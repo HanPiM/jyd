@@ -17,8 +17,10 @@ function init() {
     return
   fi
 
+  echo " git clone -b $2 git@github.com:$1.git $3"
+
   while [ ! -d $3 ]; do
-    git clone -b $2 git@github.com:$1.git $3
+    git clone -b $2 git@github-scut:$1.git $3
   done
   log="$1 `cd $3 && git log --oneline --no-abbrev-commit -n1`"$'\n'
 

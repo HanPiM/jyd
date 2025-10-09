@@ -8,35 +8,36 @@
 
 #include <nvboard.h>
 
+#ifndef TOP_NAME
+#define TOP_NAME Vtop
+#endif
+
+static TOP_NAME dut;
+
+void nvboard_bind_all_pins(TOP_NAME* top);
+
+static void single_cycle() {
+    //int a = rand() & 1;
+    //int b = rand() & 1;
+    //dut.a = a;
+    //dut.b = b;
+    dut.eval();
+    //printf("a=%d, b=%d, f=%d\r", dut.a, dut.b, dut.f);
+    assert(dut.f == (dut.a ^ dut.b));
+}
+
+
 int main(int argc, char **argv)
 {
-  VerilatedContext *contextp = new VerilatedContext;
 
-  contextp->commandArgs(argc, argv);
-  Vtop *top = new Vtop{contextp};
+  nvboard_bind_all_pins(&dut);
+  nvboard_init();
 
-  // https://verilator.org/guide/latest/faq.html#how-do-i-generate-waveforms-traces-in-c
-  Verilated::traceEverOn(true);
-  VerilatedVcdC *tfp = new VerilatedVcdC;
-  top->trace(tfp, 99);
-  tfp->open("waveform.vcd");
 
-  uint64_t sim_tim = 50;
-
-  while ((contextp->time()<sim_tim)&&(!contextp->gotFinish()))
-  {
-    contextp->timeInc(1);
-    int a = rand() & 1;
-    int b = rand() & 1;
-    top->a = a;
-    top->b = b;
-    top->eval();
-    tfp->dump(contextp->time());
-    printf("a=%d, b=%d, f=%d\n", a, b, top->f);
-    assert(top->f == (a ^ b));
+  while(1) {
+    nvboard_update();
+    single_cycle();
   }
-  tfp->close();
-  delete top;
-  delete contextp;
+
   return 0;
 }

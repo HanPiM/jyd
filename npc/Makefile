@@ -13,6 +13,7 @@ BIN = $(BUILD_DIR)/$(TOPNAME)
 default: $(BIN)
 
 $(shell mkdir -p $(BUILD_DIR))
+$(shell mkdir -p $(BUILD_DIR)/syn)
 
 # constraint file
 SRC_AUTO_BIND = $(abspath $(BUILD_DIR)/auto_bind.cpp)
@@ -60,5 +61,16 @@ clean:
 # 	  	$(CPP_SRCS) $(V_SRCS) \
 # 	 	$(addprefix -LDFLAGS , $(LDFLAGS))
 # 	./obj_dir/Vtop
+
+
+# for PROJ_PATH: yosys-sta makefile get scripts tool from PROJ_PATH, default is pwd, which is not correct here
+mysyn:
+	make -f $(HOME)/yosys-sta/Makefile syn \
+		-C $(BUILD_DIR)/syn \
+		PROJ_PATH=$(HOME)/yosys-sta \
+	   	DESIGN=$(TOPNAME) \
+	   	CLK_FREQ=100 CLK_PORT_NAME=clk \
+	   	O=./output \
+		RTL_FILES="$(VSRCS)"
 
 include ../Makefile

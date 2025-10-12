@@ -2,7 +2,7 @@ module top(
     input clk,
     input rst,
     input [4:0] btn,
-    input [7:0] sw,
+    input [15:0] sw,
     input ps2_clk,
     input ps2_data,
     input uart_rx,
@@ -24,9 +24,12 @@ module top(
     output [7:0] seg6,
     output [7:0] seg7
 );
-light mylight(
-    .clk(clk),
-    .rst(rst),
-    .led(ledr)
-);
+
+    exp2 pe (
+        .in(sw[7:0]),
+        .en(sw[8]),
+        .has_value(ledr[4]),
+        .seg_out(seg0),
+        .out(ledr[2:0])
+    );
 endmodule

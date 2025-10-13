@@ -25,18 +25,21 @@ module top(
     output [7:0] seg7
 );
 
-    wire [7:0] lfsr_out;
-    bcd7seg bslow(
-        .bcd(lfsr_out[3:0]),
-        .seg(seg0)
+    wire [7:0] ps2_out;
+    ps2test _keyboard(
+        .clk(ps2_clk),
+        .d(ps2_data),
+        .data(ps2_out),
+        .ready(ledr[15])
     );
-    bcd7seg bshigh(
-        .bcd(lfsr_out[7:4]),
+
+    bcd7seg seghigh(
+        .bcd(ps2_out[7:4]),
         .seg(seg1)
     );
-    exp6 lfsr(
-        .clk(btn[0]),
-        .out(lfsr_out)
+    bcd7seg seglow(
+        .bcd(ps2_out[3:0]),
+        .seg(seg0)
     );
 
 endmodule

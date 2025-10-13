@@ -1,9 +1,11 @@
+#include <chrono>
 #include <stdio.h>
 #include <stdlib.h>
 #include <assert.h>
 
 #include "Vtop.h"
 #include "verilated.h"
+#include <thread>
 #include <verilated_vcd_c.h>
 
 #include <nvboard.h>
@@ -22,7 +24,14 @@ static void single_cycle() {
     //dut.a = a;
     //dut.b = b;
     dut.clk=0;dut.eval();
+	//std::this_thread::sleep_for(std::chrono::milliseconds(10));
+	if (dut.seg0!=3){
+		//printf("seg0=%d\n", dut.seg0);
+	}
+	//printf("ps2_clk=%d\n", dut.ps2_clk);
     dut.clk=1;dut.eval();
+	//printf("ps2_clk=%d\n", dut.ps2_clk);
+
     //printf("a=%d, b=%d, f=%d\r", dut.a, dut.b, dut.f);
 
 }

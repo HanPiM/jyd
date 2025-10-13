@@ -26,20 +26,36 @@ module top(
 );
 
     wire [7:0] ps2_out;
+    wire idle;
+    wire ps2_ready;
     ps2test _keyboard(
-        .clk(ps2_clk),
+        .clk(clk),
+        .ps2_clk(ps2_clk),
         .d(ps2_data),
         .data(ps2_out),
-        .ready(ledr[15])
+        .ready(ps2_ready)
     );
+    /*
+    always@(*)begin
+        if(ps2_ready)$display("ps2_out=%h %h",ps2_out[7:4],ps2_out[3:0]);
+        //$display("psready=%b",ps2_ready);
+        //if(ps2_clk)$display("psclk=%b",ps2_clk);
+    end
+    */
+    assign ledr[0]=idle;
+    assign ledr[1]=ps2_ready;
 
-    bcd7seg seghigh(
+    wire [7:0] seglow, seghigh;
+
+    bcd7seg _high(
         .bcd(ps2_out[7:4]),
-        .seg(seg1)
+        .seg(seghigh)
     );
-    bcd7seg seglow(
+    bcd7seg _low(
         .bcd(ps2_out[3:0]),
-        .seg(seg0)
+        .seg(seglow)
     );
 
+    assign seg0=ps2_ready?seglow:8'hff;
+    assign seg1=ps2_ready?seghigh:8'hff;
 endmodule

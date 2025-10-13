@@ -3,7 +3,8 @@ module ps2test(
     input ps2_clk,
     input d,
     output reg [7:0] data,
-    output ready
+    output ready,
+    output idle
 );
     wire done;
     _my_hdl_sol fsm(
@@ -12,8 +13,28 @@ module ps2test(
         .reset(1'b0),
         .out_byte(data),
         .done(done),
-        .idle()
+        .idle(idle)
     );
+
+    reg [2:0] ps2_clk_sync;
+
+    always @(posedge clk) begin
+        ps2_clk_sync <=  {ps2_clk_sync[1:0],ps2_clk};
+    end
+
+    wire sampling = ps2_clk_sync[2] & ~ps2_clk_sync[1];
+
+    always @(posedge clk) begin
+        if (sampling) begin
+            ready <= done;
+            $display("sampling ready=%b done=%b",ready,done);
+        end
+        else begin
+             ready <= 0;
+//             $display("not sampling ready=%b",ready);
+        end
+    end
+    /*
     reg last_psclk;
     reg [31:0] ready_mantain;
     reg first;
@@ -31,6 +52,7 @@ module ps2test(
             ready_mantain<=32'h002F_FFFF;
         end
     end
+    */
 endmodule
 
 // I had finished it on HDLbits

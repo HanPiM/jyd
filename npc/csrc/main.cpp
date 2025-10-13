@@ -24,12 +24,15 @@ static void single_cycle() {
     //dut.a = a;
     //dut.b = b;
     dut.clk=0;dut.eval();
+	nvboard_update();
 	//std::this_thread::sleep_for(std::chrono::milliseconds(10));
 	if (dut.seg0!=3){
 		//printf("seg0=%d\n", dut.seg0);
 	}
 	//printf("ps2_clk=%d\n", dut.ps2_clk);
     dut.clk=1;dut.eval();
+	nvboard_update();
+	//std::this_thread::sleep_for(std::chrono::milliseconds(10));
 	//printf("ps2_clk=%d\n", dut.ps2_clk);
 
     //printf("a=%d, b=%d, f=%d\r", dut.a, dut.b, dut.f);
@@ -51,7 +54,6 @@ int main(int argc, char **argv)
     reset(10);
 
     while(1) {
-	nvboard_update();
 	single_cycle();
     }
 

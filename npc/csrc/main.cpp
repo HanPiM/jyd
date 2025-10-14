@@ -20,7 +20,7 @@ void nvboard_init(int vga_clk_cycle);
 
 static void single_cycle() {
     dut.clk=0;dut.eval();
-	nvboard_update();
+//	nvboard_update();
     dut.clk=1;dut.eval();
 	nvboard_update();
 }

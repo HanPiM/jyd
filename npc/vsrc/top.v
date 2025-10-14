@@ -24,7 +24,9 @@ module top(
     output [7:0] seg6,
     output [7:0] seg7
 );
-
+initial begin
+    {seg0,seg1,seg2,seg3,seg4,seg5,seg6,seg7}=64'hff_ff_ff_ff_ff_ff_ff_ff;
+end
     wire [7:0] ps2_out;
     wire idle;
     wire ps2_ready;
@@ -80,14 +82,11 @@ module top(
     reg [31:0] remain_ticks;
     always@(posedge clk or posedge rst)begin
         //$display("remain_ticks=%d",remain_ticks);
-        if(rst)begin
-            $display("reset");
-        end
-        else if(ps2_ready)begin
-            $display("ps2_ready key %h",ps2_out);
+        if(ps2_ready)begin
+            //$display("ps2_ready key %h",ps2_out);
             {seg0, seg1} <= {seglow, seghigh};
             {seg2, seg3} <= {ascii_seglow, ascii_seghigh};
-            remain_ticks <= 32'h001f_ffff;
+            remain_ticks <= 32'h000f_ffff;
             if(ps2_out==8'hf0) begin
                 is_released<=1;
                 wait_code_after_f0<=1;

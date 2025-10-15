@@ -17,6 +17,7 @@
 #include <cpu/cpu.h>
 #include <readline/readline.h>
 #include <readline/history.h>
+#include <stdio.h>
 #include "sdb.h"
 #include "utils.h"
 
@@ -53,6 +54,12 @@ static int cmd_q(char *args) {
   set_nemu_state(NEMU_QUIT,0,0);
   return -1;
 }
+static int cmd_si(char *args) {
+	int n=1;
+	if(args&&args[0])sscanf(args,"%d",&n);
+	cpu_exec(n);
+	return 0;
+}
 
 static int cmd_help(char *args);
 
@@ -64,7 +71,7 @@ static struct {
   { "help", "Display information about all supported commands", cmd_help },
   { "c", "Continue the execution of the program", cmd_c },
   { "q", "Exit NEMU", cmd_q },
-
+  { "si", "Step the program for N instructions", cmd_si },
   /* TODO: Add more commands */
 
 };

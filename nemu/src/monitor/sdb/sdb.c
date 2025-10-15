@@ -61,6 +61,15 @@ static int cmd_si(char *args) {
 	return 0;
 }
 
+static int cmd_info(char* args) {
+	if(strcmp(args,"r")==0)isa_reg_display();
+	else if(strcmp(args,"w")==0){
+		printf("TODO: list watchpoints\n");
+	}
+	else printf("Unknown info command '%s'\n", args);	
+	return 0;
+}	
+
 static int cmd_help(char *args);
 
 static struct {
@@ -72,6 +81,7 @@ static struct {
   { "c", "Continue the execution of the program", cmd_c },
   { "q", "Exit NEMU", cmd_q },
   { "si", "Step the program for N instructions", cmd_si },
+  { "info", "Display information about registers or watchpoints", cmd_info },
   /* TODO: Add more commands */
 
 };

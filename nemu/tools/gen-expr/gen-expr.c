@@ -21,8 +21,8 @@
 #include <string.h>
 
 // this should be enough
-static char buf[65536] = {};
-static char code_buf[65536 + 128] = {}; // a little larger than `buf`
+static char buf[65536+100] = {};
+static char code_buf[65536+100 + 128] = {}; // a little larger than `buf`
 static char *code_format =
 "#include <stdio.h>\n"
 "int main() { "
@@ -31,8 +31,57 @@ static char *code_format =
 "  return 0; "
 "}";
 
-static void gen_rand_expr() {
+uint32_t choose(uint32_t x) {
+  return rand() % x;
+}
+
+#define MAX_LEN 3000
+char left[MAX_LEN], right[MAX_LEN];
+char inner[MAX_LEN];
+static size_t gen_rand_expr() {
   buf[0] = '\0';
+	switch(choose(4)) {
+		case 0: {
+			int num = choose(1000);
+			return snprintf(buf,MAX_LEN, "%du", num);
+			break;
+		}
+		case 1: {
+			char op = "+-*/"[choose(4)];
+			size_t nleft = gen_rand_expr();
+			strcpy(left, buf);
+			size_t nright = gen_rand_expr();
+			strcpy(right, buf);
+
+			if(nleft + nright + 3 < MAX_LEN){
+				return snprintf(buf, MAX_LEN, "(%s%c%s)", left, op, right);
+			}
+			if(nleft + 3 >= MAX_LEN){
+				strcpy(buf, left);
+			   	return nleft;
+			}
+			if(nright + 3 >= MAX_LEN) return nright;
+			return snprintf(buf, MAX_LEN,"(%s%c1)", nleft>nright?left:right, op);
+			break;
+		}
+		case 2: {
+			size_t nin= gen_rand_expr();
+			if(nin + 2 >= MAX_LEN) return nin;
+			strcpy(inner, buf);
+			return snprintf(buf,MAX_LEN, "(%s)", inner);
+			break;
+		}
+		case 3: {
+			uint32_t nspace = choose(3);
+			size_t nin= gen_rand_expr();
+			if(nin + 2*nspace >= MAX_LEN) return nin;
+			strcpy(inner, buf);
+			return snprintf(buf, MAX_LEN,"%*s%s%*s", nspace, " ", inner, nspace, " ");
+			break;
+		}
+		default: assert(0);
+	}  
+	assert(0); // should never reach here
 }
 
 int main(int argc, char *argv[]) {
@@ -63,7 +112,7 @@ int main(int argc, char *argv[]) {
     ret = fscanf(fp, "%d", &result);
     pclose(fp);
 
-    printf("%u %s\n", result, buf);
+    printf("%u\n%s\n", result, buf);
   }
   return 0;
 }

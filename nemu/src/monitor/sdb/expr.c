@@ -21,8 +21,8 @@
 #include <regex.h>
 
 enum {
+	TK_DEC = 'd',
   TK_NOTYPE = 256, TK_EQ,
-
   /* TODO: Add more token types */
 
 };
@@ -38,7 +38,14 @@ static struct rule {
 
   {" +", TK_NOTYPE},    // spaces
   {"\\+", '+'},         // plus
+  {"\\-", '-'},         // minus
+  {"\\*", '*'},         // multiply
+  {"/", '/'},           // divide
+  {"\\(", '('},         // left parenthesis
+  {"\\)", ')'},         // right parenthesis
   {"==", TK_EQ},        // equal
+
+  {"[0-9]+", TK_DEC},   // decimal
 };
 
 #define NR_REGEX ARRLEN(rules)
@@ -94,8 +101,24 @@ static bool make_token(char *e) {
          * of tokens, some extra actions should be performed.
          */
 
+		// We only support up to 32 tokens now
+		assert(nr_token < 32);
+
+		tokens[nr_token].type = rules[i].token_type;
+
         switch (rules[i].token_type) {
-          default: TODO();
+			case TK_NOTYPE: break;
+			case TK_DEC:{
+				assert(substr_len < 32);
+				strncpy(tokens[nr_token].str, substr_start, substr_len);
+				tokens[nr_token].str[substr_len] = '\0';
+				nr_token++;
+				break;
+			}
+			default:{
+				nr_token++;
+				break;
+			}
         }
 
         break;
@@ -111,6 +134,106 @@ static bool make_token(char *e) {
   return true;
 }
 
+bool check_parentheses(int p, int q) {
+	if(tokens[p].type != '(' || tokens[q].type != ')') {
+		return false;
+	}
+	int cnt = 0;
+	for(int i = p + 1; i <= q - 1; i++) {
+		if(tokens[i].type == '(') cnt++;
+		else if(tokens[i].type == ')') {
+			if(cnt == 0) {
+				return false;
+			}
+			else cnt--;
+		}
+	}
+	return cnt == 0;
+}
+
+int op_priority(int op) {
+	switch(op) {
+		case '+':
+		case '-': return 1;
+		case '*':
+		case '/': return 2;
+		case TK_EQ: return 0;
+		default: assert(0);
+	}
+}
+bool is_operator(int type) {
+	return type == '+' || type == '-' || type == '*' || type == '/' || type == TK_EQ;
+}
+int find_main_op(int p, int q) {
+	int main_op = -1;
+	int min_priority = 0x114514;
+	int cnt = 0; // parentheses counter
+	for(int i = p; i <= q; i++) {
+		if(tokens[i].type == '(') {
+			cnt++;
+		}
+		else if(tokens[i].type == ')') {
+			cnt--;
+		}
+		else if(cnt == 0) { // only consider operators outside parentheses
+			if(!is_operator(tokens[i].type)) continue;
+			int priority = op_priority(tokens[i].type);
+			if(priority <= min_priority) { // right associative
+				min_priority = priority;
+				main_op = i;
+			}
+		}
+	}
+	assert(main_op != -1);
+	return main_op;
+}
+
+word_t eval(int p, int q, bool *success) {
+	*success = true;
+  if (p > q) {
+	*success = false;
+	return 0;
+  }
+  else if (p == q) {
+	/* Single token.
+	 * For now this token should be a number.
+	 * Return the value of the number.
+	 */
+	if(tokens[p].type == TK_DEC) {
+		return atoi(tokens[p].str);
+	}
+	else {
+		*success = false;
+		return 0;
+	}
+  }
+  else if (check_parentheses(p, q) == true) {
+	/* The expression is surrounded by a matched pair of parentheses.
+	 * If that is the case, just throw away the parentheses.
+	 */
+	return eval(p + 1, q - 1, success);
+  }
+  else {
+	  int op = find_main_op(p, q);
+	  word_t val1 = eval(p, op - 1, success);
+	  if(!(*success)) return 0;
+	  word_t val2 = eval(op + 1, q, success);
+	  if(!(*success)) return 0;
+	  switch(tokens[op].type) {
+		  case '+': return val1 + val2;
+		  case '-': return val1 - val2;
+		  case '*': return val1 * val2;
+		  case '/': {
+				assert(val2 != 0);
+				return val1 / val2;
+		  }
+		  case TK_EQ: return val1 == val2;
+  		  default: assert(0);
+	  }
+  }
+  *success = false;
+  return 0;
+}
 
 word_t expr(char *e, bool *success) {
   if (!make_token(e)) {
@@ -118,8 +241,5 @@ word_t expr(char *e, bool *success) {
     return 0;
   }
 
-  /* TODO: Insert codes to evaluate the expression. */
-  TODO();
-
-  return 0;
+  return eval(0, nr_token - 1, success);
 }

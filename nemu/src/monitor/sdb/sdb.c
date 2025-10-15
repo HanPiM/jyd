@@ -61,6 +61,13 @@ static int cmd_si(char *args) {
 	cpu_exec(n);
 	return 0;
 }
+static int cmd_p(char* args) {
+	bool success;
+	word_t result=expr(args,&success);
+	if(success)printf("0x%08x\n",result);
+	else printf("Invalid expression '%s'\n",args);
+	return 0;
+}
 
 static int cmd_info(char* args) {
 	if(strcmp(args,"r")==0)isa_reg_display();
@@ -97,7 +104,7 @@ static struct {
   { "si", "Step the program for N instructions", cmd_si },
   { "info", "Display information about registers or watchpoints", cmd_info },
   { "x", "Examine memory: x N EXPR", cmd_x },
-  
+  { "p", "Evaluate expression EXPR", cmd_p },  
   /* TODO: Add more commands */
 
 };

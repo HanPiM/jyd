@@ -20,4 +20,11 @@
 
 word_t expr(char *e, bool *success);
 
+void init_wp_pool(); 
+void add_wp(const char* sexpr);
+void delete_wp(int no);
+void info_wp();
+void check_wp();
+
+
 #endif

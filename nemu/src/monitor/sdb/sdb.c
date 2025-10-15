@@ -18,6 +18,7 @@
 #include <readline/readline.h>
 #include <readline/history.h>
 #include <stdio.h>
+#include <memory/paddr.h>
 #include "sdb.h"
 #include "utils.h"
 
@@ -69,6 +70,19 @@ static int cmd_info(char* args) {
 	else printf("Unknown info command '%s'\n", args);	
 	return 0;
 }	
+static int cmd_x(char* args) {
+	int n;
+	word_t addr;
+	sscanf(args,"%d 0x%x",&n,&addr);
+	for(int i=0;i<n;i++){
+		printf("0x%08x: ",addr+i*4);
+		for(int j=0;j<4;j++){
+			printf("%02x ",paddr_read(addr+i*4+j,1));
+		}
+		printf("\n");
+	}
+	return 0;
+}
 
 static int cmd_help(char *args);
 
@@ -82,6 +96,8 @@ static struct {
   { "q", "Exit NEMU", cmd_q },
   { "si", "Step the program for N instructions", cmd_si },
   { "info", "Display information about registers or watchpoints", cmd_info },
+  { "x", "Examine memory: x N EXPR", cmd_x },
+  
   /* TODO: Add more commands */
 
 };

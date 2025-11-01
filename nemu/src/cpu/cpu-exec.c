@@ -17,7 +17,13 @@
 #include <cpu/decode.h>
 #include <cpu/difftest.h>
 #include <locale.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <string.h>
 #include "../monitor/sdb/sdb.h"
+#include "common.h"
+#include "debug.h"
+#include "utils.h"
 
 /* The assembly code of instructions executed is only output to the screen
  * when the number of instructions executed is less than this value.
@@ -26,10 +32,88 @@
  */
 #define MAX_INST_TO_PRINT 10
 
+#define IRINGBUF_SIZE 32
+
+// for variant ilen
+#define MAX_INSTBYTE 8
+
+void disassemble(char *str, int size, uint64_t pc, uint8_t *code, int nbyte);
+
 CPU_state cpu = {};
 uint64_t g_nr_guest_inst = 0;
 static uint64_t g_timer = 0; // unit: us
 static bool g_print_step = false;
+
+typedef struct{
+	vaddr_t pc;
+	int ilen;
+	uint8_t code[MAX_INSTBYTE];
+}_pc_inst_t;
+
+void dis_asm(char* outbuf,int bufsiz,const _pc_inst_t* inst){
+	disassemble(outbuf,bufsiz,inst->pc,(uint8_t*)inst->code,inst->ilen);
+}	
+
+void expand_tabs(char *out, const char *in, int tabsize) {
+    int col = 0;
+    while (*in) {
+        if (*in == '\t') {
+            int spaces = tabsize - (col % tabsize);
+            for (int i = 0; i < spaces; i++) {
+                *out++ = ' ';
+                col++;
+            }
+        } else {
+            *out++ = *in;
+            col++;
+        }
+        in++;
+    }
+    *out = '\0';
+}
+
+struct{
+	_pc_inst_t buf[IRINGBUF_SIZE];
+	size_t idx_end;
+}g_iringbuf;
+
+// ringbuf mod plus 1
+#define _rb_mp1(x) (((x)+1)%IRINGBUF_SIZE)
+
+#define ANSI_FG_GRAY "\033[90m" // light black
+
+
+// push pc should nerver be 0
+// 0 pc consider as none inst will be ignore
+void _ringbuf_push(vaddr_t pc,const uint8_t* inst,int ilen){
+	g_iringbuf.buf[g_iringbuf.idx_end].pc=pc;
+	memcpy(g_iringbuf.buf[g_iringbuf.idx_end].code,inst,ilen);
+	g_iringbuf.buf[g_iringbuf.idx_end].ilen=ilen;
+	g_iringbuf.idx_end=_rb_mp1(g_iringbuf.idx_end);
+}
+void _ringbuf_dump(){
+	char rawdasm[128];
+	char dmpbuf[256];
+	for(size_t i=_rb_mp1(g_iringbuf.idx_end);
+			i!=g_iringbuf.idx_end;
+			i=_rb_mp1(i)){
+		_pc_inst_t* pinst=&g_iringbuf.buf[i];
+		if(!pinst->pc)continue;
+
+		dis_asm(rawdasm,sizeof(rawdasm),pinst);
+		expand_tabs(dmpbuf,rawdasm,6);
+		printf("%08X: %s%-25s" ANSI_FG_GRAY "(",
+				pinst->pc,
+				_rb_mp1(i)==g_iringbuf.idx_end?ANSI_FG_RED:ANSI_NONE,
+				dmpbuf);
+		for(int j=0;j<pinst->ilen;j++){
+			if(j)putchar(' ');
+			printf("%02x",pinst->code[j]);
+		}
+		puts(")"ANSI_NONE);
+	}
+}
+
 
 void device_update();
 
@@ -70,7 +154,8 @@ static void exec_once(Decode *s, vaddr_t pc) {
   memset(p, ' ', space_len);
   p += space_len;
 
-  void disassemble(char *str, int size, uint64_t pc, uint8_t *code, int nbyte);
+  _ringbuf_push(MUXDEF(CONFIG_ISA_x86, s->snpc, s->pc),
+		  (uint8_t *)&s->isa.inst, ilen);
   disassemble(p, s->logbuf + sizeof(s->logbuf) - p,
       MUXDEF(CONFIG_ISA_x86, s->snpc, s->pc), (uint8_t *)&s->isa.inst, ilen);
 #endif
@@ -97,6 +182,10 @@ static void statistic() {
 }
 
 void assert_fail_msg() {
+#define putsyellow(s)  puts(ANSI_FG_YELLOW s ANSI_NONE);
+  putsyellow("inst buffer");
+  _ringbuf_dump();
+  putsyellow("register info");
   isa_reg_display();
   statistic();
 }

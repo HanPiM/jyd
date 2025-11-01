@@ -17,7 +17,6 @@ int sprintf(char *out, const char *fmt, ...) {
 #define _putch(ch) do{\
     *out=(ch);out++;\
     cnt++;\
-    putch(ch);\
 }while(0)
 
     int cnt=0;

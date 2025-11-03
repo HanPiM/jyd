@@ -16,12 +16,20 @@
 
 static TOP_NAME dut;
 
+#define MADDR_BASE 0x80000000u
+typedef uint32_t word_t;
+typedef uint32_t addr_t;
+
+word_t guest_to_host(word_t addr){
+	word_t res= addr - MADDR_BASE;
+	printf("raw addr %08X after trans: %08X",addr,res);
+	return res;
+}
+
 void nvboard_bind_all_pins(TOP_NAME* top);
 void nvboard_update();
 void nvboard_init(int vga_clk_cycle);
 
-typedef uint32_t word_t;
-typedef uint32_t addr_t;
 
 word_t mem[512*1024/4]={
   0x00000297,  // auipc t0,0
@@ -40,16 +48,16 @@ extern "C" void raise_break(){
 
 extern "C" int pmem_read(int raddr) {
   	// 总是读取地址为`raddr & ~0x3u`的4字节返回
-	uint32_t addr=raddr;
+	uint32_t addr=guest_to_host(raddr);
   	addr&=~0x3u;
-//	printf("  $pmem_read try read %08X\n",addr);
+	printf("  $pmem_read try read %08X\n",addr);
 	return mem[addr>>2];
 }
 extern "C" void pmem_write(int waddr, int wdata, char wmask) {
 	// 总是往地址为`waddr & ~0x3u`的4字节按写掩码`wmask`写入`wdata`
 	// `wmask`中每比特表示`wdata`中1个字节的掩码,
 	// 如`wmask = 0x3`代表只写入最低2个字节, 内存中的其它字节保持不变
-	uint32_t addr=waddr;
+	uint32_t addr=guest_to_host(waddr);
   	addr&=~0x3u;
 //	printf("  $pmem_write try write %08X mask %d data:%08X\n",addr,(int)wmask,wdata);
 	
@@ -109,13 +117,6 @@ static long load_img() {
   fclose(fp);
 
 #define INST_EBREAK 0x00100073
-
-  if(strstr(img_file,"sum.bin")){
-	  pmem_write(0x228, INST_EBREAK, 0x0f);
-  } 
-  if(strstr(img_file,"mem.bin")){
-	  pmem_write(0x1210, INST_EBREAK, 0x0f);
-  } 
 
   return size;
 }

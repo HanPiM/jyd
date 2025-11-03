@@ -90,6 +90,7 @@ end
     assign is_imm=(itype==TypeI);
 
     alu _alu(
+        .en(is_arithmetic),
         .is_imm(is_imm),
         .func3t(func3t),.func7t(func7t),
         .src1(alu_s1),.src2(alu_s2),.res(alu_res)

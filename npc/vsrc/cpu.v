@@ -87,15 +87,16 @@ module decode_operand(
     wire [31:0] immJ={immI[31:20],inst[19:12],inst[20],inst[30:21],1'b0};
 
     always@(*)begin
-
         case(itype)
             TypeI:imm=immI;
             TypeJ:imm=immJ;
             TypeS:imm=immS;
             TypeB:imm=immB;
             TypeU:imm=immU;
+            TypeR:;
+            TypeN:;
             default:begin
-                $display("UNKNOWN Inst Type");
+                $display("(decode) UNEXPECTED UNKNOWN inst Type %d",itype);
                 imm=32'hBAADF00D;
             end
         endcase
@@ -106,6 +107,7 @@ endmodule
 parameter int BADCALL_RESVALUE=32'hBAADCA11;
 
 module alu(
+    input en, // now only effect display
     input is_imm, // in imm mode unuse func7t
     input [2:0] func3t,
     input [6:0] func7t,
@@ -121,13 +123,13 @@ always@(*)begin
                 if(func7t==7'b0)res=src1+src2;
                 else begin
                     res=BADCALL_RESVALUE;
-                    $display("(alu) UNKNOWN func7t %d",func7t);
+                    if(en)$display("(alu) UNKNOWN func7t %d",func7t);
                 end
             end
         end
         default:begin
             res=BADCALL_RESVALUE;
-            $display("(alu) UNKNOWN func3t %d",func3t);
+            if(en)$display("(alu) UNKNOWN func3t %d",func3t);
         end
     endcase
 

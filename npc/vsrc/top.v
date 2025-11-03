@@ -113,7 +113,6 @@ module top(
                 end else if(is_arithmetic)begin
                     wdata=alu_res;
                 end else if(is_load)begin
-                    $display("is_load");
                     case(func3t)
                         // lbu zero ext
                         3'b100: wdata={24'b0,pmem_read(safe_maddr)[
@@ -146,11 +145,12 @@ module top(
     end
 
     always@(posedge clk,posedge rst)begin
-        $display("pc %08x: inst %08X",pc,inst);
         if(inst==INST_EBREAK)begin
             is_halted<=1;
             raise_break();
         end
+
+        $display("--> @pc [%08x:] inst %08X",pc,inst);
         $display("rs1(r%d)=%08X(%d) rs2(r%d)=%08X(%d) imm=%08X(%d)",
             rs1,src1,src1,
             rs2,src2,src2,

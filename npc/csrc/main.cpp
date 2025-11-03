@@ -23,7 +23,7 @@ void nvboard_init(int vga_clk_cycle);
 typedef uint32_t word_t;
 typedef uint32_t addr_t;
 
-word_t mem[8192]={
+word_t mem[512*1024/4]={
   0x00000297,  // auipc t0,0
   0x00028823,  // sb  zero,16(t0)
   0x0102c503,  // lbu a0,16(t0)
@@ -93,6 +93,7 @@ static long load_img() {
   }
 
 
+
   FILE *fp = fopen(img_file, "rb");
   Assert(fp, "Can not open '%s'", img_file);
 
@@ -106,6 +107,16 @@ static long load_img() {
   assert(ret == 1);
 
   fclose(fp);
+
+#define INST_EBREAK 0x00100073
+
+  if(strstr(img_file,"sum.bin")){
+	  pmem_write(0x228, INST_EBREAK, 0x0f);
+  } 
+  if(strstr(img_file,"mem.bin")){
+	  pmem_write(0x1210, INST_EBREAK, 0x0f);
+  } 
+
   return size;
 }
 

@@ -42,10 +42,12 @@ $(BIN): $(VSRCS) $(CSRCS) $(NVBOARD_ARCHIVE)
 
 all: default
 
+SIM_IMG ?=
+
 sim: $(BIN)
 	$(call git_commit, "sim RTL") # DO NOT REMOVE THIS LINE!!!
 	@echo "Run the simulation"
-	@$^
+	@$^ $(SIM_IMG)
 #	./obj_dir/$(TOPNAME)
 
 clean:

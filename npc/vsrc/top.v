@@ -1,5 +1,7 @@
 import "DPI-C" function void raise_break();
+// always read addr & ~0x3u
 import "DPI-C" function int pmem_read(input int raddr);
+// always Write addr & ~0x3u
 import "DPI-C" function void pmem_write(
   input int waddr, input int wdata, input byte wmask);
 
@@ -32,7 +34,9 @@ module top(
     output reg [WORD_BITWIDTH-1:0] pc
 );
 
-    wire [WORD_BITWIDTH-1:0] inst=pmem_read(pc);
+    reg is_halted;
+
+    wire [WORD_BITWIDTH-1:0] inst=is_halted?0:pmem_read(pc);
 
     reg wen;
     wire [3:0] itype;
@@ -87,10 +91,18 @@ module top(
         .src1(alu_s1),.src2(alu_s2),.res(alu_res)
     );
 
+    // src1+imm
+    wire `WORD_RANGE s1pi_addr,safe_maddr;
+    wire [1:0] s1pi_addr_unalign_part;
+    assign s1pi_addr=src1+imm;
+    assign s1pi_addr_unalign_part=s1pi_addr[1:0];
 
-    assign nxt_pc=is_jalr?((src1+imm)&~1):(pc+4);
+    assign safe_maddr=is_load?s1pi_addr:0;
 
+
+    assign nxt_pc=is_jalr?(s1pi_addr&~1):(pc+4);
     assign wen=(itype!=TypeS)&&(itype!=TypeN);
+
 
     always@(*)begin
         wdata=32'hCDCDCDCD;
@@ -101,11 +113,31 @@ module top(
                 end else if(is_arithmetic)begin
                     wdata=alu_res;
                 end else if(is_load)begin
+                    $display("is_load");
+                    case(func3t)
+                        // lbu zero ext
+                        3'b100: wdata={24'b0,pmem_read(safe_maddr)[
+                            s1pi_addr_unalign_part*8+:8
+                        ]};
+                        // lw
+                        3'b010: wdata=pmem_read(safe_maddr);
+                        default: begin
+                            wdata=BADCALL_RESVALUE;
+                            $display("(load) UNKNOWN func3t %d",func3t);
+                        end
+                    endcase
                 end
             end
             TypeR:wdata=alu_res;
-            TypeU:begin
-                wdata=imm;
+            TypeU:wdata=imm;
+            TypeS:begin
+                case(func3t)
+                    3'b010: pmem_write(s1pi_addr,src2,8'b00001111);
+                    3'b000: pmem_write(s1pi_addr,
+                        src2<<(s1pi_addr_unalign_part*8),
+                        8'b00000001<<s1pi_addr_unalign_part);
+                    default:$display("(store) UNKNOWN func3t %d",func3t);
+                endcase
             end
             default:;
 
@@ -116,6 +148,7 @@ module top(
     always@(posedge clk,posedge rst)begin
         $display("pc %08x: inst %08X",pc,inst);
         if(inst==INST_EBREAK)begin
+            is_halted<=1;
             raise_break();
         end
         $display("rs1(r%d)=%08X(%d) rs2(r%d)=%08X(%d) imm=%08X(%d)",

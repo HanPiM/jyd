@@ -23,39 +23,37 @@ void nvboard_init(int vga_clk_cycle);
 typedef uint32_t word_t;
 typedef uint32_t addr_t;
 
-word_t mem[256]={
-0x123450b7,
-0x67808093,
-0x00001137,
-0x23410113,
-0x002081b3,
-0x12346237,
-0x0ac20213,
-0x10020213,
-0x000182b3,
-0x00020333,
-0x00000513,
-0x00100073,
+word_t mem[8192]={
+  0x00000297,  // auipc t0,0
+  0x00028823,  // sb  zero,16(t0)
+  0x0102c503,  // lbu a0,16(t0)
+  0x00100073,  // ebreak (used as nemu_trap)
+  0xdeadbeef,  // some data
 };
 
 bool is_running=true;
 
 extern "C" void raise_break(){
 	is_running=false;
-	puts("\n---break signal raise---\n");
+	puts("\n--- EBREAK signal raise ---\n");
 }
 
 extern "C" int pmem_read(int raddr) {
   	// 总是读取地址为`raddr & ~0x3u`的4字节返回
-  	raddr&=~0x3u;
-	return mem[raddr>>2];
+	uint32_t addr=raddr;
+  	addr&=~0x3u;
+//	printf("  $pmem_read try read %08X\n",addr);
+	return mem[addr>>2];
 }
 extern "C" void pmem_write(int waddr, int wdata, char wmask) {
 	// 总是往地址为`waddr & ~0x3u`的4字节按写掩码`wmask`写入`wdata`
 	// `wmask`中每比特表示`wdata`中1个字节的掩码,
 	// 如`wmask = 0x3`代表只写入最低2个字节, 内存中的其它字节保持不变
+	uint32_t addr=waddr;
+  	addr&=~0x3u;
+//	printf("  $pmem_write try write %08X mask %d data:%08X\n",addr,(int)wmask,wdata);
 	
-	uint8_t* p=(uint8_t*)mem;
+	uint8_t* p=(uint8_t*)(&mem[addr>>2]);
 
 	while (wmask) {
 		if(wmask&1){
@@ -71,7 +69,7 @@ static void single_cycle() {
     dut.clk=0;dut.eval();
 //	nvboard_update();
 
-	if(!dut.rst)printf("@ pc [%08X]:\n",dut.pc);
+//	if(!dut.rst)printf("@ pc [%08X]:\n",dut.pc);
 
     dut.clk=1;dut.eval();
 	nvboard_update();
@@ -83,12 +81,47 @@ static void reset(int n) {
     dut.rst = 0;
 }
 
+const char* img_file;
+
+static long load_img() {
+#define Log(fmt , ...) printf(fmt "\n",##__VA_ARGS__)
+#define Assert(expr,...) do{if(!(expr)){fprintf(stderr,__VA_ARGS__);}}while(0)
+
+  if (img_file == NULL) {
+    Log("No image is given. Use the default build-in image.");
+    return 4096; // built-in image size
+  }
+
+
+  FILE *fp = fopen(img_file, "rb");
+  Assert(fp, "Can not open '%s'", img_file);
+
+  fseek(fp, 0, SEEK_END);
+  long size = ftell(fp);
+
+  Log("The image is %s, size = %ld", img_file, size);
+
+  fseek(fp, 0, SEEK_SET);
+  int ret = fread(mem, size, 1, fp);
+  assert(ret == 1);
+
+  fclose(fp);
+  return size;
+}
+
+
 int main(int argc, char **argv)
 {
 //	pmem_write(0,0x12345678, 0x3);
 //	int res=pmem_read(0);
 //	printf("%X",res);
 //	return 0;
+
+	if(argc==2){
+		img_file=argv[1];
+	}
+
+	load_img();
 
     nvboard_bind_all_pins(&dut);
     nvboard_init();
@@ -104,6 +137,13 @@ int main(int argc, char **argv)
 	dut.final();
 
 	puts("\n--- simulation end ---\n");
+
+	for(int i=0;i<20;i+=4){
+		printf("%03d: %08X\n",i,mem[i>>2]);
+	}
+	for(int i=200;i<220;i+=4){
+		printf("%d: %08X\n",i,mem[i>>2]);
+	}
 
     return 0;
 }

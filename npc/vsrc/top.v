@@ -40,11 +40,9 @@ initial begin
     pc=INIT_PC;
 end
 
-    reg is_halted;
+    wire [WORD_BITWIDTH-1:0] inst=pmem_read(pc);
 
-    wire [WORD_BITWIDTH-1:0] inst=is_halted?0:pmem_read(pc);
-
-    reg wen;
+    wire wen;
     wire [3:0] itype;
     wire [WORD_BITWIDTH-1:0] imm,src1,src2,alu_s1,alu_s2,alu_res;
     reg [WORD_BITWIDTH-1:0] wdata,nxt_pc;
@@ -116,6 +114,11 @@ end
 
 
     always@(*)begin
+        if(inst==INST_EBREAK)begin
+            $display("-!- [EBREAK] @pc=%08X",pc);
+            raise_break();
+        end
+
         wdata=32'hCDCDCDCD;
         case(itype)
             TypeI:begin
@@ -124,6 +127,7 @@ end
                 end else if(is_arithmetic)begin
                     wdata=alu_res;
                 end else if(is_load)begin
+                    //$display("Load data since inst=%08X",inst);
                     case(func3t)
                         // lbu zero ext
                         3'b100: wdata={24'b0,pmem_read(safe_maddr)[
@@ -152,15 +156,12 @@ end
             default:;
 
         endcase
-
+//        $display("pc %08X nxt_pc %08X",pc,nxt_pc);
     end
 
     always@(posedge clk,posedge rst)begin
-        if(inst==INST_EBREAK)begin
-            is_halted<=1;
-            raise_break();
-        end
 
+    `ifdef DISPLAY_TRACE
         $display("--> @pc [%08x:] inst %08X",pc,inst);
         $display("rs1(r%d)=%08X(%d) rs2(r%d)=%08X(%d) imm=%08X(%d)",
             rs1,src1,src1,
@@ -172,6 +173,8 @@ end
         if(is_lui)$display("LUI");
 
         if(wen)$display("update r%d <- %08X(%d)",rd,wdata,wdata);
+    `endif
+
 
         if(rst)begin
             pc<=INIT_PC;

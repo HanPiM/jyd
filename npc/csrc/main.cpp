@@ -22,7 +22,7 @@ typedef uint32_t addr_t;
 
 word_t guest_to_host(word_t addr){
 	word_t res= addr - MADDR_BASE;
-	printf("raw addr %08X after trans: %08X",addr,res);
+	//printf("raw addr %08X after trans: %08X\n",addr,res);
 	return res;
 }
 
@@ -43,14 +43,18 @@ bool is_running=true;
 
 extern "C" void raise_break(){
 	is_running=false;
-	puts("\n--- EBREAK signal raise ---\n");
+	puts("\n--- raise_break called");
 }
 
 extern "C" int pmem_read(int raddr) {
+	if(!is_running){
+		printf("Warn: read addr %08X when not run, return 0xBAADCA11\n",raddr);
+		return 0xBAADCA11;
+	}
   	// 总是读取地址为`raddr & ~0x3u`的4字节返回
 	uint32_t addr=guest_to_host(raddr);
   	addr&=~0x3u;
-	printf("  $pmem_read try read %08X\n",addr);
+//	printf("  $pmem_read try read %08X\n",addr);
 	return mem[addr>>2];
 }
 extern "C" void pmem_write(int waddr, int wdata, char wmask) {
@@ -145,17 +149,9 @@ int main(int argc, char **argv)
     while(is_running) {
 		single_cycle();
     }
-
 	dut.final();
 
 	puts("\n--- simulation end ---\n");
-
-	for(int i=0;i<20;i+=4){
-		printf("%03d: %08X\n",i,mem[i>>2]);
-	}
-	for(int i=200;i<220;i+=4){
-		printf("%d: %08X\n",i,mem[i>>2]);
-	}
 
     return 0;
 }

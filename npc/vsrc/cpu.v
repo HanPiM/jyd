@@ -25,9 +25,11 @@ module itype_decoder(
     output is_lui,
     output is_auipc
 );
-// opcode[1:0] should always be 11 for 32bit
 
 wire [4:0] opcu=opcode[6:2];
+
+// opcode[1:0] should always be 11 for 32bit
+wire is_invalid=~&opcode[1:0];
 
 assign is_arithmetic=(opcu==5'b00100);
 assign is_jalr=(opcu==5'b11001);
@@ -41,6 +43,7 @@ wire isS=(opcu==5'b01000);
 wire isU=is_lui|is_auipc;
 
 assign itype=
+    is_invalid?TypeN:
     isI?TypeI:
     isR?TypeR:
     isS?TypeS:
@@ -127,7 +130,10 @@ always@(*)begin
             $display("(alu) UNKNOWN func3t %d",func3t);
         end
     endcase
-    $display("(alu) src1:%08X src2:%08X -> res=%08X",src1,src2,res);
+
+    `ifdef DISPLAY_TRACE
+        $display("(alu) src1:%08X src2:%08X -> res=%08X",src1,src2,res);
+    `endif
 end
 
 endmodule

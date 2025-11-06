@@ -14,6 +14,7 @@
 ***************************************************************************************/
 
 #include <common.h>
+#include <stdio.h>
 
 extern uint64_t g_nr_guest_inst;
 
@@ -26,6 +27,9 @@ void init_log(const char *log_file) {
     FILE *fp = fopen(log_file, "w");
     Assert(fp, "Can not open '%s'", log_file);
     log_fp = fp;
+  }
+  else{
+	  Log(ANSI_FMT("WARN: no log_file set, write_log will not work", ANSI_FG_YELLOW));
   }
   Log("Log is written to %s", log_file ? log_file : "stdout");
 }

@@ -14,6 +14,7 @@
 ***************************************************************************************/
 
 #include "common.h"
+#include "debug.h"
 #include "local-include/reg.h"
 #include "macro.h"
 #include <assert.h>
@@ -22,9 +23,10 @@
 #include <cpu/decode.h>
 #include <stdint.h>
 #include <stdio.h>
-#include <wchar.h>
 
 #include <limits.h>
+
+#include <elf_tool.h>
 
 // We are in riscv32
 #define signed_min INT_MIN
@@ -198,11 +200,19 @@ static int decode_exec(Decode *s) {
   INSTPAT_R("0000000 ????? ????? 110 ????? 01100 11", or     , R(rd) = src1 | src2); 
   INSTPAT_R("0000000 ????? ????? 100 ????? 01100 11", xor    , R(rd) = src1 ^ src2); 
 
+
+  void match_jal(word_t pc,word_t npc,word_t rd);
+  void match_jalr(word_t pc,word_t npc,word_t rd,word_t r1);
   INSTPAT("??????? ????? ????? ??? ????? 11011 11", jal    , J,
-		  R(rd) = s->pc+4; s->dnpc=s->pc+imm);
+		  R(rd) = s->pc+4; s->dnpc=s->pc+imm;
+		  match_jal(s->pc,s->dnpc, rd);
+		  );
 // setting the least-significant bit of the result to zero (see JALR p47)
   INSTPAT_I("??????? ????? ????? 000 ????? 11001 11", jalr   , 
-		  R(rd) = s->pc+4; s->dnpc=(src1+imm)&(~1));
+		  R(rd) = s->pc+4; s->dnpc=(src1+imm)&(~1);
+		  match_jalr(s->pc,s->dnpc, rd, BITS(s->isa.inst, 19, 15));
+		  );
+
 
 
 	INSTPAT_B_IMM("000",beq	,src1==src2);
@@ -225,4 +235,33 @@ static int decode_exec(Decode *s) {
 int isa_exec_once(Decode *s) {
   s->isa.inst = inst_fetch(&s->snpc, 4);
   return decode_exec(s);
+}
+
+#define REGIDX_ra 1
+
+int callst_cnt=0;
+
+void match_jal(word_t pc,word_t npc,word_t rd){
+	func_sym f;
+	assert(try_match_func(npc, &f)==0);
+	printf("0x%08X:%*scall %s @0x%08X\n",pc,callst_cnt,"",f.name,npc);	
+	callst_cnt++;
+}
+void match_jalr(word_t pc,word_t npc,word_t rd,word_t r1){
+	func_sym f;
+	if(rd==REGIDX_ra){
+		assert(try_match_func(npc, &f)==0);
+		assert(f.addr==npc);
+		printf("0x%08X:%*scall %s @0x%08X\n",pc,callst_cnt,"",f.name,npc);	
+		callst_cnt++;
+	}
+	else if(rd==0&&(r1==REGIDX_ra)){
+		assert(try_match_func(pc, &f)==0);
+		Assert(callst_cnt, "ret stmt >= call");
+		callst_cnt--;
+		printf("0x%08X:%*sret from %s @0x%08X\n",pc,callst_cnt,"",f.name,f.addr);	
+	}
+	else{
+//		printf("______unexpected jalr\n");
+	}
 }

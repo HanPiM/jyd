@@ -119,8 +119,8 @@ void load_elf(const char* filename){
 	for(size_t i=0;i<sym_num;i++){
 		int type=ELF32_ST_TYPE(syms[i].st_info);
 		if(type!=STT_FUNC)continue;
-		printf("SYM %zu: %08X %5d FUNC %s\n",
-				i,syms[i].st_value,syms[i].st_size, &symstr_buf[syms[i].st_name]);
+		//printf("SYM %zu: %08X %5d FUNC %s\n",
+		//		i,syms[i].st_value,syms[i].st_size, &symstr_buf[syms[i].st_name]);
 		func_cnt++;
 	}
 

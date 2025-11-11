@@ -64,10 +64,14 @@ static int meta_printf(putch_func f_putch,void* exinfo,const char *fmt, va_list 
     return cnt;
 }
 
+static bool printf_putch(int ch,void* v){
+	putch(ch);
+	return true;
+}
 int printf(const char *fmt, ...) {
 	va_list ap;
 	va_start(ap,fmt);
-	int cnt=meta_printf((putch_func)fputc,stdout,fmt,ap);
+	int cnt=meta_printf(printf_putch,NULL,fmt,ap);
 	va_end(ap);
 	return cnt;
 }

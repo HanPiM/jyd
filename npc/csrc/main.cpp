@@ -32,9 +32,9 @@ typedef uint32_t word_t;
 typedef uint32_t addr_t;
 
 word_t guest_to_host(word_t addr){
+//	printf("raw addr %08X\n",addr);
 	assert(addr>=MADDR_BASE);
 	word_t res= addr - MADDR_BASE;
-//	printf("raw addr %08X after trans: %08X\n",addr,res);
 	return res;
 }
 
@@ -230,7 +230,6 @@ int main(int argc, char **argv)
 		std::cout<<"(sdb) ";
 		std::getline(std::cin,cmd);
 		dbg.exec_command(cmd);
-		if(dbg.get_state().state!=sdb::run_state::running)break;
     }
 	dut.final();
 

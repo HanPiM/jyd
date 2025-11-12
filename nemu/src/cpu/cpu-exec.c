@@ -129,8 +129,12 @@ static void trace_and_difftest(Decode *_this, vaddr_t dnpc) {
   if(_this->snpc!=dnpc){
 	  
   }
+
+// sdb, DiffTest等调试功能不再开启, 因为AM无法提供它所需要的库函数(如文件读写, 动态链接, 正则表达式等)
+#ifndef CONFIG_TARGET_AM
 #ifdef CONFIG_WATCHPOINT 
   check_wp();
+#endif
 #endif
 }
 
@@ -187,7 +191,7 @@ static void statistic() {
 }
 
 void assert_fail_msg() {
-#define putsyellow(s)  puts(ANSI_FG_YELLOW s ANSI_NONE);
+#define putsyellow(s)  printf(ANSI_FG_YELLOW s ANSI_NONE"\n");
   putsyellow("inst buffer");
   _ringbuf_dump();
   putsyellow("register info");

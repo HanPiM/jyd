@@ -70,12 +70,16 @@ static inline void destroy_screen(){
 	SDL_DestroyWindow(window);
 	SDL_Quit();
 }
+void destroy_vga(){
+	destroy_screen();
+}
 #else
 static void init_screen() {}
 
 static inline void update_screen() {
   io_write(AM_GPU_FBDRAW, 0, 0, vmem, screen_width(), screen_height(), true);
 }
+void destroy_vga(){}
 #endif
 #endif
 
@@ -88,9 +92,6 @@ void vga_update_screen() {
   }
 }
 
-void destroy_vga(){
-	destroy_screen();
-}
 
 void init_vga() {
   vgactl_port_base = (uint32_t *)new_space(8);

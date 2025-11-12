@@ -34,7 +34,9 @@ int main(int argc, char *argv[]) {
   /* Start engine. */
   engine_start();
 
+#ifndef CONFIG_TARGET_AM
   destroy_monitor();
+#endif
 
   return is_exit_status_bad();
 }

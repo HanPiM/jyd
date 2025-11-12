@@ -7,11 +7,14 @@
 
 #define fb_as_u32 ((uint32_t *)(uintptr_t)FB_ADDR);
 
+// AM假设系统在运行过程中, 屏幕大小不会发生变化.
+static uint16_t gpu_w,gpu_h;
+
 void __am_gpu_init() {
 //  int i;
 //
-//  int w = io_read(AM_GPU_CONFIG).width;
-//  int h = io_read(AM_GPU_CONFIG).height;
+  gpu_w = io_read(AM_GPU_CONFIG).width;
+  gpu_h = io_read(AM_GPU_CONFIG).height;
 //  printf("get w=%d h=%d\n",w,h);
 //  uint32_t* fb=fb_as_u32;
 // 
@@ -19,8 +22,6 @@ void __am_gpu_init() {
 //  outl(SYNC_ADDR, 1);
 }
 
-// AM假设系统在运行过程中, 屏幕大小不会发生变化.
-static uint16_t gpu_w,gpu_h;
 
 void __am_gpu_config(AM_GPU_CONFIG_T *cfg) {
 	uint32_t packed_wh=inl(VGACTL_ADDR);
@@ -34,6 +35,8 @@ void __am_gpu_config(AM_GPU_CONFIG_T *cfg) {
 }
 
 void __am_gpu_fbdraw(AM_GPU_FBDRAW_T *ctl) {
+	//printf("__am_gpu_fbdraw called\n");
+	//printf("gpu_w %d gpu_h %d\n",gpu_w,gpu_h);
 	uint32_t* row_beg=fb_as_u32;
 	row_beg+=ctl->y*gpu_w+ctl->x;
 	uint32_t* row_end=row_beg+ctl->h*gpu_w;

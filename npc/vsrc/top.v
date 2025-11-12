@@ -145,7 +145,7 @@ end
                 end
             end
             TypeR:wdata=alu_res;
-            TypeU:wdata=imm;
+            TypeU:wdata=is_lui?imm:(imm+pc);
             TypeS:begin
                 case(func3t)
                     3'b010: pmem_write(s1pi_addr,src2,8'b00001111);

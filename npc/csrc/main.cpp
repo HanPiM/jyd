@@ -1,3 +1,6 @@
+#include <array>
+#include <unordered_map>
+
 #include <cstdint>
 #include <stdio.h>
 #include <stdlib.h>
@@ -10,6 +13,8 @@
 #include "Vtop__Dpi.h"
 #include <nvboard.h>
 
+#include "sdb/sdb.hpp"
+
 #ifndef TOP_NAME
 #define TOP_NAME Vtop
 #endif
@@ -18,19 +23,25 @@ static TOP_NAME dut;
 
 #define USE_NVBOARD 0
 
+//#define TRACE_MEM 
+
+#define NGPR 32
+
 #define MADDR_BASE 0x80000000u
 typedef uint32_t word_t;
 typedef uint32_t addr_t;
 
 word_t guest_to_host(word_t addr){
+	assert(addr>=MADDR_BASE);
 	word_t res= addr - MADDR_BASE;
-	//printf("raw addr %08X after trans: %08X\n",addr,res);
+//	printf("raw addr %08X after trans: %08X\n",addr,res);
 	return res;
 }
 
 void nvboard_bind_all_pins(TOP_NAME* top);
 void nvboard_update();
 void nvboard_init(int vga_clk_cycle);
+
 
 
 word_t mem[512*1024/4]={
@@ -44,17 +55,16 @@ word_t mem[512*1024/4]={
 bool is_running=true;
 bool is_good_trap=false;
 
-extern "C" void raise_break(int a0){
-	is_running=false;
-	puts("\n--- raise_break called");
-	if(a0==0){
-		puts("HIT GOOD TRAP");
-		is_good_trap=true;
-	}
-	else{
-	   	puts("HIT BAD TRAP");
-	}
+word_t regs[NGPR];
+
+extern int read_reg(int idx);
+extern "C" int reg_upadted(){
+	for(int i=0;i<32;i++)
+		regs[i]=read_reg(i);
+	return 0;
 }
+
+
 
 extern "C" int pmem_read(int raddr) {
 	if(!is_running){
@@ -64,7 +74,9 @@ extern "C" int pmem_read(int raddr) {
   	// 总是读取地址为`raddr & ~0x3u`的4字节返回
 	uint32_t addr=guest_to_host(raddr);
   	addr&=~0x3u;
-//	printf("  $pmem_read try read %08X\n",addr);
+#ifdef TRACE_MEM
+	printf("  $pmem_read try read %08X\n",addr);
+#endif
 	return mem[addr>>2];
 }
 extern "C" void pmem_write(int waddr, int wdata, char wmask) {
@@ -73,7 +85,10 @@ extern "C" void pmem_write(int waddr, int wdata, char wmask) {
 	// 如`wmask = 0x3`代表只写入最低2个字节, 内存中的其它字节保持不变
 	uint32_t addr=guest_to_host(waddr);
   	addr&=~0x3u;
-//	printf("  $pmem_write try write %08X mask %d data:%08X\n",addr,(int)wmask,wdata);
+
+#ifdef TRACE_MEM
+	printf("  $pmem_write try write %08X mask %d data:%08X\n",addr,(int)wmask,wdata);
+#endif
 	
 	uint8_t* p=(uint8_t*)(&mem[addr>>2]);
 
@@ -137,6 +152,52 @@ static long load_img() {
   return size;
 }
 
+void cpu_exec_once(){
+	single_cycle();
+}
+uint8_t addr_readbyte(sdb::paddr_t addr){
+	return pmem_read(addr)>>((addr&0x3)*8);
+}
+std::array<std::string_view,32> reg_names = {
+  "$0", "ra", "sp", "gp", "tp", "t0", "t1", "t2",
+  "s0", "s1", "a0", "a1", "a2", "a3", "a4", "a5",
+  "a6", "a7", "s2", "s3", "s4", "s5", "s6", "s7",
+  "s8", "s9", "s10", "s11", "t3", "t4", "t5", "t6"
+};
+std::optional<sdb::word_t> get_reg(std::string_view name){
+	static std::unordered_map<std::string_view,size_t> m;
+	if(m.empty()){
+		for (size_t i = 0; i < reg_names.size(); ++i) {
+			m.emplace(reg_names[i], i);
+		}
+	}
+	if(m.contains(name)){
+		return regs[m.at(name)];
+	}
+	return std::nullopt;
+}
+sdb::debuger dbg(
+	cpu_exec_once,
+	addr_readbyte,
+	get_reg,
+	std::vector<std::string>(reg_names.begin(),reg_names.end())
+);
+
+extern "C" void raise_break(int a0){
+	is_running=false;
+
+	dbg.set_run_state(sdb::run_state::quit);
+	printf("%d\n",dbg.is_running());
+
+	puts("\n--- raise_break called");
+	if(a0==0){
+		puts("HIT GOOD TRAP");
+		is_good_trap=true;
+	}
+	else{
+	   	puts("HIT BAD TRAP");
+	}
+}
 
 int main(int argc, char **argv)
 {
@@ -144,6 +205,10 @@ int main(int argc, char **argv)
 //	int res=pmem_read(0);
 //	printf("%X",res);
 //	return 0;
+
+	using std::string;
+	using namespace std::views;
+	using namespace std::ranges;
 
 	if(argc==2){
 		img_file=argv[1];
@@ -156,12 +221,16 @@ int main(int argc, char **argv)
     nvboard_init();
 #endif
 
-    reset(10);
+//    reset(10);
 
 	puts("\n--- Start ---\n");
 	
+	std::string cmd;
     while(is_running) {
-		single_cycle();
+		std::cout<<"(sdb) ";
+		std::getline(std::cin,cmd);
+		dbg.exec_command(cmd);
+		if(dbg.get_state().state!=sdb::run_state::running)break;
     }
 	dut.final();
 

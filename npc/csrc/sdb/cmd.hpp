@@ -71,24 +71,20 @@ struct command_t{
 		using namespace std;
 		auto def_args=make_tuple(forward<Defaults>(defaults)...);
 		invoke=[obj, func, def_args](toks_t toks) {
-            tuple<decay_t<Args>...> args;
+      tuple<decay_t<Args>...> args;
 			constexpr size_t N_args = sizeof...(Args);
-            constexpr size_t N_def  = sizeof...(Defaults);
-            constexpr size_t I_required_end = N_args - N_def;
+      constexpr size_t N_def  = sizeof...(Defaults);
+      constexpr size_t I_required_end = N_args - N_def;
 
 			const size_t n_tok = toks.size();
 
-            if (n_tok > N_args) {
-				return errc::argument_list_too_long;
-            }
-			if(n_tok+N_def<N_args){
-				return errc::invalid_argument;
-			}
+      if(n_tok > N_args) return errc::argument_list_too_long;
+			if(n_tok+N_def<N_args) return errc::invalid_argument;
 
 			bool ok=true;
 			errc ec;
 
-            [&]<size_t... Is>(index_sequence<Is...>) { (([&]{
+      [&]<size_t... Is>(index_sequence<Is...>) { (([&]{
 				if (Is < n_tok) {
 					if(!ok)return;
 					ec = _impl::parse(toks[Is], get<Is>(args));
@@ -110,7 +106,7 @@ struct command_t{
 
 			apply(bind_front(func, obj), args);
 			return invoke_success;
-        };
+    };
 	}
 
 };

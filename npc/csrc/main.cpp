@@ -184,11 +184,10 @@ word_t fetch_inst(sdb::paddr_t pc){
 		return pmem_read(pc);
 }
 
-std::string disasm(sdb::paddr_t pc){
+std::string disasm(sdb::disasmable_inst inst){
 	void disassemble(char *str, int size, uint64_t pc, uint8_t *code, int nbyte);
 	char buf[256];
-	word_t inst=fetch_inst(pc);
-	disassemble(buf,sizeof(buf),pc,(uint8_t*)&inst,sizeof(inst));
+	disassemble(buf,sizeof(buf),inst.pc,inst.code.data(),inst.code.size());
 	return buf;
 }
 sdb::debuger dbg(

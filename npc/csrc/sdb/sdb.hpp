@@ -5,6 +5,7 @@
 #include <format>
 #include <iostream>
 #include <vector>
+#include <deque>
 #include <optional>
 
 #include "cmd.hpp"
@@ -17,11 +18,24 @@ namespace sdb {
 	// phiysical addr
 	using paddr_t = word_t;
 
-// should return pc after exec
-using cpu_executor=std::function<paddr_t()>;
-using addr_reader=std::function<uint8_t(paddr_t)>;
-using reg_reader=std::function<std::optional<word_t>(std::string_view)>;
-using inst_disasmsembler=std::function<std::string(uint64_t pc)>;
+	using vlen_inst_code=std::vector<uint8_t>;
+
+	struct disasmable_inst{
+		paddr_t pc;
+		vlen_inst_code code;
+	};
+
+
+	// should return pc after exec
+	using cpu_executor=std::function<paddr_t()>;
+	using addr_reader=std::function<uint8_t(paddr_t)>;
+	using reg_reader=std::function<std::optional<word_t>(std::string_view)>;
+	using inst_fetcher=std::function<vlen_inst_code(paddr_t pc)>;
+	using inst_disasmsembler=std::function<std::string(const disasmable_inst&)>;
+
+namespace _impl {
+	std::string expand_tabs(std::string_view in, int tabsize);
+}
 
 enum class run_state{
 	running,
@@ -47,6 +61,20 @@ struct cpu_state{
 		return !good;
 	}
 };
+
+	
+struct inst_ringbuf{
+	constexpr static size_t n_max_records = 32;
+	std::deque<disasmable_inst> buf;
+
+	inline void push(disasmable_inst&& inst){
+		buf.push_back(inst);
+		while(buf.size()>n_max_records)buf.pop_front();
+	}
+	auto begin(){return buf.begin();}
+	auto end(){return buf.end();}
+};
+
 class debuger{
 	cpu_executor _exec;
 	cpu_state _state;
@@ -55,7 +83,12 @@ class debuger{
 	reg_reader _reg_read;
 
 	inst_disasmsembler _disasm;
+	inst_fetcher _fetch_inst;
+
+	inst_ringbuf _iringbuf;
+
 	constexpr static bool _ENABLE_ITRACE=true;
+	constexpr static int DEFAULT_INST_LEN=sizeof(word_t);
 	
 	std::vector<std::string> _reg_names;
 
@@ -73,12 +106,14 @@ class debuger{
 			<<std::endl;
 	}
 
-	void _init_cmd_table();
+	inline disasmable_inst _fetch_dinst(paddr_t pc)const{
+		return disasmable_inst{pc,_fetch_inst(pc)};
+	}
 
+	void _init_cmd_table();
 	void _step_one();
 
-	void cmd_info(std::string_view);
-	void cmd_x(size_t N,clscmd::expr_t addr);
+	void _dump_iringbuf();
 
 public:
 
@@ -87,7 +122,18 @@ public:
 			cpu_executor e,addr_reader mr,reg_reader rr,auto&& reg_names,
 			inst_disasmsembler d=inst_disasmsembler()
 			):
-		_exec(e),_paddr_read(mr),_reg_read(rr),_disasm(d),_reg_names(reg_names){
+		_exec(e),_paddr_read(mr),_reg_read(rr),_reg_names(reg_names){
+
+			_disasm=[d](const disasmable_inst& i){
+				return _impl::expand_tabs(d(i),8);
+			};
+			_fetch_inst=[mr](paddr_t pc){
+				uint8_t out[DEFAULT_INST_LEN];
+				for(size_t i=0;i<DEFAULT_INST_LEN;i++){
+					out[i]=mr(pc+i);
+				}
+				return vlen_inst_code(out,out+DEFAULT_INST_LEN);
+			};
 			_state.pc=init_pc;
 			_init_cmd_table();
 		}
@@ -103,15 +149,15 @@ public:
 		return _state.state==run_state::running;
 	}	
 
-	inline void resume()
-	{
-		step(-1);
+	inline void cmd_c(){cmd_si(-1);}
+	inline void cmd_si(size_t n=1){
+		for(;n>0&&is_running();n--)_step_one();
 	}
-	void quit();
-	inline void step(size_t n=1)
-	{
-		for(size_t i=0;i<n&&is_running();i++)_step_one();
-	}
+
+	void cmd_q();
+	void cmd_info(std::string_view);
+	void cmd_x(size_t N,clscmd::expr_t addr);
+
 	void dump_mem(paddr_t addr,paddr_t end);
 	void dump_reg();
 

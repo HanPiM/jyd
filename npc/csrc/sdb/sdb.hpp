@@ -25,6 +25,9 @@ namespace sdb {
 		paddr_t pc;
 		vlen_inst_code code;
 	};
+
+	using reg_snapshot_t=std::vector<word_t>;
+
 	struct expr_t{
 		std::string_view raw;
 		expr_t(){}
@@ -41,7 +44,7 @@ namespace sdb {
 	// should return pc after exec
 	using cpu_executor=std::function<paddr_t()>;
 	using addr_reader=std::function<uint8_t(paddr_t)>;
-	using reg_reader=std::function<std::optional<word_t>(std::string_view)>;
+	using reg_snapshoter=std::function<void(reg_snapshot_t&)>;
 	using inst_fetcher=std::function<vlen_inst_code(paddr_t pc)>;
 	using inst_disasmsembler=std::function<std::string(const disasmable_inst&)>;
 	using jump_recognizer=std::function<jump_type(const disasmable_inst&)>;
@@ -98,7 +101,10 @@ class debuger{
 	cpu_state _state;
 
 	addr_reader _paddr_read;
-	reg_reader _reg_read;
+
+	reg_snapshoter _shot_reg;
+	std::span<std::string_view> _reg_names;
+	reg_snapshot_t _reg_snap;
 
 	inst_disasmsembler _disasm;
 	inst_fetcher _fetch_inst;
@@ -110,11 +116,9 @@ class debuger{
 	int _func_depth=0;
 
 	constexpr static bool
-	 	_ENABLE_ITRACE=true,
-		_ENABLE_FTRACE=true;
+	 	_ENABLE_ITRACE=1,
+		_ENABLE_FTRACE=1;
 	
-	std::vector<std::string> _reg_names;
-
 	using fmt_str=std::string_view;
 
 	clscmd::command_table _cmd_table;
@@ -146,14 +150,16 @@ public:
 
 	debuger(
 			paddr_t init_pc,
-			cpu_executor e,addr_reader mr,reg_reader rr,auto&& reg_names,
+			cpu_executor e,addr_reader mr,reg_snapshoter rss,auto&& reg_names,
 			inst_disasmsembler d=inst_disasmsembler(),
 			inst_fetcher f=inst_fetcher()
-			): _exec(e),_paddr_read(mr),_reg_read(rr),_fetch_inst(f),_reg_names(reg_names){
+	): _exec(e),_paddr_read(mr),_shot_reg(rss),_fetch_inst(f),
+	_reg_names(reg_names){
 		_disasm=[d](const disasmable_inst& i){
 			return _impl::expand_tabs(d(i),8);
 		};
 		_state.pc=init_pc;
+		_reg_snap.resize(_reg_names.size());
 		_init_cmd_table();
 	}
 

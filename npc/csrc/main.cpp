@@ -186,17 +186,11 @@ std::array<std::string_view,32> reg_names = {
   "a6", "a7", "s2", "s3", "s4", "s5", "s6", "s7",
   "s8", "s9", "s10", "s11", "t3", "t4", "t5", "t6"
 };
-std::optional<sdb::word_t> get_reg(std::string_view name){
-	static std::unordered_map<std::string_view,size_t> m;
-	if(m.empty()){
-		for (size_t i = 0; i < reg_names.size(); ++i) {
-			m.emplace(reg_names[i], i);
-		}
+
+void sdb_shot_regsnap(sdb::reg_snapshot_t& snap){
+	for(size_t i=0;i<NGPR;i++){
+		snap[i]=regs[i];
 	}
-	if(m.contains(name)){
-		return regs[m.at(name)];
-	}
-	return std::nullopt;
 }
 
 sdb::vlen_inst_code sdb_inst_fetcher(sdb::paddr_t pc){
@@ -215,8 +209,8 @@ sdb::debuger dbg(
 	INITIAL_PC,	
 	cpu_exec_once,
 	addr_readbyte,
-	get_reg,
-	std::vector<std::string>(reg_names.begin(),reg_names.end()),
+	sdb_shot_regsnap,
+	reg_names,
 	disasm,sdb_inst_fetcher
 );
 

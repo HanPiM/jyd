@@ -136,8 +136,9 @@ void debuger::dump_mem(paddr_t addr,paddr_t end){
 	}
 }
 void debuger::dump_reg(){
-	for(auto r:_reg_names){
-		auto v=_reg_read(r);
+	for(size_t i=0;i<_reg_names.size();i++){
+		auto r=_reg_names[i];
+		auto v=_reg_snap[i];
 		_print("{}:\t0x{:08x}\t{}\n", r, v,v);
 	}
 }

@@ -7,11 +7,12 @@ import "DPI-C" function void pmem_write(
 
 import "DPI-C" function int fetch_inst(input int pc);
 
-`define MAGIC_ADDR_IGNORE 32'hFFFF_1145
 `define WORD_RANGE [WORD_BITWIDTH-1:0]
 
 parameter int INIT_PC=32'h8000_0000;
 parameter int PC_BEFORE_START=INIT_PC-4;
+
+parameter int NOP_INST_ADDR = PC_BEFORE_START;
 
 
 module top(
@@ -41,14 +42,8 @@ module top(
     output [7:0] seg7,
 
     output reg `WORD_RANGE pc,
-    output reg [WORD_BITWIDTH-1:0] nxt_pc,
-    output w_mem,
-    output r_mem
+    output reg [WORD_BITWIDTH-1:0] nxt_pc
 );
-
-initial begin
-    pc=PC_BEFORE_START;
-end
 
     wire [WORD_BITWIDTH-1:0] inst=fetch_inst(pc);
 
@@ -116,13 +111,10 @@ end
     // pmem_read is always called
     // so for non-load instructions
     // use MAGIC_ADDR_IGNORE to tell pmem_read to ignore
-    assign safe_maddr=is_load?s1pi_addr:`MAGIC_ADDR_IGNORE;
+    assign safe_maddr=is_load?s1pi_addr:NOP_INST_ADDR;
 
     assign nxt_pc=is_jalr?(s1pi_addr&~1):(pc+4);
     assign wen=(itype!=TypeS)&&(itype!=TypeN);
-
-    assign r_mem=is_load;
-    assign w_mem=(itype==TypeS);
 
     reg `WORD_RANGE mem_rdata;
 //    always@(safe_maddr)begin

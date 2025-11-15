@@ -24,7 +24,7 @@ static TOP_NAME dut;
 
 #define USE_NVBOARD 0
 
-#define TRACE_MEM 
+//#define TRACE_MEM 
 
 #define NGPR 32
 
@@ -238,19 +238,40 @@ extern "C" void raise_break(int a0){
 	printf(" at pc = 0x%08x\n",dut.pc);
 }
 
+sdb::jump_type sdb_jump_recognizer(const sdb::disasmable_inst& inst){
+	using namespace sdb;
+	word_t instr=*(word_t*)inst.code.data();
+	uint8_t opcode=instr&0x7f;
+	uint8_t funct3=(instr>>12)&0x7;
+	uint8_t rd=(instr>>7)&0x1f;
+	uint8_t rs1=(instr>>15)&0x1f;
+	bool is_jal=opcode==0x6f;
+	bool is_jalr=opcode==0x67 && funct3==0x0;
+	bool is_ret=is_jalr && rd==0 && rs1==1;
+	bool is_call=(is_jal && rd==1) || (is_jalr && rd==1);
+	if(is_call)return jump_type::call;
+	if(is_ret)return jump_type::ret;
+	return jump_type::normal;
+}
+
+std::string try_find_elf_file(std::string img_file){
+	using namespace std;
+	size_t pos=img_file.rfind('.');
+	if(pos==string::npos)return "";
+	string base=img_file.substr(0,pos);
+	string elf_file=base+".elf";
+	FILE* fp=fopen(elf_file.c_str(),"rb");
+	if(fp){
+		fclose(fp);
+		return elf_file;
+	}
+	return "";
+}
+
 void init_disasm();
 int main(int argc, char **argv)
 {
 	init_disasm();
-	std::fstream f("/home/wuser/ysyx-workbench/am-kernels/tests/cpu-tests/build/bubble-sort-minirv-npc.elf",std::ios::in|std::ios::binary);
-	ElfHandler elf_fh(f);
-	elf_fh.dump_func_syms();
-
-//	pmem_write(0,0x12345678, 0x3);
-//	int res=pmem_read(0);
-//	printf("%X",res);
-//	return 0;
-
 	using std::string;
 	using namespace std::views;
 	using namespace std::ranges;
@@ -259,7 +280,16 @@ int main(int argc, char **argv)
 		img_file=argv[1];
 	}
 
+
 	load_img();
+	string elf_file=try_find_elf_file(img_file?img_file:"");
+	if(!elf_file.empty()){
+		printf("Found ELF file %s\n",elf_file.c_str());
+		dbg.load_elf(elf_file.c_str());
+	}
+
+	dbg.set_jump_recognizer(sdb_jump_recognizer);
+
 
 #if USE_NVBOARD
     nvboard_bind_all_pins(&dut);

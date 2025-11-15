@@ -3,27 +3,23 @@
 #include <elf.h>
 #include <vector>
 #include <string>
+#include <optional>
 
-class ElfHandler {
+class elf_handler {
 public:
-	struct FuncSym {
+	struct func {
 		uint32_t addr;
 		uint32_t size;
 		std::string_view name;
 	};
 private:
-	std::fstream& _fs;
-	std::vector<FuncSym> _func_syms;
+	std::vector<func> _funcs;
 	std::string _symstr_buf;
-	void loadElf();
 
-	void _ensure_frd(void* ptr, size_t siz);
-	std::string create_strbuf(const Elf32_Shdr& shdr);
 public:
 
-	ElfHandler(std::fstream& fs):_fs(fs) {
-		loadElf();
-	}
-	void dump_func_syms();
-
+	void load(std::fstream& fs);
+	void dump_func_syms()const;
+	
+	std::optional<func> get_fun_at(uint32_t inst_addr)const;
 };

@@ -1,13 +1,10 @@
 #include "elf_tool.hpp"
 
-#include <elf.h>
 #include <cstring>
 #include <format>
 #include <stdexcept>
-#include <vector>
-#include <string>
 #include <ranges>
-#include <algorithm>
+#include <functional>
 #include <source_location>
 
 using namespace std;
@@ -19,37 +16,39 @@ void _check(bool cond, const string& msg,
 		throw runtime_error(format("{}:{}: ElfHandler: {}", loc.file_name(), loc.line(), msg));
 	}
 }
-
-string ElfHandler::create_strbuf(const Elf32_Shdr& shdr) {
-	_check(shdr.sh_type == SHT_STRTAB, "try read strtable on wrong header type");
-	_fs.seekg(shdr.sh_offset, ios::beg);
-	string buf(shdr.sh_size, '\0');
-	_ensure_frd(buf.data(), shdr.sh_size);
-	return buf;
-}
-
-void ElfHandler::_ensure_frd(void* ptr, size_t siz) {
+static void _ensure_fread(fstream& _fs,void* ptr, size_t siz) {
 	_check(_fs.read((char*)ptr, siz).gcount() == siz,
 			format("read failed, expected {} bytes", siz));
 }
-void ElfHandler::loadElf() {
+
+static string _load_strbuf(fstream& _fs,const Elf32_Shdr& shdr) {
+	_check(shdr.sh_type == SHT_STRTAB, "try read strtable on wrong header type");
+	_fs.seekg(shdr.sh_offset, ios::beg);
+	string buf(shdr.sh_size, '\0');
+	_ensure_fread(_fs,buf.data(), shdr.sh_size);
+	return buf;
+}
+
+void elf_handler::load(fstream& fs) {
+	auto _frd = bind_front(_ensure_fread, ref(fs));
+
 	// Read ELF header
 	char e_ident[EI_NIDENT];
-	_ensure_frd(e_ident, EI_NIDENT);
+	_frd(e_ident, EI_NIDENT);
 
 	_check(e_ident[EI_CLASS] == ELFCLASS32,"only support 32-bit ELF files"); 
 	_check(memcmp(e_ident, ELFMAG, SELFMAG) == 0,"not a valid ELF file");
 
 	Elf32_Ehdr hdr;
-	_fs.seekg(0, ios::beg);
-	_ensure_frd(&hdr, sizeof(hdr));
+	fs.seekg(0, ios::beg);
+	_frd(&hdr, sizeof(hdr));
 
 	// Read section headers
 	_check(hdr.e_shstrndx < hdr.e_shnum,"invalid section header string table index");
 
 	vector<Elf32_Shdr> shdrs(hdr.e_shnum);
-	_fs.seekg(hdr.e_shoff, ios::beg);
-	_ensure_frd(shdrs.data(), hdr.e_shnum * sizeof(Elf32_Shdr));
+	fs.seekg(hdr.e_shoff, ios::beg);
+	_frd(shdrs.data(), hdr.e_shnum * sizeof(Elf32_Shdr));
 
 	// Find symbol table section
 	auto it = ranges::find(shdrs, SHT_SYMTAB, &Elf32_Shdr::sh_type);
@@ -65,24 +64,31 @@ void ElfHandler::loadElf() {
 	size_t n_symbols = sh_symtab.sh_size / sh_symtab.sh_entsize;
 	vector<Elf32_Sym> syms(n_symbols);
 
-	_fs.seekg(sh_symtab.sh_offset, ios::beg);
-	_ensure_frd(syms.data(), sh_symtab.sh_size);
+	fs.seekg(sh_symtab.sh_offset, ios::beg);
+	_frd(syms.data(), sh_symtab.sh_size);
 
 	// Read symbol string table
 	_check(sh_symtab.sh_link<hdr.e_shnum, "invalid symbol string table index");
 	const auto& sh_symstrtab = shdrs[sh_symtab.sh_link];
-	_symstr_buf = create_strbuf(sh_symstrtab);
+	_symstr_buf = _load_strbuf(fs,sh_symstrtab);
 
 	// Extract function symbols
 	for(auto& s: syms) {
 		if(ELF32_ST_TYPE(s.st_info) != STT_FUNC) continue;
-		_func_syms.emplace_back(s.st_value, s.st_size,&_symstr_buf[s.st_name]);
+		_funcs.emplace_back(s.st_value, s.st_size,&_symstr_buf[s.st_name]);
 	}
 
 }
 
-void ElfHandler::dump_func_syms() {
-	for (const auto& f : _func_syms) {
+optional<elf_handler::func> elf_handler::get_fun_at(uint32_t addr) const {
+	for (auto& f : _funcs) {
+		if (addr >= f.addr && addr < f.addr + f.size)return f;
+	}
+	return nullopt;
+}
+
+void elf_handler::dump_func_syms() const {
+	for (auto& f : _funcs) {
 		printf("FUNC: %08X %5d %s\n", f.addr, f.size, f.name.data());
 	}
 }

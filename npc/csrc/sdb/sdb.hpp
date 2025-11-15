@@ -9,6 +9,7 @@
 #include <optional>
 
 #include "cmd.hpp"
+#include "elf_tool.hpp"
 
 namespace sdb {
 
@@ -31,6 +32,11 @@ namespace sdb {
 		uint64_t eval()const;
 	};
 
+	enum class jump_type{
+		normal,
+		call,
+		ret
+	};
 
 	// should return pc after exec
 	using cpu_executor=std::function<paddr_t()>;
@@ -38,6 +44,7 @@ namespace sdb {
 	using reg_reader=std::function<std::optional<word_t>(std::string_view)>;
 	using inst_fetcher=std::function<vlen_inst_code(paddr_t pc)>;
 	using inst_disasmsembler=std::function<std::string(const disasmable_inst&)>;
+	using jump_recognizer=std::function<jump_type(const disasmable_inst&)>;
 
 namespace _impl {
 	std::string expand_tabs(std::string_view in, int tabsize);
@@ -98,8 +105,13 @@ class debuger{
 
 	inst_ringbuf _iringbuf;
 
-	constexpr static bool _ENABLE_ITRACE=true;
-	constexpr static int DEFAULT_INST_LEN=sizeof(word_t);
+	elf_handler _elf;
+	jump_recognizer _recog_jmp;
+	int _func_depth=0;
+
+	constexpr static bool
+	 	_ENABLE_ITRACE=true,
+		_ENABLE_FTRACE=true;
 	
 	std::vector<std::string> _reg_names;
 
@@ -122,6 +134,7 @@ class debuger{
 	}
 
 	void _init_cmd_table();
+	void _trace_handler_f(const disasmable_inst& inst);
 	void _step_one();
 
 	void _dump_iringbuf();
@@ -139,6 +152,14 @@ public:
 		};
 		_state.pc=init_pc;
 		_init_cmd_table();
+	}
+
+	void load_elf(const char* filename){
+		std::fstream fs(filename,std::ios::in|std::ios::binary);
+		_elf.load(fs);
+	}
+	void set_jump_recognizer(jump_recognizer r){
+		_recog_jmp=r;
 	}
 
 	const cpu_state& state()const{

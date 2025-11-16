@@ -146,8 +146,9 @@ always@(*)begin
             res=src1<<src2[4:0];
         end
         3'b101:begin
-            // srli/srl
-            res=src1>>src2[4:0];
+            // srai/sra
+            if(func7t==7'b0100000)res=$signed(src1)>>>src2[4:0];
+            else res=src1>>src2[4:0]; // srli/srl
         end
         3'b110:begin
             res=src1|src2;

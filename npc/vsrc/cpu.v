@@ -135,8 +135,11 @@ always@(*)begin
                 end
             end
         end
-        3'b011:begin
+        3'b011:begin // sltu/sltui
             res=(src1<src2)?1:0;
+        end
+        3'b010:begin // slt/slti
+            res=($signed(src1)<$signed(src2))?1:0;
         end
         3'b100:begin
             res=src1^src2;

@@ -14,6 +14,24 @@ module cpu(
 );
 endmodule
 
+module branch_jmp_judger(
+    input `WORD_RANGE src1,src2,
+    input [2:0] func3t,
+    output take_branch
+);
+    wire cond_eq= (src1==src2);
+    wire cond_slt= ($signed(src1)<$signed(src2));
+    wire cond_ult= (src1<src2);
+
+    wire flag_rev=func3t[0];
+    wire flag_usign=func3t[1];
+    wire flag_cmp=func3t[2];
+
+    wire cond_calc_tmp = flag_cmp ?
+        (flag_usign ? cond_ult : cond_slt) : cond_eq;
+    assign take_branch=flag_rev ^ cond_calc_tmp;
+endmodule
+
 // only jal is TypeJ
 module itype_decoder(
     input [6:0] opcode,

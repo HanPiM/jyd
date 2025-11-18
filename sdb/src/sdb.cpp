@@ -31,7 +31,7 @@ void debuger::_dump_inst(const disasmable_inst& inst,bool highlight_disasm){
 			inst.pc,
 			highlight_disasm?ANSI_FG_RED:ANSI_NONE,
 			_disasm(inst));
-	for(int j=0;j<inst.code.size();j++){
+	for(size_t j=0;j<inst.code.size();j++){
 		if(j) _print(" ");
 		_print("{:02X}",inst.code[j]);
 	}
@@ -40,7 +40,7 @@ void debuger::_dump_inst(const disasmable_inst& inst,bool highlight_disasm){
 	_print(")" ANSI_NONE "\n");
 }
 
-void debuger::_dump_iringbuf(){if constexpr(_ENABLE_ITRACE){
+void debuger::_dump_iringbuf(){if (enable_inst_trace) {
 	_print(ANSI_FG_YELLOW "==== recent instructions ====\n" ANSI_NONE);
 	auto last=prev(end(_iringbuf));
 	for(auto it=_iringbuf.begin();it!=_iringbuf.end();++it){
@@ -68,11 +68,11 @@ string sdb::_impl::expand_tabs(std::string_view in, int tabsize) {
     return out;
 }
 void debuger::_step_one(){
-	if constexpr (_ENABLE_ITRACE){
+	if (enable_inst_trace){
 		auto inst=_fetch_dinst(_state.pc);
 		if(_enable_dump_inst)_dump_inst(inst);
 		_iringbuf.push(std::move(inst));
-		if constexpr (_ENABLE_FTRACE){
+		if (enable_ftrace){
 			_ftrace_handler(inst);
 		}
 	}
@@ -148,5 +148,20 @@ void debuger::exec_command(string_view cmdline){
 	if(ec!=invoke_success){
 		_error("{}", ec);
 	}
+}
+
+
+extern "C" void disassemble(char *str, int size, uint64_t pc, uint8_t *code, int nbyte);
+extern "C" void init_disasm();
+
+string sdb::default_disasm(const disasmable_inst& inst){
+	static bool has_init=false;
+	if(!has_init){
+		init_disasm();
+		has_init=true;
+	}
+	char buf[256];
+	disassemble(buf,sizeof(buf),inst.pc,(uint8_t*)inst.code.data(),inst.code.size());
+	return buf;
 }
 

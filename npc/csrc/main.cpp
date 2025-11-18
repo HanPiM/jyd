@@ -16,8 +16,7 @@
 #include "Vtop__Dpi.h"
 #include <nvboard.h>
 
-#include "sdb/sdb.hpp"
-#include "sdb/elf_tool.hpp"
+#include "sdb.hpp"
 
 #ifndef TOP_NAME
 #define TOP_NAME Vtop
@@ -166,19 +165,13 @@ uint8_t* sdb_loadmem(sdb::paddr_t addr, size_t nbyte){
 	return mem_atguest(addr);
 }
 
-std::string disasm(sdb::disasmable_inst inst){
-	void disassemble(char *str, int size, uint64_t pc, uint8_t *code, int nbyte);
-	char buf[256];
-	disassemble(buf,sizeof(buf),inst.pc,inst.code.data(),inst.code.size());
-	return buf;
-}
 sdb::debuger dbg(
 	INITIAL_PC,	
 	cpu_exec_once,
 	sdb_loadmem,
 	sdb_shot_regsnap,
 	reg_names,
-	disasm,sdb_inst_fetcher
+	sdb_inst_fetcher
 );
 
 extern "C" int pmem_read(int raddr) {
@@ -296,8 +289,6 @@ std::string try_find_elf_file(std::string img_file){
 	return "";
 }
 
-void init_disasm();
-
 static void parse_args(int argc, char** argv){
 	const struct option table[] = {
 		{"batch", no_argument, NULL, 'b'},
@@ -319,7 +310,6 @@ static void parse_args(int argc, char** argv){
 int main(int argc, char **argv)
 {
 	parse_args(argc, argv);
-	init_disasm();
 	using std::string;
 	using namespace std::views;
 	using namespace std::ranges;

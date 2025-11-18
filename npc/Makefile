@@ -33,15 +33,15 @@ INCHEADERS = $(shell find $(abspath ./csrc) -name "*.h" -or -name "*.hpp")
 # rules for NVBoard
 include $(NVBOARD_HOME)/scripts/nvboard.mk
 
-# rules for capstone
-include tools/disasm.mk
-
 # rules for verilator
+
+INC_PATH += $(abspath ../sdb/include)
+
 INCFLAGS = $(addprefix -I, $(INC_PATH))
 CXXFLAGS += $(INCFLAGS) -DTOP_NAME="\"V$(TOPNAME)\""
 
 CXXFLAGS += -fsanitize=address -std=c++20
-LDFLAGS += -fsanitize=address
+LDFLAGS += -fsanitize=address -L$(abspath ../sdb/build) -lsdb
 
 
 $(BIN): $(VSRCS) $(INCHEADERS) $(CSRCS) $(NVBOARD_ARCHIVE)

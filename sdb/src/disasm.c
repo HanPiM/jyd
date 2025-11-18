@@ -1,6 +1,7 @@
 #include <capstone/capstone.h>
 #include <dlfcn.h>
 #include <assert.h>
+#include <string.h>
 
 #define _gv(n) n##_dl
 #define _gt(n) n##_func_t
@@ -20,9 +21,14 @@ static csh handle;
 
 
 void init_disasm() {
-
-void *dl_handle;
-  dl_handle = dlopen("tools/capstone/repo/libcapstone.so.5", RTLD_LAZY);
+	void *dl_handle;
+	char buf[512];
+	buf[0]=0;
+	const char* am_home_env=getenv("AM_HOME");
+	assert(am_home_env);
+	strcpy(buf, am_home_env);
+	strcat(buf, "/../sdb/tools/capstone/repo/libcapstone.so.5");
+  dl_handle = dlopen(buf, RTLD_LAZY);
   assert(dl_handle);
 
   _def(,cs_err,cs_open,cs_arch arch, cs_mode mode, csh *handle);

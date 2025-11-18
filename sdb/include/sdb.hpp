@@ -73,7 +73,10 @@ namespace _impl {
 	_MAKE_DEF(ftrace);
 #undef _MAKE_DEF
 	std::string expand_tabs(std::string_view in, int tabsize);
+
 }
+
+std::string default_disasm(const disasmable_inst& inst);
 
 enum class run_state{
 	running,
@@ -125,10 +128,12 @@ struct inst_ringbuf{
 };
 
 class debuger{
-	constexpr static bool
-	 	_ENABLE_ITRACE=1,
-		_ENABLE_FTRACE=0,
-		_ENABLE_DIFFTEST=1;
+
+public:
+	bool enable_ftrace=false,
+			 enable_inst_trace=true,
+			 enable_difftest=true;
+private:
 
 	using fmt_str=std::string_view;
 
@@ -151,8 +156,8 @@ class debuger{
 	constexpr static size_t _MAX_INST_DUMP_PERSTEP=10;
 	bool _enable_dump_inst=true;
 
-	_impl::ftrace_imptr _imp_ftrace;
-	_impl::difftest_imptr _imp_difftest;
+	_impl::ftrace_imptr _imp_ftrace=nullptr;
+	_impl::difftest_imptr _imp_difftest=nullptr;
 
 	clscmd::command_table _cmd_table;
 
@@ -185,10 +190,10 @@ public:
 	debuger(
 			paddr_t init_pc,
 			cpu_executor e,mem_loader ml,reg_snapshoter rss,auto&& reg_names,
-			inst_disasmsembler d=inst_disasmsembler(),
-			inst_fetcher f=inst_fetcher()
-	): _exec(e),_loadmem(ml),_shot_reg(rss),_fetch_inst(f),
-	_reg_names(reg_names),_INITIAL_PC(init_pc){
+			inst_fetcher f=inst_fetcher(),
+			inst_disasmsembler d=default_disasm
+	): _exec(e),_loadmem(ml),_shot_reg(rss),_reg_names(reg_names),
+	_fetch_inst(f),_INITIAL_PC(init_pc){
 		_disasm=[d](const disasmable_inst& i){
 			return _impl::expand_tabs(d(i),8);
 		};

@@ -5,13 +5,13 @@
 using namespace std;
 using namespace sdb;
 
-#define COND_ENABLE if constexpr(_ENABLE_DIFFTEST)
+#define COND_ENABLE if (enable_difftest)
 
 typedef void(*ref_difftest_init_t)(int port);
 typedef void(*ref_difftest_memcpy_t)(paddr_t addr, void* buf, size_t n, bool direction);
 typedef void(*ref_difftest_regcpy_t)(void* regs, bool direction);
 typedef void(*ref_difftest_exec_t)(size_t n);
-
+;
 enum { DIFFTEST_TO_DUT, DIFFTEST_TO_REF };
 
 struct sdb::_impl::difftest_imp{

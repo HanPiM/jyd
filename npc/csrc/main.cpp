@@ -258,23 +258,6 @@ extern "C" void sim_panic(){
 	is_running=false;
 	dbg.abort();
 }
-
-sdb::jump_type sdb_jump_recognizer(const sdb::disasmable_inst& inst){
-	using namespace sdb;
-	word_t instr=*(word_t*)inst.code.data();
-	uint8_t opcode=instr&0x7f;
-	uint8_t funct3=(instr>>12)&0x7;
-	uint8_t rd=(instr>>7)&0x1f;
-	uint8_t rs1=(instr>>15)&0x1f;
-	bool is_jal=opcode==0x6f;
-	bool is_jalr=opcode==0x67 && funct3==0x0;
-	bool is_ret=is_jalr && rd==0 && rs1==1;
-	bool is_call=(is_jal && rd==1) || (is_jalr && rd==1);
-	if(is_call)return jump_type::call;
-	if(is_ret)return jump_type::ret;
-	return jump_type::normal;
-}
-
 std::string try_find_elf_file(std::string img_file){
 	using namespace std;
 	size_t pos=img_file.rfind('.');
@@ -322,8 +305,9 @@ int main(int argc, char **argv)
 		dbg.load_elf(elf_file.c_str());
 	}
 
-	dbg.set_jump_recognizer(sdb_jump_recognizer);
-	dbg.load_difftest_ref("../nemu/build/riscv32-nemu-interpreter-so",img_size);
+//	dbg.load_difftest_ref("../nemu/build/riscv32-nemu-interpreter-so",img_size);
+	dbg.enable_ftrace=true;
+	dbg.enable_difftest=false;
 
 
 #if USE_NVBOARD

@@ -16,11 +16,11 @@ typedef struct{
 	int len;
 }sdb_vlen_inst_code;
 
-enum sdb_jump_type{
+typedef enum{
 	SDB_JUMP_NORMAL,
 	SDB_JUMP_CALL,
 	SDB_JUMP_RET
-};
+}sdb_jump_type;
 
 #define SDB_ENTRACE_INST 1
 #define SDB_ENTRACE_FTRACE 2

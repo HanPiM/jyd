@@ -77,6 +77,7 @@ namespace _impl {
 }
 
 std::string default_disasm(const disasmable_inst& inst);
+jump_type default_riscv_jump_recognizer(const disasmable_inst& inst);
 
 enum class run_state{
 	running,

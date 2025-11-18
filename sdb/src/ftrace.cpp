@@ -20,6 +20,7 @@ void debuger::load_elf(const char* filename){
 	std::fstream fs(filename,std::ios::in|std::ios::binary);
 	imp.elf.load(fs);
 	_print("Loaded ELF file {}\n",filename);
+	set_jump_recognizer(default_riscv_jump_recognizer);
 }
 void debuger::set_jump_recognizer(jump_recognizer r){
 	if(_imp_ftrace){

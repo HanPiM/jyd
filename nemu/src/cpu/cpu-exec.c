@@ -20,7 +20,6 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
-#include "../monitor/sdb/sdb.h"
 #include <elf_tool.h>
 #include "common.h"
 #include "debug.h"
@@ -38,83 +37,11 @@
 // for variant ilen
 #define MAX_INSTBYTE 8
 
-void disassemble(char *str, int size, uint64_t pc, uint8_t *code, int nbyte);
 
 CPU_state cpu = {};
 uint64_t g_nr_guest_inst = 0;
 static uint64_t g_timer = 0; // unit: us
 static bool g_print_step = false;
-
-typedef struct{
-	vaddr_t pc;
-	int ilen;
-	uint8_t code[MAX_INSTBYTE];
-}_pc_inst_t;
-
-#ifdef CONFIG_ITRACE
-void dis_asm(char* outbuf,int bufsiz,const _pc_inst_t* inst){
-	disassemble(outbuf,bufsiz,inst->pc,(uint8_t*)inst->code,inst->ilen);
-}	
-
-void expand_tabs(char *out, const char *in, int tabsize) {
-    int col = 0;
-    while (*in) {
-        if (*in == '\t') {
-            int spaces = tabsize - (col % tabsize);
-            for (int i = 0; i < spaces; i++) {
-                *out++ = ' ';
-                col++;
-            }
-        } else {
-            *out++ = *in;
-            col++;
-        }
-        in++;
-    }
-    *out = '\0';
-}
-
-struct{
-	_pc_inst_t buf[IRINGBUF_SIZE];
-	size_t idx_end;
-}g_iringbuf;
-
-// ringbuf mod plus 1
-#define _rb_mp1(x) (((x)+1)%IRINGBUF_SIZE)
-
-// push pc should nerver be 0
-// 0 pc consider as none inst will be ignore
-void _ringbuf_push(vaddr_t pc,const uint8_t* inst,int ilen){
-	g_iringbuf.buf[g_iringbuf.idx_end].pc=pc;
-	memcpy(g_iringbuf.buf[g_iringbuf.idx_end].code,inst,ilen);
-	g_iringbuf.buf[g_iringbuf.idx_end].ilen=ilen;
-	g_iringbuf.idx_end=_rb_mp1(g_iringbuf.idx_end);
-}
-void _ringbuf_dump(){
-	char rawdasm[128];
-	char dmpbuf[256];
-	for(size_t i=_rb_mp1(g_iringbuf.idx_end);
-			i!=g_iringbuf.idx_end;
-			i=_rb_mp1(i)){
-		_pc_inst_t* pinst=&g_iringbuf.buf[i];
-		if(!pinst->pc)continue;
-
-		dis_asm(rawdasm,sizeof(rawdasm),pinst);
-		expand_tabs(dmpbuf,rawdasm,6);
-		printf("%08X: %s%-25s" ANSI_FG_GRAY "(",
-				pinst->pc,
-				_rb_mp1(i)==g_iringbuf.idx_end?ANSI_FG_RED:ANSI_NONE,
-				dmpbuf);
-		for(int j=0;j<pinst->ilen;j++){
-			if(j)putchar(' ');
-			printf("%02x",pinst->code[j]);
-		}
-		puts(")"ANSI_NONE);
-	}
-}
-#else
-void _ringbuf_dump(){}
-#endif
 
 void device_update();
 
@@ -143,36 +70,10 @@ static void exec_once(Decode *s, vaddr_t pc) {
   s->snpc = pc;
   isa_exec_once(s);
   cpu.pc = s->dnpc;
-#ifdef CONFIG_ITRACE
-  char *p = s->logbuf;
-  p += snprintf(p, sizeof(s->logbuf), FMT_WORD ":", s->pc);
-  int ilen = s->snpc - s->pc;
-  int i;
-  uint8_t *inst = (uint8_t *)&s->isa.inst;
-#ifdef CONFIG_ISA_x86
-  for (i = 0; i < ilen; i ++) {
-#else
-  for (i = ilen - 1; i >= 0; i --) {
-#endif
-    p += snprintf(p, 4, " %02x", inst[i]);
-  }
-  int ilen_max = MUXDEF(CONFIG_ISA_x86, 8, 4);
-  int space_len = ilen_max - ilen;
-  if (space_len < 0) space_len = 0;
-  space_len = space_len * 3 + 1;
-  memset(p, ' ', space_len);
-  p += space_len;
-
-  _ringbuf_push(MUXDEF(CONFIG_ISA_x86, s->snpc, s->pc),
-		  (uint8_t *)&s->isa.inst, ilen);
-  disassemble(p, s->logbuf + sizeof(s->logbuf) - p,
-      MUXDEF(CONFIG_ISA_x86, s->snpc, s->pc), (uint8_t *)&s->isa.inst, ilen);
-#endif
 }
 
 static void execute(uint64_t n) {
   Decode s;
-//	printf("start exec %lu @ pc=" FMT_WORD "\n",n,cpu.pc);
   for (;n > 0; n --) {
     exec_once(&s, cpu.pc);
     g_nr_guest_inst ++;
@@ -193,8 +94,6 @@ static void statistic() {
 
 void assert_fail_msg() {
 #define putsyellow(s)  printf(ANSI_FG_YELLOW s ANSI_NONE"\n");
-  putsyellow("inst buffer");
-  _ringbuf_dump();
   putsyellow("register info");
   isa_reg_display();
   statistic();

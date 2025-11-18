@@ -63,6 +63,8 @@ include $(NEMU_HOME)/scripts/config.mk
 
 run: export LSAN_OPTIONS=suppressions=asan_suppress.txt
 
+INC_PATH += $(abspath ../sdb/include)
+
 ifdef CONFIG_TARGET_AM
 include $(AM_HOME)/Makefile
 LINKAGE += $(ARCHIVES)

@@ -6,8 +6,7 @@ module RegisterFile #(ADDR_WIDTH = 1, DATA_WIDTH = 1) (
   input [ADDR_WIDTH-1:0] raddr1,raddr2,
   output [DATA_WIDTH-1:0] rdata1,rdata2,
   output [DATA_WIDTH-1:0] a0,
-  input wen,
-  input dump_info
+  input wen
 );
   reg [DATA_WIDTH-1:0] rf [2**ADDR_WIDTH-1:0];
 
@@ -22,13 +21,8 @@ module RegisterFile #(ADDR_WIDTH = 1, DATA_WIDTH = 1) (
   end
 
   always @(posedge clk) begin
-      if (wen)begin
-          rf[waddr] <= wdata;
-        end
-    if(dump_info)begin
-        for(integer i=0;i<2**ADDR_WIDTH;i=i+1)begin
-            $display("r%d : %08X %d",i,rf[i],rf[i]);
-        end
+    if (wen)begin
+      rf[waddr] <= wdata;
     end
   end
 endmodule

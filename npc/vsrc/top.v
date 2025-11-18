@@ -68,8 +68,7 @@ module top(
         .raddr1(rs1),.raddr2(rs2),
         .rdata1(src1),.rdata2(src2),
         .a0(a0),
-        .wen(wen),
-        .dump_info(inst==INST_EBREAK)
+        .wen(wen)
     );
 
     decode_operand dec_opr(

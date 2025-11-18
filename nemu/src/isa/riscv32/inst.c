@@ -112,6 +112,16 @@ word_t d_sra(word_t v,int shamt){
     return res;
 }
 
+
+#define CSR_MTVEC 0x305
+#define CSR_MCAUSE 0x342
+#define CSR_MEPC 0x341
+#define CSR_MSTATUS 0x300
+
+static word_t _handel_csr_rw(word_t csr,word_t src1,bool is_write);
+static word_t _csr_read(word_t csr){return _handel_csr_rw(csr, 0, 0);}
+static void _csr_write(word_t csr,word_t src1){_handel_csr_rw(csr, src1, 1);}
+
 static int decode_exec(Decode *s) {
   s->dnpc = s->snpc;
 #ifdef TRACE_EXEC  
@@ -220,8 +230,19 @@ static int decode_exec(Decode *s) {
 		  R(rd) = s->pc+4; s->dnpc=(src1+imm)&(~1);
 		  ftrace_trymatch_jalr(s->pc,s->dnpc, rd, BITS(s->isa.inst, 19, 15));
 		  );
-
-
+  INSTPAT_I("??????? ????? ????? 001 ????? 11100 11", csrrw  , 
+			if(rd!=0){
+				R(rd)=_csr_read(imm);
+			}
+	//		printf("csrw csr=%03X val=%08X\n",(uint32_t)imm,(uint32_t)src1);
+			_csr_write(imm,src1);
+			);
+  INSTPAT_I("??????? ????? ????? 010 ????? 11100 11", csrrs  , 
+			word_t old=_csr_read(imm);
+			R(rd)=old;
+	//		printf("csrs csr=%03X val=%08X\n",(uint32_t)imm,(uint32_t)src1);
+			_csr_write(imm,old|src1);
+			);
 
 	INSTPAT_B_IMM("000",beq	,src1==src2);
 	INSTPAT_B_IMM("001",bneq,src1!=src2);
@@ -232,12 +253,39 @@ static int decode_exec(Decode *s) {
 
 
 	INSTPAT("0000000 00001 00000 000 00000 11100 11", ebreak , N, NEMUTRAP(s->pc, R(10))); // R(10) is $a0
+	INSTPAT("0000000 00000 00000 000 00000 11100 11", ecall  , N, 
+			_csr_write(CSR_MEPC, s->pc);
+			s->dnpc=isa_raise_intr(0x11451419, s->pc)); 
+	INSTPAT("0011000 00010 00000 000 00000 11100 11", mret   , N, s->dnpc=_csr_read(CSR_MEPC)+4);
   INSTPAT("??????? ????? ????? ??? ????? ????? ??", inv    , N, INV(s->pc));
   INSTPAT_END();
 
   R(0) = 0; // reset $zero to 0
 
   return 0;
+}
+
+extern word_t g_csr_MTVEC;
+
+word_t _handel_csr_rw(word_t csr,word_t src1,bool is_write){
+	static word_t g_csr_MCAUSE=0,
+				  g_csr_MEPC=0,
+				  g_csr_MSTATUS=0;
+
+	//printf("csr " #csr_name " %s : old=%08X new=%08X\n",is_write?"write":"read", (uint32_t)old,(uint32_t)(is_write?src1:old));
+#define _CASE(csr_name) case CSR_##csr_name: { \
+			old=g_csr_##csr_name; \
+			if(is_write)g_csr_##csr_name=src1; \
+			return old; \
+		}
+		word_t old;
+		switch (csr) {
+			_CASE(MCAUSE);
+			_CASE(MEPC);
+			_CASE(MSTATUS);
+			_CASE(MTVEC);
+			default:panic("unsupported csr read/write: 0x%03X",csr);
+		}
 }
 
 int isa_exec_once(Decode *s) {

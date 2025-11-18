@@ -10,6 +10,19 @@
 using namespace std;
 using namespace std::views;
 
+string try_find_elf_file_of(string img_file){
+	size_t pos=img_file.rfind('.');
+	if(pos==string::npos)return "";
+	string base=img_file.substr(0,pos);
+	string elf_file=base+".elf";
+	FILE* fp=fopen(elf_file.c_str(),"rb");
+	if(fp){
+		fclose(fp);
+		return elf_file;
+	}
+	return "";
+}
+
 void _check(bool cond, const string& msg,
 		const source_location& loc = source_location::current()) {
 	if (!cond) {

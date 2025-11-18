@@ -13,11 +13,19 @@ struct sdb::_impl::ftrace_imp{
 void _impl::_deleter_ftrace::operator()(ftrace_imp* ptr){
 	if(ptr){delete ptr;}
 }
-void debuger::load_elf(const char* filename){
+bool debuger::try_findload_elf_fromimg(string_view img_file){
+	auto elf_file=try_find_elf_file_of(string(img_file));
+	if(elf_file.empty())return false;
+	load_elf(elf_file);
+	return true;
+}
+
+
+void debuger::load_elf(string_view filename){
 	_imp_ftrace=_impl::ftrace_imptr(new _impl::ftrace_imp());
 	auto& imp=*_imp_ftrace;
 
-	std::fstream fs(filename,std::ios::in|std::ios::binary);
+	std::fstream fs(filename.data(),std::ios::in|std::ios::binary);
 	imp.elf.load(fs);
 	_print("Loaded ELF file {}\n",filename);
 	set_jump_recognizer(default_riscv_jump_recognizer);

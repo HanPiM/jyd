@@ -23,3 +23,4 @@ public:
 	
 	std::optional<func> get_fun_at(uint32_t inst_addr)const;
 };
+std::string try_find_elf_file_of(std::string img_file);

@@ -258,19 +258,6 @@ extern "C" void sim_panic(){
 	is_running=false;
 	dbg.abort();
 }
-std::string try_find_elf_file(std::string img_file){
-	using namespace std;
-	size_t pos=img_file.rfind('.');
-	if(pos==string::npos)return "";
-	string base=img_file.substr(0,pos);
-	string elf_file=base+".elf";
-	FILE* fp=fopen(elf_file.c_str(),"rb");
-	if(fp){
-		fclose(fp);
-		return elf_file;
-	}
-	return "";
-}
 
 static void parse_args(int argc, char** argv){
 	const struct option table[] = {
@@ -298,12 +285,8 @@ int main(int argc, char **argv)
 	using namespace std::ranges;
 
 	load_img();
-
-	string elf_file=try_find_elf_file(img_file?img_file:"");
-	if(!elf_file.empty()){
-		printf("Found ELF file %s\n",elf_file.c_str());
-		dbg.load_elf(elf_file.c_str());
-	}
+	
+	dbg.try_findload_elf_fromimg(img_file);
 
 //	dbg.load_difftest_ref("../nemu/build/riscv32-nemu-interpreter-so",img_size);
 	dbg.enable_ftrace=true;

@@ -239,7 +239,8 @@ static int decode_exec(Decode *s) {
 			_csr_write(CSR_MEPC, s->pc);
 			_csr_write(CSR_MCAUSE, 11); // ECALL from M-mode
 			s->dnpc=isa_raise_intr(0x11451419, s->pc)); 
-	INSTPAT("0011000 00010 00000 000 00000 11100 11", mret   , N, s->dnpc=_csr_read(CSR_MEPC)+4);
+	// xRET sets the pc to the value stored in the xepc register.
+	INSTPAT("0011000 00010 00000 000 00000 11100 11", mret   , N, s->dnpc=_csr_read(CSR_MEPC));
   INSTPAT("??????? ????? ????? ??? ????? ????? ??", inv    , N, INV(s->pc));
   INSTPAT_END();
 
@@ -255,10 +256,10 @@ word_t _handel_csr_rw(word_t csr,word_t src1,bool is_write){
 				  g_csr_MEPC=0,
 				  g_csr_MSTATUS=0x1800;
 
+	//printf("csr " #csr_name " %s : old=%08X new=%08X\n",is_write?"write":"read", (uint32_t)old,(uint32_t)(is_write?src1:old));
 #define _CASE(csr_name) case CSR_##csr_name: { \
 			old=g_csr_##csr_name; \
 			if(is_write)g_csr_##csr_name=src1; \
-	printf("csr " #csr_name " %s : old=%08X new=%08X\n",is_write?"write":"read", (uint32_t)old,(uint32_t)(is_write?src1:old));\
 			return old; \
 		}
 		word_t old;

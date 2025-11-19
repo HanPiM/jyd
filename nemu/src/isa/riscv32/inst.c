@@ -237,6 +237,7 @@ static int decode_exec(Decode *s) {
 	INSTPAT("0000000 00001 00000 000 00000 11100 11", ebreak , N, NEMUTRAP(s->pc, R(10))); // R(10) is $a0
 	INSTPAT("0000000 00000 00000 000 00000 11100 11", ecall  , N, 
 			_csr_write(CSR_MEPC, s->pc);
+			_csr_write(CSR_MCAUSE, 11); // ECALL from M-mode
 			s->dnpc=isa_raise_intr(0x11451419, s->pc)); 
 	INSTPAT("0011000 00010 00000 000 00000 11100 11", mret   , N, s->dnpc=_csr_read(CSR_MEPC)+4);
   INSTPAT("??????? ????? ????? ??? ????? ????? ??", inv    , N, INV(s->pc));
@@ -254,10 +255,10 @@ word_t _handel_csr_rw(word_t csr,word_t src1,bool is_write){
 				  g_csr_MEPC=0,
 				  g_csr_MSTATUS=0;
 
-	//printf("csr " #csr_name " %s : old=%08X new=%08X\n",is_write?"write":"read", (uint32_t)old,(uint32_t)(is_write?src1:old));
 #define _CASE(csr_name) case CSR_##csr_name: { \
 			old=g_csr_##csr_name; \
 			if(is_write)g_csr_##csr_name=src1; \
+	printf("csr " #csr_name " %s : old=%08X new=%08X\n",is_write?"write":"read", (uint32_t)old,(uint32_t)(is_write?src1:old));\
 			return old; \
 		}
 		word_t old;

@@ -33,13 +33,13 @@ void init_wp_pool();
 static sdb_debuger dbg;
 
 
-static void sync_sdb_state_to_nemu(){
+void sync_sdb_state_to_nemu(){
 	sdbc_cpu_state sdb_s=sdb_get_state(dbg);
 	nemu_state.state=sdb_s.state;
 	nemu_state.halt_pc=sdb_s.pc;
 	nemu_state.halt_ret=sdb_s.halt_ret;
 }
-static void sync_nemu_state_to_sdb(){
+void sync_nemu_state_to_sdb(){
 	sdbc_cpu_state sdb_s;
 	sdb_s.state=nemu_state.state;
 	sdb_s.pc=nemu_state.halt_pc;

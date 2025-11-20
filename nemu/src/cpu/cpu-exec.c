@@ -96,6 +96,9 @@ void cpu_exec(uint64_t n) {
 
   execute(n);
 
+	void sync_nemu_state_to_sdb();
+	sync_nemu_state_to_sdb();
+
   uint64_t timer_end = get_time();
   g_timer += timer_end - timer_start;
 

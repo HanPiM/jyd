@@ -193,10 +193,10 @@ static int meta_printf(putch_func f_putch,void* exinfo,const char *fmt, va_list 
 				case 'u':
 				case 'x':
 				case 'X':{
-							 uint64_t u;
+					 uint64_t u;
 					_load_vlen_var(u, unsigned);
-					 int base=(*fmt=='u')?10
-						 :(*fmt=='u')?8
+					 int base=(conversion=='u')?10
+						 :(conversion=='o')?8
 						 :16;
 					 _callwithctx(put_unum,u,base,conversion=='X');
 					 break;

@@ -2,6 +2,12 @@ parameter
     MCYCLE_ADDR = 12'hB00,
     MCYCLEH_ADDR= 12'hB80;
 
+parameter MVENDORID_ADDR = 12'hF11;
+parameter MARCHID_ADDR   = 12'hF12;
+
+parameter MVENDORID_VALUE = 32'h79737978; // "ysyx"
+parameter MARCHID_VALUE   = 32'd25100261;
+
 module ControlStatusRegister(
     input clk,
     input [11:0] addr,
@@ -21,6 +27,8 @@ module ControlStatusRegister(
         case(addr)
             MCYCLE_ADDR:    rdata = mcycle[31:0];
             MCYCLEH_ADDR:   rdata = mcycle[63:32];
+            MVENDORID_ADDR: rdata = MVENDORID_VALUE;
+            MARCHID_ADDR:   rdata = MARCHID_VALUE;
             default:        rdata = 32'd0;
         endcase
     end else begin

@@ -6,7 +6,7 @@ void print(){
 	asm volatile ("csrr %0, mcycle" : "=r"(c1));
 	asm volatile ("csrr %0, mcycle" : "=r"(c2));
 	asm volatile ("csrr %0, mcycle" : "=r"(c3));
-	printf(" mcycle: %lu %lu %lu\n",c1,c2,c3);
+	printf(" mcycle: %u %u %u\n",c1,c2,c3);
 }
 
 int main(){

@@ -167,8 +167,8 @@ module top(
                 end else if(is_system)begin
                     case(func3t)
                         3'b010: begin // csrrs
-                            $display("CSR Read addr %03X data %08X",
-                                inst[31:20],csr_rdata);
+                            //$display("CSR Read addr %03X data %08X",
+                            //    inst[31:20],csr_rdata);
                             csr_wen=(src1!=0);
                             wdata=csr_rdata;
                             csr_wdata=csr_rdata | src1;

@@ -42,13 +42,17 @@ module itype_decoder(
     output is_jalr,
 
     output is_lui,
-    output is_auipc
+    output is_auipc,
+
+    output is_system
 );
 
 wire [4:0] opcu=opcode[6:2];
 
 // opcode[1:0] should always be 11 for 32bit
 wire is_invalid=~&opcode[1:0];
+
+assign is_system=(opcu==5'b11100);
 
 assign is_arithmetic=(opcu==5'b00100);
 assign is_jalr=(opcu==5'b11001);
@@ -58,7 +62,7 @@ assign is_auipc=(opcu==5'b00101);
 
 wire is_jal=(opcu==5'b11011);
 
-wire isI=is_arithmetic|is_jalr|is_load;
+wire isI=is_arithmetic|is_jalr|is_load|is_system;
 wire isR=(opcu==5'b01100);
 wire isS=(opcu==5'b01000);
 wire isU=is_lui|is_auipc;
@@ -88,7 +92,8 @@ module decode_operand(
     output is_jalr,
 
     output is_lui,
-    output is_auipc
+    output is_auipc,
+    output is_system
 );
 
     wire [6:0] opcode=inst[6:0];
@@ -102,7 +107,8 @@ module decode_operand(
         .is_arithmetic(is_arithmetic),
         .is_load(is_load),
         .is_lui(is_lui),
-        .is_auipc(is_auipc)
+        .is_auipc(is_auipc),
+        .is_system(is_system)
     );
 
     wire [31:0] immI={{21{inst[31]}},inst[30:20]};

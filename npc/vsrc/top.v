@@ -70,6 +70,15 @@ module top(
         .a0(a0),
         .wen(wen)
     );
+    reg `WORD_RANGE csr_wdata,csr_rdata;
+    reg csr_wen, csr_ren;
+    ControlStatusRegister csrs(
+        .clk(clk),
+        .addr(inst[31:20]),
+        .wdata(csr_wdata),.rdata(csr_rdata),
+        .wen(csr_wen),.ren(csr_ren)
+    );
+    wire is_system;
 
     decode_operand dec_opr(
         .inst(inst),
@@ -83,7 +92,8 @@ module top(
         .is_arithmetic(is_arithmetic),
         .is_load(is_load),
         .is_lui(is_lui),
-        .is_auipc(is_auipc)
+        .is_auipc(is_auipc),
+        .is_system(is_system)
     );
 
     wire [6:0] opcode=inst[6:0];
@@ -133,6 +143,7 @@ module top(
 
 
     assign wen=(itype!=TypeS)&&(itype!=TypeN)&&(itype!=TypeB);
+    assign csr_ren=is_system&&(func3t==3'b010); // csrrs
 
     reg `WORD_RANGE mem_rdata;
 //    always@(safe_maddr)begin
@@ -143,7 +154,7 @@ module top(
     always@(*) begin
         if(inst==INST_EBREAK)begin
             raise_break(a0);
-        end
+        end else begin
        // $display("Decode inst %08X @ %08X",inst,pc);
 
         wdata=32'hCDCDCDCD;
@@ -153,6 +164,20 @@ module top(
                     wdata=pc+4;
                 end else if(is_arithmetic)begin
                     wdata=alu_res;
+                end else if(is_system)begin
+                    case(func3t)
+                        3'b010: begin // csrrs
+                            $display("CSR Read addr %03X data %08X",
+                                inst[31:20],csr_rdata);
+                            csr_wen=(src1!=0);
+                            wdata=csr_rdata;
+                            csr_wdata=csr_rdata | src1;
+                        end
+                        default: begin
+                            $display("(system) UNKNOWN func3t %d",func3t);
+                            sim_panic();
+                        end
+                    endcase
                 end else if(is_load)begin
                    // $display("Load data since inst=%08X",inst);
                     mem_rdata=pmem_read(safe_maddr);
@@ -209,6 +234,7 @@ module top(
             default:$display("(top) UNKNOWN itype %d",itype);
 
         endcase
+    end
         //$display("pc %08X nxt_pc %08X",pc,nxt_pc);
     end
 

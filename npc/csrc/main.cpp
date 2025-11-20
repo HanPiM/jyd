@@ -287,10 +287,9 @@ int main(int argc, char **argv)
 
 	load_img();
 
-	dbg.enable_difftest=true;
 	dbg.enable_inst_trace=true;
 	
-	dbg.add_trace(sdb::make_disasm_trace_handler());
+	dbg.add_trace(sdb::make_disasm_trace_handler(sdb::default_inst_disasm,16));
 	dbg.add_trace(sdb::make_etrace_handler());
 	dbg.add_trace(sdb::make_iringbuf_trace_handler());
 
@@ -299,12 +298,13 @@ int main(int argc, char **argv)
 
 		if(!elf_file.empty()){
 			printf("Found ELF file: %s\n",elf_file.c_str());
-			dbg.add_trace(sdb::make_ftrace_handler(elf_file));
+			//dbg.add_trace(sdb::make_ftrace_handler(elf_file));
 		}
 	}
 
 
-	dbg.load_difftest_ref("../nemu/build/riscv32-nemu-interpreter-so",img_size,0);
+// dbg.enable_difftest=true;
+//	dbg.load_difftest_ref("../nemu/build/riscv32-nemu-interpreter-so",img_size,0);
 
 
 #if USE_NVBOARD

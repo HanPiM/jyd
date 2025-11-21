@@ -31,14 +31,14 @@ void __am_audio_status(AM_AUDIO_STATUS_T *stat) {
 
 void __am_audio_play(AM_AUDIO_PLAY_T *ctl) {
 	int len = ctl->buf.end - ctl->buf.start;
-	uint32_t *buf = (uint32_t *)ctl->buf.start;
+	uint8_t *buf = (uint8_t *)ctl->buf.start;
 
 	uint32_t bufsize = inl(AUDIO_SBUF_SIZE_ADDR);
 	while (inl(AUDIO_COUNT_ADDR) + len > bufsize);
 
 	uint32_t woffset = inl(AUDIO_SBUF_WHAED);
 	//printf("audio play len=%d write offset %u\n", len, woffset);
-	for (int i = 0; i < len/4; i++) {
-		outl(AUDIO_SBUF_ADDR+(woffset+i*4)%bufsize, buf[i]);
+	for (int i = 0; i < len; i++) {
+		outb(AUDIO_SBUF_ADDR+(woffset+i)%bufsize, buf[i]);
 	}
 }

@@ -139,8 +139,8 @@ static long load_img() {
   return img_size;
 }
 
-sdb::paddr_t cpu_exec_once(){
-	single_cycle();
+sdb::paddr_t wrap_cpu_exec(size_t n){
+	for(size_t i=0;i<n;i++)single_cycle();
 	return dut.nxt_pc;
 }
 
@@ -168,12 +168,16 @@ uint8_t* sdb_loadmem(sdb::paddr_t addr, size_t nbyte){
 sdb::difftest_trace_handler_ptr diff_handler;
 std::shared_ptr<sdb::debuger> dbg;
 
+void skip_difftest_ref(){
+	if(diff_handler)diff_handler->skip_ref();
+}
+
 
 extern "C" int pmem_read(int raddr) {
 	// printf("pmem_read called %08X\n",raddr);
 	if(raddr==NOP_INST_ADDR)return NOP_INST;
 	if(raddr==MMIO_RTC_ADDR||raddr==MMIO_RTC_ADDR+4){
-		diff_handler->skip_ref();
+		skip_difftest_ref();
 		static uint64_t time_in_us;
 		if(raddr==MMIO_RTC_ADDR){
 			struct timespec ts;
@@ -203,7 +207,7 @@ extern "C" int pmem_read(int raddr) {
 extern "C" void pmem_write(int waddr, int wdata, char wmask) {
 	if(waddr==MMIO_SERIAL_PORT){
 		//printf("pmem_write to serial port: %c\n",wdata&0xff);
-		diff_handler->skip_ref();
+		skip_difftest_ref();
 		putchar(wdata&0xff);
 		fflush(stdout);
 		return;
@@ -285,7 +289,7 @@ int main(int argc, char **argv)
 
 	dbg=std::make_shared<sdb::debuger>(
 		INITIAL_PC,INITIAL_PC,img_size,
-		cpu_exec_once,
+		wrap_cpu_exec,
 		sdb_loadmem,
 		sdb_shot_regsnap,
 		std::vector<std::string_view>(reg_names.begin(),reg_names.end()),
@@ -309,8 +313,8 @@ int main(int argc, char **argv)
 	}
 
 
-	diff_handler=sdb::make_difftest_trace_handler("../nemu/build/riscv32-nemu-interpreter-so",0);
-	dbg->add_trace(diff_handler);
+	//diff_handler=sdb::make_difftest_trace_handler("../nemu/build/riscv32-nemu-interpreter-so",0);
+	//dbg->add_trace(diff_handler);
 
 #if USE_NVBOARD
     nvboard_bind_all_pins(&dut);

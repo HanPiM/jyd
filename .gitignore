@@ -1,6 +1,12 @@
-*.*
-*
-!*/
+#*.*
+#*
+#!*/
+
+# like .vscode .ccache
+\.*/
+
+compile_commands.json
+
 !/nemu/*
 !/nexus-am/*
 !/nanos-lite/*

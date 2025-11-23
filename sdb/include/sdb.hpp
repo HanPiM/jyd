@@ -23,7 +23,7 @@ namespace sdb {
 
 	using reg_snapshot_t=std::vector<word_t>;
 	using reg_snapshot_view=std::span<const word_t>;
-
+	
 	enum class run_state{
 		running,
 		stop,
@@ -126,13 +126,6 @@ namespace sdb {
 	};
 	using trace_handler_ptr=std::shared_ptr<trace_handler>;
 
-	struct expr_t{
-		std::string_view raw;
-		expr_t(){}
-		expr_t(std::string_view s):raw(s){}
-		uint64_t eval()const;
-	};
-
 
 	// impl should return npc(pc after exec)
 	using cpu_executor=std::function<paddr_t(size_t n)>;
@@ -142,6 +135,17 @@ namespace sdb {
 	// impl should fill reg_snapshot_t with current register values 
 	using reg_snapshoter=std::function<void(reg_snapshot_t&)>;
 	using inst_fetcher=std::function<vlen_inst_code(paddr_t pc)>;
+
+	struct expr_t{
+		using get_reg_by_name_f=std::function<std::optional<word_t>(std::string_view)>;
+		std::string_view raw;
+		expr_t(){}
+		expr_t(std::string_view s):raw(s){}
+		uint64_t eval(
+				get_reg_by_name_f fr,
+				mem_loader fm
+				)const;
+	};
 
 class debuger{
 	public:
@@ -158,6 +162,8 @@ private:
 	reg_snapshoter _shot_reg;
 	std::vector<std::string_view> _reg_names;
 	reg_snapshot_t _reg_snap;
+
+	std::optional<word_t> _get_reg_from_name(std::string_view);
 
 	vlen_inst_code _current_inst;
 	inst_fetcher _fetch_inst;

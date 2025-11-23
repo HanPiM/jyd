@@ -96,17 +96,6 @@ void debuger::_step_one(){
 	_shot_reg(_reg_snap);
 }
 
-uint64_t expr_t::eval()const{
-	// only support 0x... now
-	auto s=raw;
-	assert(s.starts_with("0x"));
-	s=s.substr(2);
-	uint64_t v;
-	auto ec=clscmd::parse(s,v,16);
-	if(ec!=errc())cerr<<format("failed to parse {} : {}",s,ec)<<endl;
-	return v;
-}
-
 void debuger::cmd_q(){
 	if(_state.is_badexit()){
 		// cur pc has not executed yet
@@ -149,8 +138,18 @@ void debuger::cmd_info(string_view s){
 	}
 	else return _error("Unknown info command {}", s);	
 }
+
+optional<word_t> debuger::_get_reg_from_name(string_view name){
+	auto it=ranges::find(_reg_names,name);
+	if(it==_reg_names.end())return nullopt;
+	auto idx=it-_reg_names.begin();
+	return _reg_snap[idx];
+}
 void debuger::cmd_x(size_t N,expr_t e_addr){
-	paddr_t addr=e_addr.eval();
+	paddr_t addr=e_addr.eval(
+			bind_front(&debuger::_get_reg_from_name,this),
+			_loadmem
+			);
 	_print("call x {} {:08x}", N,addr);
 	cout<<endl;
 	dump_mem(addr, addr+N*4);

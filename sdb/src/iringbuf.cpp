@@ -1,5 +1,6 @@
 #include <tracers.hpp>
 #include <ansi_col.h>
+#include <deque>
 #include <ranges>
 
 using namespace sdb;
@@ -20,7 +21,9 @@ struct _irb_inst_ctx{
 			.pc=pc,
 			.regs=reg_snapshot_view(regs),
 			.inst=vlen_inst_view(inst),
-			.reg_names={} // not used
+			.reg_names={}, 		// not used
+			.loadmem=nullptr,
+			.get_reg=nullptr,
 		};
 	}
 };

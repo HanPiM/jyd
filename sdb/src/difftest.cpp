@@ -100,7 +100,7 @@ void hander_t::handle(_ctx_ref ctx){
 				regs[i],
 				ref_regs[i]
 			);
-			this->_require_abort=true;
+			this->_req_abort();
 			break;
 		}
 	}

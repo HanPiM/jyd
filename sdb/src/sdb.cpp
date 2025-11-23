@@ -2,6 +2,7 @@
 #include <assert.h>
 #include <ranges>
 #include <algorithm>
+#include <tracers.hpp>
 
 #include "ansi_col.h"
 
@@ -39,7 +40,9 @@ trace_context debuger::_make_trace_ctx(){
 		_state.pc,
 		_reg_snap,
 		_current_inst,
-		_reg_names
+		_reg_names,
+		_loadmem,
+		bind_front(&debuger::_get_reg_from_name,this),
 	};
 }
 
@@ -70,24 +73,52 @@ void debuger::_step(size_t n){
 		h->handle(_make_trace_ctx());
 		_print("{}",h->get_log());
 		if(h->is_require_abort()){
+			_print("{} require abort\n", h->name);
 			abort();
+		}
+		if(h->is_require_stop()){
+			_print("{} require stop\n", h->name);
+			stop();
 		}
 	};
 
 	for(size_t i=0;i<n&&is_running();i++){
+		//_print("step {} before exec\n", i);
 		ranges::for_each(before_exec,invoke);
+		if(!is_running())break; // NOTICE!!!!
+														// must check before inst exec
+														// exec impl always try sync 
+														// state to sdb, so will modify
+														// sdb state !!!!
+														//
+														// TODO: refactor to restrict 
+														// other part modify self state
+														//
 		_step_one();
+		//_print("step {} after exec\n", i);
 		ranges::for_each(after_exec,invoke);
+		if(!is_running())break;
 	}
+}
+
+void debuger::_dump_all(){
+	for(auto h:_trace_handlers){
+		_print("{}",h->get_dump());
+	}
+	dump_reg();
+}
+
+void debuger::stop(){
+	_state.stop();
+	assert(!is_running());
+	_print("Program stopped.\n");
+	_dump_all();
 }
 
 void debuger::abort(){
 	_state.abort();
 	_print("Program aborted.\n");
-	for(auto h:_trace_handlers){
-		_print("{}",h->get_dump());
-	}
-	dump_reg();
+	_dump_all();
 }
 
 void debuger::_step_one(){
@@ -140,6 +171,9 @@ void debuger::cmd_info(string_view s){
 }
 
 optional<word_t> debuger::_get_reg_from_name(string_view name){
+	if(name=="pc"){
+		return _state.pc;
+	}
 	auto it=ranges::find(_reg_names,name);
 	if(it==_reg_names.end())return nullopt;
 	auto idx=it-_reg_names.begin();
@@ -153,12 +187,13 @@ void debuger::cmd_p(expr_t e){
 }
 void debuger::cmd_x(size_t N,expr_t e_addr){
 	paddr_t addr=e_addr.eval(
-			bind_front(&debuger::_get_reg_from_name,this),
+		bind_front(&debuger::_get_reg_from_name,this),
 			_loadmem
 			);
-	_print("call x {} {:08x}", N,addr);
-	cout<<endl;
 	dump_mem(addr, addr+N*4);
+}
+void debuger::cmd_w(expr_t e){
+	add_trace(make_shared<watchpoint_tracer>(e));
 }
 
 void debuger::_init_cmd_table(){
@@ -170,6 +205,7 @@ void debuger::_init_cmd_table(){
 		_ITEM("info", "Display information about registers or watchpoints",cmd_info),
 		_ITEM("x", "Examine memory: x N EXPR",cmd_x),
 		_ITEM("p", "print EXPR",cmd_p),
+		_ITEM("w","watch point: w EXPR",cmd_w),
 		};
 }
 

@@ -94,5 +94,22 @@ namespace sdb {
 	exception_type default_riscv_exception_recognizer(vlen_inst_view inst);
 	trace_handler_ptr make_etrace_handler(exception_recognizer recog_exc=default_riscv_exception_recognizer);
 
+	// watchpoint
+	
+	class watchpoint_tracer:public trace_handler{
+		uint64_t _last_val;
+		expr_t _expr;
+	public:	
+		watchpoint_tracer(auto e):trace_handler("watchpoint` "+e.raw),_expr(e){}
+		virtual void init(_ctx_ref ctx,std::span<uint8_t>,paddr_t)override{
+			_last_val=ctx.eval(_expr);
+		}
+		virtual void handle(_ctx_ref ctx)override{
+			auto val=ctx.eval(_expr);
+			if(_last_val!=val)_req_stop();
+			_last_val=val;
+		}
+	};
+
 }
 

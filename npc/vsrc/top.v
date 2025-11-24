@@ -11,6 +11,8 @@ import "DPI-C" function int fetch_inst(input int pc);
 
 `define WORD_RANGE [WORD_BITWIDTH-1:0]
 
+parameter int UNINIT_DATA=32'hCDCDCDCD;
+
 parameter int INIT_PC=32'h8000_0000;
 parameter int PC_BEFORE_START=INIT_PC-4;
 
@@ -73,7 +75,7 @@ module top(
         .wen(wen)
     );
     reg `WORD_RANGE csr_wdata,csr_rdata;
-    reg csr_wen, csr_ren;
+    wire csr_wen,csr_ren;
 
     reg [11:0] csr_addr;
     ControlStatusRegister csrs(
@@ -147,8 +149,8 @@ module top(
             csr_addr=MEPC_ADDR;
         end else if(is_system)begin
             csr_addr=inst[31:20];
-        end else begin
-            csr_addr=12'h000; // unused
+        end else begin // unused
+            csr_addr=12'h000;
         end
     end
 
@@ -170,6 +172,10 @@ module top(
         ||(func3t==3'b001&&rd!=0) // csrrw
         ||(is_ecall|is_mret)
     );
+    assign csr_wen=is_system&&(
+        ~(is_mret|is_ecall)
+        &&((func3t==3'b001)||(func3t==3'b010&&src1!=0))
+    );
 
     reg `WORD_RANGE mem_rdata;
 //    always@(safe_maddr)begin
@@ -180,10 +186,12 @@ module top(
     always@(*) begin
         if(inst==INST_EBREAK)begin
             raise_break(a0);
+            wdata=0;
+            mem_rdata=0;
+            csr_wdata=0;
         end else begin
        // $display("Decode inst %08X @ %08X",inst,pc);
 
-        wdata=32'hCDCDCDCD;
         case(itype)
             TypeI:begin
                 if(is_jalr)begin
@@ -192,15 +200,14 @@ module top(
                     wdata=alu_res;
                 end else if(is_system)begin
                     if(is_mret|is_ecall)begin // no writeback
+                        wdata=UNINIT_DATA;
                     end else begin
                         case(func3t)
                             3'b010: begin // csrrs
-                                csr_wen=(src1!=0);
                                 wdata=csr_rdata;
                                 csr_wdata=csr_rdata | src1;
                             end
                             3'b001: begin // csrrw
-                                csr_wen=1;
                                 wdata=csr_rdata;
                                 csr_wdata=src1;
                             end
@@ -244,6 +251,7 @@ module top(
             TypeR:wdata=alu_res;
             TypeU:wdata=is_lui?imm:(imm+pc);
             TypeS:begin
+                wdata=UNINIT_DATA; // no writeback
                 case(func3t)
                     3'b010: pmem_write(s1pi_addr,src2,8'b00001111); // sw
                     3'b001: pmem_write(s1pi_addr,
@@ -262,9 +270,13 @@ module top(
                 // jal
                 wdata=pc+4;
             end
-            TypeB:; // no wirite
-            default:$display("(top) UNKNOWN itype %d",itype);
-
+            TypeB:begin
+                wdata=UNINIT_DATA;
+            end
+            default:begin
+                wdata=UNINIT_DATA;
+                $display("(top) UNKNOWN itype %d",itype);
+            end
         endcase
     end
         //$display("pc %08X nxt_pc %08X",pc,nxt_pc);

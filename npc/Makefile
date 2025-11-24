@@ -40,8 +40,11 @@ INC_PATH += $(abspath ../sdb/include)
 INCFLAGS = $(addprefix -I, $(INC_PATH))
 CXXFLAGS += $(INCFLAGS) -DTOP_NAME="\"V$(TOPNAME)\""
 
-CXXFLAGS += -fsanitize=address -std=c++20
-LDFLAGS += -fsanitize=address -L$(abspath ../sdb/build) -lsdb
+SAN_FLAGS?=
+#SAN_FLAGS+=-fsanitize=address
+
+CXXFLAGS += $(SAN_FLAGS) -std=c++20
+LDFLAGS += $(SAN_FLAGS) -L$(abspath ../sdb/build) -lsdb
 ARCHIVES += $(NVBOARD_ARCHIVE) $(abspath ../sdb/build/libsdb.a)
 
 

@@ -1,6 +1,6 @@
-#*.*
-#*
-#!*/
+*.*
+*
+!*/
 
 # like .vscode .ccache
 \.*/
@@ -20,3 +20,4 @@ compile_commands.json
 /fceux-am
 /am-kernels
 /nvboard
+/rt-thread-am

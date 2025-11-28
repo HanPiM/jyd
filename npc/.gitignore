@@ -1,6 +1,7 @@
 *.*
 *
 !*/
+!*.nxdc
 !Makefile
 !*.mk
 !*.scala

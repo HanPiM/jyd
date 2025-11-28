@@ -12,7 +12,7 @@ import mill.javalib.bsp.BspModule
 // support BSP
 //import mill.bsp._
 
-object playground extends ScalaModule
+object design extends ScalaModule
   with ScalafmtModule
   with BspModule { m =>
   override def scalaVersion = "2.13.16"
@@ -29,10 +29,9 @@ object playground extends ScalaModule
    * T.task has become Task.Anon, and Agg is now just Seq 
    * also ivyDeps and ivy is now mvnDeps and mvn
    * --- https://users.scala-lang.org/t/need-help-getting-started-with-scalafx-mill/11972
-   * */
+   */
   override def mvnDeps             = Seq(mvn"org.chipsalliance::chisel:$chiselVersion")
   override def scalacPluginMvnDeps = Seq(mvn"org.chipsalliance:::chisel-plugin:$chiselVersion")
-
 
   object test extends ScalaTests with TestModule.ScalaTest with ScalafmtModule {
     override def mvnDeps = m.mvnDeps() ++ Seq(

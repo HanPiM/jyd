@@ -44,4 +44,9 @@ class Top(word_width:Int=32) extends Module{
   idu.io:=DontCare
   dontTouch(idu.io)
 
+
+  val alu=Module(new ALU())
+  alu.io:=DontCare
+  dontTouch(alu.io)
+
 }

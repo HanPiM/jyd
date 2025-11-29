@@ -15,6 +15,41 @@ import chisel3.util.circt.dpi.{
 
 import chisel3.experimental.dataview._
 
+object BitWidth {
+  val addr = 5
+  val word = 32
+}
+
+class RegReadBundle(N: Int) extends Bundle {
+  require((1 << BitWidth.addr) >= N)
+  val addr = Input(Vec(N, UInt(BitWidth.addr.W)))
+  val data = Output(Vec(N, UInt(BitWidth.addr.W)))
+}
+
+class RegisterFile(READ_PORTS: Int = 2) extends Module {
+  val N_REG = 1 << BitWidth.addr
+
+  val io  = IO(new Bundle {
+    val wen   = Input(Bool())
+    val waddr = Input(UInt(BitWidth.addr.W))
+    val wdata = Input(UInt(BitWidth.word.W))
+
+    val rvec = new RegReadBundle(READ_PORTS)
+  })
+  val reg = RegInit(VecInit(Seq.fill(N_REG)(0.U(BitWidth.word.W))))
+
+  when(io.wen) {
+    reg(io.waddr) := io.wdata
+  }
+  for (i <- 0 until READ_PORTS) {
+    when(io.rvec.addr(i) === 0.U) {
+      io.rvec.data(i) := 0.U
+    }.otherwise {
+      io.rvec.data(i) := reg(io.rvec.addr(i))
+    }
+  }
+}
+
 class Inst extends Bundle {
   val code = Output(UInt(32.W))
   val pc   = Output(UInt(32.W))
@@ -51,7 +86,7 @@ class InstMetaInfo extends Bundle     {
   val typ = InstType()
 }
 
-class IInfoDecoder extends Module {
+class InstInfoDecoder extends Module {
   val io = IO(new Bundle {
     val opcode = Input(UInt(7.W))
     val valid  = Output(Bool())
@@ -85,11 +120,14 @@ class IInfoDecoder extends Module {
   io.out := MuxLookup(opcu, 0.U.asTypeOf(new InstMetaInfo()))(lut)
 }
 
-class DecodedInst(reg_addr_width: Int = 5) extends InstMetaInfo {
+class DecodedInstInfo extends InstMetaInfo {
   val imm = UInt(32.W)
-  val rd  = UInt(reg_addr_width.W)
-  val rs1 = UInt(reg_addr_width.W)
-  val rs2 = UInt(reg_addr_width.W)
+  val rd  = UInt(BitWidth.addr.W)
+  val rs1 = UInt(BitWidth.addr.W)
+  val rs2 = UInt(BitWidth.addr.W)
+}
+class DecodedInst     extends Inst         {
+  val info = new DecodedInstInfo
 }
 
 class IDU extends Module {
@@ -109,11 +147,13 @@ class IDU extends Module {
   io.in.ready  := (state === s_idle)
   io.out.valid := (state === s_wait_ready)
 
+  io.out.bits.viewAsSupertype(new Inst) := io.in
+
   // alias
-  val res  = io.out.bits
+  val res  = io.out.bits.info
   val inst = io.in.bits.code
 
-  val iinfo_dec = Module(new IInfoDecoder())
+  val iinfo_dec = Module(new InstInfoDecoder())
   iinfo_dec.io.opcode                   := io.in.bits.code(6, 0)
   res.viewAsSupertype(new InstMetaInfo) := iinfo_dec.io.out
 
@@ -140,12 +180,12 @@ class IDU extends Module {
 
 }
 
-class ALUInput(word_width: Int = 32) extends Bundle {
+class ALUInput extends Bundle {
   val is_imm = Bool()
   val func3t = UInt(3.W)
   val func7t = UInt(7.W)
-  val src1   = UInt(word_width.W)
-  val src2   = UInt(word_width.W)
+  val src1   = UInt(BitWidth.word.W)
+  val src2   = UInt(BitWidth.word.W)
 }
 
 class ALU extends Module {
@@ -154,7 +194,6 @@ class ALU extends Module {
     val out = Decoupled(UInt(32.W))
   })
   val BADCALL_RESVALUE = "hBAADCA11".U(32.W)
-  val WORD_WIDTH       = 32
 
   io.in.ready  := 0.B
   io.out.valid := 0.B
@@ -169,7 +208,7 @@ class ALU extends Module {
 
   val shamt = src2(4, 0)
 
-  val add_sub_res = Wire(UInt(WORD_WIDTH.W))
+  val add_sub_res = Wire(UInt(BitWidth.word.W))
   when(inbits.is_imm || inbits.func7t === 0.U) {
     add_sub_res := src1 + src2
   }.elsewhen(inbits.func7t === "b0100000".U) {
@@ -179,7 +218,7 @@ class ALU extends Module {
     printf("(alu) UNKNOWN func7t %d", inbits.func7t)
   }
 
-  val shift_res = Wire(UInt(WORD_WIDTH.W))
+  val shift_res = Wire(UInt(BitWidth.word.W))
   when(inbits.func7t === "b0100000".U) { // sra/srai
     shift_res := (s_src1 >> shamt).asUInt
   }.otherwise { // srl/srli
@@ -198,4 +237,36 @@ class ALU extends Module {
       7.U -> (src1 & src2)                   // 111: and/andi
     )
   )
+}
+
+class WriteBackInfo extends Bundle {
+  val addr = UInt(BitWidth.addr.W)
+  val data = UInt(BitWidth.word.W)
+}
+
+class EXU extends Module {
+  val io = IO(new Bundle {
+    val dinst = Flipped(Decoupled(new DecodedInst))
+    val rvec  = Flipped(new RegReadBundle(2))
+    val out   = Decoupled(new WriteBackInfo)
+  })
+
+  val alu = Module(new ALU)
+
+  val alu_in = alu.io.in.bits
+  val dinst  = io.dinst.bits
+  alu_in.is_imm := (dinst.info.fmt === InstFmt.imm)
+  alu_in.func3t := dinst.code(14, 12)
+  alu_in.func7t := dinst.code(31, 25)
+
+  // reg
+  io.rvec.addr(0) := dinst.info.rs1
+  io.rvec.addr(1) := dinst.info.rs2
+  val reg_v1 = io.rvec.data(0)
+  val reg_v2 = io.rvec.data(1)
+
+  alu_in.src1 := reg_v1
+  alu_in.src2 := Mux(dinst.info.fmt === InstFmt.reg, reg_v2, dinst.info.imm)
+
+
 }

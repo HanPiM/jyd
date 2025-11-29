@@ -1,8 +1,9 @@
 package cpu
 
 import chisel3._
-import chisel3.util.{Decoupled, Enum}
+import chisel3.util.{Cat, Decoupled, Enum, Fill}
 import chisel3.util.MuxLookup
+import chisel3.experimental.dataview._
 
 class Inst extends Bundle {
   val code = Output(UInt(32.W))
@@ -22,13 +23,13 @@ class IFU extends Module {
   io.out.valid := 0.B
 }
 
-object InstFmt  extends ChiselEnum {
+object InstFmt     extends ChiselEnum {
   val imm, reg, store, upper, jump, branch = Value
 }
-object InstType extends ChiselEnum {
+object InstType    extends ChiselEnum {
   val none, arithmetic, load, jalr, lui, auipc, system = Value
 }
-class InstInfo  extends Bundle     {
+class InstMetaInfo extends Bundle     {
   val fmt = InstFmt()
   val typ = InstType()
 }
@@ -37,7 +38,7 @@ class IInfoDecoder extends Module {
   val io = IO(new Bundle {
     val opcode = Input(UInt(7.W))
     val valid  = Output(Bool())
-    val out    = Output(new InstInfo())
+    val out    = Output(new InstMetaInfo())
   })
 
   // opcode[1:0] should always be 11 for 32bit
@@ -57,27 +58,57 @@ class IInfoDecoder extends Module {
     "b11000".U -> (InstFmt.branch, InstType.none)
   ).map { case (key, (fmt, typ)) =>
     key -> {
-      val info = Wire(new InstInfo)
+      val info = Wire(new InstMetaInfo)
       info.fmt := fmt
       info.typ := typ
       info
     }
   }
 
-  io.out := MuxLookup(opcu, 0.U.asTypeOf(new InstInfo()))(lut)
+  io.out := MuxLookup(opcu, 0.U.asTypeOf(new InstMetaInfo()))(lut)
+}
+
+class DecodedInst(reg_addr_width: Int = 5) extends InstMetaInfo {
+  val imm = UInt(32.W)
+  val rd  = UInt(reg_addr_width.W)
+  val rs1 = UInt(reg_addr_width.W)
+  val rs2 = UInt(reg_addr_width.W)
 }
 
 class IDU extends Module {
   val io = IO(new Bundle {
     val in  = Flipped(Decoupled(new Inst))
-    val out = Output(new InstInfo())
+    val out = Output(new DecodedInst())
 
   })
 
   io.in.ready := 0.B
 
-  val iinfo_dec=Module(new IInfoDecoder())
-  iinfo_dec.io.opcode:=io.in.bits.code(6,0)
-  io.out:=iinfo_dec.io.out
+  val iinfo_dec = Module(new IInfoDecoder())
+  iinfo_dec.io.opcode                      := io.in.bits.code(6, 0)
+  io.out.viewAsSupertype(new InstMetaInfo) := iinfo_dec.io.out
+
+  val inst = io.in.bits.code
+
+  io.out.rd:=inst(11,7)
+  io.out.rs1:=inst(19,15)
+  io.out.rs2:=inst(24,20)
+
+  // fetch IMM
+  val immI = Cat(Fill(21, inst(31)), inst(30, 20))
+  val immS = Cat(immI(31, 5), inst(11, 8), inst(7))
+  val immB = Cat(immI(31, 12), inst(7), immS(10, 1), 0.U(1.W))
+  val immU = Cat(inst(31, 12), 0.U(12.W))
+  val immJ = Cat(immI(31, 20), inst(19, 12), inst(20), inst(30, 21), 0.U(1.W))
+
+  io.out.imm := MuxLookup(iinfo_dec.io.out.fmt, "hBAADF00D".U)(
+    Seq(
+      InstFmt.imm    -> immI,
+      InstFmt.jump   -> immJ,
+      InstFmt.store  -> immS,
+      InstFmt.branch -> immB,
+      InstFmt.upper  -> immU
+    )
+  )
 
 }

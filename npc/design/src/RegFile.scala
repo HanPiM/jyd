@@ -2,26 +2,27 @@ package regfile
 
 import chisel3._
 import chisel3.util.Counter
-import cpu.BitWidth
+import cpu.Types
+import cpu.Types.Ops._
 import chisel3.util.MuxLookup
 
 class RegReadBundle(N: Int) extends Bundle {
-  require((1 << BitWidth.addr) >= N)
-  val addr = Input(Vec(N, UInt(BitWidth.addr.W)))
-  val data = Output(Vec(N, UInt(BitWidth.addr.W)))
+  require((1 << Types.BitWidth.reg_addr) >= N)
+  val addr = Input(Vec(N, Types.RegAddr))
+  val data = Output(Vec(N, Types.RegAddr))
 }
 
 class RegisterFile(READ_PORTS: Int = 2) extends Module {
-  val N_REG = 1 << BitWidth.addr
+  val N_REG = 1 << Types.BitWidth.reg_addr
 
   val io  = IO(new Bundle {
     val wen   = Input(Bool())
-    val waddr = Input(UInt(BitWidth.addr.W))
-    val wdata = Input(UInt(BitWidth.word.W))
+    val waddr = Input(Types.RegAddr)
+    val wdata = Input(Types.UWord)
 
     val rvec = new RegReadBundle(READ_PORTS)
   })
-  val reg = RegInit(VecInit(Seq.fill(N_REG)(0.U(BitWidth.word.W))))
+  val reg = RegInit(VecInit(Seq.fill(N_REG)(0.UWord)))
 
   when(io.wen) {
     reg(io.waddr) := io.wdata
@@ -38,11 +39,11 @@ class RegisterFile(READ_PORTS: Int = 2) extends Module {
 class ControlStatusRegisterFile extends Module {
   val io = IO(new Bundle {
     val addr     = Input(UInt(12.W))
-    val wdata    = Input(UInt(BitWidth.word.W))
+    val wdata    = Input(Types.UWord)
     val wen      = Input(Bool())
     val is_ecall = Input(Bool())
     val ren      = Input(Bool())
-    val rdata    = Output(UInt(BitWidth.word.W))
+    val rdata    = Output(Types.UWord)
   })
 
   val mcycle64 = RegInit(0.U(64.W))

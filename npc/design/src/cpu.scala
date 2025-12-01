@@ -17,20 +17,33 @@ import chisel3.experimental.dataview._
 
 import regfile._
 
-object BitWidth {
-  val addr = 5
-  val word = 32
-}
+object Types {
+  object BitWidth {
+    val reg_addr = 5
+    val word     = 32
+  }
+  def UWord = UInt(BitWidth.word.W)
+  def RegAddr = UInt(BitWidth.reg_addr.W)
 
+  object Ops {
+    implicit class StringOps(val s: String) extends AnyVal {
+      def UWord = s.U(BitWidth.word.W)
+    }
+    implicit class IntOps(val s: Int)       extends AnyVal {
+      def UWord = s.U(BitWidth.word.W)
+    }
+  }
+}
+import Types.Ops._
 
 class Inst extends Bundle {
-  val code = Output(UInt(32.W))
-  val pc   = Output(UInt(32.W))
+  val code = Output(Types.UWord)
+  val pc   = Output(Types.UWord)
 }
 
 class IFU extends Module {
   val io                            = IO(new Bundle {
-    val pc  = Input(UInt(32.W))
+    val pc  = Input(Types.UWord)
     val out = Decoupled(new Inst)
   })
   val s_idle :: s_wait_ready :: Nil = Enum(2)
@@ -44,7 +57,7 @@ class IFU extends Module {
   io.out.valid     := 1.B
   // NOTICE: dpi function auto generated with void return
   // see https://github.com/llvm/circt/blob/main/docs/Dialects/FIRRTL/FIRRTLIntrinsics.md#dpi-intrinsic-abi
-  io.out.bits.code := RawClockedNonVoidFunctionCall("fetch_inst", UInt(32.W))(clock, io.out.valid, io.pc)
+  io.out.bits.code := RawClockedNonVoidFunctionCall("fetch_inst", Types.UWord)(clock, io.out.valid, io.pc)
   io.out.bits.pc   := io.pc
 }
 
@@ -94,10 +107,10 @@ class InstInfoDecoder extends Module {
 }
 
 class DecodedInstInfo extends InstMetaInfo {
-  val imm = UInt(32.W)
-  val rd  = UInt(BitWidth.addr.W)
-  val rs1 = UInt(BitWidth.addr.W)
-  val rs2 = UInt(BitWidth.addr.W)
+  val imm = Types.UWord
+  val rd  = Types.RegAddr
+  val rs1 = Types.RegAddr
+  val rs2 = Types.RegAddr
 }
 class DecodedInst     extends Inst         {
   val info = new DecodedInstInfo
@@ -120,7 +133,7 @@ class IDU extends Module {
   io.in.ready  := (state === s_idle)
   io.out.valid := (state === s_wait_ready)
 
-  io.out.bits.viewAsSupertype(new Inst) := io.in
+  io.out.bits.viewAsSupertype(new Inst) := io.in.bits
 
   // alias
   val res  = io.out.bits.info
@@ -157,16 +170,16 @@ class ALUInput extends Bundle {
   val is_imm = Bool()
   val func3t = UInt(3.W)
   val func7t = UInt(7.W)
-  val src1   = UInt(BitWidth.word.W)
-  val src2   = UInt(BitWidth.word.W)
+  val src1   = Types.UWord
+  val src2   = Types.UWord
 }
 
 class ALU extends Module {
   val io               = IO(new Bundle {
     val in  = Flipped(Decoupled(new ALUInput))
-    val out = Decoupled(UInt(32.W))
+    val out = Decoupled(Types.UWord)
   })
-  val BADCALL_RESVALUE = "hBAADCA11".U(32.W)
+  val BADCALL_RESVALUE = "hBAADCA11".UWord
 
   io.in.ready  := 0.B
   io.out.valid := 0.B
@@ -181,7 +194,7 @@ class ALU extends Module {
 
   val shamt = src2(4, 0)
 
-  val add_sub_res = Wire(UInt(BitWidth.word.W))
+  val add_sub_res = Wire(Types.UWord)
   when(inbits.is_imm || inbits.func7t === 0.U) {
     add_sub_res := src1 + src2
   }.elsewhen(inbits.func7t === "b0100000".U) {
@@ -191,7 +204,7 @@ class ALU extends Module {
     printf("(alu) UNKNOWN func7t %d", inbits.func7t)
   }
 
-  val shift_res = Wire(UInt(BitWidth.word.W))
+  val shift_res = Wire(Types.UWord)
   when(inbits.func7t === "b0100000".U) { // sra/srai
     shift_res := (s_src1 >> shamt).asUInt
   }.otherwise { // srl/srli
@@ -213,8 +226,8 @@ class ALU extends Module {
 }
 
 class WriteBackInfo extends Bundle {
-  val addr = UInt(BitWidth.addr.W)
-  val data = UInt(BitWidth.word.W)
+  val addr = Types.RegAddr
+  val data = Types.UWord
 }
 
 class EXU extends Module {
@@ -240,6 +253,5 @@ class EXU extends Module {
 
   alu_in.src1 := reg_v1
   alu_in.src2 := Mux(dinst.info.fmt === InstFmt.reg, reg_v2, dinst.info.imm)
-
 
 }

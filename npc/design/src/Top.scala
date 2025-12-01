@@ -2,8 +2,11 @@ package top
 
 import chisel3._
 
+import regfile._
+
 import cpu._
 
+// For NVBoard
 class TopIO extends Bundle {
   val btn      = Input(UInt(5.W))
   val sw       = Input(UInt(16.W))
@@ -46,7 +49,7 @@ class Top(word_width: Int = 32) extends Module {
   dontTouch(io)
   io := DontCare
 
-  val regs = Module(new RegisterFile)
+  val regs = instantiateForTest(new RegisterFile)
 
   val pc     = Output(UInt(word_width.W))
   val nxt_pc = Output(UInt(word_width.W))

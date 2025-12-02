@@ -11,6 +11,12 @@ void nvboard_bind_all_pins(TOP_NAME* top);
 void fetch_inst(int pc, int *out_inst){
 
 }
+void pmem_read(int addr, int *out_data){
+
+}
+void pmem_write(int addr, int data, int mask){
+
+}
 
 int main(){
 	nvboard_bind_all_pins(&dut);

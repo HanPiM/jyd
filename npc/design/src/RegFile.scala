@@ -6,24 +6,44 @@ import cpu.Types
 import cpu.Types.Ops._
 import chisel3.util.MuxLookup
 
-class RegReadBundle(N: Int) extends Bundle {
-  require((1 << Types.BitWidth.reg_addr) >= N)
-  val en   = Input(Bool())
-  val addr = Input(Vec(N, Types.RegAddr))
-  val data = Output(Vec(N, Types.RegAddr))
+class MetaRegReqIO(addr_width: Int = Types.BitWidth.reg_addr, data_width: Int = Types.BitWidth.word) {
+  class _VecReadRX(N: Int) extends Bundle {
+    require((1 << addr_width) >= N)
+    val en   = Input(Bool())
+    val addr = Input(Vec(N, Types.RegAddr))
+    val data = Output(Vec(N, Types.RegAddr))
+  }
+  class _SingleReadRX      extends Bundle {
+    val en   = Input(Bool())
+    val addr = Input(Types.RegAddr)
+    val data = Output(Types.UWord)
+  }
+  class _WriteRX           extends Bundle {
+    val en   = Input(Bool())
+    val addr = Input(Types.RegAddr)
+    val data = Input(Types.UWord)
+  }
+  object RX {
+    def VecRead(N: Int) = new _VecReadRX(N)
+    def SingleRead = new _SingleReadRX()
+    def Write      = new _WriteRX()
+  }
+  object TX {
+    def VecRead(N: Int) = Flipped(RX.VecRead(N))
+    def SingleRead = Flipped(RX.SingleRead)
+    def Write      = Flipped(RX.Write)
+  }
 }
-class RegWriteBundle        extends Bundle {
-  val en   = Input(Bool())
-  val addr = Input(Types.RegAddr)
-  val data = Input(Types.UWord)
-}
+
+object GPRegReqIO extends MetaRegReqIO()
+object CSRegReqIO extends MetaRegReqIO(addr_width = Types.BitWidth.csr_addr)
 
 class RegisterFile(READ_PORTS: Int = 2) extends Module {
   val N_REG = 1 << Types.BitWidth.reg_addr
 
   val io  = IO(new Bundle {
-    val write = new RegWriteBundle()
-    val rvec  = new RegReadBundle(READ_PORTS)
+    val write = GPRegReqIO.RX.Write
+    val rvec  = GPRegReqIO.RX.VecRead(READ_PORTS)
   })
   val reg = RegInit(VecInit(Seq.fill(N_REG)(0.UWord)))
 
@@ -40,22 +60,21 @@ class RegisterFile(READ_PORTS: Int = 2) extends Module {
 }
 
 object CSRAddr {
-  val mstatus = "h300".U(12.W)
-  val mtvec   = "h305".U(12.W)
-  val mepc    = "h341".U(12.W)
-  val mcause  = "h342".U(12.W)
-  val mcycle  = "hB00".U(12.W)
-  val mcycleh = "hB80".U(12.W)
+  val mstatus   = "h300".U(12.W)
+  val mtvec     = "h305".U(12.W)
+  val mepc      = "h341".U(12.W)
+  val mcause    = "h342".U(12.W)
+  val mcycle    = "hB00".U(12.W)
+  val mcycleh   = "hB80".U(12.W)
+  val mvendorid = "hF11".U(12.W)
+  val marchid   = "hF12".U(12.W)
 }
 
 class ControlStatusRegisterFile extends Module {
   val io = IO(new Bundle {
-    val addr     = Input(UInt(12.W))
-    val wdata    = Input(Types.UWord)
-    val wen      = Input(Bool())
     val is_ecall = Input(Bool())
-    val ren      = Input(Bool())
-    val rdata    = Output(Types.UWord)
+    val read     = CSRegReqIO.RX.SingleRead
+    val write    = CSRegReqIO.RX.Write
   })
 
   val mcycle64 = RegInit(0.U(64.W))
@@ -64,24 +83,37 @@ class ControlStatusRegisterFile extends Module {
   val mvendor_id = "h79737978".U(32.W) // ysyx
   val march_id   = "d25100261".U(32.W)
 
-  val mstatus = RegInit("h00001800".U(32.W))
-  val mepc    = RegInit(0.U(32.W))
-  val mcause  = RegInit(0.U(32.W))
-  val mtvec   = RegInit(0.U(32.W))
+  // Writable CSRs
+  // 0: None
+  // 1: mstatus
+  val waregs = RegInit(VecInit(0.U +: "h00001800".U(32.W) +: Seq.fill(3)(0.U(32.W))))
+  val walut  = Seq(
+    CSRAddr.mstatus -> 1.U,
+    CSRAddr.mepc    -> 2.U,
+    CSRAddr.mcause  -> 3.U,
+    CSRAddr.mtvec   -> 4.U
+  )
+  val widx   = MuxLookup(io.write.addr, 0.U)(walut)
+  val ridx   = MuxLookup(io.read.addr, 0.U)(walut)
 
-  when(io.ren) {
-    io.rdata := MuxLookup(io.addr, 0.U)(
+  when(io.read.en) {
+    io.read.data := MuxLookup(io.read.addr, waregs(ridx))(
       Seq(
-        CSRAddr.mcycle  -> mcycle64(31, 0),  
-        CSRAddr.mcycleh -> mcycle64(63, 32), 
-        CSRAddr.mstatus -> mstatus,
-        CSRAddr.mepc    -> mepc,
-        CSRAddr.mcause  -> mcause,
-        CSRAddr.mtvec   -> mtvec
+        CSRAddr.mcycle    -> mcycle64(31, 0),
+        CSRAddr.mcycleh   -> mcycle64(63, 32),
+        CSRAddr.mvendorid -> mvendor_id,
+        CSRAddr.marchid   -> march_id
       )
     )
-
   }.otherwise {
-    io.rdata := 0.U
+    io.read.data := 0.U
   }
+
+  when(io.write.en && (widx =/= 0.U)) {
+    waregs(widx) := io.write.data
+    when(io.is_ecall && (io.write.addr === CSRAddr.mepc)) {
+      waregs(3) := 11.U // mcause = 11 for ecall from M-mode
+    }
+  }
+
 }

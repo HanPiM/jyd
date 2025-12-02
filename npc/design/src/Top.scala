@@ -3,6 +3,7 @@ package top
 import chisel3._
 
 import regfile._
+import memory._
 
 import cpu._
 
@@ -49,13 +50,42 @@ class Top(word_width: Int = 32) extends Module {
   dontTouch(io)
   io := DontCare
 
-  val regs = instantiateForTest(new RegisterFile)
+  val gprs = Module(new RegisterFile(READ_PORTS = 2))
+  val csrs = Module(new ControlStatusRegisterFile())
 
-  val pc     = Output(UInt(word_width.W))
-  val nxt_pc = Output(UInt(word_width.W))
+  val mem = Module(new MemUnit)
 
-  val ifu = instantiateForTest(new IFU)
-  val idu = instantiateForTest(new IDU)
-  val exu = instantiateForTest(new EXU)
+  val ifu = Module(new IFU)
+  val idu = Module(new IDU)
+  val exu = Module(new EXU)
+
+  val INIT_PC = "h80000000".U(32.W)
+
+  val pc = RegInit(INIT_PC)
+  val wbinfo = exu.io.out.bits
+
+  pc := Mux(exu.io.out.valid, wbinfo.nxt_pc,pc)
+
+  ifu.io.pc.bits := pc
+  ifu.io.pc.valid := exu.io.out.valid
+
+  ifu.io.out <> idu.io.in
+  idu.io.out <> exu.io.dinst
+
+  exu.io.rvec <> gprs.io.rvec
+  exu.io.csr_rvec <> csrs.io.read
+
+  mem.io.read <> exu.io.mem_rreq
+
+  // Write back
+
+  gprs.io.write <> wbinfo.gpr
+  csrs.io.write <> wbinfo.csr
+  csrs.io.is_ecall := wbinfo.csr_ecallflag
+
+  mem.io.write <> wbinfo.mem
+
+  exu.io.out.ready := ifu.io.pc.ready
+
 
 }

@@ -110,7 +110,7 @@ void skip_difftest_ref() {
 }
 
 void fetch_inst(int pc, int *out_inst) {
-  printf("fetch pc=%08x\n", pc);
+  //  printf("fetch pc=%08x\n", pc);
   *out_inst = mem[guest_to_host(pc) / 4];
 }
 
@@ -129,11 +129,17 @@ void pmem_read(int addr, int *out_data) {
     } else {
       *out_data = time_in_us >> 32;
     }
-		return;
+    return;
   }
   uint32_t host_aligned = guest_to_host(addr) & (~0x3);
+
+  if (host_aligned >= sizeof(mem)) {
+    *out_data = 0;
+    return;
+  }
+
   *out_data = mem[host_aligned / 4];
-  printf("pmem read addr=%08x get %08X\n", addr, *out_data);
+  //  printf("pmem read addr=%08x get %08X\n", addr, *out_data);
 }
 void pmem_write(int addr, int data, int mask) {
 
@@ -141,11 +147,11 @@ void pmem_write(int addr, int data, int mask) {
     // printf("pmem_write to serial port: %c\n",wdata&0xff);
     skip_difftest_ref();
     putchar(data & 0xff);
-    //		fflush(stdout);
+    fflush(stdout);
     return;
   }
 
-  printf("pmem write addr=%08x data=%08x mask=%02x\n", addr, data, mask);
+  //  printf("pmem write addr=%08x data=%08x mask=%02x\n", addr, data, mask);
   uint32_t host_aligned = guest_to_host(addr) & (~0x3);
 
   uint8_t *p = (uint8_t *)(&mem[host_aligned >> 2]);
@@ -162,17 +168,16 @@ void pmem_write(int addr, int data, int mask) {
 }
 
 void dump_regs() {
-	for (int i = 0; i < 32; i++) {
-		printf("%s: %08x\n", reg_names[i].data(), gpr_snap[i]);
-	}
+  for (int i = 0; i < 32; i++) {
+    printf("%s: %08x\n", reg_names[i].data(), gpr_snap[i]);
+  }
 }
 void step_inst() {
   while (!pc_changed) {
     step_cycle();
   }
   pc_changed = false;
-	dump_regs();
-	
+  //	dump_regs();
 }
 
 // IMG
@@ -284,7 +289,7 @@ int main(int argc, char **argv) {
 
   dbg->enable_inst_trace = true;
 
-  dbg->add_trace(sdb::make_disasm_trace_handler(sdb::default_inst_disasm,-1));
+  dbg->add_trace(sdb::make_disasm_trace_handler(sdb::default_inst_disasm, 16));
   dbg->add_trace(sdb::make_etrace_handler());
   dbg->add_trace(sdb::make_iringbuf_trace_handler());
 

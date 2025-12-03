@@ -79,7 +79,7 @@ class Top(word_width: Int = 32) extends Module {
   pc := Mux(exu.io.out.valid, wbinfo.nxt_pc,pc)
 
   when(exu.io.out.valid){
-    printf(p"(Top) PC: 0x${Hexadecimal(pc)} -> 0x${Hexadecimal(wbinfo.nxt_pc)}\n")
+    //printf(p"(Top) PC: 0x${Hexadecimal(pc)} -> 0x${Hexadecimal(wbinfo.nxt_pc)}\n")
     RawClockedVoidFunctionCall("pc_upd")(
       clock,
       exu.io.out.valid,
@@ -108,7 +108,7 @@ class Top(word_width: Int = 32) extends Module {
   gprs.io.write.data := wbinfo.gpr.data
 
   csrs.io.write <> wbinfo.csr
-  csrs.io.is_ecall := wbinfo.csr_ecallflag
+  csrs.io.is_ecall := wbinfo.csr_ecallflag && exu.io.out.valid
 
   mem.io.write.en := wbinfo.mem.en && exu.io.out.valid
   mem.io.write.addr := wbinfo.mem.addr

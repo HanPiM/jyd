@@ -67,7 +67,7 @@ class RegisterFile(READ_PORTS: Int = 2) extends Module {
       io.write.data
     )
 
-    printf("(RegFile) write reg[%d] <= 0x%x\n", io.write.addr, io.write.data)
+    //printf("(RegFile) write reg[%d] <= 0x%x\n", io.write.addr, io.write.data)
   }
   for (i <- 0 until READ_PORTS) {
     when(io.rvec.addr(i) === 0.U) {
@@ -117,14 +117,6 @@ class ControlStatusRegisterFile extends Module {
   val ridx   = MuxLookup(io.read.addr, 0.U)(walut)
 
   when(io.read.en) {
-    printf("(CSRFile) read CSR[0x%x] => 0x%x\n", io.read.addr, MuxLookup(io.read.addr, waregs(ridx))(
-      Seq(
-        CSRAddr.mcycle    -> mcycle64(31, 0),
-        CSRAddr.mcycleh   -> mcycle64(63, 32),
-        CSRAddr.mvendorid -> mvendor_id,
-        CSRAddr.marchid   -> march_id
-      )
-    ))
     io.read.data := MuxLookup(io.read.addr, waregs(ridx))(
       Seq(
         CSRAddr.mcycle    -> mcycle64(31, 0),
@@ -133,13 +125,17 @@ class ControlStatusRegisterFile extends Module {
         CSRAddr.marchid   -> march_id
       )
     )
+ //   printf("(CSR) read CSR[0x%x] => 0x%x\n", io.read.addr, io.read.data)
   }.otherwise {
     io.read.data := 0.U
   }
 
-  when(io.write.en && (widx =/= 0.U)) {
+  val en_wrtie= (io.write.en && (widx =/= 0.U))||(io.is_ecall && (io.write.addr === CSRAddr.mepc))
+
+  when(en_wrtie) {
     waregs(widx) := io.write.data
     when(io.is_ecall && (io.write.addr === CSRAddr.mepc)) {
+//      printf("(CSR) ecall detected")
       waregs(3) := 11.U // mcause = 11 for ecall from M-mode
     }
   }

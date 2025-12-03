@@ -24,8 +24,8 @@ typedef uint32_t addr_t;
 #define MADDR_BASE 0x80000000u
 #define INITIAL_PC MADDR_BASE
 
-#define TRACE_PMEM_CALL
-#define TRACE_SHOW_ALL_INST
+// #define TRACE_PMEM_CALL
+// #define TRACE_SHOW_ALL_INST
 
 std::shared_ptr<sdb::debuger> dbg;
 sdb::difftest_trace_handler_ptr diff_handler;

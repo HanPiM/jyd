@@ -533,9 +533,11 @@ class EXU           extends Module {
   val mem_waddr = io.mem_wreq.addr
   val mem_wen   = io.mem_wreq.en
   val mem_wmask = io.mem_wreq.mask
+
+  val is_store = dinst.info.typ === InstType.store
+
   mem_wdata := reg_v2 << mem_addr_unalign_part_bitlen
   mem_waddr := mem_addr
-  mem_wen   := dinst.info.typ === InstType.store
   mem_wmask := MuxLookup(func3t, 0.U)(
     Seq(
       MemOp.byte     -> (1.U(4.W) << mem_addr_unalign_part),
@@ -544,14 +546,24 @@ class EXU           extends Module {
     )
   )
 
+//   printf("(exu) STORE to addr 0x%x data 0x%x mask 0b%b\n", mem_waddr, mem_wdata, mem_wmask)
+  val s_wmem_noneed :: s_wmem_wait :: s_wmem_ok :: Nil = Enum(3)
+  val mem_write_state = RegInit(s_wmem_noneed)
+  mem_write_state := MuxLookup(mem_write_state, s_wmem_noneed)(
+    Seq(
+      s_wmem_noneed -> Mux(is_store, s_wmem_wait, s_wmem_noneed),
+      s_wmem_wait   -> Mux(io.mem_wreq.done, s_wmem_ok, s_wmem_wait),
+      s_wmem_ok     -> Mux(MS_fsm.io.slave_ready, s_wmem_noneed, s_wmem_ok)
+    )
+  )
+
+  mem_wen := is_store && (mem_write_state === s_wmem_wait)
+
   when(dinst.info.typ === InstType.store) {
     when(!MemOp.isValidStoreOp(func3t)) {
-      //     printf("(exu) UNKNOWN STORE func3t %d\n", func3t)
+       printf("(exu) UNKNOWN STORE func3t %d\n", func3t)
     }
   }
-//  when(mem_wen) {
-//    printf("(exu) STORE to addr 0x%x data 0x%x mask 0b%b\n", mem_waddr, mem_wdata, mem_wmask)
-//  }
 
   // nxt_pc
 

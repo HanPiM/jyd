@@ -11,7 +11,7 @@ class MetaRegReqIO(addr_width: Int = Types.BitWidth.reg_addr, data_width: Int = 
     require((1 << addr_width) >= N)
     val en   = Input(Bool())
     val addr = Input(Vec(N, Types.RegAddr))
-    val data = Output(Vec(N, Types.RegAddr))
+    val data = Output(Vec(N, Types.UWord))
   }
   class _SingleReadRX      extends Bundle {
     val en   = Input(Bool())
@@ -49,12 +49,14 @@ class RegisterFile(READ_PORTS: Int = 2) extends Module {
 
   when(io.write.en) {
     reg(io.write.addr) := io.write.data
+    printf("(RegFile) write reg[%d] <= 0x%x\n", io.write.addr, io.write.data)
   }
   for (i <- 0 until READ_PORTS) {
     when(io.rvec.addr(i) === 0.U) {
       io.rvec.data(i) := 0.U
     }.otherwise {
       io.rvec.data(i) := reg(io.rvec.addr(i))
+      printf("(RegFile) read reg[%d] => 0x%x\n", io.rvec.addr(i), io.rvec.data(i))
     }
   }
 }

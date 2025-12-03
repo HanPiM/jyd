@@ -7,6 +7,8 @@ import memory._
 
 import cpu._
 
+import chisel3.util.circt.dpi._
+
 // For NVBoard
 class TopIO extends Bundle {
   val btn      = Input(UInt(5.W))
@@ -64,10 +66,24 @@ class Top(word_width: Int = 32) extends Module {
   val pc = RegInit(INIT_PC)
   val wbinfo = exu.io.out.bits
 
+  val is_ebreak = (ifu.io.out.valid)&&(ifu.io.out.bits.code === "h00100073".U)
+
+  when(is_ebreak){
+    printf(p"EBREAK at PC = 0x${Hexadecimal(ifu.io.out.bits.pc)}\n")
+    RawClockedVoidFunctionCall("raise_ebreak")(clock,
+      is_ebreak
+    )
+    stop()
+  }
+  
+
   pc := Mux(exu.io.out.valid, wbinfo.nxt_pc,pc)
 
+  val pc_valid_reg= RegInit(true.B)
+  pc_valid_reg := exu.io.out.valid
+
   ifu.io.pc.bits := pc
-  ifu.io.pc.valid := exu.io.out.valid
+  ifu.io.pc.valid := pc_valid_reg
 
   ifu.io.out <> idu.io.in
   idu.io.out <> exu.io.dinst
@@ -79,13 +95,16 @@ class Top(word_width: Int = 32) extends Module {
 
   // Write back
 
-  gprs.io.write <> wbinfo.gpr
+  gprs.io.write.en := wbinfo.gpr.en && exu.io.out.valid
+  gprs.io.write.addr := wbinfo.gpr.addr
+  gprs.io.write.data := wbinfo.gpr.data
+
   csrs.io.write <> wbinfo.csr
   csrs.io.is_ecall := wbinfo.csr_ecallflag
 
   mem.io.write <> wbinfo.mem
 
-  exu.io.out.ready := ifu.io.pc.ready
+  exu.io.out.ready := true.B
 
 
 }

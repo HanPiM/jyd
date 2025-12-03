@@ -44,7 +44,7 @@ class Inst extends Bundle {
 }
 
 class OneMasterOneSlaveFSM extends Module {
-  val io                                      = IO(new Bundle {
+  val io = IO(new Bundle {
     val master_valid = Input(Bool())
     val master_ready = Output(Bool())
 
@@ -52,9 +52,16 @@ class OneMasterOneSlaveFSM extends Module {
 
     val slave_valid = Output(Bool())
     val slave_ready = Input(Bool())
+
+    val _state = Output(UInt(2.W))
   })
+
+  val SINGLE_CYCLE_CPU = true
+
   val s_idle :: s_busy :: s_wait_slave :: Nil = Enum(3)
   val state                                   = RegInit(s_idle)
+
+  io._state := state
 
   state := MuxLookup(state, s_idle)(
     Seq(
@@ -64,7 +71,7 @@ class OneMasterOneSlaveFSM extends Module {
     )
   )
 
-  io.master_ready := (state === s_idle)
+  io.master_ready := (state === s_wait_slave) && (io.self_finished)
   io.slave_valid  := (state === s_wait_slave)
 
   def connectMaster[T <: Data](master: DecoupledIO[T]): Unit = {
@@ -88,6 +95,14 @@ class IFU extends Module {
   fsm.connectMaster(io.pc)
   fsm.connectSlave(io.out)
   fsm.io.self_finished := true.B
+
+  //printf("(ifu) fetch inst at pc 0x%x\n", io.pc.bits)
+  //printf("(ifu) enable: %b\n", io.pc.valid)
+
+//  printf("(ifu) fsm st %d out.valid %b\n",fsm.io._state, io.out.valid)
+//  when(io.out.ready){
+//    stop()
+//  }
 
   // NOTICE: dpi function auto generated with void return
   // see https://github.com/llvm/circt/blob/main/docs/Dialects/FIRRTL/FIRRTLIntrinsics.md#dpi-intrinsic-abi
@@ -123,7 +138,7 @@ class InstInfoDecoder extends Module {
     "b11001".U -> (InstFmt.imm, InstType.jalr),
     "b11100".U -> (InstFmt.imm, InstType.system),
     "b01100".U -> (InstFmt.reg, InstType.arithmetic),
-    "b01000".U -> (InstFmt.store, InstType.none),
+    "b01000".U -> (InstFmt.store, InstType.store),
     "b01101".U -> (InstFmt.upper, InstType.lui),
     "b00101".U -> (InstFmt.upper, InstType.auipc),
     "b11011".U -> (InstFmt.jump, InstType.jal),
@@ -159,7 +174,6 @@ class IDU extends Module {
   val fsm = Module(new OneMasterOneSlaveFSM)
   fsm.connectMaster(io.in)
   fsm.connectSlave(io.out)
-  fsm.io.self_finished := true.B
 
   io.out.bits.viewAsSupertype(new Inst) := io.in.bits
 
@@ -170,6 +184,17 @@ class IDU extends Module {
   val iinfo_dec = Module(new InstInfoDecoder())
   iinfo_dec.io.opcode                   := io.in.bits.code(6, 0)
   res.viewAsSupertype(new InstMetaInfo) := iinfo_dec.io.out
+
+  fsm.io.self_finished := iinfo_dec.io.valid
+
+  printf("(idu) inst 0x%x at pc 0x%x\n", inst, io.in.bits.pc)
+  when(!iinfo_dec.io.valid) {
+    printf("(idu) UNKNOWN instruction with opcode 0b%b\n", inst(6, 0))
+  }
+  when(io.out.valid) {
+    printf("(idu) decoded finished fmt %d type %d\n", res.fmt.asUInt, res.typ.asUInt)
+  }
+  printf("(idu) fsm st %d in.valid %b\n",fsm.io._state, io.in.valid)
 
   res.rd  := inst(11, 7)
   res.rs1 := inst(19, 15)
@@ -255,7 +280,6 @@ class ALU extends Module {
   )
 }
 
-
 class WriteBackInfo extends Bundle {
   val gpr = GPRegReqIO.TX.Write
 
@@ -294,7 +318,20 @@ class EXU           extends Module {
   val MS_fsm = Module(new OneMasterOneSlaveFSM)
   MS_fsm.connectMaster(io.dinst)
   MS_fsm.connectSlave(io.out)
-  MS_fsm.io.self_finished := alu.io.out.valid && io.mem_rreq.respValid
+  MS_fsm.io.self_finished := alu.io.out.valid && (
+    io.mem_rreq.respValid || (dinst.info.typ =/= InstType.load)
+  )
+  
+  printf("(exu) fsm st %d alu.valid %b mem_rreq.respValid %b\n",MS_fsm.io._state, alu.io.out.valid, io.mem_rreq.respValid)
+  when(io.mem_rreq.respValid){
+    printf("(exu) MEM read data 0x%x for inst at pc 0x%x\n", io.mem_rreq.data, dinst.pc)
+  }
+  when(alu.io.out.valid) {
+    printf("(exu) ALU result 0x%x for inst at pc 0x%x\n", alu.io.out.bits, dinst.pc)
+  }
+  when(io.out.valid) {
+    printf("(exu) finish exu for inst at pc 0x%x\n", dinst.pc)
+  }
 
   // reg
 
@@ -393,6 +430,9 @@ class EXU           extends Module {
     }
   }
 
+  printf("(exu) reg(%d) 0x%x reg(%d) 0x%x\n", dinst.info.rs1,reg_v1,dinst.info.rs2, reg_v2)
+  printf("(exu) imm 0x%x\n", dinst.info.imm)
+
   val mem_addr                     = reg_v1 + dinst.info.imm
   val mem_addr_unalign_part        = mem_addr(1, 0)
   val mem_addr_unalign_part_bitlen = mem_addr_unalign_part << 3
@@ -405,6 +445,11 @@ class EXU           extends Module {
 
   mem_ren   := dinst.info.typ === InstType.load
   mem_raddr := mem_addr
+
+  when(mem_ren) {
+    printf("(exu) @pc 0x%x\n", dinst.pc)
+    printf("(exu) LOAD from addr 0x%x\n", mem_raddr)
+  }
 
   // wdata
 
@@ -477,6 +522,9 @@ class EXU           extends Module {
     when(!MemOp.isValidStoreOp(func3t)) {
       printf("(exu) UNKNOWN STORE func3t %d\n", func3t)
     }
+  }
+  when(mem_wen) {
+    printf("(exu) STORE to addr 0x%x data 0x%x mask 0b%b\n", mem_waddr, mem_wdata, mem_wmask)
   }
 
   // nxt_pc

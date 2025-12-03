@@ -318,10 +318,8 @@ class EXU           extends Module {
   val MS_fsm = Module(new OneMasterOneSlaveFSM)
   MS_fsm.connectMaster(io.dinst)
   MS_fsm.connectSlave(io.out)
-  MS_fsm.io.self_finished := alu.io.out.valid && (
-    io.mem_rreq.respValid || (dinst.info.typ =/= InstType.load)
-  )
   
+  /*
   printf("(exu) fsm st %d alu.valid %b mem_rreq.respValid %b\n",MS_fsm.io._state, alu.io.out.valid, io.mem_rreq.respValid)
   when(io.mem_rreq.respValid){
     printf("(exu) MEM read data 0x%x for inst at pc 0x%x\n", io.mem_rreq.data, dinst.pc)
@@ -332,6 +330,7 @@ class EXU           extends Module {
   when(io.out.valid) {
     printf("(exu) finish exu for inst at pc 0x%x\n", dinst.pc)
   }
+  */
 
   // reg
 
@@ -430,8 +429,8 @@ class EXU           extends Module {
     }
   }
 
-  printf("(exu) reg(%d) 0x%x reg(%d) 0x%x\n", dinst.info.rs1,reg_v1,dinst.info.rs2, reg_v2)
-  printf("(exu) imm 0x%x\n", dinst.info.imm)
+  // printf("(exu) reg(%d) 0x%x reg(%d) 0x%x\n", dinst.info.rs1,reg_v1,dinst.info.rs2, reg_v2)
+  // printf("(exu) imm 0x%x\n", dinst.info.imm)
 
   val mem_addr                     = reg_v1 + dinst.info.imm
   val mem_addr_unalign_part        = mem_addr(1, 0)
@@ -439,17 +438,20 @@ class EXU           extends Module {
 
   val mem_raddr     = io.mem_rreq.addr
   val mem_raw_rdata = io.mem_rreq.data
-  val mem_ren       = io.mem_rreq.en
+  
+  io.mem_rreq.en := (dinst.info.typ === InstType.load) 
 
   val mem_data = mem_raw_rdata >> mem_addr_unalign_part_bitlen
 
-  mem_ren   := dinst.info.typ === InstType.load
+  MS_fsm.io.self_finished := alu.io.out.valid && (
+    (dinst.info.typ =/= InstType.load) || io.mem_rreq.respValid
+  )
   mem_raddr := mem_addr
 
-  when(mem_ren) {
-    printf("(exu) @pc 0x%x\n", dinst.pc)
-    printf("(exu) LOAD from addr 0x%x\n", mem_raddr)
-  }
+//when(mem_ren) {
+//  printf("(exu) @pc 0x%x\n", dinst.pc)
+//  printf("(exu) LOAD from addr 0x%x\n", mem_raddr)
+//}
 
   // wdata
 

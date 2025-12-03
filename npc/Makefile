@@ -6,6 +6,7 @@ SIM_BIN = $(BUILD_DIR)/$(TOP_NAME)
 
 SIM_IMG ?=
 
+SAN_FLAGS?= -fsanitize=address
 
 default: $(SIM_BIN)
 	
@@ -18,6 +19,7 @@ CHISEL2V_EMIT_DIR = $(BUILD_DIR)/chisel2v
 CHISEL2V_DONE = $(BUILD_DIR)/verilog.done
 $(CHISEL2V_DONE): $(CHISEL_SRCS)
 	$(call git_commit, "generate verilog")
+	@rm -rf $(CHISEL2V_EMIT_DIR)
 	mill -i $(CHISEL_DESIGN).runMain Elaborate --target-dir $(CHISEL2V_EMIT_DIR)
 	touch $(CHISEL2V_DONE)
 
@@ -58,7 +60,6 @@ include $(NVBOARD_HOME)/scripts/nvboard.mk
 # rules for verilator
 INCFLAGS = $(addprefix -I, $(INC_PATH))
 CXXFLAGS += $(INCFLAGS) -DTOP_NAME=V$(TOP_NAME)
-SAN_FLAGS?= #SAN_FLAGS+=-fsanitize=address
 CXXFLAGS += $(SAN_FLAGS) -std=c++20
 
 $(SIM_BIN): $(SIM_VSRCS) $(SIM_CSRCS) $(ARCHIVES) verilog

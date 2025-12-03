@@ -69,15 +69,23 @@ class Top(word_width: Int = 32) extends Module {
   val is_ebreak = (ifu.io.out.valid)&&(ifu.io.out.bits.code === "h00100073".U)
 
   when(is_ebreak){
-    printf(p"EBREAK at PC = 0x${Hexadecimal(ifu.io.out.bits.pc)}\n")
+    printf(p"EBREAK at PC = 0x${Hexadecimal(ifu.io.out.bits.pc)} a0 = 0x${Hexadecimal(gprs.io.a0)}\n")
     RawClockedVoidFunctionCall("raise_ebreak")(clock,
-      is_ebreak
+      is_ebreak,gprs.io.a0
     )
     stop()
   }
-  
 
   pc := Mux(exu.io.out.valid, wbinfo.nxt_pc,pc)
+
+  when(exu.io.out.valid){
+    printf(p"(Top) PC: 0x${Hexadecimal(pc)} -> 0x${Hexadecimal(wbinfo.nxt_pc)}\n")
+    RawClockedVoidFunctionCall("pc_upd")(
+      clock,
+      exu.io.out.valid,
+      pc,wbinfo.nxt_pc
+    )
+  }
 
   val pc_valid_reg= RegInit(true.B)
   pc_valid_reg := exu.io.out.valid
@@ -102,7 +110,10 @@ class Top(word_width: Int = 32) extends Module {
   csrs.io.write <> wbinfo.csr
   csrs.io.is_ecall := wbinfo.csr_ecallflag
 
-  mem.io.write <> wbinfo.mem
+  mem.io.write.en := wbinfo.mem.en && exu.io.out.valid
+  mem.io.write.addr := wbinfo.mem.addr
+  mem.io.write.data := wbinfo.mem.data
+  mem.io.write.mask := wbinfo.mem.mask
 
   exu.io.out.ready := true.B
 

@@ -1,13 +1,17 @@
 #include <iostream>
+#include <string_view>
 #include <verilated.h>
 #include <verilated_vpi.h>
 
 #include "sim.hpp"
 
-void read_and_check(const char *sig_name) {
-  vpiHandle vh1 = vpi_handle_by_name((PLI_BYTE8 *)(sig_name), NULL);
+#include "sprobe.hpp"
+
+
+void read_and_check(std::string sig_name) {
+  vpiHandle vh1 = vpi_handle_by_name((PLI_BYTE8 *)(sig_name.c_str()), NULL);
   if (!vh1) {
-    printf("No handle found for %s\n", sig_name);
+    printf("No handle found for %s\n", sig_name.c_str());
     return;
     // vl_fatal(__FILE__, __LINE__, "sim_main", "No handle found");
   }
@@ -31,19 +35,16 @@ int main(int argc, char **argv) {
 
   vpiHandle top = vpi_handle_by_name((PLI_BYTE8 *)"TOP.Top", NULL);
   assert(top);
-  vpiHandle iter;
-  vpiHandle it;
 
-  for (int type = 0; type < 150; type++) {
-    iter = vpi_iterate(type, top);
-    if (iter != NULL) {
-      vpi_printf("TYPE %d success\n", type);
-      while ((it = vpi_scan(iter)) != NULL) {
-        const char *name = vpi_get_str(vpiName, it);
-        vpi_printf("- : %s\n", name);
-      }
-    }
-  }
+	SProbe sprobe;
+	sprobe.load_inside(top);
+
+	std::cout<<"===== All Signal Probed ====="<<std::endl;
+	for(auto& n:sprobe._fullnames){
+		std::cout<<n<<std::endl;
+	}
+
+
   std::string cmd;
   bool quit = false;
   while (!sim_halted() && !quit) {

@@ -5,6 +5,8 @@
 
 VTop* get_dut();
 
+typedef void(*cycle_end_callback_t)();
+
 struct sim_setting{
 	bool showdisasm=true;
 	bool always_show_disasm=false;
@@ -23,6 +25,7 @@ struct sim_setting{
 
 	bool trace_clock_cycle=false;
 
+	cycle_end_callback_t cycle_finish_cb=nullptr;
 };
 
 bool sim_init(int argc, char** argv,sim_setting teg=sim_setting{});

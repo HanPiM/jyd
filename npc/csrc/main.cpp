@@ -27,17 +27,23 @@ void read_and_check(std::string sig_name) {
          v.value.integer); // Prints "Value of readme: 0"
 }
 
+SProbe sprobe;
+void cyc_callback() {
+	sprobe.dump_watched();
+}
+
 int main(int argc, char **argv) {
-  sim_init(argc, argv);
+	sim_setting setting;
+	setting.cycle_finish_cb=cyc_callback;
+  sim_init(argc, argv, setting);
 
   // get_dut()->contextp()->internalsDump(); // See scopes to help debug
 
   vpiHandle top = vpi_handle_by_name((PLI_BYTE8 *)"TOP.Top", NULL);
   assert(top);
 
-  SProbe sprobe;
   sprobe.load_inside(top);
-	vpi_release_handle(top);
+  vpi_release_handle(top);
 
   // std::cout << "===== All Signal Probed =====" << std::endl;
   // for (auto &n : sprobe._fullnames) {
@@ -49,9 +55,9 @@ int main(int argc, char **argv) {
   while (!sim_halted() && !quit) {
     std::cout << "(sdb) ";
     std::getline(std::cin, cmd);
-    if (cmd.size()>3 && cmd.substr(0, 2) == "ps") {
+    if (cmd.size() > 3 && cmd.substr(0, 2) == "ps") {
       std::string sig_name = cmd.substr(3);
-			auto fullname = "TOP.Top." + sig_name;
+      auto fullname = "TOP.Top." + sig_name;
       if (sprobe.add_watch(fullname))
         printf("Added watch for '%s'\n", fullname.c_str());
       continue;

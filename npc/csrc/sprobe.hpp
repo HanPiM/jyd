@@ -1,5 +1,6 @@
 #pragma once
 #include "vpi_user.h"
+#include <cstdint>
 #include <format>
 #include <iostream>
 #include <string>
@@ -12,6 +13,12 @@ public:
   std::vector<std::string> _fullnames;
 
   std::vector<vpiHandle> _watched_handles;
+
+  ~SProbe() {
+    for (auto &h : _watched_handles) {
+      vpi_release_handle(h);
+    }
+  }
 
   void load_inside(vpiHandle top) {
     // std::cout<<"SProbe load inside
@@ -26,7 +33,7 @@ public:
         // printf("SProbe scanning type %d\n",type);
         while ((it = vpi_scan(iter)) != NULL) {
           _fullnames.push_back(std::string(vpi_get_str(vpiFullName, it)));
-          printf("SProbe found %d  %s\n", type, _fullnames.back().c_str());
+          // printf("SProbe found %d  %s\n", type, _fullnames.back().c_str());
           if (type == vpiModule)
             load_inside(it);
           vpi_release_handle(it);
@@ -51,12 +58,18 @@ public:
   }
 
   void dump_watched() {
+    if (_watched_handles.empty())
+      return;
+    // std::cout << "===== SProbe Watched Signals =====" << std::endl;
     for (auto &h : _watched_handles) {
       s_vpi_value v;
       v.format = vpiIntVal;
       vpi_get_value(h, &v);
-      std::cout << std::format("[{}] Value: {}\n", vpi_get_str(vpiFullName, h),
-                               v.value.integer);
+      std::string fullname = vpi_get_str(vpiFullName, h);
+      std::cout << std::format("{} ` {} [{}] = {:08X}\n",
+					vpi_get_str(vpiType, h), fullname,
+					vpi_get(vpiSize, h)
+					, (uint32_t)v.value.integer);
     }
   }
 };

@@ -53,6 +53,9 @@ static void step_cycle() {
   if (sim_settings.trace_clock_cycle) {
     printf("[Clock Cycle End]\n");
   }
+	if(sim_settings.cycle_finish_cb){
+		sim_settings.cycle_finish_cb();
+	}
 }
 static void reset(int n) {
   dut.reset = 1;
@@ -297,6 +300,7 @@ uint8_t *loadmem(sdb::paddr_t addr, size_t nbyte) { return mem_atguest(addr); }
 } // namespace sdbwrap
 
 bool sim_init(int argc, char **argv, sim_setting setting) {
+	sim_settings=setting;
   if (setting.nvboard) {
     nvboard_bind_all_pins(&dut);
     nvboard_init();

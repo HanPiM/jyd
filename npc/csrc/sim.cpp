@@ -1,8 +1,7 @@
+#include "sim.hpp"
+
 #include <VTop.h>
 #include <VTop__Dpi.h>
-
-#include <verilated.h>
-#include <verilated_vpi.h>
 
 #include <array>
 #include <cstdint>
@@ -19,6 +18,10 @@
 #include <unistd.h>
 
 TOP_NAME dut;
+sim_setting sim_settings;
+
+VTop *get_dut() { return &dut; }
+
 void nvboard_bind_all_pins(TOP_NAME *top);
 
 typedef uint32_t word_t;
@@ -34,14 +37,22 @@ std::shared_ptr<sdb::debuger> dbg;
 sdb::difftest_trace_handler_ptr diff_handler;
 
 static void step_cycle() {
-  // printf("-----step-----\n");
+  if (sim_settings.trace_clock_cycle) {
+    printf("[Clock Cycle Begin]\n");
+  }
+
   dut.clock = 0;
   dut.eval();
 
   dut.clock = 1;
   dut.eval();
 
-  // printf("-------------\n");
+  if (sim_settings.nvboard) {
+    nvboard_update();
+  }
+  if (sim_settings.trace_clock_cycle) {
+    printf("[Clock Cycle End]\n");
+  }
 }
 static void reset(int n) {
   dut.reset = 1;
@@ -72,6 +83,8 @@ void raise_ebreak(int a0) {
   }
   printf(" at pc = 0x%08x\n", current_pc);
 }
+bool sim_halted() { return !is_running; }
+bool sim_hit_good_trap() { return is_good_trap; }
 
 word_t mem[600 * 1024 * 1024 / 4] = {
     0x00000297, // auipc t0,0
@@ -116,7 +129,10 @@ void skip_difftest_ref() {
 }
 
 void fetch_inst(int pc, int *out_inst) {
-  printf("fetch pc=%08x\n", pc);
+  if (sim_settings.trace_inst_fetchcall) {
+    printf("[DPI] fetch_inst called with pc=%08x\n", pc);
+  }
+
   if (pc == 0) {
     *out_inst = 0;
     return;
@@ -149,29 +165,28 @@ void pmem_read(int addr, int *out_data) {
   }
   uint32_t host_aligned = guest_to_host(addr) & (~0x3);
 
-  //  if (host_aligned >= sizeof(mem)) {
-  //    *out_data = 0;
-  //    return;
-  //  }
-
   *out_data = mem[host_aligned / 4];
-#ifdef TRACE_PMEM_CALL
-  printf("pmem read addr=%08x get %08X\n", addr, *out_data);
-#endif
+
+  if (sim_settings.trace_pmem_readcall) {
+    printf("[DPI] pmem_read addr=%08x get %08X\n", addr, *out_data);
+  }
 }
 void pmem_write(int addr, int data, int mask) {
 
   if (addr == MMIO_SERIAL_PORT) {
-    // printf("pmem_write to serial port: %c\n",wdata&0xff);
+    if (sim_settings.trace_mmio_write) {
+      printf("[DPI] MMIO write to serial port: %c\n", data & 0xff);
+    }
     skip_difftest_ref();
     putchar(data & 0xff);
     fflush(stdout);
     return;
   }
 
-#ifdef TRACE_PMEM_CALL
-  printf("pmem write addr=%08x data=%08x mask=%02x\n", addr, data, mask);
-#endif
+  if (sim_settings.trace_pmem_writecall) {
+    printf("[DPI] pmem write addr=%08x data=%08x mask=%02x\n", addr, data,
+           mask);
+  }
 
   uint32_t host_aligned = guest_to_host(addr) & (~0x3);
 
@@ -258,27 +273,6 @@ static void parse_args(int argc, char **argv) {
     }
   }
 }
-
-void read_and_check(const char* sig_name) {
-  vpiHandle vh1 = vpi_handle_by_name((PLI_BYTE8 *)(sig_name),NULL);
-  if (!vh1){
-		printf("No handle found for %s\n", sig_name);
-		return;
-    //vl_fatal(__FILE__, __LINE__, "sim_main", "No handle found");
-	}
-  const char *name = vpi_get_str(vpiName, vh1);
-  const char *type = vpi_get_str(vpiType, vh1);
-  const int size = vpi_get(vpiSize, vh1);
-  printf("name: %s, type: %s, size: %d\n", name, type, size);
-
-	return;
-  s_vpi_value v;
-  v.format = vpiIntVal;
-  vpi_get_value(vh1, &v);
-  printf("Value of %s: %d\n", name,
-         v.value.integer); // Prints "Value of readme: 0"
-}
-
 // SDB
 
 namespace sdbwrap {
@@ -302,9 +296,11 @@ sdb::vlen_inst_code inst_fetcher(sdb::paddr_t pc) {
 uint8_t *loadmem(sdb::paddr_t addr, size_t nbyte) { return mem_atguest(addr); }
 } // namespace sdbwrap
 
-int main(int argc, char **argv) {
-  nvboard_bind_all_pins(&dut);
-  // nvboard_init();
+bool sim_init(int argc, char **argv, sim_setting setting) {
+  if (setting.nvboard) {
+    nvboard_bind_all_pins(&dut);
+    nvboard_init();
+  }
 
   parse_args(argc, argv);
   using std::string;
@@ -313,12 +309,12 @@ int main(int argc, char **argv) {
 
   load_img();
 
-  if (img_file) {
+  if (img_file && setting.ftrace) {
     auto elf_file = try_find_elf_file_of(img_file);
 
     if (!elf_file.empty()) {
       printf("Found ELF file: %s\n", elf_file.c_str());
-      //	dbg->add_trace(sdb::make_ftrace_handler(elf_file));
+      dbg->add_trace(sdb::make_ftrace_handler(elf_file));
     }
   }
 
@@ -330,51 +326,35 @@ int main(int argc, char **argv) {
 
   dbg->enable_inst_trace = true;
 
-  size_t inst_show_limit;
-#ifdef TRACE_SHOW_ALL_INST
-  inst_show_limit = -1;
-#else
-  inst_show_limit = 16;
-#endif
+  if (setting.showdisasm) {
+    size_t inst_show_limit = setting.always_show_disasm ? SIZE_MAX : 16;
+    dbg->add_trace(sdb::make_disasm_trace_handler(sdb::default_inst_disasm,
+                                                  inst_show_limit));
+  }
+  if (setting.etrace)
+    dbg->add_trace(sdb::make_etrace_handler());
+  if (setting.iringbuf)
+    dbg->add_trace(sdb::make_iringbuf_trace_handler());
 
-  dbg->add_trace(sdb::make_disasm_trace_handler(sdb::default_inst_disasm,
-                                                inst_show_limit));
-  dbg->add_trace(sdb::make_etrace_handler());
-  dbg->add_trace(sdb::make_iringbuf_trace_handler());
+  if (setting.difftest) {
+    diff_handler = sdb::make_difftest_trace_handler(
+        "../nemu/build/riscv32-nemu-interpreter-so", 0);
+    dbg->add_trace(diff_handler);
+  }
 
-  diff_handler = sdb::make_difftest_trace_handler(
-      "../nemu/build/riscv32-nemu-interpreter-so", 0);
-  dbg->add_trace(diff_handler);
   reset(10);
-
-  VerilatedVpi::callValueCbs();
 
   if (batch_mode) {
     dbg->exec_command("c");
     return dbg->state().is_badexit();
   }
 
-
-
-  dut.contextp()->internalsDump(); // See scopes to help debug
-
-vpiHandle top = vpi_handle_by_name((PLI_BYTE8*)"TOP.Top", NULL);
-vpiHandle iter = vpi_iterate(vpiNet, top);
-vpiHandle net;
-while ((net = vpi_scan(iter)) != NULL) {
-    const char* name = vpi_get_str(vpiName, net);
-    vpi_printf("Net: %s\n", name);
+  return is_good_trap ? 0 : 1;
 }
 
-  std::string cmd;
-  while (true) {
-    std::cout << "(sdb) ";
-    std::getline(std::cin, cmd);
-		read_and_check(cmd.c_str());
-    // dbg->exec_command(cmd);
-    if (dbg->state().state == sdb::run_state::quit) {
-      break;
-    }
+void sim_exec_sdbcmd(std::string_view cmd, bool &quit) {
+  dbg->exec_command(cmd);
+  if (dbg->state().state == sdb::run_state::quit) {
+    quit = true;
   }
-  return is_good_trap ? 0 : 1;
 }

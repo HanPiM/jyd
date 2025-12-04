@@ -4,6 +4,9 @@ TOP_NAME = Top # case sensitive
 SIM_CSRC_DIR = ./csrc
 SIM_BIN = $(BUILD_DIR)/$(TOP_NAME)
 
+default: $(SIM_BIN)
+
+
 SIM_IMG ?=
 
 SAN_FLAGS?= -fsanitize=address
@@ -32,16 +35,19 @@ V2CXX_EMIT_DIR = $(BUILD_DIR)/v2cxx
 SIM_VSRCS = $(shell find $(abspath $(CHISEL2V_EMIT_DIR)) -name "*.v" -or -name "*.sv")
 SIM_CSRCS = $(shell find $(abspath $(SIM_CSRC_DIR)) -name "*.c" -or -name "*.cc" -or -name "*.cpp")
 
-# Insert verilog public extensions
+# Insert verilog public modifier for VPI
 #   see https://verilator.org/guide/latest/extensions.html#cmdoption-verilator-public_-flat-flat_rd-flat_rw-_on
 # to enable VPI work (make signal accessible from C++ side)
 
-vpi: $(SIM_VSRCS)
+VPI_DONE := $(BUILD_DIR)/vpi.done
+
+$(VPI_DONE): $(CHISEL2V_DONE)
 ifeq ($(ENABLE_VPI), 1)
 	@echo "VPI enabled: inserting verilator public modifier"
 	$(foreach src,$(SIM_VSRCS),\
 	sed -i '1i /*verilator public_on*/' $(src); \
 	sed -i -e '$$a /*verilator public_off*/' $(src);)
+	touch $(VPI_DONE)
 endif
 
 # sdb
@@ -54,7 +60,6 @@ $(shell mkdir -p $(BUILD_DIR))
 $(shell mkdir -p $(V2CXX_EMIT_DIR))
 $(shell mkdir -p $(CHISEL2V_EMIT_DIR))
 
-default: $(SIM_BIN)
 
 # Chisel
 $(CHISEL2V_DONE): $(CHISEL_SRCS)
@@ -81,7 +86,7 @@ INCFLAGS = $(addprefix -I, $(INC_PATH))
 CXXFLAGS += $(INCFLAGS) -DTOP_NAME=V$(TOP_NAME)
 CXXFLAGS += $(SAN_FLAGS) -std=c++20
 
-$(SIM_BIN): $(SIM_VSRCS) $(SIM_CSRCS) $(ARCHIVES) $(CHISEL2V_DONE) vpi
+$(SIM_BIN): $(SIM_VSRCS) $(SIM_CSRCS) $(ARCHIVES) $(CHISEL2V_DONE) $(VPI_DONE)
 	@rm -rf $(V2CXX_EMIT_DIR)
 	$(VERILATOR) $(VERILATOR_CFLAGS) \
 		$(SIM_CSRCS) $(NVBOARD_ARCHIVE) \

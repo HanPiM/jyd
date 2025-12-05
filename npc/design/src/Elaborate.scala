@@ -8,6 +8,8 @@ object Elaborate extends App {
       "locationInfoStyle=wrapInAtSquareBracket"
     ).reduce(_ + "," + _)
   )
+  println("Emitting Verilog...")
   circt.stage.ChiselStage.emitSystemVerilogFile(
     new top.Top(), args, firtoolOptions)
+  println("Finish emit Verilog.")
 }

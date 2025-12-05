@@ -41,7 +41,7 @@ class MemUnit   extends Module {
   val io = IO(new MemUnitIO)
 
   val sRdIdle :: sRdWait :: Nil = Enum(2)
-  val rdState                      = RegInit(sRdIdle)
+  val rdState                   = RegInit(sRdIdle)
   rdState := MuxCase(
     rdState,
     Seq(
@@ -61,7 +61,7 @@ class MemUnit   extends Module {
   )
 
   val sWrIdle :: sWrWait :: Nil = Enum(2)
-  val WrState                      = RegInit(sWrIdle)
+  val WrState                   = RegInit(sWrIdle)
   WrState := MuxLookup(WrState, sWrIdle)(
     Seq(
       sWrIdle -> Mux(io.write.en, sWrWait, sWrIdle),
@@ -108,5 +108,49 @@ class MemReadFSM extends Module {
   io.memTX.addr := io.addr
   io.data       := io.memTX.data
   io.valid      := (state === sDone)
+
+}
+
+class LoadStoreFSM extends Module {
+  val io = IO(new Bundle {
+    val memRd     = MemReqIO.ReadTX
+    val memWr     = MemReqIO.WriteTX
+    val reqValid  = Input(Bool())
+    val addr      = Input(Types.UWord)
+    val wen       = Input(Bool())
+    val wdata     = Input(Types.UWord)
+    val wmask     = Input(UInt(4.W))
+    val rdata     = Output(Types.UWord)
+    val respValid = Output(Bool())
+  })
+
+  val sNoneed :: sWaitMem :: sDone :: Nil = Enum(3)
+  val state                               = RegInit(sNoneed)
+  state := MuxLookup(state, sNoneed)(
+    Seq(
+      sNoneed  -> Mux(io.reqValid, sWaitMem, sNoneed),
+      sWaitMem -> Mux(io.respValid, sDone, sWaitMem),
+      sDone    -> Mux(io.reqValid, sDone, sNoneed)
+    )
+  )
+  val isLoad = !io.wen
+  val isStore = io.wen
+
+  io.memRd.en   := (state === sNoneed) && io.reqValid && isLoad
+  io.memRd.addr := io.addr
+
+  io.memWr.en   := (state === sNoneed) && io.reqValid && isStore
+  io.memWr.addr := io.addr
+  io.memWr.data := io.wdata
+  io.memWr.mask := io.wmask
+
+  io.rdata     := io.memRd.data
+  io.respValid := MuxCase(
+    false.B,
+    Seq(
+      isLoad  -> io.memRd.respValid,
+      isStore -> io.memWr.done
+    )
+  ) || (state === sDone)
 
 }

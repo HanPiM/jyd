@@ -413,36 +413,33 @@ class EXU           extends Module {
     }
   }
 
-//  printf("(exu) reg(%d) 0x%x reg(%d) 0x%x\n", dinst.info.rs1,reg_v1,dinst.info.rs2, reg_v2)
-//  printf("(exu) imm 0x%x\n", dinst.info.imm)
+  val memAddr                  = reg_v1 + dinst.info.imm
+  val memAddrUnalignPart       = memAddr(1, 0)
+  val memAddrUnalignPartBitlen = memAddrUnalignPart << 3
 
-  val mem_addr                     = reg_v1 + dinst.info.imm
-  val mem_addr_unalign_part        = mem_addr(1, 0)
-  val mem_addr_unalign_part_bitlen = mem_addr_unalign_part << 3
+  val memRdRawData = Reg(Types.UWord)
 
-  val mem_raddr = io.mem_rreq.addr
+  val isLoad = (dinst.info.typ === InstType.load) && MS_fsm.io.master_valid
+  val isStore = (dinst.info.typ === InstType.store) && MS_fsm.io.master_valid
+  val isMemOp = isLoad || isStore
 
-  val mem_raw_rdata = Reg(Types.UWord)
+  val memFSM = Module(new LoadStoreFSM)
+  
+  io.mem_rreq <> memFSM.io.memRd
+  io.mem_wreq <> memFSM.io.memWr
 
-  val is_load   = (dinst.info.typ === InstType.load) && MS_fsm.io.master_valid
-  val needRdMem = is_load && (!MS_fsm.io.slave_ready)
+  memFSM.io.reqValid := isMemOp&& (!MS_fsm.io.slave_ready)
+  memFSM.io.addr     := memAddr
 
-  when(io.mem_rreq.respValid) {
-    mem_raw_rdata := io.mem_rreq.data
+  when(memFSM.io.respValid) {
+    memRdRawData := memFSM.io.rdata
   }
 
-  val rdFSM = Module(new MemReadFSM)
-  io.mem_rreq <> rdFSM.io.memTX
-  rdFSM.io.need := needRdMem
-  rdFSM.io.addr := mem_addr
-
-  val mem_data = mem_raw_rdata >> mem_addr_unalign_part_bitlen
+  val memRdData = memRdRawData >> memAddrUnalignPartBitlen
 
   MS_fsm.io.self_finished := alu.io.out.valid && (
-    (!is_load) || rdFSM.io.valid
+    (!isMemOp)|| memFSM.io.respValid
   )
-
-  mem_raddr := mem_addr
 
   // wdata
 
@@ -461,11 +458,11 @@ class EXU           extends Module {
       InstType.jal        -> (dinst.pc + 4.U),
       InstType.load       -> MuxLookup(func3t, GARBAGE_UNINIT_VALUE)(
         Seq(
-          MemOp.byte     -> Cat(Fill(24, mem_data(7)), mem_data(7, 0)),
-          MemOp.halfword -> Cat(Fill(16, mem_data(15)), mem_data(15, 0)),
-          MemOp.word     -> mem_data,
-          MemOp.lbu      -> Cat(Fill(24, 0.U), mem_data(7, 0)),
-          MemOp.lhu      -> Cat(Fill(16, 0.U), mem_data(15, 0))
+          MemOp.byte     -> Cat(Fill(24, memRdData(7)), memRdData(7, 0)),
+          MemOp.halfword -> Cat(Fill(16, memRdData(15)), memRdData(15, 0)),
+          MemOp.word     -> memRdData,
+          MemOp.lbu      -> Cat(Fill(24, 0.U), memRdData(7, 0)),
+          MemOp.lhu      -> Cat(Fill(16, 0.U), memRdData(15, 0))
         )
       ),
       InstType.system     -> Mux(
@@ -483,13 +480,13 @@ class EXU           extends Module {
   when(dinst.info.typ === InstType.system) {
     when(!(is_ecall || is_mret)) {
       when(!CSROp.isValidCSRop(func3t)) {
-        // printf("(exu) UNKNOWN SYSTEM func3t %d\n", func3t)
+        printf("(exu) UNKNOWN SYSTEM func3t %d\n", func3t)
       }
     }
   }
   when(dinst.info.typ === InstType.load) {
     when(!MemOp.isValidLoadOp(func3t)) {
-//      printf("(exu) UNKNOWN LOAD func3t %d\n", func3t)
+      printf("(exu) UNKNOWN LOAD func3t %d\n", func3t)
     }
   }
 
@@ -497,35 +494,22 @@ class EXU           extends Module {
 
   // for now sw only consider align addr
 
-  val mem_wdata = io.mem_wreq.data
-  val mem_waddr = io.mem_wreq.addr
-  val mem_wen   = io.mem_wreq.en
-  val mem_wmask = io.mem_wreq.mask
+  val mem_wdata = memFSM.io.wdata
+  val mem_waddr = memFSM.io.addr
+  val mem_wen   = memFSM.io.wen
+  val mem_wmask = memFSM.io.wmask
 
-  val is_store = dinst.info.typ === InstType.store
 
-  mem_wdata := reg_v2 << mem_addr_unalign_part_bitlen
-  mem_waddr := mem_addr
+  mem_wdata := reg_v2 << memAddrUnalignPartBitlen
+  mem_waddr := memAddr
   mem_wmask := MuxLookup(func3t, 0.U)(
     Seq(
-      MemOp.byte     -> (1.U(4.W) << mem_addr_unalign_part),
-      MemOp.halfword -> (3.U(4.W) << mem_addr_unalign_part),
+      MemOp.byte     -> (1.U(4.W) << memAddrUnalignPart),
+      MemOp.halfword -> (3.U(4.W) << memAddrUnalignPart),
       MemOp.word     -> 15.U(4.W)
     )
   )
-
-//   printf("(exu) STORE to addr 0x%x data 0x%x mask 0b%b\n", mem_waddr, mem_wdata, mem_wmask)
-  val s_wmem_noneed :: s_wmem_wait :: s_wmem_ok :: Nil = Enum(3)
-  val mem_write_state                                  = RegInit(s_wmem_noneed)
-  mem_write_state := MuxLookup(mem_write_state, s_wmem_noneed)(
-    Seq(
-      s_wmem_noneed -> Mux(is_store, s_wmem_wait, s_wmem_noneed),
-      s_wmem_wait   -> Mux(io.mem_wreq.done, s_wmem_ok, s_wmem_wait),
-      s_wmem_ok     -> Mux(MS_fsm.io.slave_ready, s_wmem_noneed, s_wmem_ok)
-    )
-  )
-
-  mem_wen := is_store && (mem_write_state === s_wmem_wait)
+  mem_wen   := isStore
 
   when(dinst.info.typ === InstType.store) {
     when(!MemOp.isValidStoreOp(func3t)) {

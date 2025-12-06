@@ -12,7 +12,7 @@
 #include "elf_tool.hpp"
 #include "sdb.hpp"
 #include "tracers.hpp"
-#include "vpi_user.h"
+#include "verilated_fst_c.h"
 
 #include <getopt.h>
 #include <unistd.h>
@@ -35,17 +35,27 @@ typedef uint32_t addr_t;
 
 std::shared_ptr<sdb::debuger> dbg;
 sdb::difftest_trace_handler_ptr diff_handler;
+std::shared_ptr<VerilatedFstC> tfp;
+
+static uint64_t sim_time = 0;
 
 void sim_step_cycle() {
+
   if (sim_settings.trace_clock_cycle) {
     printf("[Clock Cycle Begin]\n");
   }
 
   dut.clock = 0;
   dut.eval();
+	sim_time++;
+
+	tfp->dump(sim_time);
 
   dut.clock = 1;
   dut.eval();
+	sim_time++;
+
+	tfp->dump(sim_time);
 
   if (sim_settings.nvboard) {
     nvboard_update();
@@ -349,6 +359,14 @@ bool sim_init(int argc, char **argv, sim_setting setting) {
         "../nemu/build/riscv32-nemu-interpreter-so", 0);
     dbg->add_trace(diff_handler);
   }
+
+
+  Verilated::traceEverOn(true);
+  tfp = std::shared_ptr<VerilatedFstC>(new VerilatedFstC,[](VerilatedFstC* p){
+		p->close();
+	});
+  dut.trace(tfp.get(), 99);
+  tfp->open(setting.wave_fst_file.c_str());
 
   reset(10);
 

@@ -13,6 +13,12 @@ SAN_FLAGS?= -fsanitize=address
 
 VERILATOR_CFLAGS ?=
 ENABLE_VPI ?= 1
+
+ENABLE_WAVE ?= 1
+ifeq ($(ENABLE_WAVE), 1)
+VERILATOR_CFLAGS += --trace-fst
+endif
+
 ifeq ($(ENABLE_VPI), 1)
 VERILATOR_CFLAGS += --vpi
 endif
@@ -88,7 +94,7 @@ include $(NVBOARD_HOME)/scripts/nvboard.mk
 
 # rules for verilator
 INCFLAGS = $(addprefix -I, $(INC_PATH))
-CXXFLAGS += $(INCFLAGS) -DTOP_NAME=V$(TOP_NAME)
+CXXFLAGS += $(INCFLAGS) -DTOP_NAME=V$(TOP_NAME) -DENABLE_VPI=$(ENABLE_VPI) -DENABLE_WAVE=$(ENABLE_WAVE)
 CXXFLAGS += $(SAN_FLAGS) -std=c++20 -g
 
 $(SIM_BIN): $(SIM_VSRCS) $(SIM_CSRCS) $(ARCHIVES) $(CHISEL2V_DONE) $(VPI_DONE) $(SIM_HEADERS)

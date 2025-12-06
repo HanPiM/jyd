@@ -26,6 +26,8 @@ struct sim_setting{
 	bool trace_clock_cycle=false;
 
 	cycle_end_callback_t cycle_finish_cb=nullptr;
+
+	std::string wave_fst_file="build/wave.fst";
 };
 
 bool sim_init(int argc, char** argv,sim_setting teg=sim_setting{});

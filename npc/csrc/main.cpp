@@ -65,6 +65,10 @@ int main(int argc, char **argv) {
 		}
     if (cmd.size() > 3 && cmd.substr(0, 2) == "ps") {
       std::string sig_name = cmd.substr(3);
+			if(sig_name=="*"){
+				sprobe.add_watch("TOP.Top");
+				continue;
+			}
       auto fullname = "TOP.Top." + sig_name;
       if (sprobe.add_watch(fullname))
         printf("Added watch for '%s'\n", fullname.c_str());

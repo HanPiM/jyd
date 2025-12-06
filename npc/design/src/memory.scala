@@ -1,6 +1,10 @@
 package memory
 import chisel3._
 import chisel3.util._
+
+// see https://www.chisel-lang.org/api/latest/chisel3/util/circt/dpi/index.html
+// chisel has native dpi interface since
+//  https://github.com/chipsalliance/chisel/pull/4158
 import chisel3.util.circt.dpi._
 
 import common_def._

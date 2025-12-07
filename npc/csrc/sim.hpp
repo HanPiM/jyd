@@ -8,6 +8,8 @@ VTop* get_dut();
 typedef void(*cycle_end_callback_t)();
 
 struct sim_setting{
+	bool enable_inst_trace=true;
+
 	bool showdisasm=true;
 	bool always_show_disasm=false;
 
@@ -26,6 +28,8 @@ struct sim_setting{
 	bool trace_clock_cycle=false;
 
 	cycle_end_callback_t cycle_finish_cb=nullptr;
+
+	bool enable_waveform=true;
 
 	std::string wave_fst_file="build/wave.fst";
 };

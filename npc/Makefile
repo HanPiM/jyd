@@ -9,7 +9,7 @@ default: $(SIM_BIN)
 
 SIM_IMG ?=
 
-SAN_FLAGS?= -fsanitize=address
+# SAN_FLAGS?= -fsanitize=address
 
 VERILATOR_CFLAGS ?=
 ENABLE_VPI ?= 1

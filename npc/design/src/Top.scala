@@ -131,12 +131,12 @@ class ysyx_25100261(word_width: Int = 32) extends Module {
   val exu = Module(new EXU)
   val wbu = Module(new WBU)
 
-  val INIT_PC = "h80000000".U(32.W)
-  val MEM_BASE = "h80000000".U(32.W)
-  val MEM_END  = "h8FFFFFFF".U(32.W)
-
-  val SERIAL_BASE = "h10000000".U(32.W)
-  val SERIAL_END  = "h10000001".U(32.W)
+  val INIT_PC = "h20000000".U(32.W)
+  // val MEM_BASE = "h80000000".U(32.W)
+  // val MEM_END  = "h8FFFFFFF".U(32.W)
+  //
+  // val SERIAL_BASE = "h10000000".U(32.W)
+  // val SERIAL_END  = "h10000001".U(32.W)
 
   val pc = RegInit(INIT_PC)
 
@@ -172,7 +172,7 @@ class ysyx_25100261(word_width: Int = 32) extends Module {
   val clint = Module(new CLINTUnit)
 
   val otherReqSlave = Wire(AXI4IO.Slave)
-  AXI4IO.connectMasterSlave(io.master, otherReqSlave)
+  AXI4IO.transformSlaveToMasterValidIf(!reset.asBool)(io.master, otherReqSlave)
 
   val memXBar = Module(new AXI4LiteXBar(Seq(
     // (MEM_BASE,MEM_END) -> mem.io,

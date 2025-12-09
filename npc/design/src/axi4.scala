@@ -89,8 +89,8 @@ object AXI4IO {
     slave.wlast := master.wlast
   }
   def noShakeConnectB(master: Imp, slave: Imp)  = {
-    master.bresp := slave.bresp
-    master.bid   := slave.bid
+    master.bresp <> slave.bresp
+    master.bid   <> slave.bid
   }
 
   def connectAW(master: Imp, slave: Imp) = {
@@ -118,10 +118,10 @@ object AXI4IO {
   }
 
   def noShakeConnectR(master: Imp, slave: Imp) = {
-    master.rdata := slave.rdata
-    master.rresp := slave.rresp
-    master.rlast := slave.rlast
-    master.rid   := slave.rid
+    master.rdata <> slave.rdata
+    master.rresp <> slave.rresp
+    master.rlast <> slave.rlast
+    master.rid   <> slave.rid
   }
 
   def newMaster(addrWidth: Int = 32, dataWidth: Int = 32) = new Imp(addrWidth, dataWidth)
@@ -147,8 +147,8 @@ object AXI4IO {
     }
     def dontCareNonLiteAR() = {
       arid    := 0.U
-      arlen   := 0.U
-      arsize  := 0.U
+      arlen   := 4.U
+      arsize  := 2.U
       arburst := 0.U
     }
     def dontCareNonLiteAW() = {
@@ -212,6 +212,27 @@ object AXI4IO {
   def connectMasterSlave(master: MasterT, slave: SlaveT) = {
     master <> slave
   }
+
+  def transformSlaveToMasterValidIf(cond: Bool)(master: MasterT, slave: SlaveT) = {
+    master.awvalid := Mux(cond, slave.awvalid, false.B)
+    master.wvalid  := Mux(cond, slave.wvalid, false.B)
+    master.bready  := Mux(cond, slave.bready, false.B)
+    master.arvalid := Mux(cond, slave.arvalid, false.B)
+    master.rready  := Mux(cond, slave.rready, false.B)
+
+    slave.awready := Mux(cond, master.awready, false.B)
+    slave.arready := Mux(cond, master.arready, false.B)
+    slave.wready  := Mux(cond, master.wready, false.B)
+    slave.bvalid  := Mux(cond, master.bvalid, false.B)
+    slave.rvalid  := Mux(cond, master.rvalid, false.B)
+
+    noShakeConnectAW(slave, master)
+    noShakeConnectW(slave, master)
+    noShakeConnectB(slave, master)
+    noShakeConnectAR(slave, master)
+    noShakeConnectR(slave, master)
+  }
+
 }
 
 object AXI4LiteIO_ {

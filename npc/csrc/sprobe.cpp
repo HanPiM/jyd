@@ -1,6 +1,11 @@
 #include "sprobe.hpp"
 
+#define _STR2(x) #x
+#define _STR(x) _STR2(x)
+
 void SProbe::dump_watched() {
+	static const std::string TOP_DOT = std::string(_STR(TOP_NAME)).substr(1) + ".";
+
     if (_watched.empty())
       return;
 
@@ -27,8 +32,8 @@ void SProbe::dump_watched() {
 
       // Remove the "TOP."
       auto cur_name = fullname.substr(4);
-      if (cur_name.starts_with("Top.")) {
-        cur_name = cur_name.substr(4);
+      if (cur_name.starts_with(TOP_DOT)) {
+        cur_name = cur_name.substr(TOP_DOT.size());
       }
 
       auto sig_value = h.getValue();

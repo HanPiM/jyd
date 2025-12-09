@@ -29,27 +29,28 @@ void read_and_check(std::string sig_name) {
 
 SProbe sprobe;
 void cyc_callback() {
-	if(sim_halted())
-		return;
-	sprobe.dump_watched();
+  if (sim_halted())
+    return;
+  sprobe.dump_watched();
 }
 
 int main(int argc, char **argv) {
-	sim_setting setting;
-	// setting.trace_pmem_readcall=true;
-	// setting.trace_pmem_writecall=true;
-	// setting.trace_clock_cycle=true;
-	// setting.always_show_disasm=true;
-	setting.enable_inst_trace=true;
-	// setting.trace_mmio_write=true;
-	setting.enable_waveform=false;
+  sim_setting setting;
+  // setting.trace_pmem_readcall=true;
+  // setting.trace_pmem_writecall=true;
+  // setting.trace_clock_cycle=true;
+  // setting.always_show_disasm=true;
+  setting.enable_inst_trace = true;
+  // setting.trace_mmio_write=true;
+  setting.enable_waveform = true;
 
-	setting.cycle_finish_cb=cyc_callback;
+  setting.cycle_finish_cb = cyc_callback;
   sim_init(argc, argv, setting);
 
   // get_dut()->contextp()->internalsDump(); // See scopes to help debug
 
-	std::string top_vpi_name = std::string("TOP.") + std::string(_STR(TOP_NAME)).substr(1);
+  std::string top_vpi_name =
+      std::string("TOP.") + std::string(_STR(TOP_NAME)).substr(1);
 
   vpiHandle top = vpi_handle_by_name((PLI_BYTE8 *)top_vpi_name.c_str(), NULL);
   assert(top);
@@ -66,17 +67,21 @@ int main(int argc, char **argv) {
   while (!sim_halted() && !quit) {
     std::cout << "(sdb) ";
     std::getline(std::cin, cmd);
-		if(cmd=="sc"){
-			sim_step_cycle();
-			continue;
-		}
+    if (cmd == "sc") {
+      sim_step_cycle();
+      continue;
+    }
     if (cmd.size() > 3 && cmd.substr(0, 2) == "ps") {
       std::string sig_name = cmd.substr(3);
-			if(sig_name=="*"){
-				sprobe.add_watch("TOP.Top");
-				continue;
-			}
-      auto fullname = "TOP.Top." + sig_name;
+      if (sig_name == "*") {
+        sprobe.add_watch(top_vpi_name);
+        continue;
+      }
+      if (sig_name.starts_with("`c.")) {
+        sig_name = "asic.cpu.cpu." + sig_name.substr(3);
+      }
+
+      auto fullname = top_vpi_name + '.' + sig_name;
       if (sprobe.add_watch(fullname))
         printf("Added watch for '%s'\n", fullname.c_str());
       continue;

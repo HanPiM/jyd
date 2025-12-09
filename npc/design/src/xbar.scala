@@ -38,8 +38,7 @@ class AXI4LiteXBar(mappings: Seq[((UInt, UInt), AXI4IO.SlaveT)]) extends Module 
 
   // val slaveIO = mappings.map(_._2.ioImp)
 
-  def slaveIO(i: Int) = io.slaves(i)
-  def slaveIO(i: UInt) = io.slaves(i)
+  val slaveIO = io.slaves
 
   for ((((addrBeg, addrEnd), _), i) <- mappings.zipWithIndex) {
     isAR(i) := (master.araddr >= addrBeg) && (master.araddr < addrEnd)

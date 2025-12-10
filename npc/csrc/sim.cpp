@@ -303,14 +303,14 @@ extern "C" void mrom_read(int32_t addr, int32_t *data) {
   constexpr uint32_t MROM_BASE = 0x20000000u;
   assert(addr >= MROM_BASE);
   addr -= MROM_BASE;
-  static const uint32_t mrom[] = {
-      0x100007b7, 0x04100713, 0x00e78023, 0x00000013, 0xffdff06f,
-
-  };
+  // static const uint32_t mrom[] = {
+  //     0x100007b7, 0x04100713, 0x00e78023, 0x00000013, 0xffdff06f,
+  //
+  // };
   assert(addr % 4 == 0);
   size_t index = addr / 4;
-  assert(index < sizeof(mrom) / sizeof(mrom[0]));
-  *data = mrom[index];
+  assert(index < img_size / 4);
+  *data = mem[index];
 }
 
 // ARG

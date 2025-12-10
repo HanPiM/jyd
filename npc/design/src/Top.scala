@@ -178,7 +178,7 @@ class ysyx_25100261(word_width: Int = 32) extends Module {
     // (MEM_BASE,MEM_END) -> mem.io,
     // (SERIAL_BASE,SERIAL_END) -> uart.io,
     ("h02000000".U(32.W),"h0200ffff".U(32.W)) -> clint.io,
-    ("h10000000".U(32.W),"hffffffff".U(32.W)) -> otherReqSlave
+    ("h0f000000".U(32.W),"hffffffff".U(32.W)) -> otherReqSlave
   )))
 
   AXI4IO.connectMasterSlave(memArbiter.io.out, memXBar.io.in)

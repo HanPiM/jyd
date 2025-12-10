@@ -28,6 +28,8 @@ class AXI4LiteXBar(mappings: Seq[((UInt, UInt), AXI4IO.SlaveT)]) extends Module 
 
   val isAR = Wire(Vec(mappings.size, Bool()))
   val isAW = Wire(Vec(mappings.size, Bool()))
+  dontTouch(isAR)
+  dontTouch(isAW)
 
   val hasLastRdReq = RegInit(false.B)
   val hasLastWrReq = RegInit(false.B)

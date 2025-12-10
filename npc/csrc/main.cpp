@@ -41,6 +41,7 @@ int main(int argc, char **argv) {
   // setting.trace_clock_cycle=true;
   // setting.always_show_disasm=true;
   setting.enable_inst_trace = true;
+	setting.difftest = false;
   // setting.trace_mmio_write=true;
   setting.enable_waveform = true;
 

@@ -27,7 +27,7 @@ void nvboard_bind_all_pins(TOP_NAME *top);
 typedef uint32_t word_t;
 typedef uint32_t addr_t;
 
-#define MADDR_BASE 0x80000000u
+#define MADDR_BASE 0x20000000u
 #define INITIAL_PC MADDR_BASE
 
 // #define TRACE_PMEM_CALL
@@ -61,7 +61,7 @@ void sim_step_cycle() {
   cycle_count++;
 
 #ifdef ENABLE_NVBOARD
-    nvboard_update();
+  nvboard_update();
 #endif
 
   if (sim_settings.trace_clock_cycle) {
@@ -252,8 +252,8 @@ void step_inst() {
         }
         continue;
       } else {
-				printf("sim exit\n");
-				exit(1);
+        printf("sim exit\n");
+        exit(1);
       }
     }
   }
@@ -299,8 +299,18 @@ static long load_img() {
 }
 
 extern "C" void flash_read(int32_t addr, int32_t *data) { assert(0); }
-extern "C" void mrom_read(int32_t addr, int32_t *data) { 
-	*data = 0x100073; // ebreak
+extern "C" void mrom_read(int32_t addr, int32_t *data) {
+  constexpr uint32_t MROM_BASE = 0x20000000u;
+  assert(addr >= MROM_BASE);
+  addr -= MROM_BASE;
+  static const uint32_t mrom[] = {
+      0x100007b7, 0x04100713, 0x00e78023, 0x00000013, 0xffdff06f,
+
+  };
+  assert(addr % 4 == 0);
+  size_t index = addr / 4;
+  assert(index < sizeof(mrom) / sizeof(mrom[0]));
+  *data = mrom[index];
 }
 
 // ARG
@@ -341,7 +351,8 @@ void shot_regsnap(sdb::reg_snapshot_t &regsnap) {
 }
 sdb::vlen_inst_code inst_fetcher(sdb::paddr_t pc) {
   word_t inst;
-  fetch_inst(pc, (int *)&inst);
+  mrom_read(pc, (int *)&inst);
+  // fetch_inst(pc, (int *)&inst);
   uint8_t *p = (uint8_t *)&inst;
   return sdb::vlen_inst_code(p, p + 4);
 }
@@ -349,11 +360,11 @@ uint8_t *loadmem(sdb::paddr_t addr, size_t nbyte) { return mem_atguest(addr); }
 } // namespace sdbwrap
 
 bool sim_init(int argc, char **argv, sim_setting setting) {
-	Verilated::commandArgs(argc, argv);
+  Verilated::commandArgs(argc, argv);
   sim_settings = setting;
 #ifdef ENABLE_NVBOARD
-    nvboard_bind_all_pins(&dut);
-    nvboard_init();
+  nvboard_bind_all_pins(&dut);
+  nvboard_init();
 #endif
 
   parse_args(argc, argv);

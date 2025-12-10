@@ -148,6 +148,9 @@ class EXU extends Module {
 
   val memWDone = Reg(Bool())
   val memRDone = Reg(Bool())
+
+  val memAddrSent = Reg(Bool())
+
   val memOPDone = memWDone || memRDone
 
   val memIO = io.mem
@@ -156,20 +159,60 @@ class EXU extends Module {
   io.mem.dontCareNonLiteAW()
   io.mem.dontCareNonLiteW()
 
-  memIO.araddr := memAddr
-  memIO.arvalid := isLoad && (!memRDone)
+  memIO.araddr  := memAddr
+  memIO.arvalid := isLoad && (!memRDone) && (!memAddrSent)
   when(memIO.arvalid && memIO.arready) {
+    memAddrSent := true.B
   }
   when(memIO.rvalid && !memRDone) {
     memRdRawData := memIO.rdata
-    memRDone    := true.B
+    memRDone     := true.B
   }
-  memIO.rready := true.B
+  memIO.rready  := true.B
   when(!isMemOp) {
-    memRDone := false.B
+    memRDone    := false.B
+    memWDone    := false.B
+    memAddrSent := false.B
   }
 
   val memRdData = memRdRawData >> memAddrUnalignPartBitlen
+
+  // mem write
+
+  // for now sw only consider align addr
+
+  val memWAddr = memIO.awaddr
+  val memWData = memIO.wdata
+  val memWMask = memIO.wstrb
+
+  memIO.awvalid := isStore && (!memWDone) && (!memAddrSent)
+  memIO.wvalid  := isStore && (!memWDone)
+
+  when(memIO.awvalid && memIO.awready) {
+    memAddrSent := true.B
+  }
+  when(memIO.wvalid && memIO.wready) {
+    memWDone := true.B
+  }
+
+  when(memIO.bvalid) {}
+  memIO.bready := true.B
+
+  memWData := reg_v2 << memAddrUnalignPartBitlen
+  memWAddr := memAddr
+  memWMask := MuxLookup(func3t, 0.U)(
+    Seq(
+      MemOp.byte     -> (1.U(4.W) << memAddrUnalignPart),
+      MemOp.halfword -> (3.U(4.W) << memAddrUnalignPart),
+      MemOp.word     -> 15.U(4.W)
+    )
+  )
+
+  when(dinst.info.typ === InstType.store) {
+    when(!MemOp.isValidStoreOp(func3t)) {
+      printf("(exu) UNKNOWN STORE func3t %d\n", func3t)
+    }
+  }
 
   MS_fsm.io.self_finished := alu.io.out.valid && (
     (!isMemOp) || memOPDone
@@ -221,46 +264,6 @@ class EXU extends Module {
   when(dinst.info.typ === InstType.load) {
     when(!MemOp.isValidLoadOp(func3t)) {
       printf("(exu) UNKNOWN LOAD func3t %d\n", func3t)
-    }
-  }
-
-  // mem write
-
-  // for now sw only consider align addr
-
-
-  val memWAddr = memIO.awaddr
-  val memWData = memIO.wdata
-  val memWMask = memIO.wstrb
-
-  memIO.awvalid := isStore && (!memWDone)
-  memIO.wvalid  := isStore && (!memWDone)
-
-  when(memIO.awvalid && memIO.awready){}
-  when(memIO.wvalid && memIO.wready){}
-
-  when(memIO.bvalid) {
-    memWDone := true.B
-  }
-  memIO.bready := true.B
-
-  when(!isStore) {
-    memWDone := false.B
-  }
-
-  memWData := reg_v2 << memAddrUnalignPartBitlen
-  memWAddr := memAddr
-  memWMask := MuxLookup(func3t, 0.U)(
-    Seq(
-      MemOp.byte     -> (1.U(4.W) << memAddrUnalignPart),
-      MemOp.halfword -> (3.U(4.W) << memAddrUnalignPart),
-      MemOp.word     -> 15.U(4.W)
-    )
-  )
-
-  when(dinst.info.typ === InstType.store) {
-    when(!MemOp.isValidStoreOp(func3t)) {
-      printf("(exu) UNKNOWN STORE func3t %d\n", func3t)
     }
   }
 

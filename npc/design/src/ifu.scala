@@ -21,6 +21,7 @@ class IFU extends Module {
   val lastPC = RegNext(io.pc.bits)
   val code = Reg(Types.UWord)
   val fetchDone = Reg(Bool())
+  val arSent = Reg(Bool())
   val pcChanged = io.pc.bits =/= lastPC
 
   dontTouch(code)
@@ -33,13 +34,14 @@ class IFU extends Module {
   io.mem.dontCareW()
   io.mem.dontCareB()
 
-  memIO.arvalid := io.pc.valid && (!fetchDone)
+  memIO.arvalid := io.pc.valid && (!fetchDone) && (!arSent)
   memIO.araddr  := io.pc.bits
 
   // not use now
   io.mem.dontCareNonLiteAR()
 
   when(memIO.arvalid && memIO.arready) {
+    arSent := true.B
   }
 
 
@@ -51,6 +53,7 @@ class IFU extends Module {
 
   when(!fsm.io.master_valid || pcChanged) {
     fetchDone := false.B
+    arSent := false.B
   }
 
   fsm.io.self_finished := fetchDone

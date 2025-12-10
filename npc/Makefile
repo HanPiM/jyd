@@ -115,6 +115,8 @@ VERILATOR_INCDIRS+= $(shell find $(CHISEL2V_EMIT_DIR) -type d)
 
 VERILATOR_CFLAGS += -MMD --build -cc \
 										--x-assign fast --x-initial fast \
+										--autoflush \
+										--output-split 20000 \
 										$(addprefix -I,$(VERILATOR_INCDIRS)) \
 # --noassert -O3
 

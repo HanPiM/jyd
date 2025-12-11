@@ -41,6 +41,7 @@ int main(int argc, char **argv) {
   // setting.trace_clock_cycle=true;
   // setting.always_show_disasm=true;
   setting.enable_inst_trace = true;
+	setting.ftrace = true;
 	// setting.difftest = false;
   // setting.trace_mmio_write=true;
   setting.enable_waveform = true;
@@ -49,15 +50,15 @@ int main(int argc, char **argv) {
   sim_init(argc, argv, setting);
 
   // get_dut()->contextp()->internalsDump(); // See scopes to help debug
-
+  //
   std::string top_vpi_name =
       std::string("TOP.") + std::string(_STR(TOP_NAME)).substr(1);
-
-  vpiHandle top = vpi_handle_by_name((PLI_BYTE8 *)top_vpi_name.c_str(), NULL);
-  assert(top);
-
-  vpi_release_handle(top);
-
+  //
+  // vpiHandle top = vpi_handle_by_name((PLI_BYTE8 *)top_vpi_name.c_str(), NULL);
+  // assert(top);
+  //
+  // vpi_release_handle(top);
+  //
   // std::cout << "===== All Signal Probed =====" << std::endl;
   // for (auto &n : sprobe._fullnames) {
   //   std::cout << n << std::endl;

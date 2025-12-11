@@ -144,7 +144,7 @@ void pc_upd(int pc, int npc) {
   //	printf("pc upd pc=%08x npc=%08x\n",pc,npc);
   pc_changed = true;
   current_pc = npc;
-	// dump_regs();
+  // dump_regs();
 }
 
 void skip_difftest_ref() {
@@ -279,7 +279,7 @@ static long load_img() {
 
   if (img_file == NULL) {
     Log("No image is given. Use the default build-in image.");
-    return img_size=4096; // built-in image size
+    return img_size = 4096; // built-in image size
   }
 
   FILE *fp = fopen(img_file, "rb");
@@ -310,7 +310,7 @@ extern "C" void mrom_read(int32_t addr, int32_t *data) {
   // };
   assert(addr % 4 == 0);
   size_t index = addr / 4;
-	// printf("mrom read addr=%08x index=%lu\n",addr,index);
+  // printf("mrom read addr=%08x index=%lu\n",addr,index);
   assert(index < img_size / 4);
   *data = mem[index];
 }
@@ -376,15 +376,6 @@ bool sim_init(int argc, char **argv, sim_setting setting) {
 
   load_img();
 
-  if (img_file && setting.ftrace) {
-    auto elf_file = try_find_elf_file_of(img_file);
-
-    if (!elf_file.empty()) {
-      printf("Found ELF file: %s\n", elf_file.c_str());
-      dbg->add_trace(sdb::make_ftrace_handler(elf_file));
-    }
-  }
-
   dbg = std::make_shared<sdb::debuger>(
       INITIAL_PC, INITIAL_PC, img_size, sdbwrap::cpu_exec, sdbwrap::loadmem,
       sdbwrap::shot_regsnap,
@@ -403,6 +394,15 @@ bool sim_init(int argc, char **argv, sim_setting setting) {
       dbg->add_trace(sdb::make_etrace_handler());
     if (setting.iringbuf)
       dbg->add_trace(sdb::make_iringbuf_trace_handler());
+
+    if (img_file && setting.ftrace) {
+      auto elf_file = try_find_elf_file_of(img_file);
+
+      if (!elf_file.empty()) {
+        printf("Found ELF file: %s\n", elf_file.c_str());
+        dbg->add_trace(sdb::make_ftrace_handler(elf_file));
+      }
+    }
 
     if (setting.difftest) {
       diff_handler = sdb::make_difftest_trace_handler(

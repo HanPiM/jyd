@@ -81,7 +81,10 @@ class EXUIFU_MemVisitArbiter extends Module {
   outIO.arvalid := exuIO.arvalid || ifuIO.arvalid
   outIO.araddr  := Mux(isExu, exuIO.araddr, ifuIO.araddr)
 
-  io.out.dontCareNonLiteAR()
+  outIO.arid    := Mux(isExu, exuIO.arid, ifuIO.arid)
+  outIO.arlen   := Mux(isExu, exuIO.arlen, ifuIO.arlen)
+  outIO.arsize  := Mux(isExu, exuIO.arsize, ifuIO.arsize)
+  outIO.arburst := Mux(isExu, exuIO.arburst, ifuIO.arburst)
 
   exuIO.arready := isExu && outIO.arready
   ifuIO.arready := isIfu && outIO.arready
@@ -191,7 +194,20 @@ class ysyx_25100261(word_width: Int = 32) extends Module {
     stop()
     stop()
   }
-
+  val SERIAL_ADDR_BASE = "h10000000".U(32.W)
+  val SERIAL_ADDR_END  = "h10000020".U(32.W)
+  when(io.master.awvalid && io.master.awaddr >= SERIAL_ADDR_BASE && io.master.awaddr < SERIAL_ADDR_END && io.master.awready){
+    RawClockedVoidFunctionCall("skip_difftest_ref")(
+      clock,
+      true.B
+    )
+  }
+  when(io.master.arvalid && io.master.araddr >= SERIAL_ADDR_BASE && io.master.araddr < SERIAL_ADDR_END && io.master.arready){
+    RawClockedVoidFunctionCall("skip_difftest_ref")(
+      clock,
+      true.B
+    )
+  }
   AXI4IO.connectMasterSlave(memArbiter.io.out, memXBar.io.in)
   memXBar.connect()
 

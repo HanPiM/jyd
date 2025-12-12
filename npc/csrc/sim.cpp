@@ -1,6 +1,7 @@
 #include "sim.hpp"
 
 #include <array>
+#include <cassert>
 #include <cstdint>
 #include <cstdio>
 #include <string_view>
@@ -148,6 +149,9 @@ void pc_upd(int pc, int npc) {
 }
 
 void skip_difftest_ref() {
+  if (sim_settings.trace_difftest_skip) {
+    printf("[DPI] skip_difftest_ref called\n");
+  }
   if (diff_handler)
     diff_handler->skip_ref();
 }
@@ -308,11 +312,10 @@ extern "C" void mrom_read(int32_t addr, int32_t *data) {
   //     0x100007b7, 0x04100713, 0x00e78023, 0x00000013, 0xffdff06f,
   //
   // };
-  assert(addr % 4 == 0);
-  size_t index = addr / 4;
-  // printf("mrom read addr=%08x index=%lu\n",addr,index);
-  assert(index < img_size / 4);
-  *data = mem[index];
+	assert(addr < sizeof(mem));
+	uintptr_t ptr = (uintptr_t)mem + addr;
+	*data = *(int32_t *)ptr;
+	// printf("[DPI] mrom_read addr=%08x data=%08x\n", addr + MROM_BASE, *data);
 }
 
 // ARG
@@ -421,7 +424,7 @@ bool sim_init(int argc, char **argv, sim_setting setting) {
 
   reset(10);
 
-  if (batch_mode) {
+  if (batch_mode && !setting.no_batch) {
     dbg->exec_command("c");
     return dbg->state().is_badexit();
   }

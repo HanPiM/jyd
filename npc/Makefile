@@ -60,6 +60,7 @@ ifeq ($(ENABLE_VPI), 1)
 	sed -i '1i /*verilator public_on*/' $(src); \
 	sed -i -e '$$a /*verilator public_off*/' $(src);)
 	touch $(VPI_DONE)
+	@echo "VPI insertion done"
 endif
 
 # sdb
@@ -113,14 +114,14 @@ VERILATOR_CFLAGS += -Wno-SYMRSVDWORD # make uart verilog happy
 # VERILATOR_CFLAGS += -Wno-UNOPTFLAT
 # rules for verilator
 
-VERILATOR_CFLAGS += -MMD -cc\
+VERILATOR_CFLAGS += -MMD -cc \
+										--x-assign fast --x-initial fast \
 										--autoflush \
 										--hierarchical \
 										--compiler clang \
 										$(addprefix -I,$(VERILATOR_INCDIRS)) \
 
 										# --output-split 20000 
-										# --x-assign fast --x-initial fast \
 
 VERILATOR_CONTROL_FILE = verilator.vlt
 
@@ -134,6 +135,8 @@ CXXFLAGS += $(SAN_FLAGS) -std=c++20 -g # -fno-inline -O0
 # make link faster
 LDFLAGS += -fuse-ld=mold
 
+VSIM_OPT?= -O0
+
 $(SIM_BIN): $(SIM_VSRCS) $(SIM_CSRCS) $(ARCHIVES) $(CHISEL2V_DONE) $(VPI_DONE) $(SIM_HEADERS)
 	@rm -rf $(V2CXX_EMIT_DIR)
 	@$(VERILATOR) $(VERILATOR_CFLAGS) \
@@ -142,7 +145,7 @@ $(SIM_BIN): $(SIM_VSRCS) $(SIM_CSRCS) $(ARCHIVES) $(CHISEL2V_DONE) $(VPI_DONE) $
 		$(addprefix -CFLAGS , $(CXXFLAGS)) \
 		$(addprefix -LDFLAGS , $(LDFLAGS)) \
 		--Mdir $(V2CXX_EMIT_DIR) --exe -o $(abspath $(SIM_BIN))
-	make -C $(V2CXX_EMIT_DIR) -f V$(TOP_NAME).mk -j$(shell nproc) OPT_FAST="-O0" CXX=clang++
+	make -C $(V2CXX_EMIT_DIR) -f V$(TOP_NAME).mk -j$(shell nproc) OPT_FAST=$(VSIM_OPT) CXX=clang++ LINK=clang++
 
 all: default
 

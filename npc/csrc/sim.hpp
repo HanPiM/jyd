@@ -3,43 +3,47 @@
 #include "vsrc.hpp"
 #include <string_view>
 
-TOP_NAME* get_dut();
+TOP_NAME *get_dut();
 
-typedef void(*cycle_end_callback_t)();
+typedef void (*cycle_end_callback_t)();
 
-struct sim_setting{
-	bool en_inst_trace=true;
+struct sim_setting {
+  bool en_inst_trace = true;
 
-	bool en_showdisasm=true;
-	bool always_showdisasm=false;
+  bool en_showdisasm = true;
+  bool always_showdisasm = false;
 
-	bool ftrace=false;
-	bool iringbuf=true;
-	bool etrace=true;
-	bool difftest=true;
+	bool no_batch = false;
 
-	bool trace_pmem_readcall=false;
-	bool trace_pmem_writecall=false;
-	bool trace_inst_fetchcall=false;
-	bool trace_mmio_write=false;
+  bool ftrace = false;
+  bool iringbuf = true;
+  bool etrace = true;
+  bool difftest = true;
 
-	bool trace_clock_cycle=false;
+  bool trace_difftest_skip = false;
 
-	cycle_end_callback_t cycle_finish_cb=nullptr;
+  bool trace_pmem_readcall = false;
+  bool trace_pmem_writecall = false;
+  bool trace_inst_fetchcall = false;
+  bool trace_mmio_write = false;
 
-	bool enable_waveform=true;
+  bool trace_clock_cycle = false;
 
-	std::string wave_fst_file="build/wave.fst";
+  cycle_end_callback_t cycle_finish_cb = nullptr;
+
+  bool enable_waveform = true;
+
+  std::string wave_fst_file = "build/wave.fst";
 };
 
 // unchange item if not set in env
-void load_sim_setting_from_env(sim_setting& setting);
+void load_sim_setting_from_env(sim_setting &setting);
 
-bool sim_init(int argc, char** argv,sim_setting teg=sim_setting{});
+bool sim_init(int argc, char **argv, sim_setting teg = sim_setting{});
 
 void sim_step_cycle();
 
 bool sim_halted();
 bool sim_hit_good_trap();
 
-void sim_exec_sdbcmd(std::string_view cmd,bool& quit);
+void sim_exec_sdbcmd(std::string_view cmd, bool &quit);

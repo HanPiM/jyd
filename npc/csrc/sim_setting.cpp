@@ -25,10 +25,12 @@ void load_sim_setting_from_env(sim_setting &setting) {
   GET(en_inst_trace);
   GET(en_showdisasm);
   GET(always_showdisasm);
+	GET(no_batch);
   GET(ftrace);
   GET(iringbuf);
   GET(etrace);
   GET(difftest);
+	GET(trace_difftest_skip);
   GET(trace_pmem_readcall);
   GET(trace_pmem_writecall);
   GET(trace_inst_fetchcall);

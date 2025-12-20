@@ -19,6 +19,7 @@ int main(int argc, char **argv) {
 	load_sim_setting_from_env(setting);
   setting.cycle_finish_cb = cyc_callback;
   if(sim_init(argc, argv, setting)!=0){
+		get_dut()->final();
 		return 1;
 	}
 

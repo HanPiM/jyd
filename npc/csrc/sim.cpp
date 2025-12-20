@@ -303,15 +303,31 @@ static long load_img() {
   return img_size;
 }
 
-extern "C" void flash_read(int32_t addr, int32_t *data) { assert(0); }
+uint32_t flash_data[8192];
+static void init_flash() {
+	uint8_t* flash_ptr = (uint8_t*)flash_data;
+	for (size_t i = 0; i < sizeof(flash_data); i++) {
+		flash_ptr[i] = i & 0xFF;
+	}
+}
+extern "C" void flash_read(int32_t addr, int32_t *data) {
+	constexpr uint32_t FLASH_BASE = 0x30000000u;
+	
+	// in spi
+	//   .addr({8'b0, in_paddr[23:2], 2'b0}),
+	// so the high 8 bits are ignored
+	// 0x3XXXXXXX -> 0x0XXXXXXX
+	// no need to minus FLASH_BASE
+	assert(addr < sizeof(flash_data));
+	addr &= ~0x3;
+	uintptr_t ptr = (uintptr_t)flash_data + addr;
+	*data = *(int32_t *)ptr;
+}
+
 extern "C" void mrom_read(int32_t addr, int32_t *data) {
   constexpr uint32_t MROM_BASE = 0x20000000u;
   assert(addr >= MROM_BASE);
   addr -= MROM_BASE;
-  // static const uint32_t mrom[] = {
-  //     0x100007b7, 0x04100713, 0x00e78023, 0x00000013, 0xffdff06f,
-  //
-  // };
 	assert(addr < sizeof(mem));
 	addr &= ~0x3;
 	uintptr_t ptr = (uintptr_t)mem + addr;
@@ -380,6 +396,8 @@ bool sim_init(int argc, char **argv, sim_setting setting) {
 
   load_img();
 
+	init_flash();
+
   dbg = std::make_shared<sdb::debuger>(
       INITIAL_PC, INITIAL_PC, img_size, sdbwrap::cpu_exec, sdbwrap::loadmem,
       sdbwrap::shot_regsnap,
@@ -389,7 +407,7 @@ bool sim_init(int argc, char **argv, sim_setting setting) {
   dbg->enable_inst_trace = setting.en_inst_trace;
 
   if (setting.en_inst_trace) {
-    if (setting.en_showdisasm) {
+    if (setting.showdisasm) {
       size_t inst_show_limit = setting.always_showdisasm ? SIZE_MAX : 16;
       dbg->add_trace(sdb::make_disasm_trace_handler(sdb::default_inst_disasm,
                                                     inst_show_limit));
@@ -415,7 +433,7 @@ bool sim_init(int argc, char **argv, sim_setting setting) {
     }
   }
 
-  if (setting.enable_waveform) {
+  if (setting.en_waveform) {
     Verilated::traceEverOn(true);
     tfp = std::shared_ptr<VerilatedFstC>(new VerilatedFstC,
                                          [](VerilatedFstC *p) { p->close(); });

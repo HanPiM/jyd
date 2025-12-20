@@ -4,7 +4,9 @@ TOP_NAME = ysyxSoCFull
 #ysyx_25100261
 
 SIM_CSRC_DIR = ./csrc
-SIM_BIN = $(BUILD_DIR)/$(TOP_NAME)
+VSIM_OPT?= -O0
+SIM_BIN_DIR = $(BUILD_DIR)/bin
+SIM_BIN = $(SIM_BIN_DIR)/$(TOP_NAME)$(VSIM_OPT)
 
 VERILATOR = verilator
 
@@ -71,6 +73,7 @@ ARCHIVES += $(NVBOARD_ARCHIVE) $(abspath ../sdb/build/libsdb.a)
 
 # dirs
 $(shell mkdir -p $(BUILD_DIR))
+$(shell mkdir -p $(SIM_BIN_DIR))
 $(shell mkdir -p $(V2CXX_EMIT_DIR))
 $(shell mkdir -p $(CHISEL2V_EMIT_DIR))
 
@@ -117,10 +120,10 @@ VERILATOR_CFLAGS += -Wno-SYMRSVDWORD # make uart verilog happy
 VERILATOR_CFLAGS += -MMD -cc \
 										--x-assign fast --x-initial fast \
 										--autoflush \
-										--hierarchical \
 										--compiler clang \
 										$(addprefix -I,$(VERILATOR_INCDIRS)) \
 
+VERILATOR_CFLAGS += --hierarchical
 										# --output-split 20000 
 
 VERILATOR_CONTROL_FILE = verilator.vlt
@@ -135,9 +138,8 @@ CXXFLAGS += $(SAN_FLAGS) -std=c++20 -g # -fno-inline -O0
 # make link faster
 LDFLAGS += -fuse-ld=mold
 
-VSIM_OPT?= -O0
 
-$(SIM_BIN): $(SIM_VSRCS) $(SIM_CSRCS) $(ARCHIVES) $(CHISEL2V_DONE) $(VPI_DONE) $(SIM_HEADERS)
+$(SIM_BIN): $(SIM_VSRCS) $(SIM_CSRCS) $(ARCHIVES) $(CHISEL2V_DONE) $(VPI_DONE) $(SIM_HEADERS) $(VERILATOR_CONTROL_FILE)
 	@rm -rf $(V2CXX_EMIT_DIR)
 	@$(VERILATOR) $(VERILATOR_CFLAGS) \
 		$(SIM_CSRCS) $(NVBOARD_ARCHIVE) \
@@ -145,7 +147,7 @@ $(SIM_BIN): $(SIM_VSRCS) $(SIM_CSRCS) $(ARCHIVES) $(CHISEL2V_DONE) $(VPI_DONE) $
 		$(addprefix -CFLAGS , $(CXXFLAGS)) \
 		$(addprefix -LDFLAGS , $(LDFLAGS)) \
 		--Mdir $(V2CXX_EMIT_DIR) --exe -o $(abspath $(SIM_BIN))
-	make -C $(V2CXX_EMIT_DIR) -f V$(TOP_NAME).mk -j$(shell nproc) OPT_FAST=$(VSIM_OPT) CXX=clang++ LINK=clang++
+	@make -C $(V2CXX_EMIT_DIR) -f V$(TOP_NAME).mk -j$(shell nproc) OPT_FAST=$(VSIM_OPT) CXX=clang++ LINK=clang++
 
 all: default
 
@@ -173,7 +175,7 @@ clean:
 	-rm -rf $(BUILD_DIR)
 
 clean-bin:
-	-rm -f $(SIM_BIN)
+	-rm -rf $(SIM_BIN_DIR)
 
 .PHONY: test help reformat checkformat clean
 
@@ -181,6 +183,6 @@ ARGS?=
 sim: $(SIM_BIN)
 	$(call git_commit, "sim RTL") # DO NOT REMOVE THIS LINE!!!
 	@echo "Run the simulation"
-	@$^ $(ARGS) $(SIM_IMG)
+	@LSAN_OPTIONS=suppressions=asan_suppress.txt $^ $(ARGS) $(SIM_IMG)
 
 -include ../Makefile

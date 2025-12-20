@@ -10,7 +10,7 @@ typedef void (*cycle_end_callback_t)();
 struct sim_setting {
   bool en_inst_trace = true;
 
-  bool en_showdisasm = true;
+  bool showdisasm = true;
   bool always_showdisasm = false;
 
 	bool no_batch = false;
@@ -31,7 +31,7 @@ struct sim_setting {
 
   cycle_end_callback_t cycle_finish_cb = nullptr;
 
-  bool enable_waveform = true;
+  bool en_waveform = true;
 
   std::string wave_fst_file = "build/wave.fst";
 };

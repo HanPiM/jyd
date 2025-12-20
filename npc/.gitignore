@@ -26,3 +26,6 @@ out/
 test_run_dir/
 
 !*.sh
+!*.lua
+!*.vlt
+!*.txt

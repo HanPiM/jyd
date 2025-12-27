@@ -34,10 +34,10 @@
 
 #define R(i) gpr(i)
 
-static word_t _handel_csr_rw(word_t csr, word_t src1, bool is_write);
-static word_t _csr_read(word_t csr) { return _handel_csr_rw(csr, 0, 0); }
+static word_t _handle_csr_rw(word_t csr, word_t src1, bool is_write);
+static word_t _csr_read(word_t csr) { return _handle_csr_rw(csr, 0, 0); }
 static void _csr_write(word_t csr, word_t src1) {
-  _handel_csr_rw(csr, src1, 1);
+  _handle_csr_rw(csr, src1, 1);
 }
 
 // generate in out.cc
@@ -103,7 +103,7 @@ static int decode_exec(Decode *s) {
 
 extern word_t g_csr_MTVEC;
 
-word_t _handel_csr_rw(word_t csr, word_t src1, bool is_write) {
+word_t _handle_csr_rw(word_t csr, word_t src1, bool is_write) {
   static word_t g_csr_MCAUSE = 0, g_csr_MEPC = 0, g_csr_MVENDORID = 0x79737978,
                 g_csr_MARCHID = 25100261, g_csr_MSTATUS = 0x1800;
 

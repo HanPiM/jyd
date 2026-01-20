@@ -303,12 +303,25 @@ static long load_img() {
   return img_size;
 }
 
-uint32_t flash_data[8192];
+uint32_t flash_data[8192]=
+{
+0x100007b7,
+0x04100713,
+0x00e78023,
+0x00000013,
+0xffdff06f,
+};
 static void init_flash() {
-	uint8_t* flash_ptr = (uint8_t*)flash_data;
-	for (size_t i = 0; i < sizeof(flash_data); i++) {
-		flash_ptr[i] = i & 0xFF;
-	}
+	// uint8_t* flash_ptr = (uint8_t*)flash_data;
+	// for (size_t i = 0; i < sizeof(flash_data); i++) {
+	// 	flash_ptr[i] = i & 0xFF;
+	// }
+	// for(size_t i=0;i<8192;i++) {
+	// 	flash_data[i] = i;
+	// }
+	// flash_data[0] = 0x12345678;
+	// flash_data[1] = 0x9abcdef0;
+	// flash_data[2] = 0x19198100;
 }
 extern "C" void flash_read(int32_t addr, int32_t *data) {
 	constexpr uint32_t FLASH_BASE = 0x30000000u;
@@ -324,8 +337,11 @@ extern "C" void flash_read(int32_t addr, int32_t *data) {
 	*data = *(int32_t *)ptr;
 }
 
+constexpr uint32_t MROM_BASE = 0x20000000u;
 extern "C" void mrom_read(int32_t addr, int32_t *data) {
-  constexpr uint32_t MROM_BASE = 0x20000000u;
+	if(addr<MROM_BASE) {
+		printf("[clk %zu] [DPI] mrom_read addr=%08x ERROR BELOW MROM_BASE\n", sim_time,addr);
+	}
   assert(addr >= MROM_BASE);
   addr -= MROM_BASE;
 	assert(addr < sizeof(mem));
@@ -373,7 +389,13 @@ void shot_regsnap(sdb::reg_snapshot_t &regsnap) {
 }
 sdb::vlen_inst_code inst_fetcher(sdb::paddr_t pc) {
   word_t inst;
+	if(pc>=MROM_BASE&&pc<MROM_BASE+sizeof(mem)) {
   mrom_read(pc, (int *)&inst);
+	} else {
+		// printf("[W] inst_fetcher don't support fetch out of mrom @pc=%08x\n",pc);
+		inst = 0;
+	}
+
   // fetch_inst(pc, (int *)&inst);
   uint8_t *p = (uint8_t *)&inst;
   return sdb::vlen_inst_code(p, p + 4);

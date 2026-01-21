@@ -44,8 +44,7 @@ void init_serial() {
 }
 
 void putch(char ch) {
-  while (!(*UART_LSR & 0x20)) {
-  }
+  while (!(*UART_LSR & 0x20)) {}
   *(volatile uint8_t *)(UART_BASE + 0x00) = ch;
 }
 

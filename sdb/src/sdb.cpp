@@ -101,7 +101,7 @@ void debuger::_step(size_t n){
 	}
 }
 
-void debuger::_dump_all(){
+void debuger::dump_all(){
 	for(auto h:_trace_handlers){
 		_print("{}",h->get_dump());
 	}
@@ -112,13 +112,13 @@ void debuger::stop(){
 	_state.stop();
 	assert(!is_running());
 	_print("Program stopped.\n");
-	_dump_all();
+	dump_all();
 }
 
 void debuger::abort(){
 	_state.abort();
 	_print("Program aborted.\n");
-	_dump_all();
+	dump_all();
 }
 
 void debuger::_step_one(){

@@ -236,7 +236,6 @@ private:
 	void dump_mem(paddr_t addr,paddr_t end);
 	void dump_reg();
 
-	void _dump_all();
 
 public:
 
@@ -260,6 +259,9 @@ public:
 	inline bool is_running(){
 		return _state.state==run_state::running;
 	}	
+
+
+	void dump_all();
 	void abort();
 	void stop();
 	void exec_command(std::string_view cmdline);

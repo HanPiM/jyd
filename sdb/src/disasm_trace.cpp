@@ -64,6 +64,12 @@ string sdb::default_inst_disasm(paddr_t pc,vlen_inst_view inst){
 		has_init=true;
 	}
 	char buf[256];
+	if(inst.size()==4){
+		uint32_t code=*(uint32_t*)inst.data();
+		if(code==0){
+			return "(null)";
+		}
+	}
 	disassemble(buf,sizeof(buf),pc,(uint8_t*)inst.data(),inst.size());
 	return buf;
 }

@@ -4,42 +4,80 @@ ENTRY(_start)
 MEMORY {
   mrom : ORIGIN = 0x20000000, LENGTH = 4K
   sram : ORIGIN = 0x0f000000, LENGTH = 8K
-	flash : ORIGIN = 0x30000000, LENGTH = 128K
+	flash : ORIGIN = 0x30000000, LENGTH = 1M
 	psram : ORIGIN = 0x80000000, LENGTH = 4M
 }
 
 SECTIONS {
 	. = ORIGIN(flash);
+
+	.boot : {
+		_boot_start = .;
+		*(entry)
+		*(.fsbl_text)
+		_boot_end = .;
+	} > flash AT> flash
+
+	.secondary_boot : {
+		_ssbl_start = .;
+		*(.ssbl_text)
+		_ssbl_end = .;
+	} > sram AT> flash
+
+	__ssbl_load_start__ = LOADADDR(.secondary_boot);
+	__ssbl_size__       = SIZEOF(.secondary_boot);
+
+	/* .psram_padding (NOLOAD) : { */
+	/* 		. = ORIGIN(psram) + SIZEOF(.boot) + 4; */
+	/* } > psram */
+
   .text : {
-		_text = .;
-    *(entry)
+		_text_start = .;
     *(.text*)
-		_etext = .;
-  } > flash
+		_text_end = .;
+  } > psram AT> flash
 
 	__text_load_start__ = LOADADDR(.text); /* flash addr */
 	__text_size__       = SIZEOF(.text);   /* LEN */
 
-  /* .rodata : { */
-  /*   *(.rodata*) */
-  /* } > mrom AT> mrom */
+  .rodata : {
+		_rodata_start = .;
+    *(.rodata*)
+		*(.srodata*)
+		_rodata_end = .;
+  } > psram AT> flash
+
+	__rodata_load_start__ = LOADADDR(.rodata);
+	__rodata_size__       = SIZEOF(.rodata);
+
+	PROVIDE(_data_extra_start = .);
+	PROVIDE(__data_extra_load_start__ = .);
+  PROVIDE(__data_extra_size__ = 0);
+
   .data : {
-		_data = .;
+		_data_start = .;
     *(.sdata*)
     *(.data*)
-		_edata = .;
+		_data_end = .;
   } > psram AT> flash
 
 	__data_load_start__ = LOADADDR(.data); /* MA */
 	__data_size__       = SIZEOF(.data);   /* LEN */
 
+
   .bss : {
-		_bss = .;
+		_bss_start = .;
     *(.bss*)
     *(.sbss*)
     *(.scommon)
-		_ebss = .;
-  } > sram
+		_bss_end = .;
+  } > psram
+
+	__bss_size__ = SIZEOF(.bss);
+
+	PROVIDE(_bss_extra_start = .);
+	PROVIDE(__bss_extra_size__ = 0);
+
 
 	__sram_start__ = ORIGIN(sram);
 	__sram_size__ = LENGTH(sram);
@@ -49,9 +87,9 @@ SECTIONS {
 	__psram_size__ = LENGTH(psram);
 	__psram_end__ = __psram_start__ + __psram_size__;
 
-  _stack_top = __sram_end__ - _stack_size;
-  _stack_pointer  = _stack_top + _stack_size;
+  _stack_top = __sram_end__;
+  _stack_pointer  = _stack_top;
 
-  _heap_start = _ebss;
-	_heap_end = __sram_end__;
+  _heap_start = _bss_end;
+	_heap_end = __psram_end__;
 }

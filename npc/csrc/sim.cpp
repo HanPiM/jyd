@@ -107,7 +107,7 @@ void raise_ebreak(int a0) {
 bool sim_halted() { return !is_running; }
 bool sim_hit_good_trap() { return is_good_trap; }
 
-word_t img[600 * 1024 * 1024 / 4] = {
+word_t img[60 * 1024 * 1024 / 4] = {
     0x00000297, // auipc t0,0
     0x00028823, // sb  zero,16(t0)
     0x0102c503, // lbu a0,16(t0)
@@ -152,12 +152,7 @@ extern "C" void flash_read(int32_t addr, int32_t *data) {
 
 constexpr uint32_t PSRAM_BASE = 0x80000000u;
 constexpr uint32_t PSRAM_END = 0xA0000000u;
-uint32_t psram_data[sizeof(img)/4]={
-	0x12345678,
-	0x9abcdef0,
-	0x11223344,
-	0x55667788,
-};
+uint32_t psram_data[8*1024*1024/4];
 extern "C" void psram_read(int32_t addr, int32_t *data) {
 	// in psram high 8bit addr are 0
 	// no need to minus PSRAM_BASE
@@ -165,7 +160,7 @@ extern "C" void psram_read(int32_t addr, int32_t *data) {
 	addr &= ~0x3;
 	uintptr_t ptr = (uintptr_t)psram_data + addr;
 	*data = *(int32_t *)ptr;
-	printf("[DPI] psram_read addr=%08x data=%08x\n", addr + PSRAM_BASE, *data);
+	// printf("[DPI] psram_read addr=%08x data=%08x\n", addr + PSRAM_BASE, *data);
 }
 extern "C" void psram_write(int32_t addr,char strb8, int32_t data,int32_t*) {
 	assert(addr < sizeof(psram_data));
@@ -188,8 +183,12 @@ extern "C" void psram_write(int32_t addr,char strb8, int32_t data,int32_t*) {
 	*ptr &= ~shMask;
 	*ptr |= (shData & shMask);
 	
-	printf("[DPI] psram_write addr=%08x data=%08x (strb %X)\n", addr + PSRAM_BASE, data, (uint32_t)strb8);
+	// printf("[DPI] psram_write addr=%08x data=%08x (strb %X)\n", addr + PSRAM_BASE, data, (uint32_t)strb8);
 }
+
+constexpr uint32_t SRAM_BASE = 0x0f000000u;
+constexpr uint32_t SRAM_END = 0x10000000u;
+
 
 uint8_t *mem_atguest(word_t addr) {
 	uint32_t *ptr = nullptr;
@@ -382,6 +381,9 @@ static long load_img() {
 
 static void init_flash(){
 	memcpy(flash_data, img, img_size);
+	// for debug
+	// TODO: remove this
+	memset(psram_data, 0xcc, sizeof(psram_data));
 }
 
 // ARG
@@ -428,8 +430,14 @@ sdb::vlen_inst_code inst_fetcher(sdb::paddr_t pc) {
 	} else if (pc>=FLASH_BASE&&pc<FLASH_END) {
 		flash_read(pc - FLASH_BASE, (int *)&inst);
 		// printf("[DPI] inst_fetcher fetch from flash @pc=%08x get %08x\n",pc,inst);
+	} else if (pc>=SRAM_BASE&&pc<SRAM_END) {
+		// printf("[W] inst_fetcher fetch from sram @pc=%08x (ret as img)\n",pc);
+		// for debug
+		inst = img[(pc - SRAM_BASE) / 4];
+	} else if (pc>=PSRAM_BASE&&pc<PSRAM_END) {
+		psram_read(pc - PSRAM_BASE, (int *)&inst);
 	} else {
-		printf("[W] inst_fetcher don't support fetch out of mrom @pc=%08x\n",pc);
+		printf("[W] inst_fetcher don't support fetch @pc=%08x\n",pc);
 		inst = 0;
 	}
 

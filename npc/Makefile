@@ -182,7 +182,11 @@ clean-bin:
 ARGS?=
 sim: $(SIM_BIN)
 	$(call git_commit, "sim RTL") # DO NOT REMOVE THIS LINE!!!
-	@echo "Run the simulation"
+	@echo "=== ENV ==="
+	@echo "VSIM_OPT=$(VSIM_OPT)"
+	@echo "ENABLE_VPI=$(ENABLE_VPI)"
+	@echo "ENABLE_WAVE=$(ENABLE_WAVE)"
+	@echo "=== SIM BEGIN ==="
 	@LSAN_OPTIONS=suppressions=asan_suppress.txt $^ $(ARGS) $(SIM_IMG)
 
 -include ../Makefile

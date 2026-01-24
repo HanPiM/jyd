@@ -23,6 +23,14 @@ ENABLE_VPI ?= 0
 ENABLE_NVBOARD ?= 0
 
 ENABLE_WAVE ?= 0
+
+# spdlog
+SPDLOG_PATH ?= /home/wuser/gitclones/spdlog
+SPDLOG_LIBPATH ?= $(SPDLOG_PATH)/build
+INC_PATH += $(abspath $(SPDLOG_PATH)/include)
+LDFLAGS += -L$(abspath $(SPDLOG_LIBPATH)) -lspdlog
+CXXFLAGS += -DSPDLOG_COMPILED_LIB
+
 ifeq ($(ENABLE_WAVE), 1)
 VERILATOR_CFLAGS += --trace-fst --trace-structs
 endif

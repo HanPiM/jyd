@@ -107,6 +107,6 @@ string sdb::disasm_trace_handler::_dump_inst(disasm_trace_handler::_ctx_ref ctx,
 	}
 	auto as_u32code=*(uint32_t*)ctx.inst.data();
 	res+=format(" `0x{:08X}",as_u32code);
-	res+=")" ANSI_NONE "\n";
+	res+=")" ANSI_NONE ;
 	return res;
 }

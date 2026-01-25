@@ -175,7 +175,7 @@ extern "C" void flash_read(int32_t addr, int32_t *data) {
   addr &= ~0x3;
   uintptr_t ptr = (uintptr_t)flash_data + addr;
   *data = *(int32_t *)ptr;
-	DPI_TRACE("R addr={:08x} data={:08x}", addr + FLASH_BASE, *data);
+  DPI_TRACE("R addr={:08x} data={:08x}", addr + FLASH_BASE, *data);
   // _dpi_logger->trace("flash_read addr={:08x} data={:08x}", addr + FLASH_BASE,
   // (uint32_t)*data);
 }
@@ -190,7 +190,7 @@ extern "C" void psram_read(int32_t addr, int32_t *data) {
   addr &= ~0x3;
   uintptr_t ptr = (uintptr_t)psram_data + addr;
   *data = *(int32_t *)ptr;
-	DPI_TRACE("R addr={:08x} data={:08x}", addr + PSRAM_BASE, *data);
+  DPI_TRACE("R addr={:08x} data={:08x}", addr + PSRAM_BASE, *data);
   // printf("[DPI] psram_read addr=%08x data=%08x\n", addr + PSRAM_BASE, *data);
 }
 extern "C" void psram_write(int32_t addr, char strb8, int32_t data, int32_t *) {
@@ -214,8 +214,8 @@ extern "C" void psram_write(int32_t addr, char strb8, int32_t data, int32_t *) {
   *ptr &= ~shMask;
   *ptr |= (shData & shMask);
 
-	DPI_TRACE("W addr={:08x} data={:08x} (strb {:02x}) newdata={:08x}",
-						addr + PSRAM_BASE, data, (uint32_t)strb8, *ptr);
+  DPI_TRACE("W addr={:08x} data={:08x} (strb {:02x}) newdata={:08x}",
+            addr + PSRAM_BASE, data, (uint32_t)strb8, *ptr);
   // printf("[DPI] psram_write addr=%08x data=%08x (strb %X)\n", addr +
   // PSRAM_BASE, data, (uint32_t)strb8);
 }
@@ -223,32 +223,35 @@ extern "C" void psram_write(int32_t addr, char strb8, int32_t data, int32_t *) {
 constexpr uint32_t SDRAM_BASE = 0xa0000000u;
 constexpr uint32_t SDRAM_END = 0xb0000000u;
 
-uint16_t sdram_data[4][8192][512];
+uint16_t sdram_data[4][8192][512][2];
 
-extern "C" void sdram_read(char bank, short row, short col, short *data) {
+extern "C" void sdram_read(char block, char bank, short row, short col,
+                           short *data) {
   assert(bank >= 0 && bank < 4);
   assert(row >= 0 && row < 8192);
   assert(col >= 0 && col < 512);
-  *data = sdram_data[bank][row][col];
-  DPI_TRACE("R bank={:02x} row={:04x} col={:04x} data={:04x}", bank, row, col,
-            (uint16_t)*data);
+	assert(block == 0 || block == 1);
+  *data = sdram_data[bank][row][col][block];
+  DPI_TRACE("R bank={:02x} row={:04x} col={:04x} block={} data={:04x}", bank,
+            row, col, (uint32_t)block, (uint16_t)*data);
 }
-extern "C" void sdram_write(char bank, short row, short col, short data,
+extern "C" void sdram_write(char block,char bank, short row, short col, short data,
                             char mask) {
   assert(bank >= 0 && bank < 4);
   assert(row >= 0 && row < 8192);
   assert(col >= 0 && col < 512);
+	assert(block == 0 || block == 1);
   // mask [0] = 0: write low byte
   // mask [1] = 0: write high byte
   if ((mask & 0x1) == 0) {
-    sdram_data[bank][row][col] &= 0xff00;
-    sdram_data[bank][row][col] |= (data & 0x00ff);
+    sdram_data[bank][row][col][block] &= 0xff00;
+    sdram_data[bank][row][col][block] |= (data & 0x00ff);
     // _dpi_logger->trace("sdram_write low byte {:02x}", (uint8_t)(data &
     // 0x00ff));
   }
   if ((mask & 0x2) == 0) {
-    sdram_data[bank][row][col] &= 0x00ff;
-    sdram_data[bank][row][col] |= (data & 0xff00);
+    sdram_data[bank][row][col][block] &= 0x00ff;
+    sdram_data[bank][row][col][block] |= (data & 0xff00);
     // _dpi_logger->trace("sdram_write high byte {:02x}", (uint8_t)((data &
     // 0xff00) >> 8));
   }
@@ -259,10 +262,11 @@ extern "C" void sdram_write(char bank, short row, short col, short data,
   if ((mask & 0x2) == 0)
     human_friendly_mask[0] = 'H';
 
-  DPI_TRACE("W bank={:02x} row={:04x} col={:04x} "
+  DPI_TRACE("W bank={:02x} row={:04x} col={:04x} block={} "
             "data={:04x} mask={} newdata={:04x}",
-            bank, row, col, (uint16_t)data, human_friendly_mask,
-            sdram_data[bank][row][col]);
+            bank, row, col, (uint32_t)block,
+						(uint16_t)data, human_friendly_mask,
+            sdram_data[bank][row][col][block]);
 }
 
 constexpr uint32_t SRAM_BASE = 0x0f000000u;
@@ -395,8 +399,8 @@ bool sim_read_vmem(word_t addr, word_t *data) {
     short row = (in_sdram_addr >> 12) & 0x1fff;
     short col = (in_sdram_addr >> 1) & 0x1ff;
     uint16_t half1, half2;
-    half1 = sdram_data[bank][row][col];
-    half2 = sdram_data[bank][row][col + 1];
+    half1 = sdram_data[bank][row][col][0];
+    half2 = sdram_data[bank][row][col][1];
     *data = ((word_t)half2 << 16) | (word_t)half1;
     // spdlog::trace("sim_read_vmem addr={:08x} -> "
     //               "sdram[{:02x}][{:04x}][{:04x},{:04x}] = {:08x}
@@ -594,9 +598,13 @@ bool sim_init(int argc, char **argv, sim_setting setting) {
                                          [](VerilatedFstC *p) { p->close(); });
     dut.trace(tfp.get(), 99);
     tfp->open(setting.wave_fst_file.c_str());
+		spdlog::info("wave enabled, output file: {}", setting.wave_fst_file);
   }
 
   reset(10);
+
+	spdlog::info("sim reset done, entering {} mode",
+							 batch_mode ? "batch" : "interactive");
 
   if (batch_mode && !setting.no_batch) {
     dbg_exec("c");

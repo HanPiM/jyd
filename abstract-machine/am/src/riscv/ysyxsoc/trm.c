@@ -54,6 +54,18 @@ void putch(char ch) {
   }
 	*UART_TX = ch;
 }
+char try_getch() {
+	if (IS_UART_RECEIVE_READY()) {
+		return *UART_RX;
+	} else {
+		return 0xff;
+	}
+}
+char getch() {
+	while (!IS_UART_RECEIVE_READY()) {
+	}
+	return *UART_RX;
+}
 
 void halt(int code) {
   asm volatile("mv a0, %0; ebreak" : : "r"(code));
@@ -189,8 +201,8 @@ SSBL_TEXT void _second_boot() {
   boot_log(".text copied.\n");
   _ssbl_memcpy(_data_start, __data_load_start__, (size_t)__data_size__);
   boot_log(".data copied.\n");
-  // _ssbl_clear(_bss_start, (size_t)__bss_size__);
-  // boot_log(".bss cleared.\n");
+  _ssbl_clear(_bss_start, (size_t)__bss_size__);
+  boot_log(".bss cleared.\n");
   if ((size_t)__data_extra_size__) {
     boot_log("copying .data.extra...\n");
     _ssbl_memcpy(_data_extra_start, __data_extra_load_start__,
@@ -199,8 +211,8 @@ SSBL_TEXT void _second_boot() {
   }
   if ((size_t)__bss_extra_size__) {
     boot_log("clearing .bss.extra...\n");
-    boot_log(" skipping .bss.extra clear");
-    // _ssbl_clear(_bss_extra_start, (size_t)__bss_extra_size__);
+    // boot_log(" skipping .bss.extra clear");
+    _ssbl_clear(_bss_extra_start, (size_t)__bss_extra_size__);
     boot_log(".bss.extra cleared.\n");
   }
 

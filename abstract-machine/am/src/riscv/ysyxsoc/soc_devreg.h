@@ -62,4 +62,8 @@ typedef volatile_u32ptr dev_reg32_ptr;
 #define GPIO_SWITCH _GPIO_R(1)
 #define GPIO_SEG    _GPIO_R(2)
 
+#define PS2_BASE 0x10011000u
+#define _PS2_R(x) (DEV_REG8(PS2_BASE + (x)))
+#define PS2_KEYINPUT   _PS2_R(0)
+
 #endif // __DEV_REG_H__

@@ -1,4 +1,3 @@
-#include "soc_devreg.h"
 #include <am.h>
 #include <klib-macros.h>
 
@@ -7,6 +6,7 @@ void __am_timer_init();
 void __am_timer_rtc(AM_TIMER_RTC_T *);
 void __am_timer_uptime(AM_TIMER_UPTIME_T *);
 void __am_input_keybrd(AM_INPUT_KEYBRD_T *);
+void __am_input_uart(AM_UART_RX_T *uart);
 
 static void __am_timer_config(AM_TIMER_CONFIG_T *cfg) {
   cfg->present = true;
@@ -15,12 +15,6 @@ static void __am_timer_config(AM_TIMER_CONFIG_T *cfg) {
 static void __am_input_config(AM_INPUT_CONFIG_T *cfg) { cfg->present = true; }
 static void __am_uart_config(AM_INPUT_CONFIG_T *cfg) { cfg->present = true; }
 
-static void __am_input_uart(AM_UART_RX_T *uart) {
-  if (IS_UART_RECEIVE_READY())
-    uart->data = *UART_RX;
-  else
-    uart->data = 0xff;
-}
 
 typedef void (*handler_t)(void *buf);
 static void *lut[128] = {

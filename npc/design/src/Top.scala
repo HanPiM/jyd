@@ -167,6 +167,8 @@ class ysyx_25100261(word_width: Int = 32) extends Module {
     )
   }
 
+  dontTouch(exu.io)
+
   val memArbiter = Module(new EXUIFU_MemVisitArbiter)
   AXI4IO.connectMasterSlave(exu.io.mem, memArbiter.io.exu)
   AXI4IO.connectMasterSlave(ifu.io.mem, memArbiter.io.ifu)

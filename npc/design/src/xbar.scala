@@ -77,7 +77,7 @@ class AXI4LiteXBar(mappings: Seq[((UInt, UInt), AXI4IO.SlaveT)]) extends Module 
   AXI4IO.noShakeConnectB(master, slaveIO(lastWrReqIdx))
 
   for (i <- mappings.indices) {
-    slaveIO(i).bready := hasLastWrReq && (i.U === lastWrReqIdx) && master.bready
+    slaveIO(i).bready := (i.U === lastWrReqIdx) && master.bready
   }
 
   when(master.rvalid && master.rready) {

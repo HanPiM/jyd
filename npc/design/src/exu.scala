@@ -151,7 +151,7 @@ class EXU extends Module {
 
   val memIO = io.mem
 
-  io.mem.dontCareNonLiteW()
+  // io.mem.dontCareNonLiteW()
 
   val memAddr                  = reg_v1 + dinst.info.imm
   val memAddrUnalignPart       = memAddr(1, 0)
@@ -201,6 +201,9 @@ class EXU extends Module {
 
   memIO.awvalid := isStore && (!memWDone) && (!memAddrSent)
   memIO.wvalid  := isStore && (!memWDone)
+  memIO.wlast:=memIO.wvalid
+  dontTouch(io.mem)
+  dontTouch(memIO.wlast)
 
   memIO.awid    := 0.U
   memIO.awlen   := 0.U

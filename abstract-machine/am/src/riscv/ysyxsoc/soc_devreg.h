@@ -69,4 +69,6 @@ typedef volatile_u32ptr dev_reg32_ptr;
 #define VGA_FB_BEG 0x21000000u
 #define VGA_FB_END 0x211fffffu
 
+#define CHIPLINK_MEM_BASE 0xc0000000u
+
 #endif // __DEV_REG_H__

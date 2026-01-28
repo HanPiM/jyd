@@ -18,9 +18,7 @@
 #include "spdlog/logger.h"
 #include "verilated_fst_c.h"
 
-#ifdef ENABLE_NVBOARD
 #include <nvboard.h>
-#endif
 
 #include <getopt.h>
 #include <unistd.h>
@@ -81,9 +79,9 @@ void sim_step_cycle() {
 
   cycle_count++;
 
-#ifdef ENABLE_NVBOARD
-  nvboard_update();
-#endif
+  if (sim_settings.nvboard) {
+    nvboard_update();
+  }
 
   if (sim_settings.trace_clock_cycle) {
     printf("[Clock Cycle End]\n");
@@ -230,17 +228,17 @@ extern "C" void sdram_read(char block, char bank, short row, short col,
   assert(bank >= 0 && bank < 4);
   assert(row >= 0 && row < 8192);
   assert(col >= 0 && col < 512);
-	// assert(block == 0 || block == 1);
+  // assert(block == 0 || block == 1);
   *data = sdram_data[bank][row][col][block];
   DPI_TRACE("R bank={:02x} row={:04x} col={:04x} block={} data={:04x}", bank,
             row, col, (uint32_t)block, (uint16_t)*data);
 }
-extern "C" void sdram_write(char block,char bank, short row, short col, short data,
-                            char mask) {
+extern "C" void sdram_write(char block, char bank, short row, short col,
+                            short data, char mask) {
   assert(bank >= 0 && bank < 4);
   assert(row >= 0 && row < 8192);
   assert(col >= 0 && col < 512);
-	// assert(block == 0 || block == 1);
+  // assert(block == 0 || block == 1);
   // mask [0] = 0: write low byte
   // mask [1] = 0: write high byte
   if ((mask & 0x1) == 0) {
@@ -264,9 +262,8 @@ extern "C" void sdram_write(char block,char bank, short row, short col, short da
 
   DPI_TRACE("W bank={:02x} row={:04x} col={:04x} block={} "
             "data={:04x} mask={} newdata={:04x}",
-            bank, row, col, (uint32_t)block,
-						(uint16_t)data, human_friendly_mask,
-            sdram_data[bank][row][col][block]);
+            bank, row, col, (uint32_t)block, (uint16_t)data,
+            human_friendly_mask, sdram_data[bank][row][col][block]);
 }
 
 constexpr uint32_t SRAM_BASE = 0x0f000000u;
@@ -399,14 +396,14 @@ bool sim_read_vmem(word_t addr, word_t *data) {
     short row = (in_sdram_addr >> 13) & 0x1fff;
     short col = (in_sdram_addr >> 1) & 0x1ff;
     uint16_t half1, half2;
-		char bank = raw_bank % 4;
-		char block_offset = (raw_bank & 0x4) ? 1 : 0;
+    char bank = raw_bank % 4;
+    char block_offset = (raw_bank & 0x4) ? 2 : 0;
     half1 = sdram_data[bank][row][col][block_offset];
     half2 = sdram_data[bank][row][col][block_offset + 1];
     *data = ((word_t)half2 << 16) | (word_t)half1;
     // spdlog::trace("sim_read_vmem addr={:08x} -> "
-    //               "sdram[{:02x}][{:04x}][{:04x},{:04x}] = {:08x}
-    //               (pc={:08x})", addr, bank, row, col, col + 1, *data,
+    //               "sdram[{:02x}][{:04x}][{:04x},{:04x}] = {:08x} "
+    //               "(pc={:08x})", addr, bank, row, col, col + 1, *data,
     //               current_pc);
   } else {
     // TODO: gen error
@@ -473,7 +470,7 @@ static long load_img() {
   fseek(fp, 0, SEEK_END);
   img_size = ftell(fp);
 
-  spdlog::info("The image is {}, size = {}", img_file, img_size);
+  spdlog::info("load image {}, size = {}", img_file, img_size);
 
   fseek(fp, 0, SEEK_SET);
   int ret = fread(img, img_size, 1, fp);
@@ -486,13 +483,17 @@ static long load_img() {
 
 static void _init_flash() { memcpy(flash_data, img, img_size); }
 static void _fill_rams_uninit() {
-#ifdef _TRM_SKIP_BSS_CLEAR
-  memset(psram_data, 0, sizeof(psram_data));
-  memset(sdram_data, 0, sizeof(sdram_data));
-#else
-  memset(psram_data, 0xcc, sizeof(psram_data));
-  memset(sdram_data, 0xdd, sizeof(sdram_data));
-#endif
+  if (sim_settings.zero_uninit_ram) {
+    memset(psram_data, 0, sizeof(psram_data));
+    memset(sdram_data, 0, sizeof(sdram_data));
+  } else {
+    memset(psram_data, 0xcc, sizeof(psram_data));
+    spdlog::trace("psram_data filled with 0xcc");
+    memset(sdram_data, 0xdd, sizeof(sdram_data));
+    spdlog::trace("sdram_data filled with 0xdd");
+  }
+	spdlog::info("RAMs uninitialized area filled with {}", 
+		sim_settings.zero_uninit_ram ? "zeros" : "non-zero patterns");
 }
 
 // ARG
@@ -579,12 +580,14 @@ void _init_dpi_logger() {
 bool sim_init(int argc, char **argv, sim_setting setting) {
   Verilated::commandArgs(argc, argv);
   sim_settings = setting;
-#ifdef ENABLE_NVBOARD
-  nvboard_bind_all_pins(&dut);
-  nvboard_init();
-#endif
+  if (setting.nvboard) {
+    spdlog::info("initializing nvboard");
+    nvboard_bind_all_pins(&dut);
+    nvboard_init();
+  }
 
   parse_args(argc, argv);
+
   using std::string;
   using namespace std::ranges;
 
@@ -605,13 +608,13 @@ bool sim_init(int argc, char **argv, sim_setting setting) {
                                          [](VerilatedFstC *p) { p->close(); });
     dut.trace(tfp.get(), 99);
     tfp->open(setting.wave_fst_file.c_str());
-		spdlog::info("wave enabled, output file: {}", setting.wave_fst_file);
+    spdlog::info("wave enabled, output file: {}", setting.wave_fst_file);
   }
 
-  reset(10);
+  reset(30);
 
-	spdlog::info("sim reset done, entering {} mode",
-							 batch_mode ? "batch" : "interactive");
+  spdlog::info("sim reset done, entering {} mode",
+               batch_mode ? "batch" : "interactive");
 
   if (batch_mode && !setting.no_batch) {
     dbg_exec("c");

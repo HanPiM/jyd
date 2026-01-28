@@ -22,6 +22,10 @@ struct sim_setting {
   bool etrace = true;
   bool difftest = true;
 
+	bool nvboard = false;
+
+	bool zero_uninit_ram = false;
+
   bool trace_difftest_skip = false;
 
   bool trace_pmem_readcall = false;

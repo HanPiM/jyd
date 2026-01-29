@@ -1,6 +1,7 @@
 #include "sim.hpp"
 #include "dbg.hpp"
 
+#include <cmath>
 #include <spdlog/common.h>
 #include <spdlog/logger.h>
 #include <spdlog/mdc.h>
@@ -32,6 +33,7 @@ sim_setting &sim_settings = sim_cfg.setting;
 sim_cpu_state cpu;
 
 HandShakeDetector handshake_detector;
+InstTypeCounter inst_type_counter;
 
 TOP_NAME *get_dut() { return &dut; }
 
@@ -103,7 +105,7 @@ void sim_step_cycle() {
     sim_settings.cycle_finish_cb();
   }
 
-	handshake_detector.checkAndCountAll();
+  handshake_detector.checkAndCountAll();
 }
 static void reset(int n) {
   dut.reset = 1;
@@ -414,15 +416,6 @@ uint8_t *sim_guest_to_host(uint32_t addr) {
   spdlog::error("sim_guest_to_host addr={:08x} no mapping region", addr);
   return nullptr;
 }
-// word_t guest_to_host(word_t addr) {
-//   // printf("raw addr %08X\n",addr);
-//   assert(addr >= MADDR_BASE);
-//   word_t res = addr - MADDR_BASE;
-//   return res;
-// }
-
-// word_t gpr_snap[32];
-// word_t *sim_current_gpr() { return gpr_snap; }
 
 extern "C" void gpr_upd(int regno, int data) {
   if (regno == 0)
@@ -450,9 +443,10 @@ bool sim_read_vmem(word_t addr, word_t *data) {
     }
   }
   if (SRAM_BASE <= addr && addr < SRAM_END) {
-		// spdlog::warn("sim_read_vmem addr={:08x} in SRAM region, direct read not allowed", addr);
+    // spdlog::warn("sim_read_vmem addr={:08x} in SRAM region, direct read not
+    // allowed", addr);
     // TODO: handle sram read
-		*data = 0;
+    *data = 0;
   } else
     spdlog::warn("sim_read_vmem addr={:08x} no mapping region", addr);
   return false;
@@ -510,7 +504,7 @@ void sim_step_inst() {
     sim_step_cycle();
     if (sim_halted()) {
       cpu.pc += 4;
-			inst_count++;
+      inst_count++;
       return;
     }
     cnt++;
@@ -535,7 +529,7 @@ void sim_step_inst() {
     }
   }
   pc_changed = false;
-	inst_count++;
+  inst_count++;
 }
 
 // IMG
@@ -620,19 +614,19 @@ const char *_get_env_or_default(const char *env_name,
 }
 
 static auto _gen_logger_formatter_with_simtime() {
-	auto formatter = std::make_unique<spdlog::pattern_formatter>();
-	formatter->add_flag<sim_time_formatter>('&');
-	// (sim_time) [logger_name] [log_level] log_msg
-	formatter->set_pattern("(%&) [%n] [%^%l%$] %v");
-	return formatter;
+  auto formatter = std::make_unique<spdlog::pattern_formatter>();
+  formatter->add_flag<sim_time_formatter>('&');
+  // (sim_time) [logger_name] [log_level] log_msg
+  formatter->set_pattern("(%&) [%n] [%^%l%$] %v");
+  return formatter;
 }
 
-void set_logger_pattern_with_simtime(std::shared_ptr<spdlog::logger> logger){
-	auto formatter = _gen_logger_formatter_with_simtime();
-	logger->set_formatter(std::move(formatter));
+void set_logger_pattern_with_simtime(std::shared_ptr<spdlog::logger> logger) {
+  auto formatter = _gen_logger_formatter_with_simtime();
+  logger->set_formatter(std::move(formatter));
 }
 void _init_dpi_logger() {
-	auto formatter = _gen_logger_formatter_with_simtime();
+  auto formatter = _gen_logger_formatter_with_simtime();
 
   auto out_file = "dpiout.log";
   auto con_lvl_str = _get_env_or_default("DPI_CONSOLE_LVL", "info");
@@ -662,8 +656,8 @@ void _init_dpi_logger() {
     auto func_logger = std::make_shared<spdlog::logger>(#func, dpi_sink_list); \
     auto lvl = sim_settings.TRACE_DPI_FLAG(func) ? spdlog::level::trace        \
                                                  : spdlog::level::info;        \
-    spdlog::debug("DPI func '{}' logger lvl {}", #func,                         \
-                 spdlog::level::to_string_view(lvl));                          \
+    spdlog::debug("DPI func '{}' logger lvl {}", #func,                        \
+                  spdlog::level::to_string_view(lvl));                         \
     func_logger->set_level(lvl);                                               \
     func_logger->set_formatter(formatter->clone());                            \
     spdlog::register_logger(func_logger);                                      \
@@ -681,8 +675,6 @@ void _init_dpi_logger() {
   _dpi_logger->set_formatter(std::move(formatter));
   spdlog::register_logger(_dpi_logger);
 }
-
-
 
 bool sim_init(int argc, char **argv, sim_setting setting) {
   Verilated::commandArgs(argc, argv);
@@ -720,28 +712,65 @@ bool sim_init(int argc, char **argv, sim_setting setting) {
   cpu.pc = sim_cfg.init_pc;
   spdlog::info("set initial pc to {:08x}", cpu.pc);
 
-	handshake_detector.init();
-	handshake_detector.add("ifu.io_mem_r", "IFU fetch inst");
-	handshake_detector.add("exu.io_mem_r", "EXU load data");
-	handshake_detector.add("exu.alu.io_out_", "EXU calc");
-	handshake_detector.add("idu.io_out_", "IDU decode inst");
+  inst_type_counter.init();
+  auto count_inst_type = [&]() { inst_type_counter.newInstFetched(cycle_count); };
+
+  handshake_detector.init();
+  handshake_detector.add("ifu.io_mem_r", "IFU fetch inst", count_inst_type);
+  handshake_detector.add("exu.io_mem_r", "EXU load data");
+  handshake_detector.add("exu.alu.io_out_", "EXU calc");
+  handshake_detector.add("idu.io_out_", "IDU decode inst");
 
   return true;
 }
 
 void sim_dump_statistics() {
-	spdlog::info("simulation statistics:");
-	spdlog::info(">inst per cycle:");
-	spdlog::info("  total cycle count: {}", cycle_count);
-	spdlog::info("  total instruction count: {}", inst_count);
-	if (cycle_count > 0) {
-		double ipc = (double)inst_count / (double)cycle_count;
-		spdlog::info("  IPC: {:.4f}", ipc);
-	}
+  spdlog::info("simulation statistics:");
+  spdlog::info(">cycle and instruction counts:");
+  spdlog::info("  total cycle count: {}", cycle_count);
+  spdlog::info("  total instruction count: {}", inst_count);
+  if (cycle_count == 0) {
+    spdlog::warn("cycle count is 0, cannot calc IPC");
+  } else {
+    double ipc = (double)inst_count / (double)cycle_count;
+    spdlog::info("  IPC: {:.4f}", ipc);
+  }
+  if (inst_count == 0) {
+    spdlog::warn("no instruction executed, cannot calc CPI");
+  } else {
+    double cpi = (double)cycle_count / (double)inst_count;
+    spdlog::info("  CPI: {:.4f}", cpi);
+  }
 
-	spdlog::info(">handshake counts:");
-	for(auto &e : handshake_detector.bus_list) {
-		spdlog::info("  {} happened {} times", e.description, e.shake_count);
-	}
-	
+  spdlog::info(">handshake counts:");
+  for (auto &e : handshake_detector.bus_list) {
+    spdlog::info("  {:20} happened {} times", e.description, e.shake_count);
+  }
+
+  spdlog::info(">instruction type counts:");
+  size_t totByType = inst_type_counter.totalInstCountSumByType();
+  spdlog::info("  by type: (total {})", totByType);
+  for (size_t i = 0; i < InstTypeCounter::TYPE_NUM; i++) {
+    auto type_name =
+        InstTypeCounter::name_of_type((InstTypeCounter::InstType)i);
+    auto type_count = inst_type_counter.type_count[i];
+    auto type_percentage =
+        totByType == 0 ? NAN : ((double)type_count / (double)totByType) * 100.0;
+    spdlog::info(
+        "    {:<10} : {:>6} ({:>5.2f}%) cpi {:.2f}", type_name, type_count,
+        type_percentage,
+        inst_type_counter.averageCPIOfType((InstTypeCounter::InstType)i));
+  }
+  size_t totByFmt = inst_type_counter.totalInstCountSumByFmt();
+  spdlog::info("  by fmt: (total {})", totByFmt);
+  for (size_t i = 0; i < InstTypeCounter::FMT_NUM; i++) {
+    auto fmt_name = InstTypeCounter::name_of_fmt((InstTypeCounter::InstFmt)i);
+    auto fmt_count = inst_type_counter.fmt_count[i];
+    auto fmt_percentage =
+        totByFmt == 0 ? NAN : ((double)fmt_count / (double)totByFmt) * 100.0;
+    spdlog::info(
+        "    {:<10} : {:>6} ({:>5.2f}%) cpi {:.2f}", fmt_name, fmt_count,
+        fmt_percentage,
+        inst_type_counter.averageCPIOfFmt((InstTypeCounter::InstFmt)i));
+  }
 }

@@ -49,22 +49,17 @@ FSBL_TEXT void init_serial() {
   *UART_IER = 0x0;
 }
 
-FSBL_TEXT void inline fsbl_putch(char ch) {
+FSBL_TEXT void fsbl_putch(char ch) {
 	while (!IS_UART_TRANSMIT_EMPTY()) {
 	}
 	*UART_TX = ch;
 }
-SSBL_TEXT void inline ssbl_putch(char ch) {
+SSBL_TEXT void ssbl_putch(char ch) {
 	while (!IS_UART_TRANSMIT_EMPTY()) {
 	}
 	*UART_TX = ch;
 }
 
-void putch(char ch) {
-  while (!IS_UART_TRANSMIT_EMPTY()) {
-  }
-  *UART_TX = ch;
-}
 
 char try_getch() {
   if (IS_UART_RECEIVE_READY()) {
@@ -287,4 +282,11 @@ SSBL_TEXT void _second_boot() {
   boot_log("enter main function.\n");
   int ret = main(mainargs);
   halt(ret);
+}
+
+#undef putch
+void putch(char ch) {
+  while (!IS_UART_TRANSMIT_EMPTY()) {
+  }
+  *UART_TX = ch;
 }

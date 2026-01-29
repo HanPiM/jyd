@@ -11,6 +11,8 @@
 
 #include "common.hpp"
 
+#include "sim.hpp"
+
 inline const std::string &cpu_vpi_path_prefix() {
   static std::string prefix;
   if (prefix.empty()) {
@@ -56,6 +58,7 @@ struct SignalHandle {
   }
 };
 
+
 class HandShakeDetector {
 public:
   using callback_t = std::function<void()>;
@@ -69,6 +72,7 @@ public:
     callback_t onShakeCallback = nullptr;
 
     bool shakeHappened();
+		void dumpStatus();
   };
   std::shared_ptr<spdlog::logger> logger;
   std::vector<ValidReadyBus> bus_list;
@@ -76,7 +80,7 @@ public:
   HandShakeDetector();
 
   void init();
-  void add(std::string pathWithoutValidOrReady, std::string description = "",
+  ValidReadyBus& add(std::string pathWithoutValidOrReady, std::string description = "",
            callback_t onShake = nullptr);
 
   void checkAndCountAll();
@@ -141,3 +145,44 @@ struct InstTypeCounter {
 		return (double)tot_cycle_of_fmt[fmt]/(double)fmt_count[fmt];
 	}
 };
+
+
+struct AXI4CounterBase {
+	struct LatencyRecord {
+		sim_time_t startTime;
+		sim_time_t endTime;
+		size_t cycles;
+	};
+	size_t transaction_count = 0;
+
+	size_t total_latency_cycles = 0;
+
+	LatencyRecord currentRecord;
+	LatencyRecord maxRecord;
+
+	std::string name;
+
+	std::shared_ptr<spdlog::logger> logger;
+
+	void init_logger();
+
+	void dumpStatistics();
+};
+
+struct AXI4ReadPerfCounter : public AXI4CounterBase {
+	SignalHandle hARValid;
+	SignalHandle hARReady;
+	SignalHandle hRValid;
+	SignalHandle hRReady;
+
+	// count arvalid becoming high to rvalid & rready handshake
+
+	enum State {
+		IDLE,
+		WAIT_DATA,
+	} state = IDLE;
+
+	void bind(std::string path);
+	void update();
+};
+

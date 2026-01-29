@@ -9,6 +9,8 @@ TOP_NAME *get_dut();
 
 typedef void (*cycle_end_callback_t)();
 
+using sim_time_t = uint64_t;
+using sim_cycle_t = uint64_t;
 
 struct sim_setting {
   bool en_inst_trace = true;
@@ -86,6 +88,7 @@ bool sim_init(int argc, char **argv, sim_setting teg = sim_setting{});
 void sim_step_cycle();
 void sim_step_inst();
 
+sim_time_t sim_get_time();
 
 void sim_dump_statistics();
 

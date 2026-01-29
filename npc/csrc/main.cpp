@@ -36,5 +36,8 @@ int main(int argc, char **argv) {
 	sim_dump_statistics();
 	
 	get_dut()->final();
+	if(!setting.gdb_mode){
+		return sim_hit_good_trap() ? 0 : 1;
+	}
 	return 0;
 }

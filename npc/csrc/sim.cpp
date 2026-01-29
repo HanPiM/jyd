@@ -23,6 +23,7 @@
 
 #include <getopt.h>
 #include <unistd.h>
+#include <vector>
 
 #include "sig_event.hpp"
 
@@ -34,6 +35,7 @@ sim_cpu_state cpu;
 
 HandShakeDetector handshake_detector;
 InstTypeCounter inst_type_counter;
+std::vector<AXI4ReadPerfCounter> axi4_read_counters;
 
 TOP_NAME *get_dut() { return &dut; }
 
@@ -52,6 +54,8 @@ std::shared_ptr<VerilatedFstC> tfp;
 static uint64_t sim_time = 0;
 static uint64_t cycle_count = 0;
 static uint64_t inst_count = 0;
+
+sim_time_t sim_get_time() { return sim_time; }
 
 static std::shared_ptr<spdlog::logger> _dpi_logger;
 
@@ -106,6 +110,9 @@ void sim_step_cycle() {
   }
 
   handshake_detector.checkAndCountAll();
+	for (auto &ctr : axi4_read_counters) {
+		ctr.update();
+	}
 }
 static void reset(int n) {
   dut.reset = 1;
@@ -713,13 +720,22 @@ bool sim_init(int argc, char **argv, sim_setting setting) {
   spdlog::info("set initial pc to {:08x}", cpu.pc);
 
   inst_type_counter.init();
-  auto count_inst_type = [&]() { inst_type_counter.newInstFetched(cycle_count); };
+  auto notifyInstFetched = [&]() { inst_type_counter.newInstFetched(cycle_count); };
 
   handshake_detector.init();
-  handshake_detector.add("ifu.io_mem_r", "IFU fetch inst", count_inst_type);
+  handshake_detector.add("ifu.io_mem_r", "IFU fetch inst", notifyInstFetched);
   handshake_detector.add("exu.io_mem_r", "EXU load data");
   handshake_detector.add("exu.alu.io_out_", "EXU calc");
   handshake_detector.add("idu.io_out_", "IDU decode inst");
+
+	axi4_read_counters.resize(2);
+	axi4_read_counters[0].name = "IFU Read Bus";
+	axi4_read_counters[0].init_logger();
+	axi4_read_counters[0].bind("ifu.io_mem");
+
+	axi4_read_counters[1].name = "EXU Load Bus";
+	axi4_read_counters[1].init_logger();
+	axi4_read_counters[1].bind("exu.io_mem");
 
   return true;
 }
@@ -744,7 +760,7 @@ void sim_dump_statistics() {
 
   spdlog::info(">handshake counts:");
   for (auto &e : handshake_detector.bus_list) {
-    spdlog::info("  {:20} happened {} times", e.description, e.shake_count);
+		e.dumpStatus();
   }
 
   spdlog::info(">instruction type counts:");
@@ -773,4 +789,9 @@ void sim_dump_statistics() {
         fmt_percentage,
         inst_type_counter.averageCPIOfFmt((InstTypeCounter::InstFmt)i));
   }
+
+	spdlog::info(">AXI4 read performance counters:");
+	for (auto &ctr : axi4_read_counters) {
+		ctr.dumpStatistics();
+	}
 }

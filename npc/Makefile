@@ -1,7 +1,7 @@
 BUILD_DIR = ./build
 # case sensitive
 TOP_NAME = ysyxSoCFull
-#ysyx_25100261
+CPU_DESIGN_NAME = ysyx_25100261
 
 SIM_CSRC_DIR = ./csrc
 VSIM_OPT?= -O3
@@ -82,9 +82,11 @@ INC_PATH += $(abspath ../sdb/include)
 LDFLAGS += $(SAN_FLAGS) -L$(abspath ../sdb/build) -lsdb
 ARCHIVES += $(NVBOARD_ARCHIVE) $(abspath ../sdb/build/libsdb.a)
 
+STA_OUT_DIR = $(abspath $(BUILD_DIR)/sta)
 
 # dirs
 $(shell mkdir -p $(BUILD_DIR))
+$(shell mkdir -p $(STA_OUT_DIR))
 $(shell mkdir -p $(SIM_BIN_DIR))
 $(shell mkdir -p $(V2CXX_EMIT_DIR))
 $(shell mkdir -p $(CHISEL2V_EMIT_DIR))
@@ -197,5 +199,23 @@ sim: $(SIM_BIN)
 	@echo "ENABLE_VPI=$(ENABLE_VPI)"
 	@echo "=== SIM BEGIN ==="
 	@LSAN_OPTIONS=suppressions=asan_suppress.txt $^ $(ARGS) $(SIM_IMG)
+
+YOSYS_STA_PATH ?= /home/wuser/gitclones/yosys-sta
+
+STA_NODPI_PATH = $(BUILD_DIR)/sta_nodpi
+
+$(shell mkdir -p $(STA_NODPI_PATH))
+
+STA_VSRCS = $(shell find $(abspath $(STA_NODPI_PATH)) -maxdepth 1 -name "*.v" -or -name "*.sv")
+
+sta: $(SIM_VSRCS)
+	@echo "Removing DPI-C void functions from verilog sources..."
+	./remove_dpi.sh $(CHISEL2V_EMIT_DIR) $(STA_NODPI_PATH)
+	make -C $(YOSYS_STA_PATH) sta \
+		DESIGN=$(CPU_DESIGN_NAME) \
+		CLK_FREQ_MHZ=400 \
+		CLK_PORT_NAME=clock \
+		O=$(STA_OUT_DIR) \
+		RTL_FILES="$(STA_VSRCS)" 
 
 -include ../Makefile

@@ -15,7 +15,7 @@ SignalHandle::SignalHandle(std::string barePath) {
   handle = vpi_handle_by_name(
       const_cast<PLI_BYTE8 *>(_FullPath(barePath).c_str()), nullptr);
   if (!handle) {
-    spdlog::error("cannot find signal at path {}", _DebugPath(barePath));
+    spdlog::error("cannot find signal at path {}", _FullPath(barePath));
   }
 }
 

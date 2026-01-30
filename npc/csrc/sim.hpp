@@ -62,7 +62,7 @@ struct sim_setting {
 typedef void(*raise_halt_cb_t)(int a0);
 
 struct sim_config {
-	uint32_t init_pc = 0x30000000;
+	uint32_t init_pc;
 	size_t img_size;
 	const char* img_file_path;
 
@@ -83,6 +83,8 @@ struct sim_cpu_state {
 
 // unchange item if not set in env
 void load_sim_setting_from_env(sim_setting &setting);
+
+bool is_soc();
 
 bool sim_init(int argc, char **argv, sim_setting teg = sim_setting{});
 

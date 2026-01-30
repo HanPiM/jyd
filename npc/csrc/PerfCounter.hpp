@@ -19,8 +19,10 @@
 inline const std::string &cpu_vpi_path_prefix() {
   static std::string prefix;
   if (prefix.empty()) {
-    prefix = std::string("TOP.") + std::string(_STR(TOP_NAME)).substr(1);
-    prefix += ".asic.cpu.cpu.";
+    prefix = std::string("TOP.") + std::string(_STR(TOP_NAME)).substr(1) + '.';
+    if (is_soc()) {
+      prefix += "asic.cpu.cpu.";
+    }
   }
   return prefix;
 }
@@ -82,10 +84,8 @@ public:
   };
   std::vector<Field> fields;
   virtual void fillFields() = 0;
-	virtual void dumpStatistics() = 0;
-	void clearFields() {
-		fields.clear();
-	}
+  virtual void dumpStatistics() = 0;
+  void clearFields() { fields.clear(); }
 };
 
 class HandShakeCounterManager : public PerfCounterBase {
@@ -114,12 +114,12 @@ public:
 
   void update();
   void fillFields() override {
-		ctrName = "HandShakeCounter";
+    ctrName = "HandShakeCounter";
     for (auto &bus : bus_list) {
       fields.push_back(Field{bus.pathWithoutValidOrReady, bus.shake_count});
     }
   }
-	void dumpStatistics() override;
+  void dumpStatistics() override;
 };
 
 struct EXUPerfCounter : public PerfCounterBase {
@@ -168,17 +168,17 @@ struct EXUPerfCounter : public PerfCounterBase {
              const char *(*nameFunc)(int));
   void dumpStatistics() override;
 
-	void fillFields() override {
-		ctrName = "EXUInstTypeFmtCounter";
-		for (size_t i = 0; i < TYPE_NUM; i++) {
-			fields.push_back(Field{std::string("typ_") + nameOfTyp((int)i),
-														 instCountOfTyp[i]});
-		}
-		for (size_t i = 0; i < FMT_NUM; i++) {
-			fields.push_back(Field{std::string("fmt_") + nameOfFmt((int)i),
-														 instCountOfFmt[i]});
-		}
-	}
+  void fillFields() override {
+    ctrName = "EXUInstTypeFmtCounter";
+    for (size_t i = 0; i < TYPE_NUM; i++) {
+      fields.push_back(
+          Field{std::string("typ_") + nameOfTyp((int)i), instCountOfTyp[i]});
+    }
+    for (size_t i = 0; i < FMT_NUM; i++) {
+      fields.push_back(
+          Field{std::string("fmt_") + nameOfFmt((int)i), instCountOfFmt[i]});
+    }
+  }
 };
 
 struct AXI4CounterBase : public PerfCounterBase {
@@ -201,12 +201,12 @@ struct AXI4CounterBase : public PerfCounterBase {
   void init_logger();
   static void dumpStatisticsTitle();
   void dumpStatistics();
-	void fillFields() {
-		ctrName = name;
-		fields.push_back(Field{"txn", transaction_count});
-		fields.push_back(Field{"lat_cyc", total_latency_cycles});
-		fields.push_back(Field{"lat_max", maxRecord.cycles});
-	}
+  void fillFields() {
+    ctrName = name;
+    fields.push_back(Field{"txn", transaction_count});
+    fields.push_back(Field{"lat_cyc", total_latency_cycles});
+    fields.push_back(Field{"lat_max", maxRecord.cycles});
+  }
 };
 
 struct AXI4ReadPerfCounter : public AXI4CounterBase {
@@ -254,19 +254,19 @@ public:
   void addRead(std::string channelPath, std::string name);
   void addWrite(std::string channelPath, std::string name);
 
-	void fillFields() override {
-		ctrName = "AXI4PerfCounters";
-		for (auto &ctr : rdCounters) {
-			for (auto &f : ctr.fields) {
-				fields.push_back(Field{"rd_" + ctr.ctrName + "_" + f.label, f.value});
-			}
-		}
-		for (auto &ctr : wrCounters) {
-			for (auto &f : ctr.fields) {
-				fields.push_back(Field{"wr_" + ctr.ctrName + "_" + f.label, f.value});
-			}
-		}
-	}
+  void fillFields() override {
+    ctrName = "AXI4PerfCounters";
+    for (auto &ctr : rdCounters) {
+      for (auto &f : ctr.fields) {
+        fields.push_back(Field{"rd_" + ctr.ctrName + "_" + f.label, f.value});
+      }
+    }
+    for (auto &ctr : wrCounters) {
+      for (auto &f : ctr.fields) {
+        fields.push_back(Field{"wr_" + ctr.ctrName + "_" + f.label, f.value});
+      }
+    }
+  }
 };
 
 struct IFUStateCounter : public PerfCounterBase {
@@ -288,26 +288,24 @@ struct IFUStateCounter : public PerfCounterBase {
   size_t countOfStateWhenNoFetch[STATE_NUM] = {0};
   size_t totalFetchCount = 0;
 
-	const char *nameOfState(int state);
+  const char *nameOfState(int state);
 
   void bind(std::string ifupath);
   void update();
   void dumpStatistics() override;
 
-	void fillFields() override {
-		ctrName = "IFUStateCounter";
-		for (size_t i = 0; i < STATE_NUM; i++) {
-			fields.push_back(Field{std::string("state_") + nameOfState((int)i),
-														 countOfState[i]});
-		}
-	}
+  void fillFields() override {
+    ctrName = "IFUStateCounter";
+    for (size_t i = 0; i < STATE_NUM; i++) {
+      fields.push_back(
+          Field{std::string("state_") + nameOfState((int)i), countOfState[i]});
+    }
+  }
 };
 
-using PerfCounterVariant = std::variant<
-		HandShakeCounterManager,
-		EXUPerfCounter,
-		AXI4PerfCounterManager,
-		IFUStateCounter>;
+using PerfCounterVariant =
+    std::variant<HandShakeCounterManager, EXUPerfCounter,
+                 AXI4PerfCounterManager, IFUStateCounter>;
 
 void initPerfCounters();
 void dumpPerfCountersStatistics();

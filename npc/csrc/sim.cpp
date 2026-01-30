@@ -20,7 +20,9 @@
 #include "spdlog/fmt/bundled/base.h"
 #include "verilated_fst_c.h"
 
+#if ENABLE_NVBOARD
 #include <nvboard.h>
+#endif
 
 #include <getopt.h>
 #include <unistd.h>
@@ -33,7 +35,6 @@ sim_config sim_cfg;
 sim_setting &sim_settings = sim_cfg.setting;
 
 sim_cpu_state cpu;
-
 
 TOP_NAME *get_dut() { return &dut; }
 
@@ -97,9 +98,11 @@ void sim_step_cycle() {
 
   cycle_count++;
 
+#if ENABLE_NVBOARD
   if (sim_settings.nvboard) {
     nvboard_update();
   }
+#endif
 
   if (sim_settings.trace_clock_cycle) {
     printf("[Clock Cycle End]\n");
@@ -109,7 +112,7 @@ void sim_step_cycle() {
   }
 
   if (dut.reset == 0) {
-		updatePerfCounters();
+    updatePerfCounters();
   }
 }
 static void reset(int n) {
@@ -260,7 +263,7 @@ extern "C" void mrom_read(int32_t addr, int32_t *data) {
   DPI_TRACE("R addr={:08x} data={:08x}", addr + MROM_BASE, *data);
 }
 
-static void _init_flash();
+static void _copy_img();
 extern "C" void flash_read(int32_t addr, int32_t *data) {
   // in spi
   //   .addr({8'b0, in_paddr[23:2], 2'b0}),
@@ -283,7 +286,14 @@ extern "C" void psram_read(int32_t addr, int32_t *data) {
   *data = *(int32_t *)ptr;
   DPI_TRACE("R addr={:08x} data={:08x}", addr + PSRAM_BASE, *data);
 }
+// compatible interface for npc core
+extern "C" void pmem_read(int addr, int *data) {
+	return psram_read(addr-PSRAM_BASE, data);
+}
 extern "C" void psram_write(int32_t addr, char strb8, int32_t data, int32_t *) {
+	if(addr >= sizeof(psram_data)){
+		_dpi_logger->error("psram_write addr={:08x} out of bound", addr + PSRAM_BASE);
+	}
   assert(addr < sizeof(psram_data));
   uint8_t shift = (addr & 0x3) * 8;
   uint32_t aligned_addr = addr & (~0x3);
@@ -305,7 +315,14 @@ extern "C" void psram_write(int32_t addr, char strb8, int32_t data, int32_t *) {
   *ptr |= (shData & shMask);
 
   DPI_TRACE("W addr={:08x} data={:08x} (strb {:02x}) newdata={:08x}",
-            addr + PSRAM_BASE, data, (uint32_t)strb8, *ptr);
+            addr + PSRAM_BASE, (uint32_t)data, (uint32_t)strb8, *ptr);
+}
+// compatible interface for npc core
+extern "C" void pmem_write(int addr, int data, int mask) {
+	uint8_t unaligned_part = addr & 0x3;
+	uint32_t udata = ((uint32_t)data) >> (unaligned_part * 8);
+	uint8_t umask = (mask >> unaligned_part) & 0xf;
+	return psram_write(addr-PSRAM_BASE, umask, udata, nullptr);
 }
 
 constexpr uint32_t SDRAM_BASE = 0xa0000000u;
@@ -534,17 +551,26 @@ static void load_img() {
   fclose(fp);
 }
 
-static void _init_flash() {
-  spdlog::info("init flash with image data");
-  memcpy(flash_data, img, sim_cfg.img_size);
+static void _copy_img() {
+  if (is_soc()) {
+    spdlog::info("copy img to flash for soc sim");
+    memcpy(flash_data, img, sim_cfg.img_size);
+  } else {
+    spdlog::info("copy img to psram for cpu core sim");
+    memcpy(psram_data, img, sim_cfg.img_size);
+  }
 }
 static void _fill_rams_uninit() {
   if (sim_settings.zero_uninit_ram) {
-    memset(psram_data, 0, sizeof(psram_data));
+    if (is_soc()) {
+      memset(psram_data, 0, sizeof(psram_data));
+    }
     memset(sdram_data, 0, sizeof(sdram_data));
   } else {
-    memset(psram_data, 0xcc, sizeof(psram_data));
-    spdlog::debug("psram_data filled with 0xcc");
+    if (is_soc()) {
+      memset(psram_data, 0xcc, sizeof(psram_data));
+      spdlog::debug("psram_data filled with 0xcc");
+    }
     memset(sdram_data, 0xdd, sizeof(sdram_data));
     spdlog::debug("sdram_data filled with 0xdd");
   }
@@ -645,11 +671,13 @@ void _init_dpi_logger() {
 bool sim_init(int argc, char **argv, sim_setting setting) {
   Verilated::commandArgs(argc, argv);
   sim_settings = setting;
+#if ENABLE_NVBOARD
   if (setting.nvboard) {
     spdlog::info("initializing nvboard");
     nvboard_bind_all_pins(&dut);
     nvboard_init();
   }
+#endif
 
   parse_args(argc, argv);
 
@@ -658,7 +686,7 @@ bool sim_init(int argc, char **argv, sim_setting setting) {
 
   load_img();
 
-  _init_flash();
+  _copy_img();
   _fill_rams_uninit();
   _init_dpi_logger(); // should before dbg_init(which may preload data with func
                       // call dpis)
@@ -678,9 +706,5 @@ bool sim_init(int argc, char **argv, sim_setting setting) {
   cpu.pc = sim_cfg.init_pc;
   spdlog::info("set initial pc to {:08x}", cpu.pc);
 
-	initPerfCounters();
-	spdlog::info("perf counters initialized");
-
   return true;
 }
-

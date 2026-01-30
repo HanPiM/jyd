@@ -3,7 +3,6 @@ package top
 import chisel3._
 
 import regfile._
-import memory._
 
 import cpu._
 
@@ -15,37 +14,12 @@ import uart._
 import clint._
 import xbar._
 
-class NVBoardIO extends Bundle {
-  val btn      = Input(UInt(5.W))
-  val sw       = Input(UInt(16.W))
-  val ps2_clk  = Input(Bool())
-  val ps2_data = Input(Bool())
-  val uart_rx  = Input(Bool())
-  val uart_tx  = Output(Bool())
-  val ledr     = Output(UInt(16.W))
-
-  val VGA_CLK     = Output(Bool())
-  val VGA_HSYNC   = Output(Bool())
-  val VGA_VSYNC   = Output(Bool())
-  val VGA_BLANK_N = Output(Bool())
-  val VGA_R       = Output(UInt(8.W))
-  val VGA_G       = Output(UInt(8.W))
-  val VGA_B       = Output(UInt(8.W))
-
-  val seg0 = Output(UInt(8.W))
-  val seg1 = Output(UInt(8.W))
-  val seg2 = Output(UInt(8.W))
-  val seg3 = Output(UInt(8.W))
-  val seg4 = Output(UInt(8.W))
-  val seg5 = Output(UInt(8.W))
-  val seg6 = Output(UInt(8.W))
-  val seg7 = Output(UInt(8.W))
-}
+import npcMem._
 
 class TopIO extends Bundle {
   val interrupt = Input(Bool())
-  val master = AXI4IO.Master
-  val slave  = AXI4IO.Slave
+  val master    = AXI4IO.Master
+  val slave     = AXI4IO.Slave
 }
 
 // make exu and ifu access memory
@@ -134,12 +108,22 @@ class ysyx_25100261(word_width: Int = 32) extends Module {
   val exu = Module(new EXU)
   val wbu = Module(new WBU)
 
-  val INIT_PC = "h30000000".U(32.W)
-  // val MEM_BASE = "h80000000".U(32.W)
-  // val MEM_END  = "h8FFFFFFF".U(32.W)
-  //
-  // val SERIAL_BASE = "h10000000".U(32.W)
-  // val SERIAL_END  = "h10000001".U(32.W)
+  val isSoC = sys.env.getOrElse("ARCH", "") == "riscv32e-ysyxsoc"
+
+  if (isSoC) {
+    println("ARCH is SoC npc : INIT_PC = 0x30000000\n")
+  } else {
+    println("ARCH is normal npc : INIT_PC = 0x80000000\n")
+  }
+
+  val INIT_PC = if (isSoC) "h30000000".U(32.W) else "h80000000".U(32.W)
+
+  // "h30000000".U(32.W)
+  val MEM_BASE = "h80000000".U(32.W)
+  val MEM_END  = "h8FFFFFFF".U(32.W)
+
+  val SERIAL_BASE = "h10000000".U(32.W)
+  val SERIAL_END  = "h10000001".U(32.W)
 
   val pc = RegInit(INIT_PC)
 
@@ -173,51 +157,64 @@ class ysyx_25100261(word_width: Int = 32) extends Module {
   AXI4IO.connectMasterSlave(exu.io.mem, memArbiter.io.exu)
   AXI4IO.connectMasterSlave(ifu.io.mem, memArbiter.io.ifu)
 
-  // val uart = Module(new UARTUnit)
   val clint = Module(new CLINTUnit)
 
   val otherReqSlave = Wire(AXI4IO.Slave)
-  AXI4IO.transformSlaveToMasterValidIf(!reset.asBool)(io.master, otherReqSlave)
+  val memXBar       = if (isSoC) {
+    AXI4IO.transformSlaveToMasterValidIf(!reset.asBool)(io.master, otherReqSlave)
+    Module(
+      new AXI4LiteXBar(
+        Seq(
+          ("h02000000".U(32.W), "h0200ffff".U(32.W)) -> clint.io,
+          ("h0f000000".U(32.W), "hffffffff".U(32.W)) -> otherReqSlave
+        )
+      )
+    )
+  } else {
+    val uart = Module(new UARTUnit)
+    val mem  = Module(new AXI4MemUnit)
 
-  val memXBar = Module(new AXI4LiteXBar(Seq(
-    // (MEM_BASE,MEM_END) -> mem.io,
-    // (SERIAL_BASE,SERIAL_END) -> uart.io,
-    ("h02000000".U(32.W),"h0200ffff".U(32.W)) -> clint.io,
-    ("h0f000000".U(32.W),"hffffffff".U(32.W)) -> otherReqSlave
-  )))
+    otherReqSlave := DontCare
+    Module(new AXI4LiteXBar(
+      Seq(
+        ("h02000000".U(32.W), "h0200ffff".U(32.W)) -> clint.io,
+        (MEM_BASE, MEM_END)                        -> mem.io,
+        (SERIAL_BASE, SERIAL_END)                  -> uart.io
+      )
+    ))
+  }
 
-  when(io.master.bvalid && io.master.bresp === AXI4IO.BResp.DECERR){
+  when(io.master.bvalid && io.master.bresp === AXI4IO.BResp.DECERR) {
     printf("AXI4 DECERR on write address 0x%x\n", io.master.awaddr)
     stop()
     stop()
   }
-  when(io.master.rvalid && io.master.rresp === AXI4IO.RResp.DECERR){
+  when(io.master.rvalid && io.master.rresp === AXI4IO.RResp.DECERR) {
     printf("AXI4 DECERR on read address 0x%x\n", io.master.araddr)
     stop()
     stop()
   }
   val SERIAL_ADDR_BASE = "h10000000".U(32.W)
   val SERIAL_ADDR_END  = "h10001000".U(32.W)
-  val SPI_ADDR_BASE = "h10001000".U(32.W)
-  val SPI_ADDR_END  = "h10002000".U(32.W)
+  val SPI_ADDR_BASE    = "h10001000".U(32.W)
+  val SPI_ADDR_END     = "h10002000".U(32.W)
 
   def inRng(beg: UInt, end: UInt, addr: UInt): Bool = {
     (addr >= beg) && (addr < end)
   }
 
   val wNeedSkip = inRng(SERIAL_ADDR_BASE, SERIAL_ADDR_END, io.master.awaddr) ||
-                  inRng(SPI_ADDR_BASE, SPI_ADDR_END, io.master.awaddr)
+    inRng(SPI_ADDR_BASE, SPI_ADDR_END, io.master.awaddr)
   val rNeedSkip = inRng(SERIAL_ADDR_BASE, SERIAL_ADDR_END, io.master.araddr) ||
-                  inRng(SPI_ADDR_BASE, SPI_ADDR_END, io.master.araddr)
+    inRng(SPI_ADDR_BASE, SPI_ADDR_END, io.master.araddr)
 
-
-  when(io.master.awvalid && io.master.awready && wNeedSkip){
+  when(io.master.awvalid && io.master.awready && wNeedSkip) {
     RawClockedVoidFunctionCall("skip_difftest_ref")(
       clock,
       true.B
     )
   }
-  when(io.master.arvalid && io.master.arready && rNeedSkip){
+  when(io.master.arvalid && io.master.arready && rNeedSkip) {
     RawClockedVoidFunctionCall("skip_difftest_ref")(
       clock,
       true.B
@@ -225,12 +222,12 @@ class ysyx_25100261(word_width: Int = 32) extends Module {
   }
 
   val MinAccessAddr = "h02000000".U(32.W)
-  when(io.master.awvalid && io.master.awaddr < MinAccessAddr){
+  when(io.master.awvalid && io.master.awaddr < MinAccessAddr) {
     printf("AXI4 Invalid Write Address 0x%x\n", io.master.awaddr)
     stop()
     stop()
   }
-  when(io.master.arvalid && io.master.araddr < MinAccessAddr){
+  when(io.master.arvalid && io.master.araddr < MinAccessAddr) {
     printf("AXI4 Invalid Read Address 0x%x\n", io.master.araddr)
     stop()
     stop()

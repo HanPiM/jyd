@@ -62,7 +62,6 @@ static std::shared_ptr<spdlog::logger> _dpi_logger;
 sim_config *sim_get_config() { return &sim_cfg; }
 sim_cpu_state *sim_get_cpu_state() { return &cpu; }
 
-uint64_t sim_get_cycle_count() { return cycle_count; }
 uint64_t sim_get_inst_count() { return inst_count; }
 
 class sim_time_formatter : public spdlog::custom_flag_formatter {
@@ -97,6 +96,7 @@ void sim_step_cycle() {
   _sim_eval();
 
   cycle_count++;
+	// fmt::println("cycle {}", cycle_count);
 
 #if ENABLE_NVBOARD
   if (sim_settings.nvboard) {

@@ -2,6 +2,17 @@
 #include "sim.hpp"
 #include <vector>
 
+#include "VysyxSoCFull__Syms.h"
+
+auto _GetCPU() {
+  return &get_dut()->ysyxSoCFull->vlSymsp->TOP__ysyxSoCFull__asic__cpu__cpu;
+}
+
+auto _GetIFU() { return _GetCPU()->ifu; }
+auto _GetEXU() { return _GetCPU()->exu; }
+auto _GetALU() { return _GetEXU()->alu; }
+auto _GetIDU() { return _GetCPU()->idu; }
+
 using namespace _PerfCtrImp;
 
 void HandShakeCounterManager::init() {
@@ -10,29 +21,13 @@ void HandShakeCounterManager::init() {
   logger->set_level(spdlog::level::info);
 }
 
-SignalHandle::SignalHandle(std::string barePath) {
-  // spdlog::debug("resolving signal path: {}", _DebugPath(barePath));
-  handle = vpi_handle_by_name(
-      const_cast<PLI_BYTE8 *>(_FullPath(barePath).c_str()), nullptr);
-  if (!handle) {
-    spdlog::error("cannot find signal at path {}", _FullPath(barePath));
-  }
-}
-
 HandShakeCounterManager::ValidReadyBus &
-HandShakeCounterManager::add(std::string barePath, std::string description,
+HandShakeCounterManager::add(SignalHandle hValid, SignalHandle hReady,
+                             std::string barePath, std::string description,
                              callback_t onShake) {
-  auto pathValid = _FullPath(barePath, "valid");
-  auto pathReady = _FullPath(barePath, "ready");
-  spdlog::trace("adding valid/ready pair: {}/{}", pathValid, pathReady);
-  auto hValid = SignalHandle(barePath + "valid");
-  auto hReady = SignalHandle(barePath + "ready");
-
-  spdlog::info("added watch for channel {} ({})", _DebugPath(barePath),
-               description);
   bus_list.emplace_back(ValidReadyBus{
-      .hValid = std::move(hValid),
-      .hReady = std::move(hReady),
+      .hValid = hValid,
+      .hReady = hReady,
       .pathWithoutValidOrReady = barePath,
       .description = description,
       .onShakeCallback = onShake,
@@ -48,7 +43,7 @@ void HandShakeCounterManager::dumpStatistics() {
 }
 
 bool HandShakeCounterManager::ValidReadyBus::shakeHappened() {
-  return hValid.getUint32Value() == 1 && hReady.getUint32Value() == 1;
+  return hValid.get() && hReady.get();
 }
 void HandShakeCounterManager::ValidReadyBus::dumpStatus() {
   fmt::println("  {:18} happened {:>7} times (freq {:.4f})", description,
@@ -59,8 +54,8 @@ void HandShakeCounterManager::update() {
   for (auto &bus : bus_list) {
     if (bus.shakeHappened()) {
       bus.shake_count++;
-      logger->trace("Handshake happened on {} (total count {})",
-                    _DebugPath(bus.description), bus.shake_count);
+      // logger->trace("Handshake happened on {} (total count {})",
+      //               _DebugPath(bus.description), bus.shake_count);
       if (bus.onShakeCallback) {
         bus.onShakeCallback();
       }
@@ -89,23 +84,24 @@ const char *EXUPerfCounter::nameOfFmt(int fmt) {
     return "unknown";
   }
 }
-void EXUPerfCounter::bind(std::string path) {
+void EXUPerfCounter::bind() {
   logger = spdlog::stdout_color_mt("InstTypeCounter");
   set_logger_pattern_with_simtime(logger);
   logger->set_level(spdlog::level::info);
-  hInstType = SignalHandle(path + ".io_out_bits_info_typ");
-  hInstFmt = SignalHandle(path + ".io_out_bits_info_fmt");
-  hOutValid = SignalHandle(path + ".io_out_valid");
-  hOutReady = SignalHandle(path + ".io_out_ready");
+  hInstType = &_GetIDU()->io_out_bits_info_typ;
+  hInstFmt = &_GetIDU()->io_out_bits_info_fmt;
+  hOutValid = &_GetIDU()->io_out_valid;
+  hOutReady = &_GetIDU()->io_out_ready;
 }
 void EXUPerfCounter::update() {
 
-  bool isOutValidRasingEdge =
-      (!lastCycOutValid && hOutValid.getUint32Value() == 1);
-  lastCycOutValid = (hOutValid.getUint32Value() == 1);
+  bool isOutValidRasingEdge = (!lastCycOutValid && hOutValid.get());
+  lastCycOutValid = hOutValid.get();
 
   //
   // For history reason the timing is wired
+	//
+	// the exu cost time is calculated from idu
   //
   // a inst start execution approximately when out_valid rises
   // (TODO: figure out the exact timing)
@@ -116,10 +112,10 @@ void EXUPerfCounter::update() {
     instStartCycle = sim_get_cycle();
   }
 
-  if (hOutReady.getUint32Value() == 1 && hOutValid.getUint32Value() == 1) {
+  if (hOutReady.get() && hOutValid.get()) {
     // instruction finished execution
-    InstType type = (InstType)hInstType.getUint32Value();
-    InstFmt fmt = (InstFmt)hInstFmt.getUint32Value();
+    InstType type = (InstType)hInstType.get();
+    InstFmt fmt = (InstFmt)hInstFmt.get();
 
     assert(isValidType(type));
     assert(isValidFmt(fmt));
@@ -128,25 +124,26 @@ void EXUPerfCounter::update() {
     instCountOfFmt[fmt]++;
 
     auto instEndCycle = sim_get_cycle();
+		// fmt::println("Instruction executed: type {} fmt {} cycles {}",
+		// 						 nameOfTyp(type), nameOfFmt(fmt),
+		// 						 instEndCycle - instStartCycle);
     auto instCycles = instEndCycle - instStartCycle;
     totalCycleOfTyp[type] += instCycles;
     totalCycleOfFmt[fmt] += instCycles;
 
-    logger->trace("inst executed: type {} fmt {} cycles {}", nameOfTyp(type),
-                  nameOfFmt(fmt), instCycles);
+    // logger->trace("inst executed: type {} fmt {} cycles {}", nameOfTyp(type),
+    //               nameOfFmt(fmt), instCycles);
   }
 }
 
-void IFUStateCounter::bind(std::string basePath) {
-  hRValid = SignalHandle(basePath + ".io_mem_rvalid");
-  hRReady = SignalHandle(basePath + ".io_mem_rready");
-
-  hState = SignalHandle(basePath + ".fsm.state");
+void IFUStateCounter::bind() {
+  hRValid = &_GetIFU()->io_mem_rvalid;
+  hRReady = &_GetIFU()->io_mem_rready;
+  hState = &_GetIFU()->fsm->state;
 }
 void IFUStateCounter::update() {
-  bool fetchInstHappened =
-      (hRReady.getUint32Value() == 1 && hRValid.getUint32Value() == 1);
-  State s = (State)hState.getUint32Value();
+  bool fetchInstHappened = (hRReady.get() && hRValid.get());
+  State s = (State)hState.get();
   countOfState[s]++;
   if (fetchInstHappened) {
     totalFetchCount++;
@@ -174,18 +171,29 @@ void initPerfCounters() {
   IFUStateCounter ifuStateCtr;
 
   handshakeCtr.init();
-  handshakeCtr.add("ifu.io_mem_r", "IFU fetch inst");
-  handshakeCtr.add("exu.io_mem_r", "EXU load data");
-  handshakeCtr.add("exu.alu.io_out_", "EXU calc");
-  handshakeCtr.add("idu.io_out_", "IDU decode inst");
+  handshakeCtr.add(&_GetIFU()->io_mem_rvalid, &_GetIFU()->io_mem_rready,
+                   "ifu.io_mem_r", "IFU fetch inst");
+  handshakeCtr.add(&_GetEXU()->io_mem_rvalid, &_GetEXU()->io_mem_rready,
+                   "exu.io_mem_r", "EXU load data");
+  handshakeCtr.add(&_GetALU()->io_out_valid, &_GetALU()->io_out_ready,
+                   "exu.alu.io_out", "EXU calc");
+  handshakeCtr.add(&_GetIDU()->io_out_valid, &_GetIDU()->io_out_ready,
+                   "idu.io_out", "IDU decode inst");
 
-  axi4Ctr.addRead("exu.io_mem", "EXU load data");
-  axi4Ctr.addWrite("exu.io_mem", "EXU store data");
+  axi4Ctr.add(AXI4WritePerfCounter().BIND_AXI4_W_BASE(_GetEXU()->io_mem),
+              "exu_mem_write");
+  axi4Ctr.add(AXI4ReadPerfCounter().BIND_AXI4_R_BASE(_GetEXU()->io_mem),
+              "exu_mem_read");
+  axi4Ctr.add(AXI4ReadPerfCounter().BIND_AXI4_R_BASE(_GetIFU()->io_mem),
+              "ifu_mem_read");
 
-  axi4Ctr.addRead("ifu.io_mem", "IFU fetch inst");
+  // axi4Ctr.addRead("exu.io_mem", "EXU load data");
+  // axi4Ctr.addWrite("exu.io_mem", "EXU store data");
+  //
+  // axi4Ctr.addRead("ifu.io_mem", "IFU fetch inst");
 
-  exuCtr.bind("idu");
-  ifuStateCtr.bind("ifu");
+  exuCtr.bind();
+  ifuStateCtr.bind();
 
   perf_counters.push_back(std::move(handshakeCtr));
   perf_counters.push_back(std::move(exuCtr));
@@ -223,7 +231,7 @@ void dumpPerfCountersStatistics() {
   }
 }
 
-std::string dumpPerfCounterAsCSV(){
+std::string dumpPerfCounterAsCSV() {
   std::string title_row;
   std::string value_row;
   for (auto &ctr : perf_counters) {
@@ -238,9 +246,9 @@ std::string dumpPerfCounterAsCSV(){
             title_row += c.ctrName + "_" + f.label;
             value_row += std::to_string(f.value);
           }
-					c.clearFields();
+          c.clearFields();
         },
         ctr);
   }
-	return title_row + "\n" + value_row;
+  return title_row + "\n" + value_row;
 }

@@ -30,8 +30,8 @@ SIM_IMG ?=
 
 SOC_HOME ?= ../ysyxSoC
 
-# SAN_FLAGS?=
-SAN_FLAGS?= -fsanitize=address
+SAN_FLAGS?=
+# SAN_FLAGS?= -fsanitize=address
 
 VERILATOR_FLAGS ?=
 
@@ -137,7 +137,8 @@ VERILATOR_CONTROL_FILE = verilator.vlt
 
 INCFLAGS = $(addprefix -I, $(INC_PATH))
 CXXFLAGS += $(INCFLAGS) -DTOP_NAME=V$(TOP_NAME) -DENABLE_VPI=$(ENABLE_VPI)# -DENABLE_WAVE=$(ENABLE_WAVE)
-CXXFLAGS += $(SAN_FLAGS) -std=c++20 -g # -fno-inline -O0
+CXXFLAGS += $(SAN_FLAGS) -std=c++20 -g # -fno-inline
+CXXFLAGS += -fno-omit-frame-pointer
 
 # make link faster
 LDFLAGS += -fuse-ld=mold
@@ -211,6 +212,7 @@ sta: $(SIM_VSRCS)
 		RTL_FILES="$(STA_VSRCS)" 
 
 perf: $(SIM_BIN)
-	make -C ../am-kernels/benchmarks/microbench ARCH=riscv32e-ysyxsoc run VSIM_difftest=0 mainargs=train
+	export ARCH=riscv32e-ysyxsoc 
+	make -C ../am-kernels/benchmarks/microbench ARCH=riscv32e-ysyxsoc run VSIM_difftest=0 mainargs=train SAN_FLAGS=
 
 -include ../Makefile

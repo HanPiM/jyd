@@ -14,12 +14,15 @@
  ***************************************************************************************/
 
 #include "common.h"
+#include "utils.h"
 #include <device/mmio.h>
 #include <isa.h>
 #include <memory/host.h>
 #include <memory/paddr.h>
 #include <stdint.h>
 #include <stdio.h>
+
+#include <time.h>
 
 #if defined(CONFIG_PMEM_MALLOC)
 static uint8_t *pmem = NULL;
@@ -141,8 +144,10 @@ void init_mem() {
 #define mtrace(p, expr)                                                        \
   IFDEF(CONFIG_MTRACE, if (is_addr_inmtrace(addr)) { expr; });
 
+extern uint64_t g_nr_guest_inst;
+
 word_t paddr_read(paddr_t addr, int len) {
-  mtrace(addr, printf("mem r %08X %db\n", addr, len));
+  mtrace(addr, printf("%ld mem r %08X %db\n",g_nr_guest_inst, addr, len));
   word_t data;
   if (builtin_read(addr, len, &data)) {
     return data;
@@ -154,7 +159,7 @@ word_t paddr_read(paddr_t addr, int len) {
 }
 
 void paddr_write(paddr_t addr, int len, word_t data) {
-  mtrace(addr, printf("mem w %08X %db %08X\n", addr, len, data));
+  mtrace(addr, printf("%ld mem w %08X %db %08X\n",g_nr_guest_inst, addr, len, data));
 	if (builtin_write(addr, len, data)) {
 		return;
 	}

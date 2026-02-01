@@ -12,7 +12,7 @@ class ICacheIO extends Bundle {
 }
 
 object ICacheParameters {
-  val BLOCK_SIZE         = 4
+  val BLOCK_SIZE         = 8
   val BLOCK_NUM          = 16
   val BLOCK_SIZE_INBITS  = BLOCK_SIZE * 8
   val BLOCK_SIZE_INWORDS = BLOCK_SIZE / 4
@@ -38,6 +38,9 @@ object ICacheParameters {
   def extractWordOffset(addr: UInt): UInt = {
     if (BLOCK_SIZE_INWORDS == 1) 0.U
     else addr(log2Ceil(BLOCK_SIZE) - 1, 2)
+  }
+  def alignToBlock(addr: UInt):      UInt = {
+    addr(31, log2Ceil(BLOCK_SIZE)) ## 0.U(log2Ceil(BLOCK_SIZE).W)
   }
 }
 
@@ -90,7 +93,7 @@ class ICache extends Module {
   // AXI4IO.noShakeConnectAR(io.cpu, io.mem)
 
   io.mem.arid    := io.cpu.arid
-  io.mem.araddr  := io.cpu.araddr
+  io.mem.araddr  := ICacheParameters.alignToBlock(rdAddr)
   io.mem.arlen   := ICacheParameters.ARLEN.U
   io.mem.arsize  := AXI4IO.SizeType.WORD
   io.mem.arburst := AXI4IO.BurstType.INCR
@@ -124,7 +127,7 @@ class ICache extends Module {
   val dataShift = (ICacheParameters.extractWordOffset(rdAddr) << 5)
 
   // when not hit, since rvaild at the end of waitMem, the data is from nxtCacheData
-  val rdData = Mux(cacheHit, rdCacheBlock.data, nxtCacheData)
+  val rdData      = Mux(io.mem.rvalid || (!cacheHit), nxtCacheData, rdCacheBlock.data)
   dontTouch(rdData)
   val shiftedData = rdData >> dataShift
   dontTouch(shiftedData)

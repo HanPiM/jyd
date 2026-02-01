@@ -79,6 +79,8 @@ int main() {
 
   ICacheSim icache(4, 16);
 
+	printf("Simulating ICache with %zu records...\n", itrace_pack_size(pack));
+
   uint32_t pc = 0;
   do {
     pc = itrace_pack_pickone(pack);

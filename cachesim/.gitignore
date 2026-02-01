@@ -2,4 +2,6 @@
 !*.c
 !*.h
 
+.cache
+
 compile_commands.json

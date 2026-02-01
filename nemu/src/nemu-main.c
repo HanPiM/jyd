@@ -24,6 +24,7 @@ int is_exit_status_bad();
 
 void destroy_monitor();
 
+extern bool isSoC;
 extern itrace_pack_t g_itrace_pack;
 
 int main(int argc, char *argv[]) {
@@ -34,7 +35,9 @@ int main(int argc, char *argv[]) {
   init_monitor(argc, argv);
 #endif
 
+	if(isSoC){
 	g_itrace_pack = itrace_pack_create("itrace_pack.bin");
+	}
 
 
   /* Start engine. */

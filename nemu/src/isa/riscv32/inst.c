@@ -29,6 +29,7 @@
 #include <itrace_pack.h>
 
 #include "encoding.out.h"
+#include "memory/paddr.h"
 
 // We are in riscv32
 #define signed_min INT_MIN
@@ -80,7 +81,7 @@ static int decode_exec(Decode *s) {
   }
 
   if (IS_INST(EBREAK)) {
-		itrace_pack_close(g_itrace_pack);
+		if(g_itrace_pack)itrace_pack_close(g_itrace_pack);
     NEMUTRAP(s->pc, R(10)); // R(10) is $a0
 		matched = true;
   }
@@ -137,7 +138,9 @@ word_t _handle_csr_rw(word_t csr, word_t src1, bool is_write) {
 
 int isa_exec_once(Decode *s) {
   s->isa.inst = inst_fetch(&s->snpc, 4);
+	if(isSoC){
 	itrace_pack_add(g_itrace_pack, s->pc);
+	}
 	// printf("%08x\n", s->pc);
   return decode_exec(s);
 }

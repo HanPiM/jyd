@@ -49,8 +49,13 @@ static uint8_t pmem[CONFIG_MSIZE] PG_ALIGN = {};
 #define NEMU_DEVICE_BASE 0xa0000000u
 #define NEMU_DEVICE_END 0xb0000000u
 
+#ifdef CONFIG_DEVICE
 #define SDRAM_BASE (isSoC ? 0xa0000000u : 0xffffffffu)
 #define SDRAM_END (isSoC ? 0xb0000000u : 0xffffffffu)
+#else
+#define SDRAM_BASE 0xa0000000u
+#define SDRAM_END 0xb0000000u
+#endif
 
 static uint8_t mrom[0x1000] PG_ALIGN; // 4KB
 static uint8_t sram[0x2000] PG_ALIGN; // 8KB
@@ -64,6 +69,7 @@ static bool in_flash(paddr_t addr) {
 	return FLASH_BASE <= addr && addr < FLASH_END;
 }
 static bool in_sdram(paddr_t addr) { 
+	// printf("SDRAM addr check: " FMT_PADDR " base: " FMT_PADDR " end: " FMT_PADDR "\n", addr, SDRAM_BASE, SDRAM_END);
 	return SDRAM_BASE <= addr && addr < SDRAM_END;
 }
 
@@ -163,6 +169,7 @@ word_t paddr_read(paddr_t addr, int len) {
   if (builtin_read(addr, len, &data)) {
     return data;
   }
+#ifdef CONFOG_DEVICE
 	if(SOC_SERIAL_BASE <= addr && addr < SOC_SERIAL_END) {
 		addr -= SOC_SERIAL_BASE;
 		addr += CONFIG_SERIAL_MMIO;
@@ -170,6 +177,7 @@ word_t paddr_read(paddr_t addr, int len) {
 		addr -= SOC_TIMER_BASE;
 		addr += CONFIG_RTC_MMIO;
 	}
+#endif
 
   IFDEF(CONFIG_DEVICE, return mmio_read(addr, len));
   out_of_bound(addr);
@@ -181,10 +189,12 @@ void paddr_write(paddr_t addr, int len, word_t data) {
 	if (builtin_write(addr, len, data)) {
 		return;
 	}
+#ifdef CONFIG_DEVICE
 	if(SOC_SERIAL_BASE <= addr && addr < SOC_SERIAL_END) {
 		addr -= SOC_SERIAL_BASE;
 		addr += CONFIG_SERIAL_MMIO;
 	}
+#endif
   IFDEF(CONFIG_DEVICE, mmio_write(addr, len, data); return);
   out_of_bound(addr);
 }

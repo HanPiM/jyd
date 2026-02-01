@@ -5,7 +5,6 @@ import common_def._
 import busfsm._
 
 import regfile._
-import memory._
 import cpu.alu._
 import axi4._
 
@@ -213,11 +212,19 @@ class EXU extends Module {
   when(memIO.awvalid && memIO.awready) {
     memAddrSent := true.B
   }
-  when(memIO.wvalid && memIO.wready) {
+  // when(memIO.wvalid && memIO.wready) {
+  //   memWDone := true.B
+  // }
+
+  //
+  // need wait for bresp
+  // since w done only means data has been sent
+  // later read operation may have higher priority and
+  // the write may not be finished yet
+  //
+  when(memIO.bvalid && memIO.bready) {
     memWDone := true.B
   }
-
-  when(memIO.bvalid) {}
   memIO.bready := true.B
 
   memWData := reg_v2 << memAddrUnalignPartBitlen

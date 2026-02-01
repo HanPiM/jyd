@@ -16,6 +16,7 @@ itrace_pack_t itrace_pack_open(const char* filename);
 
 void itrace_pack_close(itrace_pack_t pack);
 size_t itrace_pack_size(itrace_pack_t pack);
+size_t itrace_pack_nrecords(itrace_pack_t pack);
 
 // add a pc record to the pack
 void itrace_pack_add(itrace_pack_t pack, uint32_t pc);

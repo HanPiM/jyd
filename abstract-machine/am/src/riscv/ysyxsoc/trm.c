@@ -49,14 +49,13 @@ FSBL_TEXT void init_serial() {
   *UART_IER = 0x0;
 }
 
+#define WAIT_UART_TX_EMPTY() do{while (!IS_UART_TRANSMIT_EMPTY()){}}while(0)
 FSBL_TEXT void fsbl_putch(char ch) {
-	while (!IS_UART_TRANSMIT_EMPTY()) {
-	}
+	WAIT_UART_TX_EMPTY();
 	*UART_TX = ch;
 }
 SSBL_TEXT void ssbl_putch(char ch) {
-	while (!IS_UART_TRANSMIT_EMPTY()) {
-	}
+	WAIT_UART_TX_EMPTY();
 	*UART_TX = ch;
 }
 
@@ -171,20 +170,7 @@ SSBL_TEXT void _ssbl_clear(void *dst, size_t n) {
   if (n == 0)
     return;
   uintptr_t dptr = (uintptr_t)dst;
-  // if (dptr & 0x3) {
-  //   uint8_t* byte_pre = (uint8_t *)dptr;
-  // size_t pre_bytes = 4 - (dptr & 0x3);
-  // putnum_base16(pre_bytes);
-  // putch('\n');
-  // putnum_base16(n);
-  // putch('\n');
-  // assert(n >= pre_bytes);
-  // for (size_t i = 0; i < pre_bytes; i++) {
-  // 	byte_pre[i] = 0;
-  // }
-  // dptr += pre_bytes;
-  // n -= pre_bytes;
-  // }
+
   assert(IS_4BYTE_ALIGNED(dptr));
   size_t aligned_n = n & (~0x3);
   _ssbl_clear_word_aligned((void *)dptr, aligned_n);
@@ -286,7 +272,6 @@ SSBL_TEXT void _second_boot() {
 
 #undef putch
 void putch(char ch) {
-  while (!IS_UART_TRANSMIT_EMPTY()) {
-  }
+	WAIT_UART_TX_EMPTY();
   *UART_TX = ch;
 }

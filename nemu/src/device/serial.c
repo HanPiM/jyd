@@ -24,6 +24,8 @@
 
 static uint8_t *serial_base = NULL;
 
+// uint32_t g_serial_delay = 0;
+
 static void serial_putc(char ch) {
   MUXDEF(CONFIG_TARGET_AM, putch(ch), putc(ch, stderr));
 }
@@ -33,15 +35,23 @@ static void serial_io_handler(uint32_t offset, int len, bool is_write) {
   switch (offset) {
   /* We bind the serial port with the host stderr in NEMU. */
   case CH_OFFSET:
-    if (is_write)
+    if (is_write){
       serial_putc(serial_base[0]);
+			// useless
+			// since real uart delay need cycle level simulation
+			// g_serial_delay = 00;
+		}
     else
       panic("do not support read");
     break;
   default: {
     if (isSoC) {
 			// 5 : Line Status Register (LSR)
-			if(offset != 5) printf("serial io do not support offset = %d\n", offset);
+			// if(offset != 5) printf("serial io do not support offset = %d\n", offset);
+			if(offset == 5) {
+				serial_base[5] = 0x20;
+				// serial_base[5] = (g_serial_delay > 0) ? 0 : 0x20;
+			}
     } else {
       panic("do not support offset = %d", offset);
     }

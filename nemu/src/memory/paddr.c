@@ -33,10 +33,15 @@ static uint8_t pmem[CONFIG_MSIZE] PG_ALIGN = {};
 #define SOC_SERIAL_BASE 0x10000000u
 #define SOC_SERIAL_END 0x10001000u
 
+#define SOC_TIMER_BASE 0x02000048u
+#define SOC_TIMER_END 0x02000100u
+
 #define SRAM_BASE 0x0f000000u
 #define MROM_BASE 0x20000000u
 #define FLASH_BASE 0x30000000u
 #define FLASH_END 0x40000000u
+
+
 // #define SDRAM_BASE 0xa0000000u
 // #define SDRAM_END 0xb0000000u
 
@@ -44,7 +49,6 @@ static uint8_t pmem[CONFIG_MSIZE] PG_ALIGN = {};
 #define NEMU_DEVICE_BASE 0xa0000000u
 #define NEMU_DEVICE_END 0xb0000000u
 
-// dummy SDRAM region
 #define SDRAM_BASE (isSoC ? 0xa0000000u : 0xffffffffu)
 #define SDRAM_END (isSoC ? 0xb0000000u : 0xffffffffu)
 
@@ -85,6 +89,8 @@ uint8_t *guest_to_host(paddr_t paddr) {
 	} else if (NEMU_DEVICE_BASE <= paddr && paddr < NEMU_DEVICE_END) {
 		return NULL;
 	} else if (SOC_SERIAL_BASE <= paddr && paddr < SOC_SERIAL_END) {
+		return NULL;
+	} else if (SOC_TIMER_BASE <= paddr && paddr < SOC_TIMER_END) {
 		return NULL;
 	}
 	printf("Failed to translate guest to host address: " FMT_PADDR, paddr);
@@ -160,6 +166,9 @@ word_t paddr_read(paddr_t addr, int len) {
 	if(SOC_SERIAL_BASE <= addr && addr < SOC_SERIAL_END) {
 		addr -= SOC_SERIAL_BASE;
 		addr += CONFIG_SERIAL_MMIO;
+	} else if(SOC_TIMER_BASE <= addr && addr < SOC_TIMER_END) {
+		addr -= SOC_TIMER_BASE;
+		addr += CONFIG_RTC_MMIO;
 	}
 
   IFDEF(CONFIG_DEVICE, return mmio_read(addr, len));

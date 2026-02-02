@@ -2,6 +2,9 @@
 SOC_PERIP_VSRCS = $(shell find $(abspath $(SOC_HOME)/perip) -name "*.v")
 SOC_GENED_FILE = $(abspath $(SOC_HOME)/build/ysyxSoCFull.v)
 
+$(SOC_GENED_FILE):
+	make -C $(SOC_HOME) verilog
+
 SIM_VSRCS = $(SOC_GENED_FILE)
 SIM_VSRCS += $(SOC_PERIP_VSRCS)
 

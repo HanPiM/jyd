@@ -30,7 +30,7 @@ class EXU extends Module {
   val func7t = dinst.code(31, 25)
 
   alu_in.is_imm := (dinst.info.fmt === InstFmt.imm)
-  alu_in.func3t := func3t
+  alu_in.func3t := Mux(dinst.info.fmt === InstFmt.branch, func3t >> 1, func3t)
   alu_in.func7t := func7t
 
   val MS_fsm = Module(new OneMasterOneSlaveFSM)
@@ -46,7 +46,8 @@ class EXU extends Module {
   val reg_v2 = io.rvec.data(1)
 
   alu_in.src1 := reg_v1
-  alu_in.src2 := Mux(dinst.info.fmt === InstFmt.reg, reg_v2, dinst.info.imm)
+  // when branch, src2 is reg_v2
+  alu_in.src2 := Mux(dinst.info.fmt === InstFmt.imm, dinst.info.imm, reg_v2)
 
   // csr
 
@@ -274,6 +275,10 @@ class EXU extends Module {
 
   // wdata
 
+  val nxt_pc = Wire(Types.UWord)
+  val pcAddImm = dinst.pc + dinst.info.imm
+  val snpc = dinst.pc + 4.U
+
   // for now, system inst, ecall and mret has rd == 0
   // TODO: handle rd != 0 case
   io.out.bits.gpr.en := (dinst.info.rd =/= 0.U) && (dinst.info.typ =/= InstType.branch) &&
@@ -284,9 +289,9 @@ class EXU extends Module {
     Seq(
       InstType.arithmetic -> alu.io.out.bits,
       InstType.lui        -> dinst.info.imm,
-      InstType.auipc      -> (dinst.pc + dinst.info.imm),
-      InstType.jalr       -> (dinst.pc + 4.U),
-      InstType.jal        -> (dinst.pc + 4.U),
+      InstType.auipc      -> pcAddImm,
+      InstType.jalr       -> snpc,
+      InstType.jal        -> snpc,
       InstType.load       -> MuxLookup(func3t, GARBAGE_UNINIT_VALUE)(
         Seq(
           MemOp.byte     -> Cat(Fill(24, memRdData(7)), memRdData(7, 0)),
@@ -335,25 +340,30 @@ class EXU extends Module {
     }
   }
 
-  val nxt_pc = io.out.bits.nxt_pc
-  val snpc   = dinst.pc + 4.U
+  io.out.bits.nxt_pc := nxt_pc
   when(is_ecall || is_mret) {
     nxt_pc := csr_rdata
   }.otherwise {
     when(dinst.info.typ === InstType.jalr) {
-      nxt_pc := (reg_v1 + dinst.info.imm) &
-        Cat(Fill(Types.BitWidth.word - 1, 1.U), 0.U(1.W)) // set bit0 to 0
+      val r1AddImm = reg_v1 + dinst.info.imm
+      nxt_pc := r1AddImm(31, 1) ## 0.U(1.W)
     }.elsewhen(dinst.info.typ === InstType.jal) {
-      nxt_pc := dinst.pc + dinst.info.imm
+      nxt_pc := pcAddImm
     }.elsewhen(dinst.info.fmt === InstFmt.branch) {
+      // reuse alu
+      // branch func3t
+      //
+      // blt/bge 10x -> feed alu 010 -> slt
+      // bltu/bgeu 11x -> feed alu 011 -> sltu
+      val isLessThan  = alu.io.out.bits(0)
       val take_branch = MuxLookup(func3t, false.B)(
         Seq(
           BranchOp.beq  -> (reg_v1 === reg_v2),
           BranchOp.bne  -> (reg_v1 =/= reg_v2),
-          BranchOp.blt  -> (reg_v1.asSInt < reg_v2.asSInt),
-          BranchOp.bge  -> (reg_v1.asSInt >= reg_v2.asSInt),
-          BranchOp.bltu -> (reg_v1 < reg_v2),
-          BranchOp.bgeu -> (reg_v1 >= reg_v2)
+          BranchOp.blt  -> isLessThan,
+          BranchOp.bge  -> (~isLessThan),
+          BranchOp.bltu -> isLessThan,
+          BranchOp.bgeu -> (~isLessThan)
         )
       )
       nxt_pc := Mux(take_branch, dinst.pc + dinst.info.imm, snpc)

@@ -217,7 +217,7 @@ sta: $(SIM_VSRCS)
 	./remove_dpi.sh $(CHISEL2V_EMIT_DIR) $(STA_NODPI_PATH)
 	make -C $(YOSYS_STA_PATH) sta \
 		DESIGN=$(STA_DEST) \
-		CLK_FREQ_MHZ=400 \
+		CLK_FREQ_MHZ=2000 \
 		CLK_PORT_NAME=clock \
 		O=$(STA_OUT_DIR) \
 		RTL_FILES="$(STA_VSRCS)" 

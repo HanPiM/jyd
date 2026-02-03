@@ -117,6 +117,10 @@ struct EXUPerfCounter : public PerfCounterBase {
     system,
     TYPE_NUM
   };
+
+	static InstFmt OneHotToFmt(uint32_t onehot);
+	static InstType OneHotToType(uint32_t onehot);
+
   static inline bool isValidFmt(InstFmt fmt) { return fmt < FMT_NUM; }
   static inline bool isValidType(InstType type) { return type < TYPE_NUM; }
 

@@ -1,5 +1,6 @@
 #include "PerfCounter.hpp"
 #include "sim.hpp"
+#include "spdlog/fmt/bundled/format.h"
 #include <fstream>
 #include <vector>
 
@@ -92,6 +93,12 @@ void EXUPerfCounter::bind() {
   hOutValid = &_GetIDU()->io_out_valid;
   hOutReady = &_GetIDU()->io_out_ready;
 }
+EXUPerfCounter::InstFmt EXUPerfCounter::OneHotToFmt(uint32_t onehot) {
+	return static_cast<InstFmt>(std::countr_zero(onehot));
+}
+EXUPerfCounter::InstType EXUPerfCounter::OneHotToType(uint32_t onehot) {
+	return static_cast<InstType>(std::countr_zero(onehot));
+}
 void EXUPerfCounter::update() {
 
   bool isOutValidRasingEdge = (!lastCycOutValid && hOutValid.get());
@@ -113,11 +120,16 @@ void EXUPerfCounter::update() {
 
   if (hOutReady.get() && hOutValid.get()) {
     // instruction finished execution
-    InstType type = (InstType)hInstType.get();
-    InstFmt fmt = (InstFmt)hInstFmt.get();
+    InstType type = OneHotToType(hInstType.get());
+    InstFmt fmt = OneHotToFmt(hInstFmt.get());
 
-    assert(isValidType(type));
-    assert(isValidFmt(fmt));
+
+		if(!isValidType(type) || !isValidFmt(fmt)) {
+			logger->error("Invalid instruction type {} or fmt {}",
+										(int)type, (int)fmt);
+		}
+    // assert(isValidType(type));
+    // assert(isValidFmt(fmt));
 
     instCountOfTyp[type]++;
     instCountOfFmt[fmt]++;

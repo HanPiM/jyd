@@ -139,17 +139,17 @@ class EXU extends Module {
 
   // mem
 
-  object MemOp {
-    val byte     = 0.U
-    val halfword = 1.U
-    val word     = 2.U
-    val lbu      = 4.U
-    val lhu      = 5.U
+  // object MemOp {
+  //   val byte     = 0.U
+  //   val halfword = 1.U
+  //   val word     = 2.U
+  //   val lbu      = 4.U
+  //   val lhu      = 5.U
+  //
+  // }
 
-  }
-
-  // val memRdRawData = Reg(Types.UWord)
-  val memRdRawData = Wire(Types.UWord)
+  val memRdRawData = Reg(Types.UWord)
+  // val memRdRawData = Wire(Types.UWord)
 
   val isLoad  = isTypLoad && MS_fsm.io.master_valid
   val isStore = isTypStore && MS_fsm.io.master_valid
@@ -228,14 +228,17 @@ class EXU extends Module {
     memAddrSent := true.B
   }
 
-  memRdRawData := memIO.rdata
+  // memRdRawData := memIO.rdata
   when(memIO.rvalid && !memRDone) {
-    // memRdRawData := memIO.rdata
+    memRdRawData := memIO.rdata
     memRDone := true.B
   }
   // val downStreamRecved = Reg(Bool())
   // dontTouch(downStreamRecved)
-  memIO.rready := io.out.ready
+  // memIO.rready := io.out.ready
+  
+  // TODO: fix SoC AXI4 Delayer support delay ready
+  memIO.rready := true.B
   // when(io.out.ready && io.out.valid) {
   //   downStreamRecved := true.B
   // }.elsewhen(io.dinst.valid && isMemOp){

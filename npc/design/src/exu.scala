@@ -29,8 +29,16 @@ class EXU extends Module {
   val func3t = dinst.code(14, 12)
   val func7t = dinst.code(31, 25)
 
-  alu_in.is_imm := (dinst.info.fmt === InstFmt.imm)
-  alu_in.func3t := Mux(dinst.info.fmt === InstFmt.branch, func3t >> 1, func3t)
+  val isFmtI = InstFmt.hasSame(dinst.info.fmt, InstFmt.imm)
+  val isFmtB = InstFmt.hasSame(dinst.info.fmt, InstFmt.branch)
+
+  val isTypSys = InstType.hasSame(dinst.info.typ, InstType.system)
+  val isTypLoad = InstType.hasSame(dinst.info.typ, InstType.load)
+  val isTypStore = InstType.hasSame(dinst.info.typ, InstType.store)
+
+
+  alu_in.is_imm := isFmtI
+  alu_in.func3t := Mux(isFmtB, func3t >> 1, func3t)
   alu_in.func7t := func7t
 
   val MS_fsm = Module(new OneMasterOneSlaveFSM)
@@ -47,7 +55,7 @@ class EXU extends Module {
 
   alu_in.src1 := reg_v1
   // when branch, src2 is reg_v2
-  alu_in.src2 := Mux(dinst.info.fmt === InstFmt.imm, dinst.info.imm, reg_v2)
+  alu_in.src2 := Mux(isFmtI, dinst.info.imm, reg_v2)
 
   // csr
 
@@ -67,12 +75,12 @@ class EXU extends Module {
   object CSROp {
     val csrrw = 1.U
     val csrrs = 2.U
-    def isValidCSRop(op: UInt): Bool = {
-      (op === csrrw) || (op === csrrs)
-    }
+    // def isValidCSRop(op: UInt): Bool = {
+    //   (op === csrrw) || (op === csrrs)
+    // }
   }
 
-  when(dinst.info.typ === InstType.system) {
+  when(isTypSys) {
     when(is_ecall) {
       csrren    := true.B
       csrwen    := false.B
@@ -138,8 +146,8 @@ class EXU extends Module {
 
   val memRdRawData = Reg(Types.UWord)
 
-  val isLoad  = (dinst.info.typ === InstType.load) && MS_fsm.io.master_valid
-  val isStore = (dinst.info.typ === InstType.store) && MS_fsm.io.master_valid
+  val isLoad  = isTypLoad && MS_fsm.io.master_valid
+  val isStore = isTypStore && MS_fsm.io.master_valid
   val isMemOp = isLoad || isStore
 
   val memWDone = Reg(Bool())
@@ -160,6 +168,8 @@ class EXU extends Module {
   memIO.araddr  := memAddr
   memIO.arvalid := isLoad && (!memRDone) && (!memAddrSent)
 
+  // Weird optmization from chisel make this
+  // synthesis area smaller than using func3t directly
   val memOpSize = MuxLookup(func3t, 0.U)(
     Seq(
       MemOp.byte     -> 0.U,
@@ -263,11 +273,11 @@ class EXU extends Module {
     )
   )
 
-  when(dinst.info.typ === InstType.store) {
-    when(!MemOp.isValidStoreOp(func3t)) {
-      printf("(exu) UNKNOWN STORE func3t %d\n", func3t)
-    }
-  }
+  // when(dinst.info.typ === InstType.store) {
+  //   when(!MemOp.isValidStoreOp(func3t)) {
+  //     printf("(exu) UNKNOWN STORE func3t %d\n", func3t)
+  //   }
+  // }
 
   MS_fsm.io.self_finished := alu.io.out.valid && (
     (!isMemOp) || memOPDone
@@ -285,8 +295,7 @@ class EXU extends Module {
     (dinst.info.typ =/= InstType.store)
 
   io.out.bits.gpr.addr := dinst.info.rd
-  io.out.bits.gpr.data := MuxLookup(dinst.info.typ, GARBAGE_UNINIT_VALUE)(
-    Seq(
+  val gprDataMapping =     Seq(
       InstType.arithmetic -> alu.io.out.bits,
       InstType.lui        -> dinst.info.imm,
       InstType.auipc      -> pcAddImm,
@@ -312,22 +321,47 @@ class EXU extends Module {
         )
       )
     )
-  )
-  when(dinst.info.typ === InstType.system) {
-    when(!(is_ecall || is_mret)) {
-      when(!CSROp.isValidCSRop(func3t)) {
-        printf("(exu) UNKNOWN SYSTEM func3t %d\n", func3t)
-      }
-    }
-  }
-  when(dinst.info.typ === InstType.load) {
-    when(!MemOp.isValidLoadOp(func3t)) {
-      printf("(exu) UNKNOWN LOAD func3t %d\n", func3t)
-    }
-  }
+
+  io.out.bits.gpr.data := MuxLookup(dinst.info.typ, GARBAGE_UNINIT_VALUE)(gprDataMapping)
+
+  // for (fmt <- InstFmt.all) {
+  //   println(s"InstFmt.${fmt} = ${fmt.asUInt.litValue}")
+  // }
 
   // nxt_pc
 
+  io.out.bits.nxt_pc := nxt_pc
+  when(is_ecall || is_mret) {
+    nxt_pc := csr_rdata
+  }.otherwise {
+    when(InstType.hasSame(dinst.info.typ, InstType.jalr)) {
+      val r1AddImm = reg_v1 + dinst.info.imm
+      nxt_pc := r1AddImm(31, 1) ## 0.U(1.W)
+    }.elsewhen(InstType.hasSame(dinst.info.typ, InstType.jal)) {
+      nxt_pc := pcAddImm
+    }.elsewhen(isFmtB){
+      // reuse alu
+      // branch func3t
+      //
+      // blt/bge 10x -> feed alu 010 -> slt
+      // bltu/bgeu 11x -> feed alu 011 -> sltu
+      //
+      // only when func3t[2] == 0 -> eq/ne
+      //
+      val isLessThan = alu.io.out.bits(0)
+      val branchCalc = Mux(func3t(2), isLessThan, (reg_v1 === reg_v2))
+      val takeBranch = Mux(func3t(0), ~branchCalc, branchCalc)
+      nxt_pc := Mux(takeBranch, dinst.pc + dinst.info.imm, snpc)
+      // when(!BranchOp.isValidBranchOp(func3t)) {
+      //   printf("(exu) UNKNOWN BRANCH func3t %d\n", func3t)
+      // }
+    }.otherwise {
+      nxt_pc := snpc
+    }
+  }
+}
+
+object UnusedResrervedDefinition {
   object BranchOp {
     val beq  = 0.U
     val bne  = 1.U
@@ -337,41 +371,6 @@ class EXU extends Module {
     val bgeu = 7.U
     def isValidBranchOp(op: UInt): Bool = {
       (op === beq) || (op === bne) || (op === blt) || (op === bge) || (op === bltu) || (op === bgeu)
-    }
-  }
-
-  io.out.bits.nxt_pc := nxt_pc
-  when(is_ecall || is_mret) {
-    nxt_pc := csr_rdata
-  }.otherwise {
-    when(dinst.info.typ === InstType.jalr) {
-      val r1AddImm = reg_v1 + dinst.info.imm
-      nxt_pc := r1AddImm(31, 1) ## 0.U(1.W)
-    }.elsewhen(dinst.info.typ === InstType.jal) {
-      nxt_pc := pcAddImm
-    }.elsewhen(dinst.info.fmt === InstFmt.branch) {
-      // reuse alu
-      // branch func3t
-      //
-      // blt/bge 10x -> feed alu 010 -> slt
-      // bltu/bgeu 11x -> feed alu 011 -> sltu
-      val isLessThan  = alu.io.out.bits(0)
-      // val branchCalc = MuxLookup(func3t(2,1), false.B)(
-      //   Seq(
-      //     0.U  -> (reg_v1 === reg_v2),
-      //     2.U  -> isLessThan,
-      //     3.U -> isLessThan,
-      //   )
-      // )
-      //
-      val branchCalc  = Mux(func3t(2), isLessThan, (reg_v1 === reg_v2))
-      val takeBranch = Mux(func3t(0), ~branchCalc, branchCalc)
-      nxt_pc := Mux(takeBranch, dinst.pc + dinst.info.imm, snpc)
-      when(!BranchOp.isValidBranchOp(func3t)) {
-        printf("(exu) UNKNOWN BRANCH func3t %d\n", func3t)
-      }
-    }.otherwise {
-      nxt_pc := snpc
     }
   }
 }

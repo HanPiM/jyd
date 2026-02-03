@@ -39,7 +39,9 @@ class InstInfoDecoder extends Module {
     }
   }
 
-  io.out := MuxLookup(opcu, 0.U.asTypeOf(new InstMetaInfo()))(lut)
+  val dontcare = Wire(new InstMetaInfo)
+  dontcare := DontCare
+  io.out := MuxLookup(opcu, dontcare)(lut)
 }
 
 

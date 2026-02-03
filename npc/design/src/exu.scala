@@ -275,9 +275,9 @@ class EXU extends Module {
 
   // wdata
 
-  val nxt_pc = Wire(Types.UWord)
+  val nxt_pc   = Wire(Types.UWord)
   val pcAddImm = dinst.pc + dinst.info.imm
-  val snpc = dinst.pc + 4.U
+  val snpc     = dinst.pc + 4.U
 
   // for now, system inst, ecall and mret has rd == 0
   // TODO: handle rd != 0 case
@@ -356,17 +356,17 @@ class EXU extends Module {
       // blt/bge 10x -> feed alu 010 -> slt
       // bltu/bgeu 11x -> feed alu 011 -> sltu
       val isLessThan  = alu.io.out.bits(0)
-      val take_branch = MuxLookup(func3t, false.B)(
-        Seq(
-          BranchOp.beq  -> (reg_v1 === reg_v2),
-          BranchOp.bne  -> (reg_v1 =/= reg_v2),
-          BranchOp.blt  -> isLessThan,
-          BranchOp.bge  -> (~isLessThan),
-          BranchOp.bltu -> isLessThan,
-          BranchOp.bgeu -> (~isLessThan)
-        )
-      )
-      nxt_pc := Mux(take_branch, dinst.pc + dinst.info.imm, snpc)
+      // val branchCalc = MuxLookup(func3t(2,1), false.B)(
+      //   Seq(
+      //     0.U  -> (reg_v1 === reg_v2),
+      //     2.U  -> isLessThan,
+      //     3.U -> isLessThan,
+      //   )
+      // )
+      //
+      val branchCalc  = Mux(func3t(2), isLessThan, (reg_v1 === reg_v2))
+      val takeBranch = Mux(func3t(0), ~branchCalc, branchCalc)
+      nxt_pc := Mux(takeBranch, dinst.pc + dinst.info.imm, snpc)
       when(!BranchOp.isValidBranchOp(func3t)) {
         printf("(exu) UNKNOWN BRANCH func3t %d\n", func3t)
       }

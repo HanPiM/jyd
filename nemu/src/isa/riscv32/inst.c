@@ -44,6 +44,7 @@ static void _csr_write(word_t csr, word_t src1) {
 }
 
 itrace_pack_t g_itrace_pack;
+itrace_pack_t g_mtrace_pack;
 
 // generate in out.cc
 int execute_instruction(word_t instruction, word_t* pc, word_t* regs);
@@ -85,7 +86,6 @@ static int decode_exec(Decode *s) {
   }
 
   if (IS_INST(EBREAK)) {
-		if(g_itrace_pack)itrace_pack_close(g_itrace_pack);
     NEMUTRAP(s->pc, R(10)); // R(10) is $a0
 		matched = true;
   }

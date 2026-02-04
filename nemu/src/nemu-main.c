@@ -26,6 +26,7 @@ void destroy_monitor();
 
 extern bool isSoC;
 extern itrace_pack_t g_itrace_pack;
+extern itrace_pack_t g_mtrace_pack;
 
 int main(int argc, char *argv[]) {
   /* Initialize the monitor. */
@@ -36,7 +37,8 @@ int main(int argc, char *argv[]) {
 #endif
 
 	if(isSoC){
-	g_itrace_pack = itrace_pack_create("itrace_pack.bin");
+		g_itrace_pack = itrace_pack_create("itrace_pack.bin");
+		g_mtrace_pack = itrace_pack_create("mtrace_pack.bin");
 	}
 
 
@@ -46,6 +48,11 @@ int main(int argc, char *argv[]) {
 #ifndef CONFIG_TARGET_AM
   destroy_monitor();
 #endif
+
+	if(isSoC){
+		itrace_pack_close(g_itrace_pack);
+		itrace_pack_close(g_mtrace_pack);
+	}
 
   return is_exit_status_bad();
 }

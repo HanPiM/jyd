@@ -24,6 +24,8 @@
 
 #include <time.h>
 
+#include <itrace_pack.h>
+
 #if defined(CONFIG_PMEM_MALLOC)
 static uint8_t *pmem = NULL;
 #else // CONFIG_PMEM_GARRAY
@@ -163,13 +165,18 @@ void init_mem() {
 
 extern uint64_t g_nr_guest_inst;
 
+extern itrace_pack_t g_mtrace_pack;
+
 word_t paddr_read(paddr_t addr, int len) {
   mtrace(addr, printf("%ld mem r %08X %db\n",g_nr_guest_inst, addr, len));
+	if(g_mtrace_pack){
+		itrace_pack_add(g_mtrace_pack, addr);
+	}
   word_t data;
   if (builtin_read(addr, len, &data)) {
     return data;
   }
-#ifdef CONFOG_DEVICE
+#ifdef CONFIG_DEVICE
 	if(SOC_SERIAL_BASE <= addr && addr < SOC_SERIAL_END) {
 		addr -= SOC_SERIAL_BASE;
 		addr += CONFIG_SERIAL_MMIO;

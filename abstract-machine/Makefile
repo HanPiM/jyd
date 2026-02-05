@@ -57,16 +57,19 @@ ARCHIVE   = $(WORK_DIR)/build/$(NAME)-$(ARCH).a
 
 ### Collect the files to be linked: object files (`.o`) and libraries (`.a`)
 OBJS      = $(addprefix $(DST_DIR)/, $(addsuffix .o, $(basename $(SRCS))))
-LIBS     := $(sort $(LIBS) am klib) # lazy evaluation ("=") causes infinite recursions
+LIBS     := $(sort $(LIBS) am klib kasan) # lazy evaluation ("=") causes infinite recursions
 LINKAGE   = $(OBJS)  # library archives are added by LIB_TEMPLATE below
 
 ## 3. General Compilation Flags
 
 ### (Cross) compilers, e.g., mips-linux-gnu-g++
 AS        = $(CROSS_COMPILE)gcc
-CC        = $(CROSS_COMPILE)gcc
-CXX       = $(CROSS_COMPILE)g++
+# CC        = $(CROSS_COMPILE)gcc
+CC        = clang --target=riscv64-linux-gnu
+CXX        = clang++ --target=riscv64-linux-gnu
+# CXX       = $(CROSS_COMPILE)g++
 LD        = $(CROSS_COMPILE)ld
+# LD        = mold
 AR        = $(CROSS_COMPILE)ar
 OBJDUMP   = $(CROSS_COMPILE)objdump
 OBJCOPY   = $(CROSS_COMPILE)objcopy
@@ -84,7 +87,21 @@ CFLAGS   += -O2 -MMD -Wall -Werror $(INCFLAGS) \
             -DARCH_H=\"$(ARCH_H)\" \
             -fno-asynchronous-unwind-tables -fno-builtin -fno-stack-protector \
             -Wno-main -U_FORTIFY_SOURCE -fvisibility=hidden
+
 CXXFLAGS +=  $(CFLAGS) -ffreestanding -fno-rtti -fno-exceptions
+
+CXXFLAGS += -Wno-error=non-c-typedef-for-linkage
+CXXFLAGS += -Wno-error=tautological-constant-out-of-range-compare
+
+CFLAGS	 += -ffreestanding
+
+CFLAGS += -Wno-error=unknown-warning-option
+CFLAGS += -Wno-error=macro-redefined
+CFLAGS += -Wno-error=pointer-bool-conversion
+CFLAGS += -Wno-error=tautological-pointer-compare
+
+CFLAGS	 += -ffreestanding
+
 ASFLAGS  += -MMD $(INCFLAGS)
 LDFLAGS  += -z noexecstack $(addprefix -T, $(LDSCRIPTS))
 

@@ -13,6 +13,12 @@ SECTIONS {
   .rodata : {
     *(.rodata*)
   }
+
+  .init_array : {
+    __global_ctors_start = .;
+    KEEP(*(.init_array*))
+    __global_ctors_end = .;
+ }
   .data : {
     *(.data*)
   } : data
@@ -30,4 +36,7 @@ SECTIONS {
   end = .;
   _end = .;
   _heap_start = ALIGN(0x1000);
+	__heap_start = _heap_start;
+	/* resrve 16 MB for SANITIZER */
+	__heap_end = _pmem_start + 0x7000000; /* 128MB */
 }

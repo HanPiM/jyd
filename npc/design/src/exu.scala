@@ -10,7 +10,7 @@ import axi4._
 
 class EXU extends Module {
   val io = IO(new Bundle {
-    val dinst    = Flipped(Decoupled(new DecodedInst))
+    val in    = Flipped(Decoupled(new DecodedInst))
     val rvec     = GPRegReqIO.TX.VecRead(2)
     val csr_rvec = CSRegReqIO.TX.SingleRead
     val mem      = AXI4IO.Master
@@ -23,10 +23,10 @@ class EXU extends Module {
   val alu = Module(new ALU)
 
   alu.io.out.ready := io.out.ready
-  alu.io.in.valid  := io.dinst.valid
+  alu.io.in.valid  := io.in.valid
 
   val alu_in = alu.io.in.bits
-  val dinst  = io.dinst.bits
+  val dinst  = io.in.bits
   val func3t = dinst.code(14, 12)
   val func7t = dinst.code(31, 25)
 
@@ -48,7 +48,7 @@ class EXU extends Module {
   alu_in.func7t := func7t
 
   val MS_fsm = Module(new OneMasterOneSlaveFSM)
-  MS_fsm.connectMaster(io.dinst)
+  MS_fsm.connectMaster(io.in)
   MS_fsm.connectSlave(io.out)
 
   // reg

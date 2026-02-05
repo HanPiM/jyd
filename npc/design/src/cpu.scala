@@ -8,7 +8,6 @@ import chisel3.util.{Cat, Decoupled, DecoupledIO, Enum, Fill, MuxLookup}
 import chisel3.experimental.dataview._
 
 import regfile._
-import memory._
 import common_def._
 import busfsm._
 
@@ -24,17 +23,17 @@ class WriteBackInfo extends Bundle {
 
 class WBU extends Module {
   val io = IO(new Bundle {
-    val data     = Flipped(Decoupled(new WriteBackInfo))
+    val in     = Flipped(Decoupled(new WriteBackInfo))
     val gpr      = GPRegReqIO.TX.Write
     val csr      = CSRegReqIO.TX.Write
     val is_ecall = Output(Bool())
     val done     = Output(Bool())
   })
 
-  val wbinfo = io.data.bits
-  val valid  = io.data.valid
+  val wbinfo = io.in.bits
+  val valid  = io.in.valid
 
-  io.data.ready := valid
+  io.in.ready := valid
 
   // printf("(wbu) write back gpr en %b addr %d data 0x%x\n", wbinfo.gpr.en, wbinfo.gpr.addr, wbinfo.gpr.data)
   // printf("(wbu) valid %b\n", valid)

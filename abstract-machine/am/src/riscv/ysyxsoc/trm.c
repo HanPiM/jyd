@@ -119,7 +119,13 @@ extern char _bss_start[];
 extern char __bss_size__[];
 
 extern char _data_extra_start[];
+extern char _data_extra_end[];
+// Fuck clang opt extern symbol non-null/0
+// Fuck clang opt &xxx non-zero
+#define DATA_EXTRA_SIZE ((size_t)(_data_extra_end - _data_extra_start))
 extern char _bss_extra_start[];
+extern char _bss_extra_end[];
+#define BSS_EXTRA_SIZE ((size_t)(_bss_extra_end - _bss_extra_start))
 
 extern char _ssbl_start[], _ssbl_end[];
 extern char __ssbl_load_start__[];
@@ -135,10 +141,8 @@ extern char __data_load_start__[];
 extern char __data_size__[];
 
 extern char __data_extra_load_start__[];
-extern char __data_extra_size__[];
 
 extern char __bss_extra_load_start__[];
-extern char __bss_extra_size__[];
 
 extern char __sram_start__[];
 extern char __sram_end__[];
@@ -195,6 +199,7 @@ SSBL_TEXT void _ssbl_clear(void *dst, size_t n) {
 }
 
 SSBL_TEXT void _ssbl_memcpy(void *dst, const void *src, size_t n) {
+  assert(n != 0);
   assert(IS_4BYTE_ALIGNED(dst));
   assert(IS_4BYTE_ALIGNED(src));
   assert(IS_4BYTE_ALIGNED(n));
@@ -262,19 +267,21 @@ SSBL_TEXT void _second_boot() {
 #ifndef SKIP_BSS_CLEAR
   _ssbl_clear(_bss_start, (size_t)__bss_size__);
   boot_log(".bss cleared.\n");
-  if ((size_t)__bss_extra_size__) {
-    LOG_STEP("clear .bss.extra",
-             _ssbl_clear(_bss_extra_start, (size_t)__bss_extra_size__));
+  if (BSS_EXTRA_SIZE != 0) {
+    LOG_STEP("clear .bss.extra", _ssbl_clear(_bss_extra_start, BSS_EXTRA_SIZE));
   }
 #else
   boot_log("skip clear .bss\n");
   boot_log("skip clear .bss.extra\n");
 #endif
 
-  if ((size_t)__data_extra_size__) {
+  if (DATA_EXTRA_SIZE != 0) {
+    putstr(".data.extra size = ");
+    putnum_base16((uint32_t)DATA_EXTRA_SIZE);
+    putch('\n');
     LOG_STEP("copy .data.extra",
              _ssbl_memcpy(_data_extra_start, __data_extra_load_start__,
-                          (size_t)__data_extra_size__));
+                          DATA_EXTRA_SIZE));
   }
 
   // NOTE: putnum func is in the sdram area

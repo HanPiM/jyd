@@ -20,10 +20,11 @@ typedef struct {
 #ifdef KASAN_ENABLED
 #include KASAN_MEM_H
 #else
-void  *memset    (void *s, int c, unsigned long n);
-void  *memcpy    (void *dst, const void *src, unsigned long n);
+#define memset kmemset
+#define memcpy kmemcpy
 #endif
 
+void *kmemcpy(void *out, const void *in, size_t n);
 void  *kmemset    (void *s, int c, size_t n);
 void  *_no_asan_kmemzero(void *s,size_t n);
 

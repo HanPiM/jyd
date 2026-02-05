@@ -67,6 +67,7 @@ SECTIONS {
 	PROVIDE(_data_extra_start = .);
 	PROVIDE(__data_extra_load_start__ = .);
   PROVIDE(__data_extra_size__ = 0);
+	_data_extra_end = . + __data_extra_size__;
 
   .data : {
 		_data_start = .;
@@ -91,6 +92,7 @@ SECTIONS {
 
 	PROVIDE(_bss_extra_start = .);
 	PROVIDE(__bss_extra_size__ = 0);
+	_bss_extra_end = . + __bss_extra_size__;
 
 
 	__sram_start__ = ORIGIN(sram);

@@ -11,6 +11,10 @@ extern "C" {
 
 //#define __NATIVE_USE_KLIB__
 
+typedef struct {
+    unsigned v;
+} __attribute__((packed)) unaligned_u32;
+
 // string.h
 
 #ifdef KASAN_ENABLED

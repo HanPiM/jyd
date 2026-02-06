@@ -121,7 +121,7 @@ class ysyx_25100261(word_width: Int = 32) extends Module {
   val isIFUMeetCorrectJmpTarget = Wire(Bool())
   isBranchGuessWrong := isBranchGuessWrongReg
   when(exu.io.out.valid) {
-    isBranchGuessWrongReg := exu.io.jmpHappen
+    isBranchGuessWrongReg := exu.io.jmpHappen && exu.io.out.bits.exuWriteBack.nxt_pc =/= exu.io.out.bits.exuWriteBack.pc + 4.U
   }.elsewhen(isIFUMeetCorrectJmpTarget) {
     isBranchGuessWrongReg := false.B
   }
@@ -135,6 +135,7 @@ class ysyx_25100261(word_width: Int = 32) extends Module {
 
   val isIDUMeetCorrectJmpTarget = Wire(Bool())
   isIDUMeetCorrectJmpTarget := ifu.io.out.valid && (ifu.io.out.bits.pc === curCorrectJmpTarget)
+  dontTouch(isIFUMeetCorrectJmpTarget)
   dontTouch(isIDUMeetCorrectJmpTarget)
   dontTouch(curCorrectJmpTarget)
 
@@ -149,7 +150,8 @@ class ysyx_25100261(word_width: Int = 32) extends Module {
   // pc := Mux(wbu.io.done, nxt_pc, pc)
   pc := Mux(
     ifu.io.pc.ready,
-    Mux(isBranchGuessWrong, curCorrectJmpTarget, pc + 4.U),
+    // Sometimes although jump target is near current pc and IFU just meets it
+    Mux(isBranchGuessWrong && (!isIFUMeetCorrectJmpTarget), curCorrectJmpTarget, pc + 4.U),
     pc
   )
 

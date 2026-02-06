@@ -3,6 +3,11 @@ package common_def
 import chisel3._
 import chisel3.util._
 
+trait HasRs {
+  val rs1: UInt
+  val rs2: UInt
+}
+
 object Types {
   object BitWidth {
     // N_REG = 16
@@ -58,7 +63,7 @@ class InstMetaInfo extends Bundle {
   val typ = InstType()
 }
 
-class DecodedInstInfo extends InstMetaInfo {
+class DecodedInstInfo extends InstMetaInfo with HasRs {
   val imm = Types.UWord
   val rd  = Types.RegAddr
   val rs1 = Types.RegAddr

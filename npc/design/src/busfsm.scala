@@ -2,7 +2,7 @@ package busfsm
 import chisel3._
 import chisel3.util._
 
-class OneMasterOneSlaveFSM extends Module {
+class OneMasterOneSlaveFSM_Old extends Module {
   val io = IO(new Bundle {
     val master_valid = Input(Bool())
     val master_ready = Output(Bool())
@@ -41,5 +41,48 @@ class OneMasterOneSlaveFSM extends Module {
   }
 
 }
+class OneMasterOneSlaveFSM extends Module {
+  val io = IO(new Bundle {
+    val master_valid = Input(Bool())
+    val master_ready = Output(Bool())
 
+    val self_finished = Input(Bool())
 
+    val slave_valid = Output(Bool())
+    val slave_ready = Input(Bool())
+  })
+
+  val full = RegInit(false.B)
+
+  val state = Wire(UInt(2.W))
+  when(!full) {
+    state := 0.U
+  }.elsewhen(full && !io.self_finished) {
+    state := 1.U
+  }.otherwise {
+    state := 2.U
+  }
+  dontTouch(state)
+
+  val slave_picked = io.slave_ready && io.self_finished
+
+  val ready = !full //|| slave_picked
+  io.master_ready := ready
+
+  io.slave_valid := full && io.self_finished
+
+  when(ready) {
+    full := io.master_valid
+  }.elsewhen(slave_picked) {
+    full := false.B
+  }
+
+  def connectMaster[T <: Data](master: DecoupledIO[T]): Unit = {
+    master.ready    := io.master_ready
+    io.master_valid := master.valid
+  }
+  def connectSlave[T <: Data](slave: DecoupledIO[T]):   Unit = {
+    slave.valid    := io.slave_valid
+    io.slave_ready := slave.ready
+  }
+}

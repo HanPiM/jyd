@@ -10,10 +10,11 @@ import axi4._
 
 class EXU extends Module {
   val io = IO(new Bundle {
-    val in       = Flipped(Decoupled(new DecodedInst))
-    val rvec     = GPRegReqIO.TX.VecRead(2)
-    val csr_rvec = CSRegReqIO.TX.SingleRead
-    val out      = Decoupled(new LSUInput)
+    val in        = Flipped(Decoupled(new DecodedInst))
+    val rvec      = GPRegReqIO.TX.VecRead(2)
+    val csr_rvec  = CSRegReqIO.TX.SingleRead
+    val jmpHappen = Output(Bool())
+    val out       = Decoupled(new LSUInput)
   })
 
   val GARBAGE_UNINIT_VALUE = Wire(Types.UWord)
@@ -174,13 +175,16 @@ class EXU extends Module {
     }
   )
 
-  // for (fmt <- InstFmt.all) {
-  //   println(s"InstFmt.${fmt} = ${fmt.asUInt.litValue}")
-  // }
-
   // nxt_pc
+  val takeBranch = WireDefault(false.B)
 
+  writeBackInfo.pc     := dinst.pc
   writeBackInfo.nxt_pc := nxt_pc
+  writeBackInfo.is_ebreak := (dinst.code === "h00100073".U)
+
+  // TODO: handle exception
+  io.jmpHappen := takeBranch || isTypJALR || isTypJAL
+
   when(is_ecall || is_mret) {
     nxt_pc := csr_rdata
   }.otherwise {
@@ -201,7 +205,8 @@ class EXU extends Module {
       //
       val isLessThan = alu.io.out.bits(0)
       val branchCalc = Mux(func3t(2), isLessThan, (reg_v1 === reg_v2))
-      val takeBranch = Mux(func3t(0), ~branchCalc, branchCalc)
+      takeBranch := Mux(func3t(0), ~branchCalc, branchCalc)
+
       nxt_pc := Mux(takeBranch, pcAddImm, snpc)
       // when(!BranchOp.isValidBranchOp(func3t)) {
       //   printf("(exu) UNKNOWN BRANCH func3t %d\n", func3t)

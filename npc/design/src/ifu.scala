@@ -17,14 +17,6 @@ class IFU extends Module {
   fsm.connectMaster(io.pc)
   fsm.connectSlave(io.out)
 
-  val lastPC = RegNext(io.pc.bits)
-  val code = Reg(Types.UWord)
-  val fetchDone = Reg(Bool())
-  val arSent = Reg(Bool())
-  val pcChanged = io.pc.bits =/= lastPC
-
-  // dontTouch(code)
-  // dontTouch(fetchDone)
   dontTouch(io)
 
   val memIO = io.mem
@@ -32,35 +24,35 @@ class IFU extends Module {
   io.mem.dontCareAW()
   io.mem.dontCareW()
   io.mem.dontCareB()
-
-  memIO.arvalid := io.pc.valid && (!fetchDone) && (!arSent)
-  memIO.araddr  := io.pc.bits
-
-  // not use now
   io.mem.dontCareNonLiteAR()
 
-  when(memIO.arvalid && memIO.arready) {
-    arSent := true.B
+  object State extends ChiselEnum {
+    val idle, waitAR, waitR = Value
   }
 
-
-  when(memIO.rvalid && !fetchDone) {
-    code := memIO.rdata
-    fetchDone := true.B
+  val state = RegInit(State.idle)
+  state         := MuxLookup(state, State.idle)(
+    Seq(
+      State.idle   -> Mux(io.pc.fire, State.waitAR, State.idle),
+      State.waitAR -> Mux(memIO.arready, State.waitR, State.waitAR),
+      State.waitR  -> Mux(memIO.rvalid, Mux(io.pc.fire, State.waitAR, State.idle), State.waitR)
+    )
+  )
+  val pcReg = Reg(Types.UWord)
+  when(io.pc.fire) {
+    pcReg := io.pc.bits
   }
-  memIO.rready := true.B
+  memIO.arvalid := (state === State.waitAR)
+  memIO.araddr  := pcReg
 
-  when(!fsm.io.master_valid || pcChanged) {
-    fetchDone := false.B
-    arSent := false.B
+  val instReg = Reg(Types.UWord)
+  when(memIO.rvalid) {
+    instReg := memIO.rdata
   }
+  memIO.rready := (state === State.waitR) && io.out.ready
 
-  fsm.io.self_finished := fetchDone
+  fsm.io.self_finished := ((state === State.waitR) && memIO.rvalid) || (state === State.idle)
 
-  // NOTICE: dpi function auto generated with void return
-  // see https://github.com/llvm/circt/blob/main/docs/Dialects/FIRRTL/FIRRTLIntrinsics.md#dpi-intrinsic-abi
-  io.out.bits.code := code
-  io.out.bits.pc   := io.pc.bits
+  io.out.bits.code := Mux(memIO.rvalid, memIO.rdata, instReg)
+  io.out.bits.pc   := pcReg
 }
-
-

@@ -35,7 +35,7 @@ class AXI4MemUnit extends Module {
   arState   := MuxLookup(arState, sARIdle)(
     Seq(
       sARIdle -> Mux(sio.arvalid, sARWait, sARIdle),
-      sARWait -> Mux(sio.rvalid, sARIdle, sARWait)
+      sARWait -> Mux(sio.rvalid && sio.rlast, sARIdle, sARWait)
     )
   )
   rdAddrBegReg := Mux(sio.arvalid && sio.arready, sio.araddr, rdAddrBegReg)
@@ -76,7 +76,7 @@ class AXI4MemUnit extends Module {
     Seq(
       RState.idle     -> Mux(sio.arvalid, RState.waitMem, RState.idle),
       RState.waitMem  -> Mux(curReadCount === arLen, RState.sendData, RState.waitMem),
-      RState.sendData -> Mux(curReadCount === 0.U, RState.idle, RState.sendData)
+      RState.sendData -> Mux(curReadCount === 0.U, Mux(sio.arvalid,RState.waitMem,RState.idle), RState.sendData)
     )
   )
 

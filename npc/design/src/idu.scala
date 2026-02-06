@@ -52,6 +52,8 @@ class IDU extends Module {
     val out = Decoupled(new DecodedInst)
   })
 
+  dontTouch(io)
+
   val fsm = Module(new OneMasterOneSlaveFSM)
   fsm.connectMaster(io.in)
   fsm.connectSlave(io.out)
@@ -66,7 +68,8 @@ class IDU extends Module {
   iinfo_dec.io.opcode                   := io.in.bits.code(6, 0)
   res.viewAsSupertype(new InstMetaInfo) := iinfo_dec.io.out
 
-  fsm.io.self_finished := iinfo_dec.io.valid
+  // TODO: handle invalid instruction
+  fsm.io.self_finished := true.B
 
   res.rd  := inst(11, 7)
   res.rs1 := inst(19, 15)

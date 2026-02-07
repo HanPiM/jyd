@@ -46,10 +46,6 @@ HandShakeCounterManager::add(SignalHandle hValid, SignalHandle hReady,
 bool HandShakeCounterManager::ValidReadyBus::shakeHappened() {
   return hValid.get() && hReady.get();
 }
-// void HandShakeCounterManager::ValidReadyBus::dumpStatus() {
-//   fmt::println("  {:18} happened {:>7} times (freq {:.4f})", description,
-//                shake_count, (double)shake_count / (double)sim_get_cycle());
-// }
 
 void HandShakeCounterManager::update() {
   for (auto &bus : bus_list) {
@@ -95,10 +91,10 @@ void EXUPerfCounter::bind() {
   hOutReady = &_GetIDU()->io_out_ready;
 }
 EXUPerfCounter::InstFmt EXUPerfCounter::OneHotToFmt(uint32_t onehot) {
-	return static_cast<InstFmt>(std::countr_zero(onehot));
+  return static_cast<InstFmt>(std::countr_zero(onehot));
 }
 EXUPerfCounter::InstType EXUPerfCounter::OneHotToType(uint32_t onehot) {
-	return static_cast<InstType>(std::countr_zero(onehot));
+  return static_cast<InstType>(std::countr_zero(onehot));
 }
 void EXUPerfCounter::update() {
 
@@ -120,15 +116,21 @@ void EXUPerfCounter::update() {
   }
 
   if (hOutReady.get() && hOutValid.get()) {
+		// idu think inst invaild
+    if (hInstType.get() == 0)
+      return;
+    if (hInstFmt.get() == 0)
+      return;
+
     // instruction finished execution
     InstType type = OneHotToType(hInstType.get());
     InstFmt fmt = OneHotToFmt(hInstFmt.get());
 
-
-		if(!isValidType(type) || !isValidFmt(fmt)) {
-			logger->error("Invalid instruction type {} or fmt {}",
-										(int)type, (int)fmt);
-		}
+    if (!isValidType(type) || !isValidFmt(fmt)) {
+      logger->warn("Invalid instruction type {} or fmt {}", (int)type,
+                   (int)fmt);
+      return;
+    }
     // assert(isValidType(type));
     // assert(isValidFmt(fmt));
 
@@ -166,13 +168,9 @@ void IFUStateCounter::update() {
 }
 
 void EXUPerfCounter::dumpStatistics(std::ostream &os) {
-  // spdlog::info(">instruction type counts:");
   os << "instruction type counts:\n";
-
-  // spdlog::info("  by type:");
   os << "By type:\n";
   _dump(instCountOfTyp, totalCycleOfTyp, TYPE_NUM, nameOfTyp, os);
-  // spdlog::info("  by format:");
   os << "By format:\n";
   _dump(instCountOfFmt, totalCycleOfFmt, FMT_NUM, nameOfFmt, os);
 }
@@ -187,7 +185,7 @@ void CachePerfCounter::bind() {
 }
 
 void CachePerfCounter::update() {
-	rdMemCtr.update();
+  rdMemCtr.update();
   if (hARValid.get() && hARReady.get()) {
     totalVisitCount++;
     currentHitAccessStartCycle = sim_get_cycle();
@@ -203,9 +201,9 @@ void CachePerfCounter::dumpStatistics(std::ostream &os) {
   os << "Cache Performance Counter Statistics:\n";
   os << "hit rate: " << hitCount << " / " << totalVisitCount << " = "
      << hitRate() * 100.0 << " %\n";
-	os << "average hit access cycles: " << avgHitAccessCycles() << "\n";
-	os << "average miss access cycles: " << avgMissPenaltyCycles() << "\n";
-	os << "AMAT : " << AMAT() << "\n";
+  os << "average hit access cycles: " << avgHitAccessCycles() << "\n";
+  os << "average miss access cycles: " << avgMissPenaltyCycles() << "\n";
+  os << "AMAT : " << AMAT() << "\n";
 }
 
 std::vector<PerfCounterVariant> perf_counters;
@@ -217,7 +215,7 @@ void initPerfCounters() {
   AXI4PerfCounterManager axi4Ctr;
   IFUStateCounter ifuStateCtr;
 
-	CachePerfCounter cacheCtr;
+  CachePerfCounter cacheCtr;
 
   handshakeCtr.init();
   handshakeCtr.add(&_GetIFU()->io_mem_rvalid, &_GetIFU()->io_mem_rready,
@@ -243,13 +241,13 @@ void initPerfCounters() {
 
   exuCtr.bind();
   ifuStateCtr.bind();
-	cacheCtr.bind();
+  cacheCtr.bind();
 
   perf_counters.push_back(std::move(handshakeCtr));
   perf_counters.push_back(std::move(exuCtr));
   perf_counters.push_back(std::move(axi4Ctr));
   perf_counters.push_back(std::move(ifuStateCtr));
-	perf_counters.push_back(std::move(cacheCtr));
+  perf_counters.push_back(std::move(cacheCtr));
 }
 
 void updatePerfCounters() {
@@ -319,7 +317,7 @@ void dumpPerfCounterAsCSV(std::ostream &os) {
   os << "\n" << value_row;
 }
 void dumpPerfReportOnDir(const std::string &dir) {
-  std::string reportPath = dir + "/new.counter.rpt";
+  std::string reportPath = dir + "/pipe.counter.rpt";
   std::ofstream reportFile(reportPath);
   if (!reportFile.is_open()) {
     spdlog::error("cannot open perf counter report file {}", reportPath);
@@ -328,7 +326,7 @@ void dumpPerfReportOnDir(const std::string &dir) {
   dumpPerfCountersStatistics(reportFile);
   reportFile.close();
   spdlog::info("perf counter report dumped to {}", reportPath);
-  std::string csvPath = dir + "/new.rawdata.csv";
+  std::string csvPath = dir + "/pipe.rawdata.csv";
   std::ofstream csvFile(csvPath);
   if (!csvFile.is_open()) {
     spdlog::error("cannot open perf counter csv file {}", csvPath);

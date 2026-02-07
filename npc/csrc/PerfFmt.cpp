@@ -23,7 +23,6 @@ void _PrintTable(Table &t, std::ostream &os) {
 }
 
 void HandShakeCounterManager::dumpStatistics(std::ostream &os) {
-  // spdlog::info(">handshake counts:");
   os << "handshake counts:\n";
   Table t;
   t.add_row({"Description", "Handshake Count", "Frequency"});
@@ -77,9 +76,6 @@ void IFUStateCounter::dumpStatistics(std::ostream &os) {
   os << "IFU State Counter Statistics:\n";
   os << "total instruction fetch count: " << totalFetchCount << "\n";
   os << "state statistics:\n";
-  // spdlog::info("IFU State Counter Statistics:");
-  // fmt::println("total instruction fetch count: {}", totalFetchCount);
-  // fmt::println("state statistics:");
   Table t;
   t.add_row({"State", "Count", "Percent", "Count\n[exclu fetch]",
              "Percent\n[exclu fetch]"});
@@ -100,23 +96,8 @@ void IFUStateCounter::dumpStatistics(std::ostream &os) {
   _PrintTable(t, os);
 }
 
-// void AXI4CounterBase::dumpStatisticsTitle(){
-// 	fmt::println("  {:18} : {:>8} {:>10} {:>8} {:>8}",
-// 							 "name", "txns",
-// "cycles", "avg_lat", "max_lat");
-// }
 void AXI4CounterBase::dumpStatistics(std::ostream &os) {
   spdlog::error("AXI4CounterBase::dumpStatistics unimpled!!!");
-  // // name : total_txns total_cycles avg_latency max_latency max_time_beg
-  // // max_time_end
-  // double avg_latency = transaction_count == 0 ? NAN
-  //                                             : (double)total_latency_cycles
-  //                                             /
-  //                                                   (double)transaction_count;
-  // fmt::println("  {:18} : {:>8} {:>10} {:>8.2f} {:>8} (at sim time {} to
-  // {})", ctrName,
-  //              transaction_count, total_latency_cycles, avg_latency,
-  //              maxRecord.cycles, maxRecord.startTime, maxRecord.endTime);
 }
 
 static void _AddTableRowForAXI4Counter(Table &t, AXI4CounterBase &ctr){
@@ -130,7 +111,6 @@ static void _AddTableRowForAXI4Counter(Table &t, AXI4CounterBase &ctr){
 }
 void AXI4PerfCounterManager::dumpStatistics(std::ostream &os) {
   os << "AXI4 Performance Counters Statistics:\n";
-  // os << "AXI4 Read Counters:\n";
 
   Table t;
   t.add_row({"Name", "Transactions", "Total\nCycles", "Avg\nLatency",
@@ -142,6 +122,4 @@ void AXI4PerfCounterManager::dumpStatistics(std::ostream &os) {
 		_AddTableRowForAXI4Counter(t, ctr);
 	}
 	_PrintTable(t, os);
-
-  // os << "AXI4 Write Counters:\n";
 }

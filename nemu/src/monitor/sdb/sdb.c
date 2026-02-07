@@ -113,6 +113,9 @@ void wrap_shotreg(uint32_t* reg_snapshot){
 sdbc_vlen_inst wrap_fetch_inst(sdb_paddr_t pc){
 	sdbc_vlen_inst	inst_code;
 	inst_code.data=(uint8_t*)guest_to_host(pc);
+	if(inst_code.data==NULL){
+		printf("\nFailed to fetch instruction at pc = " FMT_PADDR "\n", pc);
+	}
 	inst_code.len=4;
 	return inst_code;
 }

@@ -205,7 +205,10 @@ class EXU extends Module {
       //
       // only when func3t[2] == 0 -> eq/ne
       //
-      val isLessThan = alu.io.out.bits(0)
+      // val isLessThan = alu.io.out.bits(0)
+      val isLessThanU = reg_v1 < reg_v2
+      val isLessThanS = (reg_v1.asSInt < reg_v2.asSInt)
+      val isLessThan = Mux(func3t(1),isLessThanU, isLessThanS)
       val branchCalc = Mux(func3t(2), isLessThan, (reg_v1 === reg_v2))
       takeBranch := Mux(func3t(0), ~branchCalc, branchCalc)
 

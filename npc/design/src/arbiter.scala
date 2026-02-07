@@ -41,7 +41,7 @@ class EXUIFU_MemVisitArbiter extends Module {
   val isIfu = (state === State.ifuAccess) || ((state === State.idle) && !exuIO.arvalid && ifuIO.arvalid)
 
   // AR channel
-  outIO.arvalid := exuIO.arvalid || ifuIO.arvalid
+  outIO.arvalid := (isExu && exuIO.arvalid) || (isIfu && ifuIO.arvalid)
   outIO.araddr  := Mux(isExu, exuIO.araddr, ifuIO.araddr)
 
   outIO.arid    := Mux(isExu, exuIO.arid, ifuIO.arid)

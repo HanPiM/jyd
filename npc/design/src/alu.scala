@@ -19,10 +19,7 @@ class ALU extends Module {
     val out = Decoupled(Types.UWord)
   })
 
-  val fsm = Module(new OneMasterOneSlaveFSM)
-  fsm.connectMaster(io.in)
-  fsm.connectSlave(io.out)
-  fsm.io.self_finished := true.B
+  val fsm = InnerBusCtrl(io.in, io.out, alwaysComb = true)
 
   // alias
   val inbits = io.in.bits

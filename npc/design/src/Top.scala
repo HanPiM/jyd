@@ -48,14 +48,16 @@ class ysyx_25100261(word_width: Int = 32) extends Module {
     } else {
       thisIn.ready
     }
-
     prevOut.ready := thisInReady
-    thisIn.bits   := RegEnable(prevOut.bits, prevOut.fire)
+
+    thisIn.bits := RegEnable(prevOut.bits, prevOut.fire)
 
     val isThisBusy   = RegInit(false.B)
-    val normalNxtBsy = Mux(isThisBusy, !(thisOut.fire), prevOut.fire)
+    val normalNxtBsy = Mux(isThisBusy, (!thisOut.fire) || (prevOut.fire), prevOut.fire)
 
     if (isIDUtoEXU) {
+      isThisBusy := normalNxtBsy && (!isFlushIDU)
+    } else if (isIFUtoIDU) {
       isThisBusy := normalNxtBsy && (!isFlushIDU)
     } else {
       isThisBusy := normalNxtBsy
@@ -126,7 +128,7 @@ class ysyx_25100261(word_width: Int = 32) extends Module {
   }.elsewhen(isIDUMeetCorrectJmpTarget) {
     isFlushIDUReg := false.B
   }
-  isFlushIDU := isFlushIDUReg || isBranchGuessWrong
+  isFlushIDU := (isFlushIDUReg & (!isIDUMeetCorrectJmpTarget)) || isBranchGuessWrong
   dontTouch(isFlushIDU)
 
   // pc := Mux(wbu.io.done, nxt_pc, pc)

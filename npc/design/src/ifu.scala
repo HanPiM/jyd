@@ -13,9 +13,7 @@ class IFU extends Module {
     val out = Decoupled(new Inst)
   })
 
-  val fsm = Module(new OneMasterOneSlaveFSM)
-  fsm.connectMaster(io.pc)
-  fsm.connectSlave(io.out)
+  val fsm = InnerBusCtrl(io.pc, io.out)
 
   dontTouch(io)
 

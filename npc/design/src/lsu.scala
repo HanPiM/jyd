@@ -23,10 +23,10 @@ class LSUIO extends Bundle {
 }
 
 class LSU extends Module {
-  val io     = IO(new LSUIO)
-  val MS_fsm = Module(new OneMasterOneSlaveFSM)
-  MS_fsm.connectMaster(io.in)
-  MS_fsm.connectSlave(io.out)
+  val io = IO(new LSUIO)
+
+  val selfFinish = Wire(Bool())
+  val fsm = InnerBusCtrl(io.in, io.out, selfFinish)
 
   val outWriteBackInfo   = io.out.bits
   val inExuWriteBackInfo = io.in.bits.exuWriteBack
@@ -45,8 +45,8 @@ class LSU extends Module {
   val memRdRawData = Reg(Types.UWord)
   // val memRdRawData = Wire(Types.UWord)
 
-  val isLoad  = io.in.bits.isLoad && MS_fsm.io.master_valid
-  val isStore = io.in.bits.isStore && MS_fsm.io.master_valid
+  val isLoad  = io.in.bits.isLoad && io.in.valid
+  val isStore = io.in.bits.isStore && io.in.valid
   val isMemOp = isLoad || isStore
 
   val memWDone = Reg(Bool())
@@ -58,9 +58,7 @@ class LSU extends Module {
 
   val memIO = io.mem
 
-  MS_fsm.io.self_finished := (
-    (!isMemOp) || memOPDone
-  )
+  selfFinish := ((!isMemOp) || memOPDone)
 
   val memAddr            = io.in.bits.destAddr
   val func3t             = io.in.bits.func3t

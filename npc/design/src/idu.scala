@@ -54,9 +54,9 @@ class IDU extends Module {
 
   dontTouch(io)
 
-  val fsm = Module(new OneMasterOneSlaveFSM)
-  fsm.connectMaster(io.in)
-  fsm.connectSlave(io.out)
+  // TODO: handle invalid instruction
+
+  val fsm = InnerBusCtrl(io.in, io.out, alwaysComb = true)
 
   io.out.bits.viewAsSupertype(new Inst) := io.in.bits
 
@@ -68,8 +68,6 @@ class IDU extends Module {
   iinfo_dec.io.opcode                   := io.in.bits.code(6, 0)
   res.viewAsSupertype(new InstMetaInfo) := iinfo_dec.io.out
 
-  // TODO: handle invalid instruction
-  fsm.io.self_finished := true.B
 
   res.rd  := inst(11, 7)
   res.rs1 := inst(19, 15)

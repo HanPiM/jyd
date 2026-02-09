@@ -47,9 +47,8 @@ class EXU extends Module {
   alu_in.func3t := Mux(isFmtB, func3t >> 1, func3t)
   alu_in.func7t := func7t
 
-  val MS_fsm = Module(new OneMasterOneSlaveFSM)
-  MS_fsm.connectMaster(io.in)
-  MS_fsm.connectSlave(io.out)
+  // val MS_fsm = InnerBusCtrl(io.in, io.out, alu.io.out.valid)
+  val MS_fsm = InnerBusCtrl(io.in, io.out, alwaysComb = true)
 
   // reg
 
@@ -139,7 +138,6 @@ class EXU extends Module {
     csr_wdata := DontCare
   }
 
-  MS_fsm.io.self_finished := alu.io.out.valid
 
   // wdata
 

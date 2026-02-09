@@ -42,6 +42,7 @@ class EXU extends Module {
   val isTypBranch     = InstType.hasSame(dinst.info.typ, InstType.branch)
   val isTypArithmetic = InstType.hasSame(dinst.info.typ, InstType.arithmetic)
   val isTypFencei     = InstType.hasSame(dinst.info.typ, InstType.fencei)
+  val isTypLUI        = InstType.hasSame(dinst.info.typ, InstType.lui)
 
   alu_in.is_imm := isFmtI
   alu_in.func3t := Mux(isFmtB, func3t >> 1, func3t)
@@ -92,52 +93,64 @@ class EXU extends Module {
     val csrrs = 2.U
   }
 
+  val isCSRRW = (func3t === CSROp.csrrw) && isTypSys
+  val isCSRRS = (func3t === CSROp.csrrs) && isTypSys
+
+  csrren := isCSRRS || (isCSRRW && (dinst.info.rd =/= 0.U)) || is_ecall || is_mret
+  csrwen := isCSRRW || (isCSRRS && (reg_v1 =/= 0.U))
+
   when(isTypSys) {
     when(is_ecall) {
-      csrren    := true.B
-      csrwen    := false.B
+      // csrren    := true.B
+      // csrwen    := false.B
       csr_waddr := CSRAddr.mepc
       csr_raddr := CSRAddr.mtvec
+
       // ecall: set mepc to pc
+      // !!!note:
       // although wen = falase
       // is_ecall flag make csr to write wdata to mepc
       csr_wdata := dinst.pc
     }.elsewhen(is_mret) {
-      csrren    := true.B
-      csrwen    := false.B
+      // csrren    := true.B
+      // csrwen    := false.B
       csr_raddr := CSRAddr.mepc
-      csr_waddr := 0.U
-      csr_wdata := 0.U
+      csr_waddr := DontCare
+      csr_wdata := DontCare
     }.otherwise {
-      csrren    := MuxLookup(func3t, false.B)(
-        Seq(
-          CSROp.csrrw -> (dinst.info.rd =/= 0.U),
-          CSROp.csrrs -> true.B
-        )
-      )
-      csrwen    := MuxLookup(func3t, false.B)(
-        Seq(
-          CSROp.csrrw -> true.B,
-          CSROp.csrrs -> (reg_v1 =/= 0.U)
-        )
-      )
+      // csrren    := MuxLookup(func3t, false.B)(
+      //   Seq(
+      //     CSROp.csrrw -> (dinst.info.rd =/= 0.U),
+      //     CSROp.csrrs -> true.B
+      //   )
+      // )
+      // csrwen    := MuxLookup(func3t, false.B)(
+      //   Seq(
+      //     CSROp.csrrw -> true.B,
+      //     CSROp.csrrs -> (reg_v1 =/= 0.U)
+      //   )
+      // )
       csr_raddr := dinst.code(31, 20)
       csr_waddr := csr_raddr
-      csr_wdata := Mux1H(
-        Seq(
-          (func3t === CSROp.csrrw) -> reg_v1,
-          (func3t === CSROp.csrrs) -> (csr_rdata | reg_v1)
-        )
+      csr_wdata := Mux(
+        isCSRRW,
+        reg_v1,
+        (csr_rdata | reg_v1)
       )
+      // csr_wdata := Mux1H(
+      //   Seq(
+      //     isCSRRW -> reg_v1,
+      //     isCSRRS -> (csr_rdata | reg_v1)
+      //   )
+      // )
     }
   }.otherwise {
-    csrren    := false.B
-    csrwen    := false.B
+    // csrren    := false.B
+    // csrwen    := false.B
     csr_raddr := DontCare
     csr_waddr := DontCare
     csr_wdata := DontCare
   }
-
 
   // wdata
 
@@ -155,29 +168,50 @@ class EXU extends Module {
 
   writeBackInfo.gpr.addr := dinst.info.rd
   val sysInstWrBackData = csr_rdata
-  val gprDataMapping    = Seq(
-    InstType.arithmetic -> alu.io.out.bits,
-    InstType.lui        -> dinst.info.imm,
-    InstType.auipc      -> pcAddImm,
-    InstType.jalr       -> snpc,
-    InstType.jal        -> snpc,
-    InstType.load       -> GARBAGE_UNINIT_VALUE, // load data will be from lsu
-    InstType.system     -> sysInstWrBackData,
-    InstType.fencei     -> GARBAGE_UNINIT_VALUE
-  )
+  // val gprDataMapping    = Seq(
+  //   InstType.arithmetic -> alu.io.out.bits,
+  //   InstType.lui        -> dinst.info.imm,
+  //   InstType.auipc      -> pcAddImm,
+  //   InstType.jalr       -> snpc,
+  //   InstType.jal        -> snpc,
+  //   InstType.load       -> GARBAGE_UNINIT_VALUE, // load data will be from lsu
+  //   InstType.system     -> sysInstWrBackData,
+  //   InstType.fencei     -> GARBAGE_UNINIT_VALUE
+  // )
 
   // io.out.bits.gpr.data := MuxLookup(dinst.info.typ, GARBAGE_UNINIT_VALUE)(gprDataMapping)
-  writeBackInfo.gpr.data := Mux1H(
-    gprDataMapping.map { case (typ, data) =>
-      InstType.hasSame(dinst.info.typ, typ) -> data
-    }
+  // writeBackInfo.gpr.data := Mux1H(
+  //   gprDataMapping.map { case (typ, data) =>
+  //     InstType.hasSame(dinst.info.typ, typ) -> data
+  //   }
+  // )
+  writeBackInfo.gpr.data := Mux(
+    isTypArithmetic,
+    alu.io.out.bits,
+    Mux(
+      isTypLUI,
+      dinst.info.imm,
+      Mux(
+        isTypAUIPC,
+        pcAddImm,
+        Mux(
+          isTypJALR || isTypJAL,
+          snpc,
+          Mux(
+            isTypSys,
+            sysInstWrBackData,
+            GARBAGE_UNINIT_VALUE
+          )
+        )
+      )
+    )
   )
 
   // nxt_pc
   val takeBranch = WireDefault(false.B)
 
-  writeBackInfo.pc     := dinst.pc
-  writeBackInfo.nxt_pc := nxt_pc
+  writeBackInfo.pc        := dinst.pc
+  writeBackInfo.nxt_pc    := nxt_pc
   writeBackInfo.is_ebreak := (dinst.code === "h00100073".U)
 
   val isJmpCsr = is_ecall || is_mret
@@ -185,37 +219,47 @@ class EXU extends Module {
   // TODO: handle exception
   io.jmpHappen := takeBranch || isTypJALR || isTypJAL || isJmpCsr
 
-  when(isJmpCsr) {
-    nxt_pc := csr_rdata
-  }.otherwise {
-    when(isTypJALR) {
-      val r1AddImm = reg_v1 + dinst.info.imm
-      nxt_pc := r1AddImm(31, 1) ## 0.U(1.W)
-    }.elsewhen(isTypJAL) {
-      nxt_pc := pcAddImm
-    }.elsewhen(isFmtB) {
-      //
-      // reuse alu
-      // branch func3t
-      //
-      // blt/bge 10x -> feed alu 010 -> slt
-      // bltu/bgeu 11x -> feed alu 011 -> sltu
-      //
-      // only when func3t[2] == 0 -> eq/ne
-      //
-      // val isLessThan = alu.io.out.bits(0)
-      val isLessThanU = reg_v1 < reg_v2
-      val isLessThanS = (reg_v1.asSInt < reg_v2.asSInt)
-      val isLessThan = Mux(func3t(1),isLessThanU, isLessThanS)
-      val branchCalc = Mux(func3t(2), isLessThan, (reg_v1 === reg_v2))
-      takeBranch := Mux(func3t(0), ~branchCalc, branchCalc)
+  // blt/bge 10x
+  // bltu/bgeu 11x
+  //
+  // only when func3t[2] == 0 -> eq/ne
+  val isLessThanU = reg_v1 < reg_v2
+  val isLessThanS = (reg_v1.asSInt < reg_v2.asSInt)
+  val isLessThan  = Mux(func3t(1), isLessThanU, isLessThanS)
+  val branchCalc  = Mux(func3t(2), isLessThan, (reg_v1 === reg_v2))
+  takeBranch := Mux(func3t(0), ~branchCalc, branchCalc)
 
-      nxt_pc := Mux(takeBranch, pcAddImm, snpc)
-      // when(!BranchOp.isValidBranchOp(func3t)) {
-      //   printf("(exu) UNKNOWN BRANCH func3t %d\n", func3t)
-      // }
-    }.otherwise {
-      nxt_pc := snpc
-    }
-  }
+  // val branchNxtPC = Mux(takeBranch, pcAddImm, snpc)
+
+  val r1AddImm = reg_v1 + dinst.info.imm
+  nxt_pc := Mux(
+    isJmpCsr,
+    csr_rdata,
+    Mux(
+      isTypJALR,
+      (r1AddImm(31, 1) ## 0.U(1.W)),
+      Mux(
+        isTypJAL || (isFmtB && takeBranch),
+        pcAddImm,
+        snpc
+      )
+    )
+  )
+
+  // when(isJmpCsr) {
+  //   nxt_pc := csr_rdata
+  // }.otherwise {
+  //   when(isTypJALR) {
+  //     nxt_pc := r1AddImm(31, 1) ## 0.U(1.W)
+  //   }.elsewhen(isTypJAL) {
+  //     nxt_pc := pcAddImm
+  //   }.elsewhen(isFmtB) {
+  //
+  //     // when(!BranchOp.isValidBranchOp(func3t)) {
+  //     //   printf("(exu) UNKNOWN BRANCH func3t %d\n", func3t)
+  //     // }
+  //   }.otherwise {
+  //     nxt_pc := snpc
+  //   }
+  // }
 }

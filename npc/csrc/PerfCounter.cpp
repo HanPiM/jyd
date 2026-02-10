@@ -60,101 +60,14 @@ void HandShakeCounterManager::update() {
   }
 }
 
-const char *EXUPerfCounter::nameOfTyp(int type) {
-  static const char *type_names[] = {
-      "branch", "arithmetic", "load",  "store",  "jalr",
-      "jal",    "lui",        "auipc", "system", "fence.i",
-  };
-  if (type < sizeof(type_names) / sizeof(type_names[0])) {
-    return type_names[type];
-  } else {
-    return "unknown";
-  }
-}
-const char *EXUPerfCounter::nameOfFmt(int fmt) {
-  static const char *fmt_names[] = {
-      "I_TYPE", "R_TYPE", "S_TYPE", "U_TYPE", "J_TYPE", "B_TYPE",
-  };
-  if (fmt < sizeof(fmt_names) / sizeof(fmt_names[0])) {
-    return fmt_names[fmt];
-  } else {
-    return "unknown";
-  }
-}
-void EXUPerfCounter::bind() {
-  logger = spdlog::stdout_color_mt("InstTypeCounter");
-  set_logger_pattern_with_simtime(logger);
-  logger->set_level(spdlog::level::info);
-  hInstType = &_GetIDU()->io_out_bits_info_typ;
-  hInstFmt = &_GetIDU()->io_out_bits_info_fmt;
-  hOutValid = &_GetIDU()->io_out_valid;
-  hOutReady = &_GetIDU()->io_out_ready;
-}
-EXUPerfCounter::InstFmt EXUPerfCounter::OneHotToFmt(uint32_t onehot) {
-  return static_cast<InstFmt>(std::countr_zero(onehot));
-}
-EXUPerfCounter::InstType EXUPerfCounter::OneHotToType(uint32_t onehot) {
-  return static_cast<InstType>(std::countr_zero(onehot));
-}
-void EXUPerfCounter::update() {
-
-  bool isOutValidRasingEdge = (!lastCycOutValid && hOutValid.get());
-  lastCycOutValid = hOutValid.get();
-
-  //
-  // For history reason the timing is wired
-  //
-  // the exu cost time is calculated from idu
-  //
-  // a inst start execution approximately when out_valid rises
-  // (TODO: figure out the exact timing)
-  // and ends when out_ready highs
-  //
-
-  if (isOutValidRasingEdge) {
-    instStartCycle = sim_get_cycle();
-  }
-
-  if (hOutReady.get() && hOutValid.get()) {
-		// idu think inst invaild
-    if (hInstType.get() == 0)
-      return;
-    if (hInstFmt.get() == 0)
-      return;
-
-    // instruction finished execution
-    InstType type = OneHotToType(hInstType.get());
-    InstFmt fmt = OneHotToFmt(hInstFmt.get());
-
-    if (!isValidType(type) || !isValidFmt(fmt)) {
-      logger->warn("Invalid instruction type {} or fmt {}", (int)type,
-                   (int)fmt);
-      return;
-    }
-    // assert(isValidType(type));
-    // assert(isValidFmt(fmt));
-
-    instCountOfTyp[type]++;
-    instCountOfFmt[fmt]++;
-
-    auto instEndCycle = sim_get_cycle();
-    // fmt::println("Instruction executed: type {} fmt {} cycles {}",
-    // 						 nameOfTyp(type),
-    // nameOfFmt(fmt), 						 instEndCycle -
-    // instStartCycle);
-    auto instCycles = instEndCycle - instStartCycle;
-    totalCycleOfTyp[type] += instCycles;
-    totalCycleOfFmt[fmt] += instCycles;
-
-    // logger->trace("inst executed: type {} fmt {} cycles {}", nameOfTyp(type),
-    //               nameOfFmt(fmt), instCycles);
-  }
-}
 
 void IFUStateCounter::bind() {
   hRValid = &_GetIFU()->io_mem_rvalid;
   hRReady = &_GetIFU()->io_mem_rready;
-  hState = &_GetIFU()->fsm->state;
+  hState = &_GetIFU()->state;
+
+	hOutValid = &_GetIFU()->io_out_valid;
+	hOutReady = &_GetIFU()->io_out_ready;
 }
 void IFUStateCounter::update() {
   bool fetchInstHappened = (hRReady.get() && hRValid.get());
@@ -165,14 +78,13 @@ void IFUStateCounter::update() {
   } else {
     countOfStateWhenNoFetch[s]++;
   }
-}
 
-void EXUPerfCounter::dumpStatistics(std::ostream &os) {
-  os << "instruction type counts:\n";
-  os << "By type:\n";
-  _dump(instCountOfTyp, totalCycleOfTyp, TYPE_NUM, nameOfTyp, os);
-  os << "By format:\n";
-  _dump(instCountOfFmt, totalCycleOfFmt, FMT_NUM, nameOfFmt, os);
+	if (hOutReady.get()){
+		totalOutReadyHighCyc++;
+		if (!hOutValid.get()) {
+			totalSupplyCacancyCyc++;
+		}
+	}
 }
 
 void CachePerfCounter::bind() {
@@ -211,7 +123,7 @@ std::vector<PerfCounterVariant> perf_counters;
 void initPerfCounters() {
 
   HandShakeCounterManager handshakeCtr;
-  EXUPerfCounter exuCtr;
+  // EXUPerfCounter exuCtr;
   AXI4PerfCounterManager axi4Ctr;
   IFUStateCounter ifuStateCtr;
 
@@ -222,8 +134,10 @@ void initPerfCounters() {
                    "ifu.io_mem_r", "IFU fetch inst");
   handshakeCtr.add(&_GetLSU()->io_mem_rvalid, &_GetLSU()->io_mem_rready,
                    "lsu.io_mem_r", "EXU load data");
-  handshakeCtr.add(&_GetALU()->io_out_valid, &_GetALU()->io_out_ready,
-                   "exu.alu.io_out", "EXU calc");
+	// ALU now is combintional logic, no handshake
+	//
+  // handshakeCtr.add(&_GetALU()->io_out_valid, &_GetALU()->io_out_ready,
+  //                  "exu.alu.io_out", "EXU calc");
   handshakeCtr.add(&_GetIDU()->io_out_valid, &_GetIDU()->io_out_ready,
                    "idu.io_out", "IDU decode inst");
 
@@ -239,12 +153,12 @@ void initPerfCounters() {
   //
   // axi4Ctr.addRead("ifu.io_mem", "IFU fetch inst");
 
-  exuCtr.bind();
+  // exuCtr.bind();
   ifuStateCtr.bind();
   cacheCtr.bind();
 
   perf_counters.push_back(std::move(handshakeCtr));
-  perf_counters.push_back(std::move(exuCtr));
+  // perf_counters.push_back(std::move(exuCtr));
   perf_counters.push_back(std::move(axi4Ctr));
   perf_counters.push_back(std::move(ifuStateCtr));
   perf_counters.push_back(std::move(cacheCtr));
@@ -258,10 +172,6 @@ void updatePerfCounters() {
 void dumpPerfCountersStatistics(std::ostream &os) {
   auto cycle_count = sim_get_cycle();
   auto inst_count = sim_get_inst_count();
-  // spdlog::info("simulation statistics:");
-  // fmt::println(">cycle and instruction counts:");
-  // fmt::println("  total cycle count: {}", cycle_count);
-  // fmt::println("  total instruction count: {}", inst_count);
 
   os << "Perf Counters Report\n";
   os << "Git commit: " << _STR(GIT_COMMIT_HASH) << "\n\n";
@@ -317,7 +227,7 @@ void dumpPerfCounterAsCSV(std::ostream &os) {
   os << "\n" << value_row;
 }
 void dumpPerfReportOnDir(const std::string &dir) {
-  std::string reportPath = dir + "/pipe.counter.rpt";
+  std::string reportPath = dir + "/test.counter.rpt";
   std::ofstream reportFile(reportPath);
   if (!reportFile.is_open()) {
     spdlog::error("cannot open perf counter report file {}", reportPath);
@@ -326,7 +236,7 @@ void dumpPerfReportOnDir(const std::string &dir) {
   dumpPerfCountersStatistics(reportFile);
   reportFile.close();
   spdlog::info("perf counter report dumped to {}", reportPath);
-  std::string csvPath = dir + "/pipe.rawdata.csv";
+  std::string csvPath = dir + "/test.rawdata.csv";
   std::ofstream csvFile(csvPath);
   if (!csvFile.is_open()) {
     spdlog::error("cannot open perf counter csv file {}", csvPath);

@@ -100,7 +100,9 @@ public:
   void dumpStatistics(std::ostream &os) override;
 };
 
-struct EXUPerfCounter : public PerfCounterBase {
+struct 
+[[deprecated("work bad for pipelined design")]]
+EXUPerfCounter : public PerfCounterBase {
   // in common_def.scala
   //   val imm, reg, store, upper, jump, branch = Value
   //   val branch, arithmetic, load, store, jalr, jal, lui, auipc, system =
@@ -295,19 +297,26 @@ struct IFUStateCounter : public PerfCounterBase {
   // ifu fsm state
   SignalHandle hState;
 
-  enum State {
-    IDLE,
-    WAIT_INST,
-    WAIT_DOWNSTREAM,
+	SignalHandle hOutValid;
+	SignalHandle hOutReady;
 
-    STATE_NUM
-  };
+	enum State{
+		Idle,
+		WaitARReady,
+		WaitRValid,
+		STATE_NUM
+	};
 
   size_t countOfState[STATE_NUM] = {0};
   size_t countOfStateWhenNoFetch[STATE_NUM] = {0};
   size_t totalFetchCount = 0;
 
-  const char *nameOfState(int state);
+	// total cycles when later stage ready high but self
+	// not able to reply valid
+	size_t totalSupplyCacancyCyc = 0;
+	size_t totalOutReadyHighCyc = 0;
+
+  static const char *nameOfState(int state);
 
   void bind();
   void update();
@@ -321,6 +330,7 @@ struct IFUStateCounter : public PerfCounterBase {
     }
   }
 };
+
 
 class CachePerfCounter : public PerfCounterBase {
 public:
@@ -372,7 +382,7 @@ public:
 };
 
 using PerfCounterVariant =
-    std::variant<HandShakeCounterManager, EXUPerfCounter,
+    std::variant<HandShakeCounterManager,
                  AXI4PerfCounterManager, IFUStateCounter, CachePerfCounter>;
 
 void initPerfCounters();

@@ -7,6 +7,7 @@ import chisel3.experimental.dataview._
 
 import common_def._
 import busfsm._
+import regfile._
 
 class InstInfoDecoder extends Module {
   val io = IO(new Bundle {
@@ -42,36 +43,45 @@ class InstInfoDecoder extends Module {
 
   val dontcare = Wire(new InstMetaInfo)
   dontcare := DontCare
-  io.out := MuxLookup(opcu, dontcare)(lut)
+  io.out   := MuxLookup(opcu, dontcare)(lut)
 }
-
 
 class IDU extends Module {
   val io = IO(new Bundle {
-    val in  = Flipped(Decoupled(new Inst))
-    val out = Decoupled(new DecodedInst)
+    val in   = Flipped(Decoupled(new Inst))
+    val rvec = GPRegReqIO.TX.VecRead(2)
+    val out  = Decoupled(new DecodedInst)
   })
 
   dontTouch(io)
+
+  // val inReg = RegEnable(io.in.bits, io.in.fire)
+  val inReg = io.in.bits
 
   // TODO: handle invalid instruction
 
   val fsm = InnerBusCtrl(io.in, io.out, alwaysComb = true)
 
-  io.out.bits.viewAsSupertype(new Inst) := io.in.bits
+  io.out.bits.viewAsSupertype(new Inst) := inReg
 
   // alias
   val res  = io.out.bits.info
-  val inst = io.in.bits.code
+  val inst = inReg.code
 
   val iinfo_dec = Module(new InstInfoDecoder())
-  iinfo_dec.io.opcode                   := io.in.bits.code(6, 0)
+  iinfo_dec.io.opcode                   := inst(6, 0)
   res.viewAsSupertype(new InstMetaInfo) := iinfo_dec.io.out
-
 
   res.rd  := inst(11, 7)
   res.rs1 := inst(19, 15)
   res.rs2 := inst(24, 20)
+
+  io.rvec.en      := true.B
+  io.rvec.addr(0) := res.rs1
+  io.rvec.addr(1) := res.rs2
+
+  res.reg1 := io.rvec.data(0)
+  res.reg2 := io.rvec.data(1)
 
   // fetch IMM
   val immI = Cat(Fill(21, inst(31)), inst(30, 20))
@@ -91,5 +101,3 @@ class IDU extends Module {
   )
 
 }
-
-

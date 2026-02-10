@@ -19,8 +19,9 @@ class WriteBackInfo extends Bundle {
 
   val is_ebreak = Bool()
 
-  val pc = Types.UWord
+  val skipDifftest = Bool()
 
+  val pc = Types.UWord
   val nxt_pc = Types.UWord
 }
 
@@ -56,6 +57,10 @@ class WBU extends Module {
       wbinfo.pc,
       wbinfo.nxt_pc
     )
+  }
+
+  when(valid && wbinfo.skipDifftest) {
+    RawClockedVoidFunctionCall("skip_difftest_ref")(clock, valid && wbinfo.skipDifftest)
   }
 
   io.gpr.en   := wbinfo.gpr.en && valid

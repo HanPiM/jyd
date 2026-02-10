@@ -474,7 +474,7 @@ extern "C" void pc_upd(int pc, int npc) {
 
 extern "C" void skip_difftest_ref() {
   if (sim_settings.trace_difftest_skip) {
-    printf("[DPI] skip_difftest_ref called\n");
+    printf("(%ld)[DPI] skip_difftest_ref called\n",sim_time);
   }
   sdb_skip_difftest_ref();
 }

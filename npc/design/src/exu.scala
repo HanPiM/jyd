@@ -8,10 +8,28 @@ import regfile._
 import cpu.alu._
 import axi4._
 
+class EXUWriteBackGen extends Module {
+  val io = IO(new Bundle {
+    val in = Input(new DecodedInst)
+    val out = GPRegReqIO.TX.Write
+  })
+
+  val dinst  = io.in
+
+  val isTypStore      = InstType.hasSame(dinst.info.typ, InstType.store)
+  val isTypBranch     = InstType.hasSame(dinst.info.typ, InstType.branch)
+  val isTypFencei     = InstType.hasSame(dinst.info.typ, InstType.fencei)
+
+  val isNoWrBackType = isTypStore || isTypBranch || isTypFencei
+
+  io.out.en   := ~isNoWrBackType
+  io.out.addr := dinst.info.rd
+  io.out.data := DontCare
+}
+
 class EXU extends Module {
   val io = IO(new Bundle {
     val in        = Flipped(Decoupled(new DecodedInst))
-    val rvec      = GPRegReqIO.TX.VecRead(2)
     val csr_rvec  = CSRegReqIO.TX.SingleRead
     val jmpHappen = Output(Bool())
     val out       = Decoupled(new LSUInput)
@@ -53,11 +71,8 @@ class EXU extends Module {
 
   // reg
 
-  io.rvec.en      := true.B
-  io.rvec.addr(0) := dinst.info.rs1
-  io.rvec.addr(1) := dinst.info.rs2
-  val reg_v1 = io.rvec.data(0)
-  val reg_v2 = io.rvec.data(1)
+  val reg_v1 = dinst.info.reg1
+  val reg_v2 = dinst.info.reg2
 
   // alu_in.src1 := reg_v1
   alu_in.src1 := reg_v1
@@ -166,6 +181,8 @@ class EXU extends Module {
   // TODO: handle rd != 0 case
   writeBackInfo.gpr.en := (~isNoWrBackType)
 
+  writeBackInfo.skipDifftest := DontCare // fill in LSU
+
   writeBackInfo.gpr.addr := dinst.info.rd
   val sysInstWrBackData = csr_rdata
   // val gprDataMapping    = Seq(
@@ -209,11 +226,11 @@ class EXU extends Module {
 
   writeBackInfo.gpr.data := Mux1H(
     Seq(
-      isTypArithmetic -> alu.io.out.bits,
-      isTypLUI        -> dinst.info.imm,
-      isTypAUIPC      -> pcAddImm,
+      isTypArithmetic         -> alu.io.out.bits,
+      isTypLUI                -> dinst.info.imm,
+      isTypAUIPC              -> pcAddImm,
       (isTypJALR || isTypJAL) -> snpc,
-      isTypSys        -> sysInstWrBackData
+      isTypSys                -> sysInstWrBackData
     )
   )
 
@@ -227,7 +244,7 @@ class EXU extends Module {
   val isJmpCsr = is_ecall || is_mret
 
   // TODO: handle exception
-  io.jmpHappen := takeBranch || isTypJALR || isTypJAL || isJmpCsr
+  io.jmpHappen := (isTypBranch && takeBranch) || isTypJALR || isTypJAL || isJmpCsr
 
   // blt/bge 10x
   // bltu/bgeu 11x

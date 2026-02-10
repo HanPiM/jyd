@@ -23,12 +23,16 @@ class CLINTUnit extends Module {
   sio.rlast := true.B
   assert(!(sio.arvalid && !sio.rready), "CLINTUnit does not support wait readdata")
 
-  when(sio.arvalid){
-    RawClockedVoidFunctionCall("skip_difftest_ref")(
-      clock,
-      sio.arvalid
-    )
-  }
+  // not work for pipeline since arvalid may be
+  // sent before the inst retires, but difftest
+  // check may be after the inst retires
+  //
+  // when(sio.arvalid){
+  //   RawClockedVoidFunctionCall("skip_difftest_ref")(
+  //     clock,
+  //     sio.arvalid
+  //   )
+  // }
 
   // val mtime = RegInit(0.U(64.W))
   // mtime := mtime + 1.U

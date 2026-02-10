@@ -18,6 +18,7 @@ import npcMem._
 
 import icache._
 import common_def.{HasRs, InstType}
+import common_def.AddrSpace
 
 class TopIO extends Bundle {
   val interrupt = Input(Bool())
@@ -30,50 +31,82 @@ class ysyx_25100261(word_width: Int = 32) extends Module {
   val isBranchGuessWrong  = Wire(Bool())
   val curCorrectJmpTarget = Reg(UInt(32.W))
 
-  val isIDUWaitEXUReg = RegInit(false.B)
-  val isIDUWaitEXU    = Wire(Bool())
-  val isFlushIDUReg   = RegInit(false.B)
-  val isFlushIDU      = Wire(Bool())
+  val isIDUStall    = Wire(Bool())
+  val isFlushIDUReg = RegInit(false.B)
+  val isFlushIDU    = Wire(Bool())
 
   def pipelineConnect[T <: Data, T2 <: Data](
     prevOut:    DecoupledIO[T],
     thisIn:     DecoupledIO[T],
     thisOut:    DecoupledIO[T2],
     isIDUtoEXU: Boolean = false,
-    isIFUtoIDU: Boolean = false
+    isIFUtoIDU: Boolean = false,
+    isEXUtoLSU: Boolean = false
   ) = {
+
     // prevOut <> thisIn
     val thisInReady = if (isIDUtoEXU) {
-      thisIn.ready && (!isIDUWaitEXU)
+      thisIn.ready && (!isIDUStall)
     } else {
       thisIn.ready
     }
-    prevOut.ready := thisInReady
 
-    thisIn.bits := RegEnable(prevOut.bits, prevOut.fire)
-
-    val isThisBusy   = RegInit(false.B)
-    val normalNxtBsy = Mux(isThisBusy, (!thisOut.fire) || (prevOut.fire), prevOut.fire)
+    // val thisInReady = thisIn.ready
+    val dataValid   = RegInit(false.B)
+    val readyToPrev = (!dataValid) || thisInReady
 
     if (isIDUtoEXU) {
-      isThisBusy := normalNxtBsy && (!isFlushIDU)
-    } else if (isIFUtoIDU) {
-      isThisBusy := normalNxtBsy && (!isFlushIDU)
+
+      val clearDataValid = isFlushIDU || isIDUStall
+
+      when(readyToPrev) {
+        dataValid := prevOut.valid && (!clearDataValid)
+      }.elsewhen(thisOut.fire) {
+        dataValid := false.B
+      }
+      prevOut.ready := readyToPrev && (!isIDUStall)
     } else {
-      isThisBusy := normalNxtBsy
+
+      when(readyToPrev) {
+        dataValid := prevOut.valid
+      }
+      if (isIFUtoIDU) {
+        prevOut.ready := readyToPrev || isFlushIDU
+      } else {
+        prevOut.ready := readyToPrev
+      }
     }
 
-    if (isIDUtoEXU) {
-      thisIn.valid := isThisBusy && (!isIDUWaitEXU) && (!isFlushIDU)
-    } else if (isIFUtoIDU) {
-      thisIn.valid := isThisBusy && (!isFlushIDU)
-    } else {
-      thisIn.valid := isThisBusy
-    }
+    thisIn.bits  := RegEnable(prevOut.bits, prevOut.fire)
+    thisIn.valid := dataValid
+    //
+    // // val isThisBusyReg   = RegInit(false.B)
+    // // val normalNxtBsy = Mux(isThisBusyReg, (!thisOut.fire) || (prevOut.fire), prevOut.fire)
+    // //
+    // // if (isIDUtoEXU) {
+    // //   isThisBusyReg := normalNxtBsy && (!isFlushIDU)
+    // // } else if (isIFUtoIDU) {
+    // //   isThisBusyReg := normalNxtBsy && (!isFlushIDU)
+    // // } else {
+    // //   isThisBusyReg := normalNxtBsy
+    // // }
+    //
+    // // val isThisBusy = isThisBusyReg
+    //
+    // if (isIDUtoEXU) {
+    //   thisIn.valid := dataValid && (!isFlushIDU)
+    // } else if (isIFUtoIDU) {
+    //   thisIn.valid := dataValid && (!isFlushIDU)
+    // } else {
+    //   thisIn.valid := dataValid
+    // }
   }
-  def conflict(rs: UInt, rd: GPRegReqIO._WriteRX) = (rs === rd.addr) && (rd.addr =/= 0.U) && rd.en
-  def conflictWithStage[T <: HasRs](info: T, gprWr: GPRegReqIO._WriteRX, valid: Bool) = {
-    WireDefault(valid && (conflict(info.rs1, gprWr) || conflict(info.rs2, gprWr)))
+  def conflict(rs: UInt, rd: UInt, en: Bool) = (rs === rd) && (rd =/= 0.U) && en
+  def conflictWithStage(rs1: UInt, rs2: UInt, gprWr: GPRegReqIO._WriteRX, valid: Bool) = {
+    WireDefault(valid && (conflict(rs1, gprWr.addr, gprWr.en) || conflict(rs2, gprWr.addr, gprWr.en)))
+  }
+  def conflictWithStage[T <: HasRs](info: T, gprWr: GPRegReqIO._WriteRX, valid: Bool): Bool = {
+    conflictWithStage(info.rs1, info.rs2, gprWr, valid)
   }
 
   val io = IO(new TopIO)
@@ -103,9 +136,9 @@ class ysyx_25100261(word_width: Int = 32) extends Module {
 
   val isBranchGuessWrongReg     = RegInit(false.B)
   val isIFUMeetCorrectJmpTarget = Wire(Bool())
-  isBranchGuessWrong := isBranchGuessWrongReg
+  isBranchGuessWrong := isBranchGuessWrongReg || (exu.io.out.valid && exu.io.jmpHappen)
   when(exu.io.out.valid) {
-    isBranchGuessWrongReg := exu.io.jmpHappen// && exu.io.out.bits.exuWriteBack.nxt_pc =/= exu.io.out.bits.exuWriteBack.pc + 4.U
+    isBranchGuessWrongReg := exu.io.jmpHappen // && exu.io.out.bits.exuWriteBack.nxt_pc =/= exu.io.out.bits.exuWriteBack.pc + 4.U
   }.elsewhen(isIFUMeetCorrectJmpTarget) {
     isBranchGuessWrongReg := false.B
   }
@@ -123,12 +156,13 @@ class ysyx_25100261(word_width: Int = 32) extends Module {
   dontTouch(isIDUMeetCorrectJmpTarget)
   dontTouch(curCorrectJmpTarget)
 
-  when(isBranchGuessWrong) {
+  when(isBranchGuessWrong && (!isIFUMeetCorrectJmpTarget)) {
     isFlushIDUReg := true.B
   }.elsewhen(isIDUMeetCorrectJmpTarget) {
     isFlushIDUReg := false.B
   }
-  isFlushIDU := (isFlushIDUReg & (!isIDUMeetCorrectJmpTarget)) || isBranchGuessWrong
+  // & (!isIDUMeetCorrectJmpTarget)
+  isFlushIDU := (isFlushIDUReg) || isBranchGuessWrong
   dontTouch(isFlushIDU)
 
   // pc := Mux(wbu.io.done, nxt_pc, pc)
@@ -159,8 +193,10 @@ class ysyx_25100261(word_width: Int = 32) extends Module {
     Module(
       new AXI4LiteXBar(
         Seq(
-          ("h02000000".U(32.W), "h0200ffff".U(32.W)) -> clint.io,
-          ("h0f000000".U(32.W), "hffffffff".U(32.W)) -> otherReqSlave
+          // ("h02000000".U(32.W), "h0200ffff".U(32.W)) -> clint.io,
+          // ("h0f000000".U(32.W), "hffffffff".U(32.W)) -> otherReqSlave
+          AddrSpace.CLINT  -> clint.io,
+          AddrSpace.SOC    -> otherReqSlave,
         )
       )
     )
@@ -168,18 +204,13 @@ class ysyx_25100261(word_width: Int = 32) extends Module {
     val uart = Module(new UARTUnit)
     val mem  = Module(new AXI4MemUnit)
 
-    val MEM_BASE = "h80000000".U(32.W)
-    val MEM_END  = "h8FFFFFFF".U(32.W)
-
-    val SERIAL_BASE = "h10000000".U(32.W)
-    val SERIAL_END  = "h10001000".U(32.W)
     otherReqSlave := DontCare
     Module(
       new AXI4LiteXBar(
         Seq(
-          ("h02000000".U(32.W), "h0200ffff".U(32.W)) -> clint.io,
-          (MEM_BASE, MEM_END)                        -> mem.io,
-          (SERIAL_BASE, SERIAL_END)                  -> uart.io
+          AddrSpace.CLINT     -> clint.io,
+          AddrSpace.NPCMEM    -> mem.io,
+          AddrSpace.SERIAL    -> uart.io
         )
       )
     )
@@ -195,32 +226,22 @@ class ysyx_25100261(word_width: Int = 32) extends Module {
     stop()
     stop()
   }
-  val SERIAL_ADDR_BASE = "h10000000".U(32.W)
-  val SERIAL_ADDR_END  = "h10001000".U(32.W)
-  val SPI_ADDR_BASE    = "h10001000".U(32.W)
-  val SPI_ADDR_END     = "h10002000".U(32.W)
 
-  def inRng(beg: UInt, end: UInt, addr: UInt): Bool = {
-    (addr >= beg) && (addr < end)
-  }
+  // dontTouch(wNeedSkip)
+  // dontTouch(rNeedSkip)
 
-  val wNeedSkip = inRng(SERIAL_ADDR_BASE, SERIAL_ADDR_END, io.master.awaddr) ||
-    inRng(SPI_ADDR_BASE, SPI_ADDR_END, io.master.awaddr)
-  val rNeedSkip = inRng(SERIAL_ADDR_BASE, SERIAL_ADDR_END, io.master.araddr) ||
-    inRng(SPI_ADDR_BASE, SPI_ADDR_END, io.master.araddr)
-
-  when(io.master.awvalid && io.master.awready && wNeedSkip) {
-    RawClockedVoidFunctionCall("skip_difftest_ref")(
-      clock,
-      true.B
-    )
-  }
-  when(io.master.arvalid && io.master.arready && rNeedSkip) {
-    RawClockedVoidFunctionCall("skip_difftest_ref")(
-      clock,
-      true.B
-    )
-  }
+  // when(io.master.awvalid && io.master.awready && wNeedSkip) {
+  //   RawClockedVoidFunctionCall("skip_difftest_ref")(
+  //     clock,
+  //     true.B
+  //   )
+  // }
+  // when(io.master.arvalid && io.master.arready && rNeedSkip) {
+  //   RawClockedVoidFunctionCall("skip_difftest_ref")(
+  //     clock,
+  //     true.B
+  //   )
+  // }
 
   AXI4IO.connectMasterSlave(memArbiter.io.out, memXBar.io.in)
   memXBar.connect()
@@ -228,24 +249,34 @@ class ysyx_25100261(word_width: Int = 32) extends Module {
   ifu.io.pc.bits  := pc
   ifu.io.pc.valid := true.B
 
-  val isConflictWithEXU = conflictWithStage(
+  val exuWriteBackInfoGen = Module(new EXUWriteBackGen)
+  exuWriteBackInfoGen.io.in := idu.io.out.bits
+
+  val isConflictWithEXU    = conflictWithStage(
     idu.io.out.bits.info,
-    // exu.io.out.bits.exuWriteBack.gpr,
-    // exu.io.out.valid
+    exu.io.out.bits.exuWriteBack.gpr,
+    exu.io.out.valid
+  )
+  val isConflictWithLSUIn  = conflictWithStage(
+    idu.io.out.bits.info,
     lsu.io.in.bits.exuWriteBack.gpr,
     lsu.io.in.valid
   )
-  val isConflictWithLSU = conflictWithStage(
+  val isConflictWithLSUOut = conflictWithStage(
     idu.io.out.bits.info,
     lsu.io.out.bits.gpr,
     lsu.io.out.valid
   )
-  val isConflictWithWBU = conflictWithStage(
+  val isConflictWithLSU    = isConflictWithLSUIn || isConflictWithLSUOut
+  val isConflictWithWBU    = conflictWithStage(
     idu.io.out.bits.info,
     wbu.io.in.bits.gpr,
     wbu.io.in.valid
   )
+
   dontTouch(isConflictWithEXU)
+  dontTouch(isConflictWithLSUIn)
+  dontTouch(isConflictWithLSUOut)
   dontTouch(isConflictWithLSU)
   dontTouch(isConflictWithWBU)
 
@@ -253,19 +284,14 @@ class ysyx_25100261(word_width: Int = 32) extends Module {
   isRdAfterWr := isConflictWithEXU || isConflictWithLSU || isConflictWithWBU
   dontTouch(isRdAfterWr)
 
-  when(isRdAfterWr) {
-    isIDUWaitEXUReg := true.B
-  }.elsewhen(wbu.io.done) {
-    isIDUWaitEXUReg := false.B
-  }
-  isIDUWaitEXU := isRdAfterWr
-  dontTouch(isIDUWaitEXU)
+  isIDUStall := isRdAfterWr
+  dontTouch(isIDUStall)
 
   pipelineConnect(ifu.io.out, idu.io.in, idu.io.out, isIFUtoIDU = true)
   pipelineConnect(idu.io.out, exu.io.in, exu.io.out, isIDUtoEXU = true)
   pipelineConnect(exu.io.out, lsu.io.in, lsu.io.out)
 
-  exu.io.rvec <> gprs.io.read
+  idu.io.rvec <> gprs.io.read
   exu.io.csr_rvec <> csrs.io.read
 
   // Write back

@@ -64,17 +64,19 @@ class OneMasterOneSlaveFSM extends Module {
   }
   dontTouch(state)
 
-  val slave_picked = io.slave_ready && io.self_finished
+  val selfFinished = io.self_finished && (!reset.asBool)
 
-  val ready = !full // || slave_picked
-  io.master_ready := ready
+  val slave_picked = io.slave_ready && selfFinished
 
-  io.slave_valid := full && io.self_finished
+  val ready = !full && (!reset.asBool)
+  io.master_ready := ready || (full && slave_picked)
+
+  io.slave_valid := full && selfFinished
 
   when(ready) {
-    full := io.master_valid
+    full := io.master_valid && selfFinished
   }.elsewhen(slave_picked) {
-    full := false.B
+    full := io.master_valid && selfFinished
   }
 }
 
@@ -94,9 +96,10 @@ object InnerBusCtrl {
     fsm
   }
 
-  def apply(master: DecoupledIO[Data], slave: DecoupledIO[Data], alwaysComb: Boolean): OneMasterOneSlaveFSM = {
-    // slave.valid  := master.valid
-    // master.ready := slave.ready
-    apply(master, slave, alwaysComb.B)
+  def apply(master: DecoupledIO[Data], slave: DecoupledIO[Data], alwaysComb: Boolean) = {
+    slave.valid  := master.valid
+    master.ready := slave.ready
+
+    // apply(master, slave, alwaysComb.B)
   }
 }

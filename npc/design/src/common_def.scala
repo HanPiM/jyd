@@ -8,6 +8,20 @@ trait HasRs {
   val rs2: UInt
 }
 
+object AddrSpace {
+  val CLINT = ("h02000000".U(32.W), "h0200ffff".U(32.W))
+  val SPI   = ("h10001000".U(32.W), "h10002000".U(32.W))
+  val SERIAL = ("h10000000".U(32.W), "h10001000".U(32.W))
+
+  val SOC = ("h0f000000".U(32.W), "hffffffff".U(32.W))
+
+  val NPCMEM = ("h80000000".U(32.W), "h8fffffff".U(32.W))
+
+  def inRng(addr: UInt, rng: (UInt, UInt)): Bool = {
+    (addr >= rng._1) && (addr < rng._2)
+  }
+}
+
 object Types {
   object BitWidth {
     // N_REG = 16
@@ -68,6 +82,9 @@ class DecodedInstInfo extends InstMetaInfo with HasRs {
   val rd  = Types.RegAddr
   val rs1 = Types.RegAddr
   val rs2 = Types.RegAddr
+
+  val reg1 = Types.UWord
+  val reg2 = Types.UWord
 }
 
 class DecodedInst extends Inst {

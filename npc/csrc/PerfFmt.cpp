@@ -1,4 +1,5 @@
 #include "PerfCounter.hpp"
+#include "spdlog/fmt/bundled/format.h"
 #include "spdlog/spdlog.h"
 #include <tabulate/table.hpp>
 
@@ -66,15 +67,18 @@ void EXUPerfCounter::_dump(size_t *instCnts, size_t *cycCnts, size_t num,
 
 const char *IFUStateCounter::nameOfState(int s) {
   const char *names[] = {
-      "IDLE",
-      "WAIT_INST",
-      "WAIT_LATER",
+			"Idle", "WaitARReady", "WaitRValid"
   };
   return names[s];
 }
 void IFUStateCounter::dumpStatistics(std::ostream &os) {
   os << "IFU State Counter Statistics:\n";
   os << "total instruction fetch count: " << totalFetchCount << "\n";
+	double vacancyRate = totalOutReadyHighCyc == 0
+		? NAN
+		: ((double)totalSupplyCacancyCyc / (double)totalOutReadyHighCyc) * 100.0;
+	os << fmt::format("total cycles supply vacancy: {} ({:.2f} %)\n", totalSupplyCacancyCyc, vacancyRate);
+
   os << "state statistics:\n";
   Table t;
   t.add_row({"State", "Count", "Percent", "Count\n[exclu fetch]",

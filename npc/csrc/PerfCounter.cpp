@@ -118,6 +118,27 @@ void CachePerfCounter::dumpStatistics(std::ostream &os) {
   os << "AMAT : " << AMAT() << "\n";
 }
 
+void RAWStallPerfCounter::update() {
+	if(hIsIDUStall.get()){
+		cycIDUStall++;
+	}
+	if(hIsConflictEXU.get()){
+		cycConflictEXU++;
+	}
+	if(hIsConflictLSU.get()){
+		cycConflictLSU++;
+	}
+	if(hIsConflictWBU.get()){
+		cycConflictWBU++;
+	}
+}
+void RAWStallPerfCounter::bind(){
+	hIsConflictEXU = &_GetCPU()->isConflictWithEXU;
+	hIsConflictLSU = &_GetCPU()->isConflictWithLSU;
+	hIsConflictWBU = &_GetCPU()->isConflictWithWBU;
+	hIsIDUStall = &_GetCPU()->isIDUStall;
+}
+
 std::vector<PerfCounterVariant> perf_counters;
 
 void initPerfCounters() {
@@ -127,6 +148,7 @@ void initPerfCounters() {
   AXI4PerfCounterManager axi4Ctr;
 
   PipePerfManager pipeCtr;
+	RAWStallPerfCounter rawStallCtr;
 
   CachePerfCounter cacheCtr;
 
@@ -161,11 +183,13 @@ void initPerfCounters() {
               "LSU");
 
   cacheCtr.bind();
+	rawStallCtr.bind();
 
   perf_counters.push_back(std::move(handshakeCtr));
   // perf_counters.push_back(std::move(exuCtr));
   perf_counters.push_back(std::move(axi4Ctr));
   perf_counters.push_back(std::move(pipeCtr));
+	perf_counters.push_back(std::move(rawStallCtr));
   perf_counters.push_back(std::move(cacheCtr));
 }
 

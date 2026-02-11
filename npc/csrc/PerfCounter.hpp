@@ -402,9 +402,33 @@ public:
   }
 };
 
+struct RAWStallPerfCounter: public PerfCounterBase{
+	SignalHandle hIsConflictEXU;
+	SignalHandle hIsConflictLSU;
+	SignalHandle hIsConflictWBU;
+	SignalHandle hIsIDUStall;
+
+	size_t cycConflictEXU = 0;
+	size_t cycConflictLSU = 0;
+	size_t cycConflictWBU = 0;
+	size_t cycIDUStall = 0;
+
+	void bind();
+	void update();
+
+	void dumpStatistics(std::ostream &) override;
+	void fillFields() override {
+		ctrName = "RAWStallPerfCounter";
+		fields.push_back(Field{"cyc_conflict_exu", cycConflictEXU});
+		fields.push_back(Field{"cyc_conflict_lsu", cycConflictLSU});
+		fields.push_back(Field{"cyc_conflict_wbu", cycConflictWBU});
+		fields.push_back(Field{"cyc_idu_stall", cycIDUStall});
+	}
+};
+
 using PerfCounterVariant =
     std::variant<HandShakeCounterManager, AXI4PerfCounterManager,
-                 PipePerfManager, CachePerfCounter>;
+                 PipePerfManager, CachePerfCounter, RAWStallPerfCounter>;
 
 void initPerfCounters();
 void dumpPerfCountersStatistics(std::ostream &os);

@@ -126,6 +126,26 @@ void PipePerfManager::dumpStatistics(std::ostream &os) {
 
   _PrintTable(t, os);
 }
+void RAWStallPerfCounter::dumpStatistics(std::ostream &os) {
+	os << "RAW Stall Performance Counter Statistics:\n";
+	double stallPerc = sim_get_cycle() == 0
+		? NAN
+		: ((double)cycIDUStall / (double)sim_get_cycle()) * 100.0;
+	os << "total RAW stall cycles: " << cycIDUStall << " (" << stallPerc << " %)\n";
+	Table t;
+
+	t.add_row({"Reason", "Stall Cycles", "Stall %\n(in tot)", "Stall %\n(in all stalls)"});
+	auto addRow = [&](const char* reason, size_t cycles){
+		double percTot = sim_get_cycle() == 0 ? NAN : ((double)cycles / (double)sim_get_cycle()) * 100.0;
+		double percStall = cycIDUStall == 0 ? NAN : ((double)cycles / (double)cycIDUStall) * 100.0;
+		t.add_row(RowStream{} << reason << cycles << percTot << percStall);
+	};
+	addRow("EXU conflict", cycConflictEXU);
+	addRow("LSU conflict", cycConflictLSU);
+	addRow("WBU conflict", cycConflictWBU);
+	
+	_PrintTable(t, os);
+}
 
 void AXI4CounterBase::dumpStatistics(std::ostream &os) {
   spdlog::error("AXI4CounterBase::dumpStatistics unimpled!!!");

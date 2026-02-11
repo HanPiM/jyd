@@ -170,6 +170,23 @@ void IDUFlushPerfCounter::update() {
 }
 void IDUFlushPerfCounter::bind() { hIsFlushIDU = &_GetCPU()->isFlushIDU; }
 
+void BranchPredPerfCounter::bind() {
+  hIsBranch = &_GetEXU()->dbgIsBranch;
+  hValid = &_GetEXU()->io_in_valid;
+  hReady = &_GetEXU()->io_in_ready;
+}
+
+void BranchPredPerfCounter::update() {
+  if (hValid.get() && hReady.get()) {
+    if (hIsBranch.get()) {
+      totBranchCount++;
+      if (_GetEXU()->takeBranch) {
+        totMispredictCount++;
+      }
+    }
+  }
+}
+
 std::vector<PerfCounterVariant> perf_counters;
 
 void initPerfCounters() {
@@ -183,6 +200,8 @@ void initPerfCounters() {
   IDUFlushPerfCounter iduFlushCtr;
 
   CachePerfCounter cacheCtr;
+
+	BranchPredPerfCounter branchPredCtr;
 
   handshakeCtr.init();
   handshakeCtr.add(&_GetIFU()->io_mem_rvalid, &_GetIFU()->io_mem_rready,
@@ -217,6 +236,7 @@ void initPerfCounters() {
   iduFlushCtr.bind();
   cacheCtr.bind();
   rawStallCtr.bind();
+	branchPredCtr.bind();
 
   perf_counters.push_back(std::move(handshakeCtr));
   // perf_counters.push_back(std::move(exuCtr));
@@ -224,6 +244,7 @@ void initPerfCounters() {
   perf_counters.push_back(std::move(pipeCtr));
   perf_counters.push_back(std::move(rawStallCtr));
   perf_counters.push_back(std::move(iduFlushCtr));
+	perf_counters.push_back(std::move(branchPredCtr));
   perf_counters.push_back(std::move(cacheCtr));
 }
 
@@ -290,7 +311,7 @@ void dumpPerfCounterAsCSV(std::ostream &os) {
   os << "\n" << value_row;
 }
 void dumpPerfReportOnDir(const std::string &dir) {
-  std::string prefix = "pipe_with_bypass";
+  std::string prefix = "test.pipe_with_bypass";
   std::string reportPath = dir + '/' + prefix + ".counter.rpt";
   std::ofstream reportFile(reportPath);
   if (!reportFile.is_open()) {

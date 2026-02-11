@@ -165,6 +165,19 @@ void IDUFlushPerfCounter::dumpStatistics(std::ostream &os) {
   _PrintTable(t, os);
 }
 
+void BranchPredPerfCounter::dumpStatistics(std::ostream &os) {
+	os << "Branch Prediction Performance Counter Statistics:\n";
+	size_t totAccuracy = totBranchCount - totMispredictCount;
+	os << "total branch count: " << totBranchCount << "\n";
+	os << "total mispredict count: " << totMispredictCount << "\n";
+	os << "total accuracy count: " << totAccuracy << "\n";
+	double accuracyPerc =
+	    totBranchCount == 0
+	        ? NAN
+	        : ((double)totAccuracy / (double)totBranchCount) * 100.0;
+	os << "accuracy: " << accuracyPerc << " %\n";
+}
+
 void AXI4CounterBase::dumpStatistics(std::ostream &os) {
   spdlog::error("AXI4CounterBase::dumpStatistics unimpled!!!");
 }

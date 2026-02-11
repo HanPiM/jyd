@@ -100,71 +100,6 @@ public:
   void dumpStatistics(std::ostream &os) override;
 };
 
-// struct [[deprecated("work bad for pipelined design")]] EXUPerfCounter
-//     : public PerfCounterBase {
-//   // in common_def.scala
-//   //   val imm, reg, store, upper, jump, branch = Value
-//   //   val branch, arithmetic, load, store, jalr, jal, lui, auipc, system =
-//   enum InstFmt { I_TYPE, R_TYPE, S_TYPE, U_TYPE, J_TYPE, B_TYPE, FMT_NUM };
-//   enum InstType {
-//     branch,
-//     arithmetic,
-//     load,
-//     store,
-//     jalr,
-//     jal,
-//     lui,
-//     auipc,
-//     system,
-//     fencei,
-//     TYPE_NUM
-//   };
-//
-//   static InstFmt OneHotToFmt(uint32_t onehot);
-//   static InstType OneHotToType(uint32_t onehot);
-//
-//   static inline bool isValidFmt(InstFmt fmt) { return fmt < FMT_NUM; }
-//   static inline bool isValidType(InstType type) { return type < TYPE_NUM; }
-//
-//   static const char *nameOfFmt(int fmt);
-//   static const char *nameOfTyp(int type);
-//
-//   size_t instCountOfFmt[FMT_NUM] = {0};
-//   size_t instCountOfTyp[TYPE_NUM] = {0};
-//
-//   size_t totalCycleOfTyp[TYPE_NUM] = {0};
-//   size_t totalCycleOfFmt[FMT_NUM] = {0};
-//
-//   bool lastCycOutValid = false;
-//   sim_cycle_t instStartCycle = 0;
-//
-//   SignalHandle hInstType;
-//   SignalHandle hInstFmt;
-//   SignalHandle hOutValid;
-//   SignalHandle hOutReady;
-//
-//   std::shared_ptr<spdlog::logger> logger;
-//
-//   void bind();
-//   void update();
-//
-//   void _dump(size_t *instCnts, size_t *cycCnts, size_t num,
-//              const char *(*nameFunc)(int), std::ostream &os);
-//   void dumpStatistics(std::ostream &) override;
-//
-//   void fillFields() override {
-//     ctrName = "EXUInstTypeFmtCounter";
-//     for (size_t i = 0; i < TYPE_NUM; i++) {
-//       fields.push_back(
-//           Field{std::string("typ_") + nameOfTyp((int)i), instCountOfTyp[i]});
-//     }
-//     for (size_t i = 0; i < FMT_NUM; i++) {
-//       fields.push_back(
-//           Field{std::string("fmt_") + nameOfFmt((int)i), instCountOfFmt[i]});
-//     }
-//   }
-// };
-
 struct AXI4CounterBase : public PerfCounterBase {
   struct LatencyRecord {
     sim_time_t startTime;
@@ -305,7 +240,7 @@ struct PipeStagePerfCounter : public PerfCounterBase {
   static const char *nameOfState(int state);
 
   PipeStagePerfCounter &bind(SignalHandle inValid, SignalHandle inReady,
-                              SignalHandle outValid, SignalHandle outReady) {
+                             SignalHandle outValid, SignalHandle outReady) {
     hInValid = inValid;
     hInReady = inReady;
     hOutValid = outValid;
@@ -318,9 +253,9 @@ struct PipeStagePerfCounter : public PerfCounterBase {
   void update();
   void dumpStatistics(std::ostream &) override;
 
-	size_t totalCount() const {
-		return std::accumulate(countOfState, countOfState + STATE_NUM, 0ull);
-	}
+  size_t totalCount() const {
+    return std::accumulate(countOfState, countOfState + STATE_NUM, 0ull);
+  }
 
   void fillFields() override {
     for (size_t i = 0; i < STATE_NUM; i++) {
@@ -334,9 +269,9 @@ class PipePerfManager : public PerfCounterBase {
 public:
   std::vector<PipeStagePerfCounter> stageCtrs;
   void add(PipeStagePerfCounter ctr, std::string name) {
-		ctr.ctrName = name;
-		stageCtrs.push_back(std::move(ctr));
-	}
+    ctr.ctrName = name;
+    stageCtrs.push_back(std::move(ctr));
+  }
   void update() {
     for (auto &ctr : stageCtrs) {
       ctr.update();
@@ -402,63 +337,82 @@ public:
   }
 };
 
-struct RAWStallPerfCounter: public PerfCounterBase{
-	SignalHandle hIsConflictEXU;
-	SignalHandle hIsConflictLSU;
-	SignalHandle hIsConflictWBU;
-	SignalHandle hIsIDUStall;
+struct RAWStallPerfCounter : public PerfCounterBase {
+  SignalHandle hIsConflictEXU;
+  SignalHandle hIsConflictLSU;
+  SignalHandle hIsConflictWBU;
+  SignalHandle hIsIDUStall;
 
-	size_t cycConflictEXU = 0;
-	size_t cycConflictLSU = 0;
-	size_t cycConflictWBU = 0;
-	size_t cycIDUStall = 0;
+  size_t cycConflictEXU = 0;
+  size_t cycConflictLSU = 0;
+  size_t cycConflictWBU = 0;
+  size_t cycIDUStall = 0;
 
-	void bind();
-	void update();
+  void bind();
+  void update();
 
-	void dumpStatistics(std::ostream &) override;
-	void fillFields() override {
-		ctrName = "RAWStallPerfCounter";
-		fields.push_back(Field{"cyc_conflict_exu", cycConflictEXU});
-		fields.push_back(Field{"cyc_conflict_lsu", cycConflictLSU});
-		fields.push_back(Field{"cyc_conflict_wbu", cycConflictWBU});
-		fields.push_back(Field{"cyc_idu_stall", cycIDUStall});
-	}
+  void dumpStatistics(std::ostream &) override;
+  void fillFields() override {
+    ctrName = "RAWStallPerfCounter";
+    fields.push_back(Field{"cyc_conflict_exu", cycConflictEXU});
+    fields.push_back(Field{"cyc_conflict_lsu", cycConflictLSU});
+    fields.push_back(Field{"cyc_conflict_wbu", cycConflictWBU});
+    fields.push_back(Field{"cyc_idu_stall", cycIDUStall});
+  }
 };
 
-struct IDUFlushPerfCounter: public PerfCounterBase {
-	SignalHandle hIsFlushIDU;
-	bool lastCycIsFlush = false;
+struct IDUFlushPerfCounter : public PerfCounterBase {
+  SignalHandle hIsFlushIDU;
+  bool lastCycIsFlush = false;
 
-	enum IDUFlushReason {
-		BranchTaken,
-		JALR,
-		JAL,
-		Exception,
-		Unknown,
-		REASON_NUM
-	};
-	IDUFlushReason lastFlushReason = IDUFlushReason::Unknown;
+  enum IDUFlushReason {
+    BranchTaken,
+    JALR,
+    JAL,
+    Exception,
+    Unknown,
+    REASON_NUM
+  };
+  IDUFlushReason lastFlushReason = IDUFlushReason::Unknown;
 
-	size_t cycIDUFlush = 0;
-	size_t cycFlushOfReason[REASON_NUM] = {0};
+  size_t cycIDUFlush = 0;
+  size_t cycFlushOfReason[REASON_NUM] = {0};
 
+  void bind();
+  void update();
 
-	void bind();
-	void update();
+  IDUFlushReason getCurReason() const;
 
-	IDUFlushReason getCurReason() const;
+  void dumpStatistics(std::ostream &) override;
+  void fillFields() override {
+    ctrName = "IDUFlushPerfCounter";
+    fields.push_back(Field{"cyc_idu_flush", cycIDUFlush});
+  }
+};
 
-	void dumpStatistics(std::ostream &) override;
-	void fillFields() override {
-		ctrName = "IDUFlushPerfCounter";
-		fields.push_back(Field{"cyc_idu_flush", cycIDUFlush});
-	}
+struct BranchPredPerfCounter : public PerfCounterBase {
+  SignalHandle hIsBranch;
+  SignalHandle hValid;
+  SignalHandle hReady;
+
+  size_t totBranchCount = 0;
+  size_t totMispredictCount = 0;
+
+  void bind();
+  void update();
+
+  void dumpStatistics(std::ostream &) override;
+  void fillFields() override {
+    ctrName = "BranchPredPerfCounter";
+    fields.push_back(Field{"tot_branch", totBranchCount});
+    fields.push_back(Field{"tot_mispredict", totMispredictCount});
+  }
 };
 
 using PerfCounterVariant =
     std::variant<HandShakeCounterManager, AXI4PerfCounterManager,
-                 PipePerfManager, CachePerfCounter, RAWStallPerfCounter, IDUFlushPerfCounter>;
+                 PipePerfManager, CachePerfCounter, RAWStallPerfCounter,
+                 IDUFlushPerfCounter, BranchPredPerfCounter>;
 
 void initPerfCounters();
 void dumpPerfCountersStatistics(std::ostream &os);

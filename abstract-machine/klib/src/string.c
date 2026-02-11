@@ -120,6 +120,17 @@ void *kmemcpy(void *out, const void *in, size_t n) {
   return out;
 }
 
+#ifndef KASAN_ENABLED
+#undef memset
+void* memset(void *s, int c, size_t n) {
+	return kmemset(s, c, n);
+}
+#undef memcpy
+void* memcpy(void *out, const void *in, size_t n) {
+	return kmemcpy(out, in, n);
+}
+#endif
+
 int memcmp(const void *s1, const void *s2, size_t n) {
   const char *bs1 = (const char *)s1;
   const char *bs2 = (const char *)s2;

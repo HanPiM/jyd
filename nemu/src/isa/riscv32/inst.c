@@ -26,8 +26,8 @@
 
 #include <limits.h>
 
-#include <itrace_pack.h>
 #include <btrace_pack.h>
+#include <itrace_pack.h>
 
 #include "memory/paddr.h"
 #include <encoding.out.h>
@@ -74,18 +74,16 @@ static int decode_exec(Decode *s) {
     matched = true;
   }
 
-#define MATCH_BRANCH (MATCH_BEQ | MATCH_BNE | MATCH_BLT | MATCH_BGE | MATCH_BLTU | MATCH_BGEU)
-#define MASK_BRANCH (MASK_BEQ | MASK_BNE | MASK_BLT | MASK_BGE | MASK_BLTU | MASK_BGEU)
+#define MATCH_BRANCH 0b1100011
+#define MASK_BRANCH 0b1111111
 
-	if((inst & MASK_BRANCH) == MATCH_BRANCH) {
-		g_nbranches++;
-		btrace_record_t record = {
-			.pc = s->pc,
-			.code = inst,
-			.nxt_pc = s->dnpc
-		};
-		btrace_pack_add(g_btrace_pack, &record);
-	}
+  if ((inst & MASK_BRANCH) == MATCH_BRANCH) {
+    g_nbranches++;
+    if (g_btrace_pack) {
+      btrace_record_t record = {.pc = s->pc, .code = inst, .nxt_pc = s->dnpc};
+      btrace_pack_add(g_btrace_pack, &record);
+    }
+  }
 
   if (IS_INST(CSRRW)) {
     if (rd != 0) {

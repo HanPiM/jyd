@@ -47,8 +47,8 @@ int main(int argc, char *argv[]) {
       g_itrace_pack = itrace_pack_create("itrace_pack.bin");
       g_mtrace_pack = itrace_pack_create("mtrace_pack.bin");
     }
-    g_btrace_pack = btrace_pack_create("btrace_pack.bin");
   }
+    g_btrace_pack = btrace_pack_create("btrace_pack.bin");
 
   /* Start engine. */
   engine_start();
@@ -62,8 +62,8 @@ int main(int argc, char *argv[]) {
       itrace_pack_close(g_itrace_pack);
       itrace_pack_close(g_mtrace_pack);
     }
-    btrace_pack_close(g_btrace_pack);
   }
+    btrace_pack_close(g_btrace_pack);
 
   printf("total branches: %lu\n", g_nbranches);
 

@@ -91,8 +91,8 @@ VPI_DONE := $(BUILD_DIR)/vpi.done
 # the real modification only needs when CHISEL2V_DONE is updated
 $(VPI_DONE): $(CHISEL2V_DONE)
 ifeq ($(ENABLE_VPI), 1)
-	@echo "VPI enabled: inserting verilator public modifier"
-	$(foreach src,$(MY_VSRCS),\
+	@echo "# inserting verilator public modifier"
+	@$(foreach src,$(MY_VSRCS),\
 	sed -i '1i /*verilator public_on*/' $(src); \
 	sed -i -e '$$a /*verilator public_off*/' $(src);)
 	touch $(VPI_DONE)
@@ -154,13 +154,14 @@ LDFLAGS += -fuse-ld=mold
 
 $(SIM_BIN): $(SIM_VSRCS) $(SIM_CSRCS) $(ARCHIVES) $(CHISEL2V_DONE) $(VPI_DONE) $(SIM_HEADERS) $(VERILATOR_CONTROL_FILE)
 	@rm -rf $(V2CXX_EMIT_DIR)
+	@echo "# Building simulation binary: $@"
 	@$(VERILATOR) $(VERILATOR_FLAGS) \
 		$(SIM_CSRCS) $(NVBOARD_ARCHIVE) \
 		--top-module $(TOP_NAME) $(VERILATOR_CONTROL_FILE) $(SIM_VSRCS) \
 		$(addprefix -CFLAGS , $(CXXFLAGS)) \
 		$(addprefix -LDFLAGS , $(LDFLAGS)) \
 		--Mdir $(V2CXX_EMIT_DIR) --exe -o $(abspath $(SIM_BIN))
-	@make -C $(V2CXX_EMIT_DIR) -f V$(TOP_NAME).mk -j$(shell nproc) OPT_FAST=$(VSIM_OPT) CXX=clang++ LINK=clang++
+	@make -s -C $(V2CXX_EMIT_DIR) -f V$(TOP_NAME).mk -j$(shell nproc) OPT_FAST=$(VSIM_OPT) CXX=clang++ LINK=clang++
 
 all: default
 

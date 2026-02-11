@@ -27,6 +27,7 @@
 #include <limits.h>
 
 #include <itrace_pack.h>
+#include <btrace_pack.h>
 
 #include "memory/paddr.h"
 #include <encoding.out.h>
@@ -45,9 +46,12 @@ static void _csr_write(word_t csr, word_t src1) {
 
 itrace_pack_t g_itrace_pack;
 itrace_pack_t g_mtrace_pack;
+btrace_pack_t g_btrace_pack;
 
 // generate in out.cc
 int execute_instruction(word_t instruction, word_t *pc, word_t *regs);
+
+uint64_t g_nbranches;
 
 static int decode_exec(Decode *s) {
   s->dnpc = s->snpc;
@@ -69,6 +73,19 @@ static int decode_exec(Decode *s) {
   if (inst == 0x100f) { // fence.i
     matched = true;
   }
+
+#define MATCH_BRANCH (MATCH_BEQ | MATCH_BNE | MATCH_BLT | MATCH_BGE | MATCH_BLTU | MATCH_BGEU)
+#define MASK_BRANCH (MASK_BEQ | MASK_BNE | MASK_BLT | MASK_BGE | MASK_BLTU | MASK_BGEU)
+
+	if((inst & MASK_BRANCH) == MATCH_BRANCH) {
+		g_nbranches++;
+		btrace_record_t record = {
+			.pc = s->pc,
+			.code = inst,
+			.nxt_pc = s->dnpc
+		};
+		btrace_pack_add(g_btrace_pack, &record);
+	}
 
   if (IS_INST(CSRRW)) {
     if (rd != 0) {
@@ -143,7 +160,7 @@ word_t _handle_csr_rw(word_t csr, word_t src1, bool is_write) {
 
 int isa_exec_once(Decode *s) {
   s->isa.inst = inst_fetch(&s->snpc, 4);
-  if (isSoC) {
+  if (isSoC && g_itrace_pack) {
     itrace_pack_add(g_itrace_pack, s->pc);
   }
   // printf("%08x\n", s->pc);

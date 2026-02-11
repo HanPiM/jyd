@@ -119,24 +119,25 @@ void CachePerfCounter::dumpStatistics(std::ostream &os) {
 }
 
 void RAWStallPerfCounter::update() {
-	if(hIsIDUStall.get()){
-		cycIDUStall++;
-	}
-	if(hIsConflictEXU.get()){
-		cycConflictEXU++;
-	}
-	if(hIsConflictLSU.get()){
-		cycConflictLSU++;
-	}
-	if(hIsConflictWBU.get()){
-		cycConflictWBU++;
-	}
+  if (hIsIDUStall.get()) {
+    cycIDUStall++;
+
+    if (hIsConflictEXU.get()) {
+      cycConflictEXU++;
+    }
+    if (hIsConflictLSU.get()) {
+      cycConflictLSU++;
+    }
+    if (hIsConflictWBU.get()) {
+      cycConflictWBU++;
+    }
+  }
 }
-void RAWStallPerfCounter::bind(){
-	hIsConflictEXU = &_GetCPU()->isConflictWithEXU;
-	hIsConflictLSU = &_GetCPU()->isConflictWithLSU;
-	hIsConflictWBU = &_GetCPU()->isConflictWithWBU;
-	hIsIDUStall = &_GetCPU()->isIDUStall;
+void RAWStallPerfCounter::bind() {
+  hIsConflictEXU = &_GetCPU()->isConflictWithEXU;
+  hIsConflictLSU = &_GetCPU()->isConflictWithLSU;
+  hIsConflictWBU = &_GetCPU()->isConflictWithWBU;
+  hIsIDUStall = &_GetCPU()->isIDUStall;
 }
 
 std::vector<PerfCounterVariant> perf_counters;
@@ -148,7 +149,7 @@ void initPerfCounters() {
   AXI4PerfCounterManager axi4Ctr;
 
   PipePerfManager pipeCtr;
-	RAWStallPerfCounter rawStallCtr;
+  RAWStallPerfCounter rawStallCtr;
 
   CachePerfCounter cacheCtr;
 
@@ -183,13 +184,13 @@ void initPerfCounters() {
               "LSU");
 
   cacheCtr.bind();
-	rawStallCtr.bind();
+  rawStallCtr.bind();
 
   perf_counters.push_back(std::move(handshakeCtr));
   // perf_counters.push_back(std::move(exuCtr));
   perf_counters.push_back(std::move(axi4Ctr));
   perf_counters.push_back(std::move(pipeCtr));
-	perf_counters.push_back(std::move(rawStallCtr));
+  perf_counters.push_back(std::move(rawStallCtr));
   perf_counters.push_back(std::move(cacheCtr));
 }
 
@@ -256,7 +257,7 @@ void dumpPerfCounterAsCSV(std::ostream &os) {
   os << "\n" << value_row;
 }
 void dumpPerfReportOnDir(const std::string &dir) {
-	std::string prefix = "pipe";
+  std::string prefix = "new_test_pipe";
   std::string reportPath = dir + '/' + prefix + ".counter.rpt";
   std::ofstream reportFile(reportPath);
   if (!reportFile.is_open()) {

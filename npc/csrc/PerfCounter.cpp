@@ -60,31 +60,31 @@ void HandShakeCounterManager::update() {
   }
 }
 
+// void IFUStateCounter::bind() {
+//   hInValid = &_GetIFU()->io_mem_rvalid;
+//   hInReady = &_GetIFU()->io_mem_rready;
+//   // hState = &_GetIFU()->state;
+//
+//   hOutValid = &_GetIFU()->io_out_valid;
+//   hOutReady = &_GetIFU()->io_out_ready;
+// }
+void PipeStagePerfCounter::update() {
+  // bool fetchInstHappened = (hInReady.get() && hInValid.get());
+  // if (fetchInstHappened) {
+  //   totalFetchCount++;
+  // }
 
-void IFUStateCounter::bind() {
-  hRValid = &_GetIFU()->io_mem_rvalid;
-  hRReady = &_GetIFU()->io_mem_rready;
-  hState = &_GetIFU()->state;
-
-	hOutValid = &_GetIFU()->io_out_valid;
-	hOutReady = &_GetIFU()->io_out_ready;
-}
-void IFUStateCounter::update() {
-  bool fetchInstHappened = (hRReady.get() && hRValid.get());
-  State s = (State)hState.get();
-  countOfState[s]++;
-  if (fetchInstHappened) {
-    totalFetchCount++;
+  State s;
+  if (hOutReady.get()) {
+    if (hOutValid.get()) {
+      s = Fire;
+    } else {
+      s = Bubble;
+    }
   } else {
-    countOfStateWhenNoFetch[s]++;
+    s = Backpressure;
   }
-
-	if (hOutReady.get()){
-		totalOutReadyHighCyc++;
-		if (!hOutValid.get()) {
-			totalSupplyCacancyCyc++;
-		}
-	}
+  countOfState[s]++;
 }
 
 void CachePerfCounter::bind() {
@@ -101,11 +101,11 @@ void CachePerfCounter::update() {
   if (hARValid.get() && hARReady.get()) {
     totalVisitCount++;
     currentHitAccessStartCycle = sim_get_cycle();
-  }
-  auto s = (State)hState.get();
-  if (s == checkCache && hCacheHit.get()) {
-    hitCount++;
-    totalHitAccessCycles += sim_get_cycle() - currentHitAccessStartCycle;
+    auto s = (State)hState.get();
+    if (s == idle && hCacheHit.get()) {
+      hitCount++;
+      totalHitAccessCycles += sim_get_cycle() - currentHitAccessStartCycle;
+    }
   }
 }
 
@@ -125,7 +125,8 @@ void initPerfCounters() {
   HandShakeCounterManager handshakeCtr;
   // EXUPerfCounter exuCtr;
   AXI4PerfCounterManager axi4Ctr;
-  IFUStateCounter ifuStateCtr;
+
+  PipePerfManager pipeCtr;
 
   CachePerfCounter cacheCtr;
 
@@ -134,8 +135,8 @@ void initPerfCounters() {
                    "ifu.io_mem_r", "IFU fetch inst");
   handshakeCtr.add(&_GetLSU()->io_mem_rvalid, &_GetLSU()->io_mem_rready,
                    "lsu.io_mem_r", "EXU load data");
-	// ALU now is combintional logic, no handshake
-	//
+  // ALU now is combintional logic, no handshake
+  //
   // handshakeCtr.add(&_GetALU()->io_out_valid, &_GetALU()->io_out_ready,
   //                  "exu.alu.io_out", "EXU calc");
   handshakeCtr.add(&_GetIDU()->io_out_valid, &_GetIDU()->io_out_ready,
@@ -148,19 +149,23 @@ void initPerfCounters() {
   axi4Ctr.add(AXI4ReadPerfCounter().BIND_AXI4_R_BASE(_GetIFU()->io_mem),
               "ifu_mem_read");
 
-  // axi4Ctr.addRead("exu.io_mem", "EXU load data");
-  // axi4Ctr.addWrite("exu.io_mem", "EXU store data");
-  //
-  // axi4Ctr.addRead("ifu.io_mem", "IFU fetch inst");
+  pipeCtr.add(PipeStagePerfCounter().bind(
+                  &_GetIFU()->io_pc_valid, &_GetIFU()->io_pc_ready,
+                  &_GetIFU()->io_out_valid, &_GetIFU()->io_out_ready),
+              "IFU");
+  pipeCtr.add(PipeStagePerfCounter().BIND_PIPE_STAGE_BASE(_GetIDU()->io),
+              "IDU");
+  pipeCtr.add(PipeStagePerfCounter().BIND_PIPE_STAGE_BASE(_GetEXU()->io),
+              "EXU");
+  pipeCtr.add(PipeStagePerfCounter().BIND_PIPE_STAGE_BASE(_GetLSU()->io),
+              "LSU");
 
-  // exuCtr.bind();
-  ifuStateCtr.bind();
   cacheCtr.bind();
 
   perf_counters.push_back(std::move(handshakeCtr));
   // perf_counters.push_back(std::move(exuCtr));
   perf_counters.push_back(std::move(axi4Ctr));
-  perf_counters.push_back(std::move(ifuStateCtr));
+  perf_counters.push_back(std::move(pipeCtr));
   perf_counters.push_back(std::move(cacheCtr));
 }
 
@@ -227,7 +232,8 @@ void dumpPerfCounterAsCSV(std::ostream &os) {
   os << "\n" << value_row;
 }
 void dumpPerfReportOnDir(const std::string &dir) {
-  std::string reportPath = dir + "/test.counter.rpt";
+	std::string prefix = "pipe";
+  std::string reportPath = dir + '/' + prefix + ".counter.rpt";
   std::ofstream reportFile(reportPath);
   if (!reportFile.is_open()) {
     spdlog::error("cannot open perf counter report file {}", reportPath);
@@ -236,7 +242,7 @@ void dumpPerfReportOnDir(const std::string &dir) {
   dumpPerfCountersStatistics(reportFile);
   reportFile.close();
   spdlog::info("perf counter report dumped to {}", reportPath);
-  std::string csvPath = dir + "/test.rawdata.csv";
+  std::string csvPath = dir + '/' + prefix + "rawdata.csv";
   std::ofstream csvFile(csvPath);
   if (!csvFile.is_open()) {
     spdlog::error("cannot open perf counter csv file {}", csvPath);

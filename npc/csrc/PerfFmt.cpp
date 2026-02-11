@@ -33,7 +33,7 @@ void HandShakeCounterManager::dumpStatistics(std::ostream &os) {
                       : ((double)bus.shake_count / (double)sim_get_cycle());
     t.add_row(RowStream{} << bus.description << bus.shake_count << freq);
   }
-	_PrintTable(t, os);
+  _PrintTable(t, os);
 }
 
 void EXUPerfCounter::_dump(size_t *instCnts, size_t *cycCnts, size_t num,
@@ -65,38 +65,65 @@ void EXUPerfCounter::_dump(size_t *instCnts, size_t *cycCnts, size_t num,
   _PrintTable(t, os);
 }
 
-const char *IFUStateCounter::nameOfState(int s) {
+const char *PipeStagePerfCounter::nameOfState(int s) {
   const char *names[] = {
-			"Idle", "WaitARReady", "WaitRValid"
+      "Backpressure",
+      "Bubble",
+      "Fire",
   };
   return names[s];
 }
-void IFUStateCounter::dumpStatistics(std::ostream &os) {
-  os << "IFU State Counter Statistics:\n";
-  os << "total instruction fetch count: " << totalFetchCount << "\n";
-	double vacancyRate = totalOutReadyHighCyc == 0
-		? NAN
-		: ((double)totalSupplyCacancyCyc / (double)totalOutReadyHighCyc) * 100.0;
-	os << fmt::format("total cycles supply vacancy: {} ({:.2f} %)\n", totalSupplyCacancyCyc, vacancyRate);
-
-  os << "state statistics:\n";
+void PipeStagePerfCounter::dumpStatistics(std::ostream &os) {
+  spdlog::error("PipeStagePerfCounter::dumpStatistics unimpled!!!");
+  // os << "IFU State Counter Statistics:\n";
+  // os << "total instruction fetch count: " << totalFetchCount << "\n";
+  //
+  // os << "state statistics:\n";
+  // Table t;
+  // t.add_row({"State", "Count", "Percent"});
+  //
+  // auto totStateCount =
+  //     std::accumulate(countOfState, countOfState + STATE_NUM, 0ull);
+  //
+  // auto totCycles = sim_get_cycle();
+  // for (size_t i = 0; i < STATE_NUM; i++) {
+  //   double perc =
+  //       totStateCount == 0
+  //           ? NAN
+  //           : ((double)countOfState[i] / (double)totStateCount) * 100.0;
+  //   t.add_row(RowStream{} << nameOfState((int)i) << countOfState[i] << perc);
+  // }
+  // _PrintTable(t, os);
+}
+void PipePerfManager::dumpStatistics(std::ostream &os) {
+  os << "Pipeline Performance Counter Statistics:\n";
   Table t;
-  t.add_row({"State", "Count", "Percent", "Count\n[exclu fetch]",
-             "Percent\n[exclu fetch]"});
+  t.add_row({"Stage", "Backpressure\nCycles", "Bubble\nCycles", "Fire\nCycles",
+             "Backpressure\n%", "Bubble\n%", "Fire\n%"});
 
-  auto totCycles = sim_get_cycle();
-  for (size_t i = 0; i < STATE_NUM; i++) {
-    double perc = totCycles == 0
-                      ? NAN
-                      : ((double)countOfState[i] / (double)totCycles) * 100.0;
-    double percNoFetch =
+  for (auto &ctr : stageCtrs) {
+    size_t totCycles = ctr.totalCount();
+    double backPerc =
         totCycles == 0
             ? NAN
-            : ((double)countOfStateWhenNoFetch[i] / (double)totCycles) * 100.0;
+            : ((double)ctr.countOfState[0] / (double)totCycles) * 100.0;
+    double bubPerc =
+        totCycles == 0
+            ? NAN
+            : ((double)ctr.countOfState[1] / (double)totCycles) * 100.0;
+    double firePerc =
+        totCycles == 0
+            ? NAN
+            : ((double)ctr.countOfState[2] / (double)totCycles) * 100.0;
 
-    t.add_row(RowStream{} << nameOfState(i) << countOfState[i] << perc
-                          << countOfStateWhenNoFetch[i] << percNoFetch);
+    t.add_row(
+        RowStream{} << ctr.ctrName
+                    << ctr.countOfState[PipeStagePerfCounter::Backpressure]
+                    << ctr.countOfState[PipeStagePerfCounter::Bubble]
+                    << ctr.countOfState[PipeStagePerfCounter::Fire] << backPerc
+                    << bubPerc << firePerc);
   }
+
   _PrintTable(t, os);
 }
 
@@ -104,14 +131,14 @@ void AXI4CounterBase::dumpStatistics(std::ostream &os) {
   spdlog::error("AXI4CounterBase::dumpStatistics unimpled!!!");
 }
 
-static void _AddTableRowForAXI4Counter(Table &t, AXI4CounterBase &ctr){
-    double avg_latency =
-        ctr.transaction_count == 0
-            ? NAN
-            : (double)ctr.total_latency_cycles / (double)ctr.transaction_count;
-    t.add_row(RowStream{} << ctr.ctrName << ctr.transaction_count
-                          << ctr.total_latency_cycles << avg_latency
-                          << ctr.maxRecord.cycles << ctr.maxRecord.startTime);
+static void _AddTableRowForAXI4Counter(Table &t, AXI4CounterBase &ctr) {
+  double avg_latency =
+      ctr.transaction_count == 0
+          ? NAN
+          : (double)ctr.total_latency_cycles / (double)ctr.transaction_count;
+  t.add_row(RowStream{} << ctr.ctrName << ctr.transaction_count
+                        << ctr.total_latency_cycles << avg_latency
+                        << ctr.maxRecord.cycles << ctr.maxRecord.startTime);
 }
 void AXI4PerfCounterManager::dumpStatistics(std::ostream &os) {
   os << "AXI4 Performance Counters Statistics:\n";
@@ -120,10 +147,10 @@ void AXI4PerfCounterManager::dumpStatistics(std::ostream &os) {
   t.add_row({"Name", "Transactions", "Total\nCycles", "Avg\nLatency",
              "Max\nLatency", "Max Start\n(sim time)"});
   for (AXI4CounterBase &ctr : rdCounters) {
-		_AddTableRowForAXI4Counter(t, ctr);
+    _AddTableRowForAXI4Counter(t, ctr);
   }
-	for (AXI4CounterBase &ctr : wrCounters) {
-		_AddTableRowForAXI4Counter(t, ctr);
-	}
-	_PrintTable(t, os);
+  for (AXI4CounterBase &ctr : wrCounters) {
+    _AddTableRowForAXI4Counter(t, ctr);
+  }
+  _PrintTable(t, os);
 }

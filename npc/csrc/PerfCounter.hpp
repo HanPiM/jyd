@@ -100,9 +100,8 @@ public:
   void dumpStatistics(std::ostream &os) override;
 };
 
-struct 
-[[deprecated("work bad for pipelined design")]]
-EXUPerfCounter : public PerfCounterBase {
+struct [[deprecated("work bad for pipelined design")]] EXUPerfCounter
+    : public PerfCounterBase {
   // in common_def.scala
   //   val imm, reg, store, upper, jump, branch = Value
   //   val branch, arithmetic, load, store, jalr, jal, lui, auipc, system =
@@ -117,12 +116,12 @@ EXUPerfCounter : public PerfCounterBase {
     lui,
     auipc,
     system,
-		fencei,
+    fencei,
     TYPE_NUM
   };
 
-	static InstFmt OneHotToFmt(uint32_t onehot);
-	static InstType OneHotToType(uint32_t onehot);
+  static InstFmt OneHotToFmt(uint32_t onehot);
+  static InstType OneHotToType(uint32_t onehot);
 
   static inline bool isValidFmt(InstFmt fmt) { return fmt < FMT_NUM; }
   static inline bool isValidType(InstType type) { return type < TYPE_NUM; }
@@ -290,40 +289,40 @@ public:
   }
 };
 
-struct IFUStateCounter : public PerfCounterBase {
+struct PipeStagePerfCounter : public PerfCounterBase {
   // check fetch handshake happened
-  SignalHandle hRValid;
-  SignalHandle hRReady;
-  // ifu fsm state
-  SignalHandle hState;
 
-	SignalHandle hOutValid;
-	SignalHandle hOutReady;
+  SignalHandle hInValid;
+  SignalHandle hInReady;
 
-	enum State{
-		Idle,
-		WaitARReady,
-		WaitRValid,
-		STATE_NUM
-	};
+  SignalHandle hOutValid;
+  SignalHandle hOutReady;
+
+  enum State { Backpressure, Bubble, Fire, STATE_NUM };
 
   size_t countOfState[STATE_NUM] = {0};
-  size_t countOfStateWhenNoFetch[STATE_NUM] = {0};
-  size_t totalFetchCount = 0;
-
-	// total cycles when later stage ready high but self
-	// not able to reply valid
-	size_t totalSupplyCacancyCyc = 0;
-	size_t totalOutReadyHighCyc = 0;
 
   static const char *nameOfState(int state);
 
-  void bind();
+  PipeStagePerfCounter &bind(SignalHandle inValid, SignalHandle inReady,
+                              SignalHandle outValid, SignalHandle outReady) {
+    hInValid = inValid;
+    hInReady = inReady;
+    hOutValid = outValid;
+    hOutReady = outReady;
+    return *this;
+  }
+#define BIND_PIPE_STAGE_BASE(base)                                             \
+  bind(&base##_in_valid, &base##_in_ready, &base##_out_valid, &base##_out_ready)
+
   void update();
   void dumpStatistics(std::ostream &) override;
 
+	size_t totalCount() const {
+		return std::accumulate(countOfState, countOfState + STATE_NUM, 0ull);
+	}
+
   void fillFields() override {
-    ctrName = "IFUStateCounter";
     for (size_t i = 0; i < STATE_NUM; i++) {
       fields.push_back(
           Field{std::string("state_") + nameOfState((int)i), countOfState[i]});
@@ -331,10 +330,33 @@ struct IFUStateCounter : public PerfCounterBase {
   }
 };
 
+class PipePerfManager : public PerfCounterBase {
+public:
+  std::vector<PipeStagePerfCounter> stageCtrs;
+  void add(PipeStagePerfCounter ctr, std::string name) {
+		ctr.ctrName = name;
+		stageCtrs.push_back(std::move(ctr));
+	}
+  void update() {
+    for (auto &ctr : stageCtrs) {
+      ctr.update();
+    }
+  }
+  void dumpStatistics(std::ostream &) override;
+  void fillFields() override {
+    ctrName = "PipePerfManager";
+    for (auto &ctr : stageCtrs) {
+      ctr.fillFields();
+      for (auto &f : ctr.fields) {
+        fields.push_back(Field{ctr.ctrName + "_" + f.label, f.value});
+      }
+    }
+  }
+};
 
 class CachePerfCounter : public PerfCounterBase {
 public:
-  enum State { idle, checkCache, sendFetch, waitMem, respCPU };
+  enum State { idle, sendFetch, waitMem };
 
   SignalHandle hCacheHit;
   SignalHandle hState;
@@ -353,25 +375,24 @@ public:
   void bind();
   void update();
   void dumpStatistics(std::ostream &) override;
-	void fillFields() override {
-		ctrName = "CachePerfCounter";
-		fields.push_back(Field{"total_visits", totalVisitCount});
-		fields.push_back(Field{"hit_count", hitCount});
-		fields.push_back(Field{"total_hit_cycles", totalHitAccessCycles});
-		rdMemCtr.fillFields();
-		for (auto &f : rdMemCtr.fields) {
-			fields.push_back(Field{"mem_rd_" + f.label, f.value});
-		}
-	}
+  void fillFields() override {
+    ctrName = "CachePerfCounter";
+    fields.push_back(Field{"total_visits", totalVisitCount});
+    fields.push_back(Field{"hit_count", hitCount});
+    fields.push_back(Field{"total_hit_cycles", totalHitAccessCycles});
+    rdMemCtr.fillFields();
+    for (auto &f : rdMemCtr.fields) {
+      fields.push_back(Field{"mem_rd_" + f.label, f.value});
+    }
+  }
 
   double hitRate() const {
     return totalVisitCount == 0 ? NAN
                                 : (double)hitCount / (double)totalVisitCount;
   }
   double avgHitAccessCycles() const {
-    return hitCount == 0
-               ? NAN
-               : (double)totalHitAccessCycles / (double)hitCount;
+    return hitCount == 0 ? NAN
+                         : (double)totalHitAccessCycles / (double)hitCount;
   }
   double avgMissPenaltyCycles() const { return rdMemCtr.avgLatency(); }
 
@@ -382,8 +403,8 @@ public:
 };
 
 using PerfCounterVariant =
-    std::variant<HandShakeCounterManager,
-                 AXI4PerfCounterManager, IFUStateCounter, CachePerfCounter>;
+    std::variant<HandShakeCounterManager, AXI4PerfCounterManager,
+                 PipePerfManager, CachePerfCounter>;
 
 void initPerfCounters();
 void dumpPerfCountersStatistics(std::ostream &os);

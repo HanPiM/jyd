@@ -21,8 +21,6 @@ auto _GetIDU() { return _GetCPU()->idu; }
 
 auto _GetICache() { return _GetCPU()->icache; }
 
-using namespace _PerfCtrImp;
-
 void HandShakeCounterManager::init() {
   logger = spdlog::stdout_color_mt("HandShakeDetector");
   set_logger_pattern_with_simtime(logger);
@@ -31,14 +29,12 @@ void HandShakeCounterManager::init() {
 
 HandShakeCounterManager::ValidReadyBus &
 HandShakeCounterManager::add(SignalHandle hValid, SignalHandle hReady,
-                             std::string barePath, std::string description,
-                             callback_t onShake) {
+                             std::string barePath, std::string description){
   bus_list.emplace_back(ValidReadyBus{
       .hValid = hValid,
       .hReady = hReady,
       .pathWithoutValidOrReady = barePath,
       .description = description,
-      .onShakeCallback = onShake,
   });
   return bus_list.back();
 }
@@ -53,9 +49,6 @@ void HandShakeCounterManager::update() {
       bus.shake_count++;
       // logger->trace("Handshake happened on {} (total count {})",
       //               _DebugPath(bus.description), bus.shake_count);
-      if (bus.onShakeCallback) {
-        bus.onShakeCallback();
-      }
     }
   }
 }

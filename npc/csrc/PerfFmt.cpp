@@ -4,7 +4,6 @@
 #include <ostream>
 #include <tabulate/table.hpp>
 
-using namespace _PerfCtrImp;
 using namespace tabulate;
 
 static void _SetTableFmt(Table &t) {

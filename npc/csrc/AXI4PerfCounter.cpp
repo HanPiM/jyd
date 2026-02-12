@@ -1,5 +1,4 @@
 #include "PerfCounter.hpp"
-using namespace _PerfCtrImp;
 
 void AXI4CounterBase::init_logger() {
   // assert(!name.empty());

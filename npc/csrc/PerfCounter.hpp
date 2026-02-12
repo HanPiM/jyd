@@ -16,28 +16,28 @@
 
 #include "sim.hpp"
 
-inline const std::string &cpu_vpi_path_prefix() {
-  static std::string prefix;
-  if (prefix.empty()) {
-    prefix = std::string("TOP.") + std::string(_STR(TOP_NAME)).substr(1) + '.';
-    if (is_soc()) {
-      prefix += "asic.cpu.cpu.";
-    }
-  }
-  return prefix;
-}
-
-namespace _PerfCtrImp {
-
-inline auto _FullPath(const std::string &pathWithoutValidOrReady,
-                      const std::string &suffix = "") {
-  return cpu_vpi_path_prefix() + pathWithoutValidOrReady + suffix;
-}
-inline auto _DebugPath(const std::string &pathWithoutValidOrReady,
-                       const std::string &suffix = "") {
-  return "`cpu." + pathWithoutValidOrReady + suffix;
-}
-} // namespace _PerfCtrImp
+// inline const std::string &cpu_vpi_path_prefix() {
+//   static std::string prefix;
+//   if (prefix.empty()) {
+//     prefix = std::string("TOP.") + std::string(_STR(TOP_NAME)).substr(1) + '.';
+//     if (is_soc()) {
+//       prefix += "asic.cpu.cpu.";
+//     }
+//   }
+//   return prefix;
+// }
+//
+// namespace _PerfCtrImp {
+//
+// inline auto _FullPath(const std::string &pathWithoutValidOrReady,
+//                       const std::string &suffix = "") {
+//   return cpu_vpi_path_prefix() + pathWithoutValidOrReady + suffix;
+// }
+// inline auto _DebugPath(const std::string &pathWithoutValidOrReady,
+//                        const std::string &suffix = "") {
+//   return "`cpu." + pathWithoutValidOrReady + suffix;
+// }
+// } // namespace _PerfCtrImp
 
 struct SignalHandle {
   using vDataPtr = std::variant<CData *, SData *, IData *, QData *>;
@@ -69,7 +69,6 @@ public:
 
 class HandShakeCounterManager : public PerfCounterBase {
 public:
-  using callback_t = std::function<void()>;
   struct ValidReadyBus {
     SignalHandle hValid;
     SignalHandle hReady;
@@ -78,7 +77,6 @@ public:
     std::string description;
 
     size_t shake_count = 0;
-    callback_t onShakeCallback = nullptr;
 
     bool shakeHappened();
   };
@@ -87,8 +85,7 @@ public:
 
   void init();
   ValidReadyBus &add(SignalHandle hValid, SignalHandle hReady,
-                     std::string barePath, std::string description = "",
-                     callback_t onShake = nullptr);
+                     std::string barePath, std::string description = "");
 
   void update();
   void fillFields() override {

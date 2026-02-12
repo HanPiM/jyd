@@ -12,6 +12,7 @@
 #include "sim.hpp"
 
 #include "PerfCounter.hpp"
+#include "spdlog/common.h"
 
 int gdb_mainloop();
 
@@ -25,7 +26,7 @@ int main(int argc, char **argv) {
 	logger->set_level(spdlog::level::debug);
 
   spdlog::set_default_logger(logger);
-  // spdlog::set_level(spdlog::level::info); // will modify all registered loggers
+  // spdlog::set_level(spdlog::level::debug); // will modify all registered loggers
   spdlog::set_pattern("[%H:%M:%S.%e][%^%-5l%$][%n] %v");
 
   if (is_soc()) {

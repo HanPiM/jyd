@@ -49,7 +49,7 @@ class ALU extends Module {
 
   val full_add_res = src1 +& op2_inv + cin
   add_sub_res := full_add_res(31, 0)
-  val carry_out   = full_add_res(32)
+  val carry_out = full_add_res(32)
 
   // By using carry out to determine slt/sltu
   // Optimize 23504 -> 23445
@@ -95,18 +95,22 @@ class ALU extends Module {
   // val leftShiftRes = Wire(Types.UWord)
   // leftShiftRes := src1 << shamt
 
+  val logic_and = src1 & src2
+  val logic_xor = src1 ^ src2
+  // Optimize or to use and/xor result
+  // 23445 -> 23282
+  val logic_or  = logic_and | logic_xor
+
   io.out.bits := MuxLookup(inbits.func3t, defaultRes)(
     Seq(
-      0.U -> add_sub_res,                    // 000: add/sub/addi
-      1.U -> Reverse(shift_res),             // 001: sll/slli
-      // 2.U -> Mux(s_src1 < s_src2, 1.U, 0.U), // 010: slt/slti
-      // 3.U -> Mux(src1 < src2, 1.U, 0.U),     // 011: sltu/sltiu
-      2.U -> slt_res,                        // 010: slt/slti
-      3.U -> sltu_res,                       // 011: sltu/sltiu
-      4.U -> (src1 ^ src2),                  // 100: xor/xori
-      5.U -> shift_res,                      // 101: srl/srli/sra/srai
-      6.U -> (src1 | src2),                  // 110: or/ori
-      7.U -> (src1 & src2)                   // 111: and/andi
+      0.U -> add_sub_res,        // 000: add/sub/addi
+      1.U -> Reverse(shift_res), // 001: sll/slli
+      2.U -> slt_res,            // 010: slt/slti
+      3.U -> sltu_res,           // 011: sltu/sltiu
+      4.U -> logic_xor,          // 100: xor/xori
+      5.U -> shift_res,          // 101: srl/srli/sra/srai
+      6.U -> logic_or,           // 110: or/ori
+      7.U -> logic_and           // 111: and/andi
     )
   )
 }

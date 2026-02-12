@@ -227,8 +227,7 @@ sta: $(SIM_VSRCS)
 		O=$(STA_OUT_DIR) \
 		RTL_FILES="$(STA_VSRCS)" 
 
-perf: $(SIM_BIN)
-	export ARCH=riscv32e-ysyxsoc 
-	make -C ../am-kernels/benchmarks/microbench ARCH=riscv32e-ysyxsoc run VSIM_difftest=0 mainargs=train SAN_FLAGS=
+perf: 
+	./scripts/make_perf.sh
 
 -include ../Makefile

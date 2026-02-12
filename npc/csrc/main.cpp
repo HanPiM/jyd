@@ -61,6 +61,8 @@ int main(int argc, char **argv) {
 
   spdlog::info("sim ended");
 
+	// auto isMakePerf = getenv("
+
   if (true||is_soc()) {
     dumpPerfCountersStatistics(std::cout);
 		dumpPerfReportOnDir(".");

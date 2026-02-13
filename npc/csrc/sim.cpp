@@ -696,19 +696,18 @@ void _init_mem_logger() {
 void _init_dpi_logger() {
   auto formatter = _gen_logger_formatter_with_simtime();
 
-  auto out_file = "dpiout.log";
+  auto out_file_name = "dpi";
   auto con_lvl_str = _get_env_or_default("DPI_CONSOLE_LVL", "info");
   auto file_lvl_str = _get_env_or_default("DPI_FILE_LVL", "info");
 
   auto console_lvl = spdlog::level::from_str(con_lvl_str);
   auto file_lvl = spdlog::level::from_str(file_lvl_str);
-  spdlog::info("DPI logger out console lvl {}, out file '{}' lvl {}",
-               con_lvl_str, out_file, file_lvl_str);
+  spdlog::info("DPI logger out console lvl {}, out file '{}.log' lvl {}",
+               con_lvl_str, out_file_name, file_lvl_str);
 
   static auto console_sink =
       std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
-  static auto file_sink =
-      std::make_shared<spdlog::sinks::basic_file_sink_mt>(out_file, true);
+  static auto file_sink = newFileLoggerSink(out_file_name);
 
   console_sink->set_level(console_lvl);
   auto dup_console = std::make_shared<spdlog::sinks::dup_filter_sink_mt>(

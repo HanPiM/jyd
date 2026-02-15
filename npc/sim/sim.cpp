@@ -32,7 +32,7 @@
 
 #include "PerfCounter.hpp"
 
-#include "mem.hpp"
+#include "memory/mem.hpp"
 
 TOP_NAME dut;
 sim_config sim_cfg;
@@ -55,8 +55,6 @@ static uint64_t inst_count = 0;
 
 sim_time_t sim_get_time() { return sim_time; }
 sim_cycle_t sim_get_cycle() { return cycle_count; }
-
-static std::shared_ptr<spdlog::logger> _dpi_logger;
 
 sim_config *sim_get_config() { return &sim_cfg; }
 sim_cpu_state *sim_get_cpu_state() { return &cpu; }
@@ -156,193 +154,10 @@ word_t img[60 * 1024 * 1024 / 4] = {
 };
 
 #define _EXPAND(x) x
-#define DPI_LOG(lvl, fmt, ...)                                                 \
-  do {                                                                         \
-    auto _loger = spdlog::get(__func__);                                       \
-    if (_loger)                                                                \
-      _loger->lvl(fmt, ##__VA_ARGS__);                                         \
-  } while (0)
-#define DPI_TRACE(fmt, ...) DPI_LOG(trace, fmt, ##__VA_ARGS__)
-#define DPI_ERROR(fmt, ...) DPI_LOG(error, fmt, ##__VA_ARGS__)
-#define DPI_CRITICAL(fmt, ...) DPI_LOG(critical, fmt, ##__VA_ARGS__)
-
-#define DPI_ASSERT(cond, fmt, ...)                                             \
-  do {                                                                         \
-    if (!(cond)) {                                                             \
-      DPI_CRITICAL(fmt, ##__VA_ARGS__);                                        \
-      assert(cond);                                                            \
-    }                                                                          \
-  } while (0)
-
-
-
-// constexpr uint32_t SDRAM_BASE = 0xa0000000u;
-// constexpr uint32_t SDRAM_END = 0xb0000000u;
-
-bool read_sdram(word_t addr, word_t *data);
-bool write_sdram(word_t addr, word_t data);
-
-struct {
-  direct_mapped_mem mrom = {0x20000000u, 0x20010000u, "mrom"};
-  direct_mapped_mem flash = {0x30000000u, 0x40000000u, "flash", sizeof(img)};
-  direct_mapped_mem psram = {0x80000000u, 0xa0000000u, "psram",
-                             128 * 1024 * 1024};
-  direct_mapped_mem sram = {0x0f000000u, 0x10000000u, "sram", 8 * 1024};
-
-  sdram_mem sdram = {0xa0000000u, 0xb0000000u, "sdram"};
-} g_sim_mem;
-
-using mem_region_t = std::variant<direct_mapped_mem, sdram_mem>;
-std::vector<mem_region_t> mem_regions = {g_sim_mem.mrom, g_sim_mem.flash,
-                                         g_sim_mem.psram, g_sim_mem.sram,
-                                         g_sim_mem.sdram};
 
 extern "C" void uart_send(char ch) {
   putchar(ch);
   fflush(stdout);
-}
-
-extern "C" void mrom_read(int32_t addr, int32_t *data) {
-  g_sim_mem.mrom.read_word(addr, (uint32_t &)(*data));
-  DPI_TRACE("R addr={:08x} data={:08x}", addr, *data);
-}
-
-static void _copy_img();
-extern "C" void flash_read(int32_t addr, int32_t *data) {
-  // in spi
-  //   .addr({8'b0, in_paddr[23:2], 2'b0}),
-  // so the high 8 bits are ignored
-  // 0x3XXXXXXX -> 0x00XXXXXX
-
-  DPI_ASSERT((addr & 0xff000000) == 0,
-             "flash_read addr={:08x} has non-zero high 8 bits", addr);
-
-  // add back
-  addr += g_sim_mem.flash.base();
-
-  g_sim_mem.flash.read_word(addr, (uint32_t &)(*data));
-  DPI_TRACE("R addr={:08x} data={:08x}", addr, *data);
-}
-
-extern "C" void psram_read(int32_t addr, int32_t *data) {
-  // in psram high 8bit addr are 0
-  // no need to minus PSRAM_BASE
-
-  DPI_ASSERT((addr & 0xff000000) == 0,
-             "psram_read addr={:08x} has non-zero high 8 bits", addr);
-
-  // add back
-  addr += g_sim_mem.psram.base();
-
-  g_sim_mem.psram.read_word(addr, (uint32_t &)(*data));
-
-  // addr &= ~0x3;
-  DPI_TRACE("R addr={:08x} data={:08x}", addr, *data);
-}
-// compatible interface for npc core
-extern "C" void pmem_read(int addr, int *data) {
-  return psram_read(addr - g_sim_mem.psram.base(), data);
-}
-extern "C" void psram_write(int32_t addr, char strb8, int32_t data, int32_t *) {
-  DPI_ASSERT((addr & 0xff000000) == 0,
-             "psram_write addr={:08x} has non-zero high 8 bits", addr);
-  // add back
-  addr += g_sim_mem.psram.base();
-  g_sim_mem.psram.write_word(addr, data, strb8);
-  uint32_t newdata;
-  g_sim_mem.psram.read_word(addr, newdata);
-
-  DPI_TRACE("W addr={:08x} data={:08x} (strb {:02x}) newdata={:08x}", addr,
-            (uint32_t)data, (uint32_t)strb8, newdata);
-}
-// compatible interface for npc core
-extern "C" void pmem_write(int addr, int data, int mask) {
-  uint8_t unaligned_part = addr & 0x3;
-  uint32_t udata = ((uint32_t)data) >> (unaligned_part * 8);
-  uint8_t umask = (mask >> unaligned_part) & 0xf;
-  return psram_write(addr - g_sim_mem.psram.base(), umask, udata, nullptr);
-}
-
-// uint16_t sdram_data[4][8192][512][4];
-
-extern "C" void sdram_read(char block, char bank, short row, short col,
-                           short *data) {
-	g_sim_mem.sdram.read_half(block, bank, row, col, (uint16_t &)(*data));
-  // assert(bank >= 0 && bank < 4);
-  // assert(row >= 0 && row < 8192);
-  // assert(col >= 0 && col < 512);
-  // assert(block >= 0 && block < 4);
-  // *data = sdram_data[bank][row][col][block];
-  DPI_TRACE("R bank={:02x} row={:04x} col={:04x} block={} data={:04x}", bank,
-            row, col, (uint32_t)block, (uint16_t)*data);
-}
-extern "C" void sdram_write(char block, char bank, short row, short col,
-                            short data, char mask) {
-  // assert(bank >= 0 && bank < 4);
-  // assert(row >= 0 && row < 8192);
-  // assert(col >= 0 && col < 512);
-  // assert(block == 0 || block == 1);
-	
-	uint16_t new_data;
-	g_sim_mem.sdram.read_half(bank, row, col, block, new_data);
-	
-  // mask [0] = 0: write low byte
-  // mask [1] = 0: write high byte
-  if ((mask & 0x1) == 0) {
-    new_data &= 0xff00;
-    new_data |= (data & 0x00ff);
-    // _dpi_logger->trace("sdram_write low byte {:02x}", (uint8_t)(data &
-    // 0x00ff));
-  }
-  if ((mask & 0x2) == 0) {
-    new_data &= 0x00ff;
-    new_data |= (data & 0xff00);
-    // _dpi_logger->trace("sdram_write high byte {:02x}", (uint8_t)((data &
-    // 0xff00) >> 8));
-  }
-
-	g_sim_mem.sdram.write_half(block, bank, row, col, new_data);
-
-  char human_friendly_mask[3] = {'-', '-', '\0'};
-  if ((mask & 0x1) == 0)
-    human_friendly_mask[1] = 'L';
-  if ((mask & 0x2) == 0)
-    human_friendly_mask[0] = 'H';
-
-  DPI_TRACE("W bank={:02x} row={:04x} col={:04x} block={} "
-            "data={:04x} mask={} newdata={:04x}",
-            bank, row, col, (uint32_t)block, (uint16_t)data,
-            human_friendly_mask, new_data);
-}
-
-// bool read_sdram(word_t addr, word_t *data) {
-//   sdram_u32_data_ptr ptrs = get_sdram_data_at(addr);
-//   *data = ((word_t)(*ptrs.highpart) << 16) | (word_t)(*ptrs.lowpart);
-//   return true;
-// }
-// bool write_sdram(word_t addr, word_t data) {
-//   sdram_u32_data_ptr ptrs = get_sdram_data_at(addr);
-//   *ptrs.lowpart = (uint16_t)(data & 0xffff);
-//   *ptrs.highpart = (uint16_t)((data >> 16) & 0xffff);
-//   return true;
-// }
-
-uint8_t *sim_guest_to_host(uint32_t addr) {
-  for (auto &r : mem_regions) {
-    auto res = std::visit(
-        [&](auto &region) -> uint8_t * {
-          if (region.contains(addr)) {
-            return region.get_data_ptr_at(addr);
-          }
-          return nullptr;
-        },
-        r);
-    if (res) {
-      return res;
-    }
-  }
-  spdlog::error("sim_guest_to_host addr={:08x} no mapping region", addr);
-  return nullptr;
 }
 
 extern "C" void gpr_upd(char regno, int data) {
@@ -358,38 +173,11 @@ extern "C" void pc_upd(int pc, int npc) {
   // printf("[DPI] pc_upd called, pc=0x%08x npc=0x%08x\n", pc, npc);
 }
 
-extern "C" void sram_upd(int addr, int data, char mask){
-	g_sim_mem.sram.write_word(addr, data, mask);
-}
-
 extern "C" void skip_difftest_ref() {
   if (sim_settings.trace_difftest_skip) {
     printf("(%ld)[DPI] skip_difftest_ref called\n", sim_time);
   }
   sdb_skip_difftest_ref();
-}
-
-bool sim_read_vmem(word_t addr, word_t *data) {
-  bool ok = std::ranges::any_of(mem_regions, [&](auto &v) {
-    return std::visit(
-        [&](auto &r) { return r.contains(addr) && r.read_word(addr, *data); },
-        v);
-  });
-  if (!ok)
-    spdlog::warn("sim_read_vmem addr={:08x} no mapping region or read failed",
-                 addr);
-  return ok;
-}
-bool sim_write_vmem(word_t addr, word_t data) {
-  bool ok = std::ranges::any_of(mem_regions, [&](auto &v) {
-    return std::visit(
-        [&](auto &r) { return r.contains(addr) && r.write_word(addr, data); },
-        v);
-  });
-  if (!ok)
-    spdlog::warn("sim_write_vmem addr={:08x} no mapping region or write failed",
-                 addr);
-  return ok;
 }
 
 void sim_step_inst() {
@@ -460,49 +248,6 @@ static void load_img() {
   fclose(fp);
 }
 
-static void _copy_img() {
-  if (is_soc()) {
-    spdlog::info("copy img to flash for soc sim");
-    // memcpy(flash_data, img, sim_cfg.img_size);
-    g_sim_mem.flash.copy_from(img, sim_cfg.img_size);
-  } else {
-    spdlog::info("copy img to psram for cpu core sim");
-    // memcpy(psram_data, img, sim_cfg.img_size);
-    g_sim_mem.psram.copy_from(img, sim_cfg.img_size);
-  }
-}
-static void _fill_rams_uninit() {
-  if (sim_settings.zero_uninit_ram) {
-    if (is_soc()) {
-      g_sim_mem.psram.fill(0);
-    }
-		g_sim_mem.sdram.fill(0);
-    // memset(sdram_data, 0, sizeof(sdram_data));
-  } else {
-    if (is_soc()) {
-      g_sim_mem.psram.fill(0xcc);
-      spdlog::debug("psram_data filled with 0xcc");
-    }
-		g_sim_mem.sdram.fill(0xdd);
-    // memset(sdram_data, 0xdd, sizeof(sdram_data));
-    spdlog::debug("sdram_data filled with 0xdd");
-  }
-  spdlog::info("RAMs uninitialized area filled with {}",
-               sim_settings.zero_uninit_ram ? "zeros" : "non-zero patterns");
-
-  if (!is_soc()) {
-    // memset the ASAN shadow memory to zero
-    // instead at trm_init to optimise the init time
-#define ASAN_SHADOW_MEMORY_START 0x7000000
-#define ASAN_SHADOW_MEMORY_SIZE 0x1000000
-
-    auto psram_data = g_sim_mem.psram.data;
-    memset((uint8_t *)psram_data + ASAN_SHADOW_MEMORY_START, 0,
-           ASAN_SHADOW_MEMORY_SIZE);
-    spdlog::info("ASAN shadow memory in psram zeroed");
-  }
-}
-
 // ARG
 
 static void parse_args(int argc, char **argv) {
@@ -524,12 +269,6 @@ static void parse_args(int argc, char **argv) {
   }
 }
 
-const char *_get_env_or_default(const char *env_name,
-                                const char *default_value) {
-  const char *env_value = std::getenv(env_name);
-  return env_value ? env_value : default_value;
-}
-
 static auto _gen_logger_formatter_with_simtime() {
   auto formatter = std::make_unique<spdlog::pattern_formatter>();
   formatter->add_flag<sim_time_formatter>('&');
@@ -541,74 +280,6 @@ static auto _gen_logger_formatter_with_simtime() {
 void set_logger_pattern_with_simtime(std::shared_ptr<spdlog::logger> logger) {
   auto formatter = _gen_logger_formatter_with_simtime();
   logger->set_formatter(std::move(formatter));
-}
-void _init_mem_logger() {
-  auto formatter = _gen_logger_formatter_with_simtime();
-  auto lvl = spdlog::level::info;
-
-#define _REG_MEM_REGION_LOGGER(name)                                           \
-  do {                                                                         \
-    spdlog::debug("Registering logger for mem region '{}'", #name);            \
-    auto logger =                                                              \
-        std::make_shared<spdlog::logger>(#name, spdlog::sinks_init_list{});    \
-    logger->set_level(lvl);                                                    \
-    logger->set_formatter(formatter->clone());                                 \
-    spdlog::register_logger(logger);                                           \
-  } while (0)
-  _REG_MEM_REGION_LOGGER(mrom);
-  _REG_MEM_REGION_LOGGER(flash);
-  _REG_MEM_REGION_LOGGER(psram);
-  _REG_MEM_REGION_LOGGER(sram);
-  _REG_MEM_REGION_LOGGER(sdram);
-}
-void _init_dpi_logger() {
-  auto formatter = _gen_logger_formatter_with_simtime();
-
-  auto out_file_name = "dpi";
-  auto con_lvl_str = _get_env_or_default("DPI_CONSOLE_LVL", "info");
-  auto file_lvl_str = _get_env_or_default("DPI_FILE_LVL", "info");
-
-  auto console_lvl = spdlog::level::from_str(con_lvl_str);
-  auto file_lvl = spdlog::level::from_str(file_lvl_str);
-  spdlog::info("DPI logger out console lvl {}, out file '{}.log' lvl {}",
-               con_lvl_str, out_file_name, file_lvl_str);
-
-  static auto console_sink =
-      std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
-  static auto file_sink = newFileLoggerSink(out_file_name);
-
-  console_sink->set_level(console_lvl);
-  auto dup_console = std::make_shared<spdlog::sinks::dup_filter_sink_mt>(
-      std::chrono::seconds(3));
-  dup_console->add_sink(console_sink);
-  dup_console->set_level(console_lvl);
-
-  file_sink->set_level(file_lvl);
-  auto dpi_sink_list = spdlog::sinks_init_list{dup_console, file_sink};
-
-#define _REG_DPI_FUNC_LOGGER(func)                                             \
-  do {                                                                         \
-    auto func_logger = std::make_shared<spdlog::logger>(#func, dpi_sink_list); \
-    auto lvl = sim_settings.TRACE_DPI_FLAG(func) ? spdlog::level::trace        \
-                                                 : spdlog::level::info;        \
-    spdlog::debug("DPI func '{}' logger lvl {}", #func,                        \
-                  spdlog::level::to_string_view(lvl));                         \
-    func_logger->set_level(lvl);                                               \
-    func_logger->set_formatter(formatter->clone());                            \
-    spdlog::register_logger(func_logger);                                      \
-  } while (0)
-
-  _REG_DPI_FUNC_LOGGER(mrom_read);
-  _REG_DPI_FUNC_LOGGER(flash_read);
-  _REG_DPI_FUNC_LOGGER(psram_read);
-  _REG_DPI_FUNC_LOGGER(psram_write);
-  _REG_DPI_FUNC_LOGGER(sdram_read);
-  _REG_DPI_FUNC_LOGGER(sdram_write);
-
-  _dpi_logger = std::make_shared<spdlog::logger>("DPI", dpi_sink_list);
-  _dpi_logger->set_level(spdlog::level::trace);
-  _dpi_logger->set_formatter(std::move(formatter));
-  spdlog::register_logger(_dpi_logger);
 }
 
 bool sim_init(int argc, char **argv, sim_setting setting) {
@@ -628,13 +299,8 @@ bool sim_init(int argc, char **argv, sim_setting setting) {
   using namespace std::ranges;
 
   load_img();
-
-  _copy_img();
-  _fill_rams_uninit();
-  _init_dpi_logger(); // should before dbg_init(which may preload data with func
-                      // call dpis)
-
-  _init_mem_logger();
+  // should before dbg_init(which may preload data with func call dpis)
+  mem_init(img, sim_cfg);
 
   if (setting.en_wave) {
     Verilated::traceEverOn(true);

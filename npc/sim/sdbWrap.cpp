@@ -1,4 +1,5 @@
 #include "elf_tool.hpp"
+#include "memory/mem.hpp"
 #include "sim.hpp"
 #include "spdlog/spdlog.h"
 #include "tracers.hpp"
@@ -56,12 +57,12 @@ void shot_regsnap(sdb::reg_snapshot_t &regsnap) {
 }
 sdb::vlen_inst_code inst_fetcher(sdb::paddr_t pc) {
   sdb::word_t inst;
-  sim_read_vmem(pc, &inst);
+  read_guest_mem(pc, &inst);
   uint8_t *p = (uint8_t *)&inst;
   return sdb::vlen_inst_code(p, p + 4);
 }
 uint8_t *loadmem(sdb::paddr_t addr, size_t nbyte) {
-  return sim_guest_to_host(addr);
+  return mem_guest_to_host(addr);
 }
 } // namespace sdbwrap
 using namespace sdb;

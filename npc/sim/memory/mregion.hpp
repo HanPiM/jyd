@@ -7,6 +7,8 @@
 #include <string_view>
 #include <vector>
 
+void init_mem_logger();
+
 struct mem_region_traits {
   const uint32_t _Base;
   const uint32_t _End;

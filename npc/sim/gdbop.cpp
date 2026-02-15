@@ -9,6 +9,7 @@ extern "C" {
 #include <spdlog/sinks/stdout_color_sinks.h>
 
 #include "sim.hpp"
+#include "memory/mem.hpp"
 
 #define N_GPR 16
 
@@ -62,7 +63,7 @@ static int _op_read_mem(void *args, size_t addr, size_t len, void *val) {
 
 	if(len==1){
 		uint32_t word;
-		if(!sim_read_vmem(addr & ~0x3, &word)){
+		if(!read_guest_mem(addr & ~0x3, &word)){
 			*(uint8_t*)val = 0;
 			return (int)std::errc::address_family_not_supported;
 		}
@@ -74,7 +75,7 @@ static int _op_read_mem(void *args, size_t addr, size_t len, void *val) {
 
 	if((addr & 0x1)==0 && len == 2){
 		uint32_t word;
-		if(!sim_read_vmem(addr & ~0x3, &word)){
+		if(!read_guest_mem(addr & ~0x3, &word)){
 			*(uint16_t*)val = 0;
 			return (int)std::errc::address_family_not_supported;
 		}
@@ -92,7 +93,7 @@ static int _op_read_mem(void *args, size_t addr, size_t len, void *val) {
 
 	if(len == 4){
 		uint32_t word;
-		if(!sim_read_vmem(addr, &word)){
+		if(!read_guest_mem(addr, &word)){
 			*(uint32_t*)val = 0;
 			return (int)std::errc::address_family_not_supported;
 		}
@@ -105,7 +106,7 @@ static int _op_read_mem(void *args, size_t addr, size_t len, void *val) {
 		uint32_t *dest = (uint32_t *)val;
 		for(size_t i=0;i<words;i++){
 			uint32_t word;
-			if(!sim_read_vmem(addr + i*4, &word)){
+			if(!read_guest_mem(addr + i*4, &word)){
 				dest[i] = 0;
 				return (int)std::errc::address_family_not_supported;
 			}

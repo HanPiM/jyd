@@ -122,14 +122,7 @@ struct sdram_mem : public mem_region_traits {
   */
   using _MemContainerType = std::vector<uint16_t>;
   std::shared_ptr<_MemContainerType> mem_container;
-  uint16_t &data_at(size_t bank, size_t row, size_t col, size_t block) {
-    assert(bank < N_BANKS);
-    assert(row < N_ROWS);
-    assert(col < N_COLS);
-    assert(block < N_BLOCKS);
-    return (*mem_container)[bank * (N_ROWS * N_COLS * N_BLOCKS) +
-                            row * (N_COLS * N_BLOCKS) + col * N_BLOCKS + block];
-  }
+  uint16_t &data_at(size_t bank, size_t row, size_t col, size_t block);
 
   void fill(uint8_t val) override {
     std::fill(mem_container->begin(), mem_container->end(), (uint16_t)val);

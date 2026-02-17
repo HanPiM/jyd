@@ -7,22 +7,7 @@
 
 #include <nlohmann/json.hpp>
 
-auto _GetCPU() {
-  // use vlSymsp to get inner module/signal
-#ifdef SIM_SOC
-  return &get_dut()->ysyxSoCFull->vlSymsp->TOP__ysyxSoCFull__asic__cpu__cpu;
-#else
-  return &get_dut()->ysyx_25100261->vlSymsp->TOP__ysyx_25100261;
-#endif
-}
-
-auto _GetIFU() { return _GetCPU()->ifu; }
-auto _GetEXU() { return _GetCPU()->exu; }
-auto _GetLSU() { return _GetCPU()->lsu; }
-auto _GetALU() { return _GetEXU()->alu; }
-auto _GetIDU() { return _GetCPU()->idu; }
-
-auto _GetICache() { return _GetCPU()->icache; }
+using namespace DirectSignals;
 
 HandShakeCounterManager::ValidReadyBus &
 HandShakeCounterManager::add(SignalHandle hValid, SignalHandle hReady,
@@ -64,12 +49,12 @@ void PipeStagePerfCounter::update() {
 }
 
 void CachePerfCounter::bind() {
-  hARValid = &_GetICache()->io_cpu_arvalid;
-  hARReady = &_GetICache()->io_cpu_arready;
-  hCacheHit = &_GetICache()->cacheHit;
-  hState = &_GetICache()->state;
+  hARValid = &GetICache()->io_cpu_arvalid;
+  hARReady = &GetICache()->io_cpu_arready;
+  hCacheHit = &GetICache()->cacheHit;
+  hState = &GetICache()->state;
 
-  rdMemCtr.BIND_AXI4_R_BASE(_GetICache()->io_mem);
+  rdMemCtr.BIND_AXI4_R_BASE(GetICache()->io_mem);
 }
 
 void CachePerfCounter::update() {
@@ -110,13 +95,13 @@ void RAWStallPerfCounter::update() {
   }
 }
 void RAWStallPerfCounter::bind() {
-  hIsConflictEXU = &_GetCPU()->isConflictWithEXU;
-  hIsConflictLSU = &_GetCPU()->isConflictWithLSU;
-  hIsConflictWBU = &_GetCPU()->isConflictWithWBU;
-  hIsIDUStall = &_GetCPU()->isIDUStall;
+  hIsConflictEXU = &GetCPU()->isConflictWithEXU;
+  hIsConflictLSU = &GetCPU()->isConflictWithLSU;
+  hIsConflictWBU = &GetCPU()->isConflictWithWBU;
+  hIsIDUStall = &GetCPU()->isIDUStall;
 }
 IDUFlushPerfCounter::IDUFlushReason IDUFlushPerfCounter::getCurReason() const {
-  auto &exu = *_GetEXU();
+  auto &exu = *GetEXU();
   IDUFlushReason reason;
   if (exu.dbgJmpCauseByBranch)
     reason = IDUFlushReason::BranchTaken;
@@ -144,19 +129,19 @@ void IDUFlushPerfCounter::update() {
     cycFlushOfReason[lastFlushReason]++;
   }
 }
-void IDUFlushPerfCounter::bind() { hIsFlushIDU = &_GetCPU()->isFlushIDU; }
+void IDUFlushPerfCounter::bind() { hIsFlushIDU = &GetCPU()->isFlushIDU; }
 
 void BranchPredPerfCounter::bind() {
-  hIsBranch = &_GetEXU()->dbgIsBranch;
-  hValid = &_GetEXU()->io_in_valid;
-  hReady = &_GetEXU()->io_in_ready;
+  hIsBranch = &GetEXU()->dbgIsBranch;
+  hValid = &GetEXU()->io_in_valid;
+  hReady = &GetEXU()->io_in_ready;
 }
 
 void BranchPredPerfCounter::update() {
   if (hValid.get() && hReady.get()) {
     if (hIsBranch.get()) {
       totBranchCount++;
-      if (_GetEXU()->takeBranch) {
+      if (GetEXU()->takeBranch) {
         totMispredictCount++;
       }
     }
@@ -179,29 +164,29 @@ void initPerfCounters() {
 
   BranchPredPerfCounter branchPredCtr;
 
-  handshakeCtr.add(&_GetIFU()->io_mem_rvalid, &_GetIFU()->io_mem_rready,
+  handshakeCtr.add(&GetIFU()->io_mem_rvalid, &GetIFU()->io_mem_rready,
                    "IFU fetch inst");
-  handshakeCtr.add(&_GetLSU()->io_mem_rvalid, &_GetLSU()->io_mem_rready,
+  handshakeCtr.add(&GetLSU()->io_mem_rvalid, &GetLSU()->io_mem_rready,
                    "EXU load data");
-  handshakeCtr.add(&_GetIDU()->io_out_valid, &_GetIDU()->io_out_ready,
+  handshakeCtr.add(&GetIDU()->io_out_valid, &GetIDU()->io_out_ready,
                    "IDU decode inst");
 
-  axi4Ctr.add(AXI4WritePerfCounter().BIND_AXI4_W_BASE(_GetLSU()->io_mem),
+  axi4Ctr.add(AXI4WritePerfCounter().BIND_AXI4_W_BASE(GetLSU()->io_mem),
               "lsu_mem_write");
-  axi4Ctr.add(AXI4ReadPerfCounter().BIND_AXI4_R_BASE(_GetLSU()->io_mem),
+  axi4Ctr.add(AXI4ReadPerfCounter().BIND_AXI4_R_BASE(GetLSU()->io_mem),
               "lsu_mem_read");
-  axi4Ctr.add(AXI4ReadPerfCounter().BIND_AXI4_R_BASE(_GetIFU()->io_mem),
+  axi4Ctr.add(AXI4ReadPerfCounter().BIND_AXI4_R_BASE(GetIFU()->io_mem),
               "ifu_mem_read");
 
   pipeCtr.add(PipeStagePerfCounter().bind(
-                  &_GetIFU()->io_pc_valid, &_GetIFU()->io_pc_ready,
-                  &_GetIFU()->io_out_valid, &_GetIFU()->io_out_ready),
+                  &GetIFU()->io_pc_valid, &GetIFU()->io_pc_ready,
+                  &GetIFU()->io_out_valid, &GetIFU()->io_out_ready),
               "IFU");
-  pipeCtr.add(PipeStagePerfCounter().BIND_PIPE_STAGE_BASE(_GetIDU()->io),
+  pipeCtr.add(PipeStagePerfCounter().BIND_PIPE_STAGE_BASE(GetIDU()->io),
               "IDU");
-  pipeCtr.add(PipeStagePerfCounter().BIND_PIPE_STAGE_BASE(_GetEXU()->io),
+  pipeCtr.add(PipeStagePerfCounter().BIND_PIPE_STAGE_BASE(GetEXU()->io),
               "EXU");
-  pipeCtr.add(PipeStagePerfCounter().BIND_PIPE_STAGE_BASE(_GetLSU()->io),
+  pipeCtr.add(PipeStagePerfCounter().BIND_PIPE_STAGE_BASE(GetLSU()->io),
               "LSU");
 
   iduFlushCtr.bind();

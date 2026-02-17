@@ -15,6 +15,7 @@
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
+#include <fstream>
 #include <string_view>
 #include <sys/types.h>
 #include <variant>
@@ -33,6 +34,8 @@
 #include "PerfCounter.hpp"
 
 #include "memory/mem.hpp"
+
+#include "KonataLog/KonataLog.hpp"
 
 TOP_NAME dut;
 sim_config sim_cfg;
@@ -74,12 +77,14 @@ public:
   }
 };
 
+std::shared_ptr<KonataLogger> konata_logger;
+
 static void _sim_eval() {
   dut.eval();
-  sim_time++;
   if (tfp) {
     tfp->dump(sim_time);
   }
+  sim_time++;
 }
 
 void sim_step_cycle() {
@@ -87,9 +92,10 @@ void sim_step_cycle() {
     printf("[Clock Cycle Begin]\n");
   }
 
-  dut.clock = 0;
-  _sim_eval();
   dut.clock = 1;
+  _sim_eval();
+
+  dut.clock = 0;
   _sim_eval();
 
   cycle_count++;
@@ -110,6 +116,9 @@ void sim_step_cycle() {
 
   if (dut.reset == 0) {
     updatePerfCounters();
+    if (konata_logger) {
+      konata_logger->readSignalsAndLog();
+    }
   }
 }
 static void reset(int n) {
@@ -317,6 +326,11 @@ bool sim_init(int argc, char **argv, sim_setting setting) {
 
   cpu.pc = sim_cfg.init_pc;
   spdlog::info("set initial pc to {:08x}", cpu.pc);
+
+  konata_logger = std::make_shared<KonataLogger>("konata.log");
+  konata_logger->start(sim_get_cycle());
+  spdlog::info("KonataLogger initialized, start at cycle {}, sim time {}ps",
+               sim_get_cycle(), sim_get_time());
 
   return true;
 }

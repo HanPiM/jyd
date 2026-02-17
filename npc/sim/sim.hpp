@@ -8,6 +8,24 @@
 #include <spdlog/spdlog.h>
 TOP_NAME *get_dut();
 
+namespace DirectSignals {
+inline auto GetCPU() {
+  // use vlSymsp to get inner module/signal
+#ifdef SIM_SOC
+  return &get_dut()->ysyxSoCFull->vlSymsp->TOP__ysyxSoCFull__asic__cpu__cpu;
+#else
+  return &get_dut()->ysyx_25100261->vlSymsp->TOP__ysyx_25100261;
+#endif
+}
+
+inline auto GetIFU() { return GetCPU()->ifu; }
+inline auto GetEXU() { return GetCPU()->exu; }
+inline auto GetLSU() { return GetCPU()->lsu; }
+inline auto GetALU() { return GetEXU()->alu; }
+inline auto GetIDU() { return GetCPU()->idu; }
+inline auto GetICache() { return GetCPU()->icache; }
+} // namespace DirectSignals
+
 typedef void (*cycle_end_callback_t)();
 
 using sim_time_t = uint64_t;
@@ -19,18 +37,18 @@ struct sim_setting {
   bool showdisasm = true;
   bool always_showdisasm = false;
 
-	bool no_batch = false;
+  bool no_batch = false;
 
-	bool gdb_mode = false;
+  bool gdb_mode = false;
 
   bool ftrace = false;
-	int iringbuf = 32;
+  int iringbuf = 32;
   bool etrace = true;
   bool difftest = true;
 
-	bool nvboard = false;
+  bool nvboard = false;
 
-	bool zero_uninit_ram = false;
+  bool zero_uninit_ram = false;
 
   bool trace_difftest_skip = false;
 
@@ -44,13 +62,13 @@ struct sim_setting {
 #define TRACE_DPI_FLAG(name) trace_dpi_##name
 
 #define _GEN_DPI_FLAG(name) bool TRACE_DPI_FLAG(name) = false;
-	_GEN_DPI_FLAG(mrom_read);
-	_GEN_DPI_FLAG(sdram_read);
-	_GEN_DPI_FLAG(sdram_write);
-	_GEN_DPI_FLAG(flash_read);
+  _GEN_DPI_FLAG(mrom_read);
+  _GEN_DPI_FLAG(sdram_read);
+  _GEN_DPI_FLAG(sdram_write);
+  _GEN_DPI_FLAG(flash_read);
 
-	_GEN_DPI_FLAG(psram_read);
-	_GEN_DPI_FLAG(psram_write);
+  _GEN_DPI_FLAG(psram_read);
+  _GEN_DPI_FLAG(psram_write);
 
   cycle_end_callback_t cycle_finish_cb = nullptr;
 
@@ -59,26 +77,26 @@ struct sim_setting {
   std::string wave_fst_file = "build/wave.fst";
 };
 
-typedef void(*raise_halt_cb_t)(int a0);
+typedef void (*raise_halt_cb_t)(int a0);
 
 struct sim_config {
-	uint32_t init_pc;
-	size_t img_size;
-	const char* img_file_path;
+  uint32_t init_pc;
+  size_t img_size;
+  const char *img_file_path;
 
-	bool hope_batch_mode;
+  bool hope_batch_mode;
 
-	sim_setting setting;
-	raise_halt_cb_t raise_halt_cb;
+  sim_setting setting;
+  raise_halt_cb_t raise_halt_cb;
 
-	inline bool is_batch_mode() const {
-		return hope_batch_mode && !setting.no_batch;
-	}
+  inline bool is_batch_mode() const {
+    return hope_batch_mode && !setting.no_batch;
+  }
 };
 
 struct sim_cpu_state {
-	uint32_t pc;
-	uint32_t gpr[32];
+  uint32_t pc;
+  uint32_t gpr[32];
 };
 
 // unchange item if not set in env
@@ -95,9 +113,8 @@ uint64_t sim_get_inst_count();
 
 void sim_dump_statistics();
 
-sim_config* sim_get_config();
-sim_cpu_state* sim_get_cpu_state();
-
+sim_config *sim_get_config();
+sim_cpu_state *sim_get_cpu_state();
 
 bool sim_halted();
 bool sim_hit_good_trap();

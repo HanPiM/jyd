@@ -23,6 +23,8 @@ class WriteBackInfo extends Bundle {
 
   val pc = Types.UWord
   val nxt_pc = Types.UWord
+
+  val iid = Types.InstID
 }
 
 class WBU extends Module {

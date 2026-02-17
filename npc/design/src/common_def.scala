@@ -3,6 +3,10 @@ package common_def
 import chisel3._
 import chisel3.util._
 
+object Config {
+  val genStageLog : Boolean = true
+}
+
 trait HasRs {
   val rs1: UInt
   val rs2: UInt
@@ -30,9 +34,13 @@ object Types {
     val reg_addr = 4
     val csr_addr = 12
     val word     = 32
+
+    val inst_id = if (Config.genStageLog) 32 else 0
   }
   def UWord = UInt(BitWidth.word.W)
   def RegAddr = UInt(BitWidth.reg_addr.W)
+
+  def InstID = UInt(BitWidth.inst_id.W)
 
   object Ops {
     implicit class StringOps(val s: String) extends AnyVal {
@@ -72,6 +80,7 @@ object InstType extends ChiselEnum {
 class Inst extends Bundle {
   val code = Output(Types.UWord)
   val pc   = Output(Types.UWord)
+  val iid = Output(Types.InstID)
 }
 
 class InstMetaInfo extends Bundle {

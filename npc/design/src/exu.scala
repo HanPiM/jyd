@@ -43,7 +43,7 @@ class EXU extends Module {
   val isTypFencei     = InstType.hasSame(dinst.info.typ, InstType.fencei)
   val isTypLUI        = InstType.hasSame(dinst.info.typ, InstType.lui)
 
-alu_in.is_imm := isFmtI
+  alu_in.is_imm := isFmtI
   alu_in.func3t := Mux(isFmtB, func3t >> 1, func3t)
   alu_in.func7t := func7t
 
@@ -218,6 +218,7 @@ alu_in.is_imm := isFmtI
   // nxt_pc
   val takeBranch = WireDefault(false.B)
 
+  writeBackInfo.iid       := dinst.iid
   writeBackInfo.pc        := dinst.pc
   writeBackInfo.nxt_pc    := nxt_pc
   writeBackInfo.is_ebreak := (dinst.code === "h00100073".U)
@@ -227,7 +228,7 @@ alu_in.is_imm := isFmtI
   val willJmp = (isTypBranch && takeBranch) || isTypJALR || isTypJAL || isJmpCsr
 
   // TODO: handle exception
-  io.jmpHappen := willJmp //&& (nxt_pc =/= snpc)
+  io.jmpHappen := willJmp // && (nxt_pc =/= snpc)
 
   val dbgIsBranch = WireDefault(isTypBranch)
   dontTouch(dbgIsBranch)

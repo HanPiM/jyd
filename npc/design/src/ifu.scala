@@ -38,7 +38,15 @@ class IFU extends Module {
   dontTouch(pc)
   val state = RegInit(State.idle)
 
-  io.pc.ready   := (state === State.idle) && !reset.asBool
+  val instID = RegInit(0.U(Types.BitWidth.inst_id.W))
+  when(io.pc.fire) {
+    instID := instID + 1.U
+  }
+  dontTouch(instID)
+
+  io.out.bits.iid := Mux(io.pc.fire, instID + 1.U, instID)
+
+  io.pc.ready   := (state === State.idle) && !RegNext(reset.asBool)
   memIO.arvalid := (state === State.waitAR) || (state === State.idle && io.pc.fire)
   memIO.araddr  := pc
 
@@ -48,15 +56,16 @@ class IFU extends Module {
   io.out.bits.pc   := pc
   io.out.valid     := (state === State.waitR && memIO.rvalid) || (state === State.idle && io.pc.fire && memIO.rvalid) || (state === State.waitOut)
 
-  io.pc.ready := (state === State.idle) && !reset.asBool
-
   val nxtStateWhenWaitOut = Mux(io.out.ready, State.idle, State.waitOut)
   val nxtStateWhenWaitR   = Mux(memIO.rvalid, nxtStateWhenWaitOut, State.waitR)
   val nxtStateWhenWaitAR  = Mux(memIO.arready, nxtStateWhenWaitR, State.waitAR)
 
+  val nxtStateWhenIdle = Mux(io.pc.fire, nxtStateWhenWaitAR, State.idle)
+  dontTouch(nxtStateWhenIdle)
+
   state := MuxLookup(state, State.idle)(
     Seq(
-      State.idle    -> Mux(io.pc.fire, nxtStateWhenWaitAR, State.idle),
+      State.idle    -> nxtStateWhenIdle,
       State.waitAR  -> nxtStateWhenWaitAR,
       State.waitR   -> nxtStateWhenWaitR,
       State.waitOut -> nxtStateWhenWaitOut

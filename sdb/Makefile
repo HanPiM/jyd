@@ -34,8 +34,8 @@ $(LIBCAPSTONE):
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
 
-$(TARGET): $(OBJS)
-	$(AR) $@ $^
+$(TARGET): $(LIBCAPSTONE) $(OBJS)
+	$(AR) $@ $(OBJS)
 
 $(BUILD_DIR)/%.o: src/%.c
 	$(CC) $(CFLAGS) -c $< -o $@

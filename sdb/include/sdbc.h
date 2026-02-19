@@ -22,7 +22,7 @@ typedef enum{
 	SDB_JUMP_RET
 }sdb_jump_type;
 
-typedef enum : int{
+typedef enum {
 	SDB_STATE_RUNNING,
 	SDB_STATE_STOP,
 	SDB_STATE_END,

@@ -17,7 +17,7 @@ INCLUDES = $(foreach dir,$(INC_PATH),-I$(dir))
 
 CC ?= clang
 CXX ?= clang++
-AR ?= ar rcs
+AR ?= ar
 
 COMMON_FLAGS = -fPIC -MMD -MP -Wall -Wextra -O3 -g $(INCLUDES) 
 CFLAGS = $(COMMON_FLAGS)
@@ -35,7 +35,7 @@ $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
 
 $(TARGET): $(LIBCAPSTONE) $(OBJS)
-	$(AR) $@ $(OBJS)
+	$(AR) rcs $@ $(OBJS)
 
 $(BUILD_DIR)/%.o: src/%.c
 	$(CC) $(CFLAGS) -c $< -o $@

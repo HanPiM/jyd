@@ -30,6 +30,18 @@ private:
     _output(res);
   }
 
+  struct _RetireInfo {
+    InstFileIDType id;
+    InstRetireIDType retireID;
+    bool isFlushed;
+    bool operator==(const _RetireInfo &other) const {
+      return id == other.id && retireID == other.retireID &&
+             isFlushed == other.isFlushed;
+    }
+  };
+
+  _RetireInfo _lastRetireInfo{0, 0, false};
+
 public:
   KonataLogger(std::string_view filePath) {
     _fileStream.open(filePath.data(), std::ios::out);
@@ -71,8 +83,14 @@ public:
   }
   void retire(InstFileIDType id, InstRetireIDType retireID,
               bool isFlushed = false) {
-    log("R", id, retireID, isFlushed ? '1' : '0');
+    _RetireInfo info{id, retireID, isFlushed};
+    if (info == _lastRetireInfo) {
+      // avoid duplicate retire log
+    } else {
+      _lastRetireInfo = info;
+      log("R", id, retireID, isFlushed ? '1' : '0');
+    }
   }
 
-	void readSignalsAndLog();
+  void readSignalsAndLog();
 };

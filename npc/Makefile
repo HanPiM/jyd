@@ -154,8 +154,13 @@ CXXFLAGS += $(SAN_FLAGS) -std=c++20 -g # -fno-inline
 # when use perf tool, frame pointer is needed
 # CXXFLAGS += -fno-omit-frame-pointer
 
+# LDFLAGS += -fuse-ld=mold
+
+MOLD_EXISTS := $(shell command -v mold 2> /dev/null)
+ifneq ($(MOLD_EXISTS),)
 # make link faster
-LDFLAGS += -fuse-ld=mold
+  LDFLAGS += -fuse-ld=mold
+endif
 
 
 $(SIM_BIN): $(SIM_VSRCS) $(SIM_CSRCS) $(ARCHIVES) $(CHISEL2V_DONE) $(VPI_DONE) $(SIM_HEADERS) $(VERILATOR_CONTROL_FILE)

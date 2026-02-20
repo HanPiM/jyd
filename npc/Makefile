@@ -162,6 +162,22 @@ ifneq ($(MOLD_EXISTS),)
   LDFLAGS += -fuse-ld=mold
 endif
 
+GLOBAL_MILL_EXISTS := $(shell command -v mill 2> /dev/null)
+LOCAL_MILL_EXISTS := $(shell test -f ./mill && echo y)
+ifeq ($(MILL),)
+ifneq ($(GLOBAL_MILL_EXISTS),)
+  $(info "Using global Mill: $(shell which mill)")
+	MILL = mill
+else ifeq ($(LOCAL_MILL_EXISTS), y)
+	$(info "Using local Mill: $(abspath ./mill)")
+	MILL = ./mill
+else
+	$(error "Mill build tool not found. Please install Mill or place a local copy in the project directory.")
+endif
+else
+  $(info "Using specified Mill: $(MILL)")
+endif
+
 
 $(SIM_BIN): $(SIM_VSRCS) $(SIM_CSRCS) $(ARCHIVES) $(CHISEL2V_DONE) $(VPI_DONE) $(SIM_HEADERS) $(VERILATOR_CONTROL_FILE)
 	@rm -rf $(V2CXX_EMIT_DIR)

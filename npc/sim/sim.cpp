@@ -155,7 +155,9 @@ void raise_ebreak() {
 bool sim_halted() { return !is_running; }
 bool sim_hit_good_trap() { return is_good_trap; }
 
-word_t img[60 * 1024 * 1024 / 4] = {
+// word_t img[60 * 1024 * 1024 / 4] = {};
+std::vector<uint8_t> img;
+const word_t defalut_img[] = {
     0x00000297, // auipc t0,0
     0x00028823, // sb  zero,16(t0)
     0x0102c503, // lbu a0,16(t0)
@@ -252,8 +254,10 @@ static void load_img() {
   spdlog::info("load image {}, size = {}", sim_cfg.img_file_path,
                sim_cfg.img_size);
 
+	img.resize(sim_cfg.img_size);
+
   fseek(fp, 0, SEEK_SET);
-  int ret = fread(img, sim_cfg.img_size, 1, fp);
+  int ret = fread(img.data(), sim_cfg.img_size, 1, fp);
   assert(ret == 1);
 
   fclose(fp);
@@ -311,7 +315,7 @@ bool sim_init(int argc, char **argv, sim_setting setting) {
 
   load_img();
   // should before dbg_init(which may preload data with func call dpis)
-  mem_init(img, sim_cfg);
+  mem_init(img.data(), sim_cfg);
 
   if (setting.en_wave) {
     Verilated::traceEverOn(true);

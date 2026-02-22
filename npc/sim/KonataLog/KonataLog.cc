@@ -15,11 +15,9 @@ struct HandshakeBus {
   HandshakeBus() = default;
   HandshakeBus(SignalBoolType *valid, SignalBoolType *ready)
       : hValid(valid), hReady(ready) {}
-	bool valid() const { return hValid && *hValid; }
-	bool ready() const { return hReady && *hReady; }
-  bool fire() const {
-		return valid() && ready();
-  }
+  bool valid() const { return hValid && *hValid; }
+  bool ready() const { return hReady && *hReady; }
+  bool fire() const { return valid() && ready(); }
 };
 
 template <typename T>
@@ -65,6 +63,9 @@ void KonataLogger::readSignalsAndLog() {
   };
 
   auto &ifu_stage = stages[0];
+  auto &idu_stage = stages[1];
+  auto &wbu_stage = stages[4];
+
   if (ifu_stage.in.fire()) {
     declare(*ifu_stage.iid, *ifu_stage.iid);
     sdb::vlen_inst_code code(4);
@@ -72,28 +73,25 @@ void KonataLogger::readSignalsAndLog() {
     auto disasm = sdb::default_inst_disasm(ifu.io_pc_bits, code);
     std::ranges::replace(disasm, '\t', ' ');
     addLabel(*ifu_stage.iid, disasm);
-    // addLabel(*ifu_stage.iid, fmt::format("{}ps", sim_get_time()), true);
-    // IFU always issue start stage event, even when the instruction is later
-    // flushed in IDU, to make log easier to read
-    stageStart(*ifu_stage.iid, ifu_stage.name);
+    addLabel(*ifu_stage.iid, fmt::format("{}ps", sim_get_time()), true);
   }
 
-  for (auto &stage : stages) {
-    if (stage.in.fire() && (!cpu.isFlushIDU)) {
+  std::ranges::for_each(stages, [&](auto &stage) {
+    bool isIDU = (&stage == &idu_stage);
+    if (isIDU && cpu.isFlushIDU)
+      return;
+    if (stage.in.fire())
       stageStart(*stage.iid, stage.name);
-    }
-  }
-
-  auto &wbu_stage = stages.back();
+  });
 
   if (wbu_stage.in.fire()) {
     retire(*wbu_stage.iid, _GenNextRetireID());
     // stageEnd(*wbu_stage.iid, wbu_stage.name);
   }
 
-  auto &idu_stage = stages[1];
   if (cpu.isFlushIDU && idu_stage.in.valid()) {
-		// addLabel(*idu_stage.iid, std::format("FLUSHED@{}ps", sim_get_time()), true);
+    // addLabel(*idu_stage.iid, std::format("FLUSHED@{}ps", sim_get_time()),
+    // true);
     retire(*idu_stage.iid, 0, true);
   }
 }

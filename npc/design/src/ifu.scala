@@ -18,6 +18,7 @@ object RegEnableReadNew {
 class IFU extends Module {
   val io = IO(new Bundle {
     val pc  = Flipped(Decoupled(Types.UWord))
+    val predictedNextPC = Input(Types.UWord)
     val mem = AXI4IO.Master
     val out = Decoupled(new Inst)
   })
@@ -35,6 +36,7 @@ class IFU extends Module {
 
   val pcReg = RegEnable(io.pc.bits, io.pc.fire)
   val pc    = Mux(io.pc.fire, io.pc.bits, pcReg)
+  val predNxtPC = RegEnableReadNew(io.predictedNextPC, io.pc.fire)
   dontTouch(pc)
   val state = RegInit(State.idle)
 
@@ -54,6 +56,7 @@ class IFU extends Module {
   memIO.rready     := io.out.ready
   io.out.bits.code := inst
   io.out.bits.pc   := pc
+  io.out.bits.predictedNextPC := predNxtPC
   io.out.valid     := (state === State.waitR && memIO.rvalid) || (state === State.idle && io.pc.fire && memIO.rvalid) || (state === State.waitOut)
 
   val nxtStateWhenWaitOut = Mux(io.out.ready, State.idle, State.waitOut)

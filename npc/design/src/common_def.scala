@@ -81,6 +81,7 @@ class Inst extends Bundle {
   val code = Output(Types.UWord)
   val pc   = Output(Types.UWord)
   val iid = Output(Types.InstID)
+  val predictedNextPC = Output(Types.UWord)
 }
 
 class InstMetaInfo extends Bundle {

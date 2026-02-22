@@ -19,6 +19,9 @@ import npcMem._
 import icache._
 import common_def._
 
+import btb._
+import branchpredictor._
+
 class TopIO extends Bundle {
   val interrupt = Input(Bool())
   val master    = AXI4IO.Master
@@ -26,8 +29,7 @@ class TopIO extends Bundle {
 }
 
 class ysyx_25100261(word_width: Int = 32) extends Module {
-  val isBranchGuessWrong  = Wire(Bool())
-  val curCorrectJmpTarget = Reg(UInt(32.W))
+  val isBranchGuessWrong = Wire(Bool())
 
   // val isIDUStall    = Wire(Bool())
   val isFlushIDUReg = RegInit(false.B)
@@ -66,6 +68,9 @@ class ysyx_25100261(word_width: Int = 32) extends Module {
   val lsu = Module(new LSU)
   val wbu = Module(new WBU)
 
+  // val btb = Module(new BranchTargetBuffer)
+  // val bp  = Module(new BranchPredictor)
+
   val isSoC = sys.env.getOrElse("ARCH", "") == "riscv32e-ysyxsoc"
 
   if (isSoC) {
@@ -80,45 +85,51 @@ class ysyx_25100261(word_width: Int = 32) extends Module {
 
   val nxtPredictedPC = Wire(Types.UWord)
   dontTouch(nxtPredictedPC)
-  nxtPredictedPC := ifu.io.pc.bits + 4.U
+  nxtPredictedPC         := ifu.io.pc.bits + 8.U
+  ifu.io.predictedNextPC := nxtPredictedPC
 
-  val isBranchGuessWrongReg     = RegInit(false.B)
-  val isIFUMeetCorrectJmpTarget = Wire(Bool())
-  isBranchGuessWrong := isBranchGuessWrongReg || (exu.io.out.valid && exu.io.jmpHappen)
+  val isBranchGuessWrongReg = RegInit(false.B)
+  val isIFUAckCorrectTarget = Wire(Bool())
+  isBranchGuessWrong := isBranchGuessWrongReg || (exu.io.out.valid && exu.io.predWrong)
   when(exu.io.out.valid) {
-    isBranchGuessWrongReg := exu.io.jmpHappen // && exu.io.out.bits.exuWriteBack.nxt_pc =/= exu.io.out.bits.exuWriteBack.pc + 4.U
-  }.elsewhen(isIFUMeetCorrectJmpTarget) {
+    isBranchGuessWrongReg := exu.io.predWrong
+  }.elsewhen(isIFUAckCorrectTarget) {
     isBranchGuessWrongReg := false.B
   }
 
   dontTouch(isBranchGuessWrong)
-  when(exu.io.out.valid) {
-    curCorrectJmpTarget := exu.io.out.bits.exuWriteBack.nxt_pc
-  }
+  val curCorrectJmpTarget = RegEnableReadNew(
+    exu.io.out.bits.exuWriteBack.nxt_pc,
+    exu.io.out.valid
+  )
 
-  isIFUMeetCorrectJmpTarget := ifu.io.pc.valid && (ifu.io.pc.bits === curCorrectJmpTarget)
+  // NOTICE: for IFU
+  // must wait until IFU accepts the jump target (pc fire) can not
+  // just check the valid, sometimes IFU still fetching old wrong
+  // target, if think it meets the correct target, then the wrong
+  // target will be passed to IDU since that time isWrongPred is unset.
+  isIFUAckCorrectTarget := ifu.io.pc.fire && (ifu.io.pc.bits === curCorrectJmpTarget)
 
   val isIDUMeetCorrectJmpTarget = Wire(Bool())
   isIDUMeetCorrectJmpTarget := ifu.io.out.valid && (ifu.io.out.bits.pc === curCorrectJmpTarget)
-  dontTouch(isIFUMeetCorrectJmpTarget)
+  dontTouch(isIFUAckCorrectTarget)
   dontTouch(isIDUMeetCorrectJmpTarget)
   dontTouch(curCorrectJmpTarget)
 
-  when(isBranchGuessWrong && (!isIFUMeetCorrectJmpTarget)) {
+  when(isBranchGuessWrong && (!isIFUAckCorrectTarget)) {
     isFlushIDUReg := true.B
   }.elsewhen(isIDUMeetCorrectJmpTarget) {
     isFlushIDUReg := false.B
   }
-  // & (!isIDUMeetCorrectJmpTarget)
+
   isFlushIDU := (isFlushIDUReg) || isBranchGuessWrong
   dontTouch(isFlushIDU)
 
-  // pc := Mux(wbu.io.done, nxt_pc, pc)
   pc := Mux(
     ifu.io.pc.ready,
     // Sometimes although jump,
     // target is near current pc and IFU just meets it
-    Mux(isBranchGuessWrong && (!isIFUMeetCorrectJmpTarget), curCorrectJmpTarget, nxtPredictedPC),
+    Mux(isBranchGuessWrong && (!isIFUAckCorrectTarget), curCorrectJmpTarget, nxtPredictedPC),
     pc
   )
 

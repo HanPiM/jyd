@@ -19,6 +19,8 @@ object AddrSpace {
 
   val SRAM = ("h0f000000".U(32.W), "h10000000".U(32.W))
 
+  val SOC_ExceptSRAM = ("h10000000".U(32.W), "hffffffff".U(32.W))
+
   val SOC = ("h0f000000".U(32.W), "hffffffff".U(32.W))
 
   val NPCMEM = ("h80000000".U(32.W), "h8fffffff".U(32.W))

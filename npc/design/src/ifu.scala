@@ -53,11 +53,11 @@ class IFU extends Module {
   memIO.araddr  := pc
 
   val inst = RegEnableReadNew(memIO.rdata, memIO.rvalid)
-  memIO.rready     := io.out.ready
+  memIO.rready     := true.B//io.out.ready
   io.out.bits.code := inst
   io.out.bits.pc   := pc
   io.out.bits.predictedNextPC := predNxtPC
-  io.out.valid     := (state === State.waitR && memIO.rvalid) || (state === State.idle && io.pc.fire && memIO.rvalid) || (state === State.waitOut)
+  io.out.valid     := ((state === State.waitR || state === State.waitAR) && memIO.rvalid) || (state === State.idle && io.pc.fire && memIO.rvalid) || (state === State.waitOut)
 
   val nxtStateWhenWaitOut = Mux(io.out.ready, State.idle, State.waitOut)
   val nxtStateWhenWaitR   = Mux(memIO.rvalid, nxtStateWhenWaitOut, State.waitR)

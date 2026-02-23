@@ -58,7 +58,6 @@ class ysyx_25100261(word_width: Int = 32) extends Module {
     thisIn.valid := dataValid
   }
 
-
   val gprs = Module(new RegisterFile(READ_PORTS = 2))
   val csrs = Module(new ControlStatusRegisterFile())
 
@@ -83,16 +82,16 @@ class ysyx_25100261(word_width: Int = 32) extends Module {
 
   val pc = RegInit(INIT_PC)
 
-  btb.io.query.addr := ifu.io.pc.bits
-  bp.io.pc := ifu.io.pc.bits
-  bp.io.historyHit := btb.io.query.hit
+  btb.io.query.addr   := pc
+  bp.io.pc            := pc
+  bp.io.historyHit    := btb.io.query.hit
   bp.io.historyTarget := btb.io.query.target
-  bp.io.historyIsJAL := btb.io.query.isJAL
+  bp.io.historyIsJAL  := btb.io.query.isJAL
 
-  btb.io.update.en := exu.io.out.valid && exu.io.jmpHappen
-  btb.io.update.addr := exu.io.out.bits.exuWriteBack.pc
+  btb.io.update.en     := exu.io.out.valid && exu.io.jmpHappen
+  btb.io.update.addr   := exu.io.out.bits.exuWriteBack.pc
   btb.io.update.target := exu.io.out.bits.exuWriteBack.nxt_pc
-  btb.io.update.isJAL := exu.io.isJAL
+  btb.io.update.isJAL  := exu.io.isJAL
 
   val nxtPredictedPC = Wire(Types.UWord)
   dontTouch(nxtPredictedPC)
@@ -153,6 +152,7 @@ class ysyx_25100261(word_width: Int = 32) extends Module {
   icache.io.flush := idu.io.out.valid && idu.io.out.bits.info.typ === InstType.fencei
   AXI4IO.connectMasterSlave(ifu.io.mem, icache.io.cpu)
   AXI4IO.connectMasterSlave(icache.io.mem, memArbiter.io.ifu)
+
 
   // AXI4IO.connectMasterSlave(ifu.io.mem, memArbiter.io.ifu)
 

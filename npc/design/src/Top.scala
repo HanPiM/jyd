@@ -35,8 +35,8 @@ class ysyx_25100261(word_width: Int = 32) extends Module {
 
   val isBranchGuessWrong = Wire(Bool())
 
-  val isFlushIDUReg = RegInit(false.B)
-  val needFlushPipeline    = Wire(Bool())
+  val isFlushIDUReg     = RegInit(false.B)
+  val needFlushPipeline = Wire(Bool())
 
   val gprs = Module(new RegisterFile(READ_PORTS = 2))
   val csrs = Module(new ControlStatusRegisterFile())
@@ -77,6 +77,7 @@ class ysyx_25100261(word_width: Int = 32) extends Module {
   dontTouch(nxtPredictedPC)
   nxtPredictedPC         := bp.io.predictTarget
   ifu.io.predictedNextPC := nxtPredictedPC
+
 
   val isBranchGuessWrongReg = RegInit(false.B)
   val isIFUAckCorrectTarget = Wire(Bool())
@@ -127,7 +128,7 @@ class ysyx_25100261(word_width: Int = 32) extends Module {
   AXI4IO.connectMasterSlave(lsu.io.mem, memArbiter.io.exu)
 
   val icache = Module(new ICache)
-  icache.io.flush := idu.io.out.valid && idu.io.out.bits.info.typ === InstType.fencei
+  icache.io.flush := exu.io.fencei
   AXI4IO.connectMasterSlave(ifu.io.mem, icache.io.cpu)
   AXI4IO.connectMasterSlave(icache.io.mem, memArbiter.io.ifu)
 
@@ -196,7 +197,7 @@ class ysyx_25100261(word_width: Int = 32) extends Module {
 
   val exuWrBackDataVaild = !(exu.io.out.bits.isLoad || exu.io.out.bits.isStore)
 
-  idu.io.flush := needFlushPipeline
+  idu.io.flush  := needFlushPipeline
   exu.io.flush1 := needFlushPipeline
 
   // Write back

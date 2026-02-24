@@ -58,16 +58,16 @@ class WrBackForwardInfo extends Bundle {
 object WrBackForwardInfo {
   def apply(infoValid: Bool, dinstInfo: DecodedInst, dataVaild: Bool, data: UInt): WrBackForwardInfo = {
     val res = Wire(new WrBackForwardInfo)
-    res.addr := dinstInfo.info.rd
-    res.enWr := dinstInfo.info.rdWrEn && infoValid
+    res.addr      := dinstInfo.info.rd
+    res.enWr      := dinstInfo.info.rdWrEn && infoValid
     res.dataVaild := dataVaild
-    res.data := data
+    res.data      := data
     res
   }
-  def apply(dinst: DecoupledIO[DecodedInst], dataVaild: Bool, data: UInt): WrBackForwardInfo = {
+  def apply(dinst: DecoupledIO[DecodedInst], dataVaild: Bool, data: UInt):         WrBackForwardInfo = {
     apply(dinst.valid, dinst.bits, dataVaild, data)
   }
-  def apply(dinst: DecoupledIO[DecodedInst]): WrBackForwardInfo = {
+  def apply(dinst: DecoupledIO[DecodedInst]):                                      WrBackForwardInfo = {
     val foo = Wire(Types.UWord)
     foo := DontCare
     apply(dinst, false.B, foo)
@@ -89,7 +89,7 @@ class ByPassMux extends Module {
     val regData2 = Input(Types.UWord)
 
     val wrBackInfo = Input(new WrBackInfoGroup)
-    val needStall = Output(Bool())
+    val needStall  = Output(Bool())
 
     val outData1 = Output(Types.UWord)
     val outData2 = Output(Types.UWord)
@@ -108,9 +108,9 @@ class ByPassMux extends Module {
   // just check conflict
   isConflictWithEXUS1 := oneConflictWithWrBack(io.wrBackInfo.exus1)
 
-  val isConflictWithEXUS2    = Wire(Bool())
-  val isRs1ConflictEXUS2 = conflict(io.rs1, io.wrBackInfo.exus2)
-  val isRs2ConflictEXUS2 = conflict(io.rs2, io.wrBackInfo.exus2)
+  val isConflictWithEXUS2 = Wire(Bool())
+  val isRs1ConflictEXUS2  = conflict(io.rs1, io.wrBackInfo.exus2)
+  val isRs2ConflictEXUS2  = conflict(io.rs2, io.wrBackInfo.exus2)
 
   isConflictWithEXUS2 := (isRs1ConflictEXUS2 || isRs2ConflictEXUS2)
 
@@ -167,20 +167,6 @@ class IDU extends Module {
     val rvec = GPRegReqIO.TX.VecRead(2)
 
     val flush = Input(Bool())
-
-    // // connect to EXU output
-    // val exuWrBack          = GPRegReqIO.RX.Write
-    // // connect to EXU output, indicate whether the data is ready for bypassing
-    // //
-    // // for memory operations, the data is not ready until the memory access is
-    // // finished
-    // val exuWrBackDataVaild = Input(Bool())
-    //
-    // // !!! Notice
-    // // connect to LSU **input**
-    // val lsuWrBack = GPRegReqIO.RX.Write
-    //
-    // val wbuWrBack = GPRegReqIO.RX.Write
 
     val wrBackInfo = Input(new WrBackInfoGroup)
 
@@ -242,13 +228,13 @@ class IDU extends Module {
   res.snpc := io.in.bits.pc + 4.U
 
   val bypassMux = Module(new ByPassMux())
-  bypassMux.io.rs1 := res.rs1
-  bypassMux.io.rs2 := res.rs2
-  bypassMux.io.regData1 := io.rvec.data(0)
-  bypassMux.io.regData2 := io.rvec.data(1)
+  bypassMux.io.rs1        := res.rs1
+  bypassMux.io.rs2        := res.rs2
+  bypassMux.io.regData1   := io.rvec.data(0)
+  bypassMux.io.regData2   := io.rvec.data(1)
   bypassMux.io.wrBackInfo := io.wrBackInfo
-  res.reg1 := bypassMux.io.outData1
-  res.reg2 := bypassMux.io.outData2
+  res.reg1                := bypassMux.io.outData1
+  res.reg2                := bypassMux.io.outData2
 
   val needStall = bypassMux.io.needStall
 

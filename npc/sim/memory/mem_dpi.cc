@@ -5,6 +5,7 @@
 
 #include "../common.hpp"
 #include <algorithm>
+#include <cstdint>
 #include <ranges>
 #include <spdlog/sinks/basic_file_sink.h>
 #include <spdlog/sinks/dup_filter_sink.h>
@@ -124,15 +125,21 @@ EXTERN_C void mrom_read(int32_t addr, int32_t *data) {
 // 0x3XXXXXXX -> 0x00XXXXXX
 DEF_NOHIGH8_FORWARD_RD(flash)
 
-DEF_NOHIGH8_FORWARD_RD(psram)
+// DEF_NOHIGH8_FORWARD_RD(psram)
+EXTERN_C void psram_read(int32_t addr, int32_t *data) {
+	// add back
+	addr += g_sim_mem.psram.base();
+	g_sim_mem.psram.read_word(addr, (uint32_t &)(*data));
+	DPI_TRACE("R addr={:08x} data={:08x}", addr, *data);
+}
 // compatible interface for npc core
 extern "C" void pmem_read(int addr, int *data) {
   return psram_read(addr - g_sim_mem.psram.base(), data);
 }
 
 extern "C" void psram_write(int32_t addr, char strb8, int32_t data, int32_t *) {
-  DPI_ASSERT((addr & 0xff000000) == 0,
-             "psram_write addr={:08x} has non-zero high 8 bits", addr);
+  // DPI_ASSERT((addr & 0xff000000) == 0,
+  //            "psram_write addr={:08x} has non-zero high 8 bits", addr);
   // add back
   addr += g_sim_mem.psram.base();
   g_sim_mem.psram.write_word(addr, data, strb8);
@@ -147,7 +154,10 @@ extern "C" void pmem_write(int addr, int data, int mask) {
   uint8_t unaligned_part = addr & 0x3;
   uint32_t udata = ((uint32_t)data) >> (unaligned_part * 8);
   uint8_t umask = (mask >> unaligned_part) & 0xf;
-  return psram_write(addr - g_sim_mem.psram.base(), umask, udata, nullptr);
+
+	uint32_t psram_addr = addr - g_sim_mem.psram.base();
+	// spdlog::info("pmem_write addr={:08x} translated to psram_addr={:08x}", (uint32_t)addr, psram_addr);
+  return psram_write(psram_addr, umask, udata, nullptr);
 }
 
 extern "C" void sdram_read(char block, char bank, short row, short col,

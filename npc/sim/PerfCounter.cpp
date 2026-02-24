@@ -63,11 +63,12 @@ void CachePerfCounter::update() {
   if (hARValid.get() && hARReady.get()) {
     totalVisitCount++;
     currentHitAccessStartCycle = sim_get_cycle();
-    auto s = (State)hState.get();
-    if (s == idle && hCacheHit.get()) {
-      hitCount++;
-      totalHitAccessCycles += sim_get_cycle() - currentHitAccessStartCycle;
-    }
+  }
+
+  auto s = (State)hState.get();
+  if (s == checkHit && hCacheHit.get()) {
+    hitCount++;
+    totalHitAccessCycles += sim_get_cycle() - currentHitAccessStartCycle;
   }
 }
 
@@ -201,8 +202,10 @@ void initPerfCounters() {
                   &GetIFU()->io_out_valid, &GetIFU()->io_out_ready),
               "IFU");
   pipeCtr.add(PipeStagePerfCounter().BIND_PIPE_STAGE_BASE(GetIDU()->io), "IDU");
-  pipeCtr.add(PipeStagePerfCounter().BIND_PIPE_STAGE_BASE(GetEXUS1()->io), "EXUS1");
-  pipeCtr.add(PipeStagePerfCounter().BIND_PIPE_STAGE_BASE(GetEXUS2()->io), "EXUS2");
+  pipeCtr.add(PipeStagePerfCounter().BIND_PIPE_STAGE_BASE(GetEXUS1()->io),
+              "EXUS1");
+  pipeCtr.add(PipeStagePerfCounter().BIND_PIPE_STAGE_BASE(GetEXUS2()->io),
+              "EXUS2");
   pipeCtr.add(PipeStagePerfCounter().BIND_PIPE_STAGE_BASE(GetLSU()->io), "LSU");
 
   iduFlushCtr.bind();

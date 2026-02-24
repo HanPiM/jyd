@@ -30,5 +30,6 @@ test_run_dir/
 !*.vlt
 !*.txt
 !*.json
+compile_commands.json
 
 !history_perf/*

@@ -218,7 +218,10 @@ public:
 
 class CachePerfCounter : public PerfCounterBase {
 public:
-  enum State { idle, sendFetch, waitMem };
+	// for 1cycle cache
+  // enum State { idle, sendFetch, waitMem };
+	
+	enum State { idle, checkHit, sendFetch, waitMem };
 
   SignalHandle hCacheHit;
   SignalHandle hState;

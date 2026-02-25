@@ -192,6 +192,10 @@ $(SIM_BIN): $(SIM_VSRCS) $(SIM_CSRCS) $(ARCHIVES) $(CHISEL2V_DONE) $(VPI_DONE) $
 		--Mdir $(V2CXX_EMIT_DIR) --exe -o $(abspath $(SIM_BIN))
 	@make -s -C $(V2CXX_EMIT_DIR) -f V$(TOP_NAME).mk -j$(shell nproc) OPT_FAST=$(VSIM_OPT) CXX=clang++ LINK=clang++ AR="ar -T"
 
+verilog-lint: $(MY_VSRCS)
+	$(info Lint verilog files with verilator)
+	@$(VERILATOR) --lint-only $(VERILATOR_FLAGS) -Wall $(MY_VSRCS)
+
 all: default
 
 test:

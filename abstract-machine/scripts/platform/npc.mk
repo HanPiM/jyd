@@ -28,7 +28,10 @@ image: image-dep
 	@$(OBJCOPY) -S --set-section-flags .bss=alloc,contents -O binary $(IMAGE).elf $(IMAGE).bin
 
 run: insert-arg
-	#echo "TODO: add command here to run simulation"
+ifeq ($(VSIM_iverilog),1)
+	@$(MAKE) -C $(NPC_HOME) sim-iverilog IMG=$(IMAGE).bin
+else
 	@$(MAKE) -C $(NPC_HOME) sim IMG=$(IMAGE).bin ARGS='-b'
+endif
 
 .PHONY: insert-arg

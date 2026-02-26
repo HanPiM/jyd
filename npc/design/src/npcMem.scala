@@ -26,8 +26,8 @@ class MaskedRdWrMem(sizeInByte: Int, filePath: Option[String] = None) extends Mo
   val dataType = Vec(numBytes, UInt(width.W))
   val io       = IO(new Bundle {
     val write   = Input(Bool())
-    val rdAddr    = Input(UInt(log2Ceil(sizeInByte).W))
-    val wrAddr    = Input(UInt(log2Ceil(sizeInByte).W))
+    val rdAddr  = Input(UInt(log2Ceil(sizeInByte).W))
+    val wrAddr  = Input(UInt(log2Ceil(sizeInByte).W))
     val mask    = Input(Vec(numBytes, Bool()))
     val dataIn  = Input(dataType)
     val dataOut = Output(dataType)
@@ -125,7 +125,7 @@ class AXI4MemUnit extends Module {
   val enRdDataCall = WireDefault((rState === RState.waitMem) || (rState === RState.idle && sio.arvalid))
   dontTouch(enRdDataCall)
 
-  val mem = Module(new MaskedRdWrMem(1024 * 1024 * 128, None))
+  val mem = Module(new MaskedRdWrMem(1024 * 1024 * 128, Some("npcmem_init.hex")))
   mem.io := DontCare
 
   when(rState === RState.waitMem) {
@@ -134,7 +134,7 @@ class AXI4MemUnit extends Module {
     //   rdAddr
     // )
     mem.io.write        := false.B
-    mem.io.rdAddr         := rdAddr
+    mem.io.rdAddr       := rdAddr
     rdFIFO.io.enq.bits  := mem.io.dataOut.asUInt
     rdFIFO.io.enq.valid := true.B
   }.otherwise {
@@ -204,7 +204,7 @@ class AXI4MemUnit extends Module {
 
   when(bState === sBWaitMem) {
     mem.io.write  := true.B
-    mem.io.wrAddr   := wrAddr
+    mem.io.wrAddr := wrAddr
     mem.io.mask   := wrMask.asBools
     mem.io.dataIn := wrData.asTypeOf(mem.dataType)
     ClockedCallVoidDPIC("pmem_upd")(

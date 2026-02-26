@@ -61,6 +61,7 @@ class WBU extends Module {
   when(is_ebreak && !halted) {
     ClockedCallVoidDPIC("raise_ebreak")(clock, is_ebreak)
     halted := true.B
+    stop()
   }
 
   when(valid && (!is_ebreak)) {

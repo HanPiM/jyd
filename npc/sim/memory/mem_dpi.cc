@@ -147,8 +147,8 @@ extern "C" void psram_write(int32_t addr, char strb8, int32_t data, int32_t *) {
 }
 // compatible interface for npc core
 extern "C" void pmem_upd(int addr, int data, int mask) {
-	uint32_t udata = data;
-	uint8_t umask = mask & 0xf;
+  uint32_t udata = data;
+  uint8_t umask = mask & 0xf;
 
   uint32_t psram_addr = addr - g_sim_mem.psram.base();
   return psram_write(psram_addr, umask, udata, nullptr);
@@ -236,16 +236,16 @@ bool write_guest_mem(uint32_t addr, uint32_t data) {
 }
 
 static void _copy_img(void *img, size_t img_size) {
-  if (is_soc()) {
-    spdlog::info("copy img to flash for soc sim");
-    g_sim_mem.flash.copy_from(img, img_size);
-  } else {
-    spdlog::info("copy img to psram for sdb read");
-    g_sim_mem.psram.copy_from(img, img_size);
-		spdlog::info("copy img to pmem for cpu core sim read");
-    auto pmemDataPtr = DirectSignals::GetCPU()->mem->mem->mem_ext->Memory.data();
-		memcpy(pmemDataPtr, img, img_size);
-  }
+#if SIM_SOC
+  spdlog::info("copy img to flash for soc sim");
+  g_sim_mem.flash.copy_from(img, img_size);
+#else
+  spdlog::info("copy img to psram for sdb read");
+  g_sim_mem.psram.copy_from(img, img_size);
+  spdlog::info("copy img to pmem for cpu core sim read");
+  auto pmemDataPtr = DirectSignals::GetCPU()->mem->mem->mem_ext->Memory.data();
+  memcpy(pmemDataPtr, img, img_size);
+#endif
 }
 static void _fill_rams_uninit(bool zero_uninit_ram) {
   if (zero_uninit_ram) {

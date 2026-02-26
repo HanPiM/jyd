@@ -81,7 +81,12 @@ CHISEL2V_EMIT_DIR = $(BUILD_DIR)/gened/verilog$(SIM_ARCH_SUFFIX)
 CHISEL2V_DONE = $(BUILD_DIR)/verilog$(SIM_ARCH_SUFFIX).done
 
 V2CXX_EMIT_DIR = $(BUILD_DIR)/gened/cxx
-MY_VSRCS = $(addprefix $(CHISEL2V_EMIT_DIR)/,$(shell cat $(CHISEL2V_EMIT_DIR)/filelist.f))
+EMITED_VSRCS = $(addprefix $(CHISEL2V_EMIT_DIR)/,$(shell cat $(CHISEL2V_EMIT_DIR)/filelist.f))
+
+UNSYNTH_FILE_KEYWORDS = DPICLayer|verification
+SYNTH_VSRCS = $(addprefix $(CHISEL2V_EMIT_DIR)/,$(shell grep -vE "$(UNSYNTH_FILE_KEYWORDS)" $(CHISEL2V_EMIT_DIR)/filelist.f))
+
+MY_VSRCS = $(EMITED_VSRCS)
 
 # un synithesizable sources
 #
@@ -90,8 +95,7 @@ MY_VSRCS = $(addprefix $(CHISEL2V_EMIT_DIR)/,$(shell cat $(CHISEL2V_EMIT_DIR)/fi
 # 				make core logic synthesizable and clean
 #
 LAYER_VSRCS = $(shell find $(abspath $(CHISEL2V_EMIT_DIR)) -name "layers-*")
-# INIT_VSRCS = $(shell find $(abspath $(CHISEL2V_EMIT_DIR)) -name "*_init.sv")
-MY_VSRCS += $(LAYER_VSRCS) # $(INIT_VSRCS)
+MY_VSRCS += $(LAYER_VSRCS)
 
 MY_VSRCS_INCDIRS = $(shell find $(abspath $(CHISEL2V_EMIT_DIR)) -type d)
 VERILATOR_FLAGS += $(addprefix -I,$(MY_VSRCS_INCDIRS))
@@ -118,16 +122,16 @@ ifeq ($(ENABLE_VPI), 1)
 	touch $@
 endif
 
-
-# Chisel generates macro like `layer$xxx` to control inline layer
-# renaming them to `$(CPU_DESIGN_NAME)_xxx` to avoid conflict and
-# make them more standard as macro names (convinient to pass to verilator)
-
-RENAME_LAYER_MACRO := $(BUILD_DIR)/rename_layer_macro.done
-$(RENAME_LAYER_MACRO): $(CHISEL2V_DONE)
-	$(info # Removing unstandard layer$$ style macro)
-	@$(foreach src,$(MY_VSRCS), sed -i 's/layer\$$\(\w\+\)/$(CPU_DESIGN_NAME)_\1/g' $(src);)
-	touch $@
+#
+# # Chisel generates macro like `layer$xxx` to control inline layer
+# # renaming them to `$(CPU_DESIGN_NAME)_xxx` to avoid conflict and
+# # make them more standard as macro names (convinient to pass to verilator)
+#
+# RENAME_LAYER_MACRO := $(BUILD_DIR)/rename_layer_macro.done
+# $(RENAME_LAYER_MACRO): $(CHISEL2V_DONE)
+# 	$(info # Removing unstandard layer$$ style macro)
+# 	@$(foreach src,$(MY_VSRCS), sed -i 's/layer\$$\(\w\+\)/$(CPU_DESIGN_NAME)_\1/g' $(src);)
+# 	touch $@
 
 # sdb
 INC_PATH += $(abspath ../sdb/include)
@@ -203,7 +207,7 @@ else
 endif
 
 
-$(SIM_BIN): $(CHISEL2V_DONE) $(VPI_DONE) $(RENAME_LAYER_MACRO) $(SIM_VSRCS) $(SIM_CSRCS) $(ARCHIVES)  $(SIM_HEADERS) $(VERILATOR_CONTROL_FILE) 
+$(SIM_BIN): $(CHISEL2V_DONE) $(VPI_DONE) $(SIM_VSRCS) $(SIM_CSRCS) $(ARCHIVES)  $(SIM_HEADERS) $(VERILATOR_CONTROL_FILE) 
 	@rm -rf $(V2CXX_EMIT_DIR)
 	@echo "# Building simulation binary: $@"
 	@$(VERILATOR) $(VERILATOR_FLAGS) \
@@ -214,9 +218,11 @@ $(SIM_BIN): $(CHISEL2V_DONE) $(VPI_DONE) $(RENAME_LAYER_MACRO) $(SIM_VSRCS) $(SI
 		--Mdir $(V2CXX_EMIT_DIR) --exe -o $(abspath $(SIM_BIN))
 	@make -s -C $(V2CXX_EMIT_DIR) -f V$(TOP_NAME).mk -j$(shell nproc) OPT_FAST=$(VSIM_OPT) CXX=clang++ LINK=clang++ AR="ar -T"
 
-iverilog: $(CHISEL2V_DONE) $(RENAME_LAYER_MACRO)
+iverilog: $(CHISEL2V_DONE)
 	$(info process verilog files with iverilog)
-	iverilog -g2012 -o $(BUILD_DIR)/iverilog_sim $(SIM_VSRCS)
+	# @echo $(SYNTH_VSRCS)
+	iverilog -g2012 -o $(BUILD_DIR)/iverilog_sim $(SYNTH_VSRCS)
+	$(info Run iverilog simulation)
 	@$(BUILD_DIR)/iverilog_sim
 
 verilog-lint: $(MY_VSRCS) 
@@ -228,9 +234,9 @@ all: default
 test:
 	$(MILL) -i $(CHISEL_DESIGN).test
 
-verilog: $(CHISEL2V_DONE) $(VPI_DONE) $(RENAME_LAYER_MACRO)
+verilog: $(CHISEL2V_DONE) $(VPI_DONE)# $(RENAME_LAYER_MACRO)
 	$(info Merge verilog files into one file $(ALL_IN_ONE_VFILE))
-	@cat $(MY_VSRCS) > $(ALL_IN_ONE_VFILE)
+	@cat $(SYNTH_VSRCS) > $(ALL_IN_ONE_VFILE)
 
 help:
 	$(MILL) -i $(CHISEL_DESIGN).runMain Elaborate --help

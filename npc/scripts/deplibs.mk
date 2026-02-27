@@ -1,20 +1,42 @@
+# sdb
+INC_PATH += $(abspath ../sdb/include)
+LDFLAGS += $(SAN_FLAGS) -L$(abspath ../sdb/build) -lsdb
+ARCHIVES += $(NVBOARD_ARCHIVE) $(abspath ../sdb/build/libsdb.a)
+
+DEPS_DIR = ./deps
+
 # spdlog
-SPDLOG_PATH ?= /home/wuser/gitclones/spdlog
+SPDLOG_PATH ?= $(DEPS_DIR)/spdlog
 SPDLOG_LIBPATH ?= $(SPDLOG_PATH)/build
 INC_PATH += $(abspath $(SPDLOG_PATH)/include)
 LDFLAGS += -L$(abspath $(SPDLOG_LIBPATH)) -lspdlog
 CXXFLAGS += -DSPDLOG_COMPILED_LIB
 
 # gdbstub
-GDBSTUB_PATH ?= /home/wuser/gitclones/mini-gdbstub
+GDBSTUB_PATH ?= $(DEPS_DIR)/mini-gdbstub
 GDBSTUB_LIBPATH ?= $(GDBSTUB_PATH)/build
 INC_PATH += $(abspath $(GDBSTUB_PATH)/include)
 LDFLAGS += -L$(abspath $(GDBSTUB_LIBPATH)) -lgdbstub
 
 # tabulate
-TABULATE_PATH ?= /home/wuser/gitclones/tabulate
+TABULATE_PATH ?= $(DEPS_DIR)/tabulate
 INC_PATH += $(abspath $(TABULATE_PATH)/include)
 
 # json
-JSON_PATH ?= /home/wuser/gitclones/json
+JSON_PATH ?= $(DEPS_DIR)/json
 INC_PATH += $(abspath $(JSON_PATH)/include)
+
+SIM_DEP_LIBS_CLONE_DONE = $(DEPS_DIR)/clone.done
+$(SIM_DEP_LIBS_CLONE_DONE):
+	@mkdir -p $(DEPS_DIR)
+	@./scripts/dev-init/clone_deps.sh $(DEPS_DIR)
+	@touch $@
+
+SIM_DEP_LIBS_BUILD_DONE = $(DEPS_DIR)/build.done
+$(SIM_DEP_LIBS_BUILD_DONE): $(SIM_DEP_LIBS_CLONE_DONE)
+	@./scripts/dev-init/build_deps.sh $(DEPS_DIR)
+	@touch $@
+
+sim-bin-deps: $(SIM_DEP_LIBS_CLONE_DONE) $(SIM_DEP_LIBS_BUILD_DONE)
+
+

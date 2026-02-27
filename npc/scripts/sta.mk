@@ -6,8 +6,12 @@ STA_VSRCS = $(abspath $(SYNTH_VSRCS))
 
 STA_FREQ_MHZ = 2000
 
-STA_DEST ?= CPUCore
+STA_DEST ?= 
+ifeq ($(STA_DEST),)
+STA_DEST_FULL_NAME = $(CPU_DESIGN_NAME)
+else
 STA_DEST_FULL_NAME = $(CPU_DESIGN_NAME)_$(STA_DEST)
+endif
 
 sta: verilog $(STA_VSRCS)
 	# @echo "Removing DPI-C void functions from verilog sources..."

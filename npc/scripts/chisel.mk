@@ -24,7 +24,7 @@ else ifeq ($(LOCAL_MILL_EXISTS), y)
   $(info Using local Mill: $(abspath ./mill))
   MILL = ./mill
 else
-  $(error Mill build tool not found. Please install Mill or place a local copy in the project directory.)
+  $(info Mill build tool not found. Please install Mill or place a local copy in the project directory.)
 endif
 else
   $(info Using specified Mill: $(MILL))

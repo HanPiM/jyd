@@ -38,7 +38,7 @@ $(SIM_DEP_LIBS_CLONE_DONE):
 
 SIM_DEP_LIBS_BUILD_DONE = $(DEPS_DIR)/build.done
 $(SIM_DEP_LIBS_BUILD_DONE): $(SIM_DEP_LIBS_CLONE_DONE) $(SDB_BUILD_LIB)
-	@ARCH= ./scripts/dev-init/build_deps.sh $(DEPS_DIR)
+	@./scripts/dev-init/build_deps.sh $(DEPS_DIR)
 	@touch $@
 
 sim-bin-deps: $(SIM_DEP_LIBS_CLONE_DONE) $(SIM_DEP_LIBS_BUILD_DONE)

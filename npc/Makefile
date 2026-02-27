@@ -7,7 +7,7 @@ VSIM_OPT?= -O3
 SIM_BIN_DIR = $(BUILD_DIR)/bin
 
 COMMIT_HASH = $(shell git rev-parse HEAD)
-CXXFLAGS += -DGIT_COMMIT_HASH=\"$(COMMIT_HASH)\"
+CXXFLAGS += -DGIT_COMMIT_HASH=$(COMMIT_HASH)
 
 ifeq ($(ARCH), riscv32e-ysyxsoc)
 SIM_ARCH_SUFFIX = _soc
@@ -16,6 +16,9 @@ SIM_ARCH_SUFFIX = _npc
 endif
 
 SIM_VSRCS =
+
+VERILATOR_FLAGS ?=
+VERILATOR_INCDIRS =
 
 ifeq ($(ARCH), riscv32e-ysyxsoc)
 include ./scripts/soc.mk
@@ -27,19 +30,16 @@ VERILATOR_FLAGS += -D$(CPU_DESIGN_NAME)_ResetPCProvider_RESET_PC=32\'h$(RESET_PC
 
 ALL_IN_ONE_VFILE = $(BUILD_DIR)/$(CPU_DESIGN_NAME).v
 
-SIM_BIN = $(SIM_BIN_DIR)/$(TOP_NAME)$(SIM_ARCH_SUFFIX)$(VSIM_OPT)
 
 VERILATOR = verilator
 
-MILL ?= 
-
+SIM_BIN = $(SIM_BIN_DIR)/$(TOP_NAME)$(SIM_ARCH_SUFFIX)$(VSIM_OPT)
 default: $(SIM_BIN)
 
 IMG ?= 
 
 SAN_FLAGS?= #-fsanitize=address
 
-VERILATOR_FLAGS ?=
 
 # Performance counter need VPI to fetch handshake signals
 ENABLE_VPI ?= 1
@@ -53,73 +53,24 @@ include ./scripts/deplibs.mk
 
 VERILATOR_FLAGS += --trace-fst --trace-structs
 
-# Chisel
-CHISEL_DESIGN = design
-CHISEL_SRCS = $(shell find $(abspath $(CHISEL_DESIGN)) -name "*.scala")
-CHISEL_SRCS += build.mill
 CHISEL2V_EMIT_DIR = $(BUILD_DIR)/gened/verilog
-CHISEL2V_DONE = $(BUILD_DIR)/verilog.done
+
+include ./scripts/chisel.mk
 
 V2CXX_EMIT_DIR = $(BUILD_DIR)/gened/cxx
 
-define rd_filelist_indir 
-$(addprefix $(1)/, $(shell cat $(1)/filelist.f))
-endef
+CORE_VSRCS = $(CHISEL_EMITED_VSRCS)
+SYNTH_VSRCS = $(CHISEL_EMITED_VSRCS_SYNTH)
 
-#$(addprefix $(CHISEL2V_EMIT_DIR)/,$(shell cat $(CHISEL2V_EMIT_DIR)/filelist.f))
-EMITED_VSRCS = $(call rd_filelist_indir, $(CHISEL2V_EMIT_DIR))
-CORE_VSRCS = $(EMITED_VSRCS)
-MY_VSRCS += $(CORE_VSRCS)
+MY_SIM_VSRCS += $(CORE_VSRCS)
+MY_SIM_VSRCS += $(CHISEL_EMITED_VSRCS_LAYER)
 
-UNSYNTH_FILE_KEYWORDS = DPICLayer|verification
-SYNTH_VSRCS = $(addprefix $(CHISEL2V_EMIT_DIR)/,$(shell grep -vE "$(UNSYNTH_FILE_KEYWORDS)" $(CHISEL2V_EMIT_DIR)/filelist.f))
 
-# un synithesizable sources
-#
-# Layer : Verification code for assert/assume/cover... and printf ...
-# 				Chisel generates these code into separate files with name like `layers-*` to
-# 				make core logic synthesizable and clean
-#
-LAYER_VSRCS = $(shell find $(abspath $(CHISEL2V_EMIT_DIR)) -name "layers-*")
-MY_VSRCS += $(LAYER_VSRCS)
-
-MY_VSRCS_INCDIRS = $(shell find $(abspath $(CHISEL2V_EMIT_DIR)) -type d)
-VERILATOR_FLAGS += $(addprefix -I,$(MY_VSRCS_INCDIRS))
-
-SIM_VSRCS += $(MY_VSRCS)
+SIM_VSRCS += $(MY_SIM_VSRCS)
 SIM_CSRCS += $(shell find $(abspath $(SIM_CSRC_DIR)) -name "*.c" -or -name "*.cc" -or -name "*.cpp")
 
 SIM_HEADERS = $(shell find $(abspath $(SIM_CSRC_DIR)) -name "*.h" -or -name "*.hpp")
 
-#
-# use file xxx.done as a dependency to avoid repeated insertion
-# since the sed command modifies the source files
-# the real modification only needs when CHISEL2V_DONE is updated
-#
-
-# Insert verilog public modifier for VPI
-#   see https://verilator.org/guide/latest/extensions.html#cmdoption-verilator-public_-flat-flat_rd-flat_rw-_on
-# to enable VPI work (make signal accessible from C++ side)
-VPI_DONE := $(BUILD_DIR)/vpi.done
-$(VPI_DONE): $(CHISEL2V_DONE)
-ifeq ($(ENABLE_VPI), 1)
-	$(info # Inserting verilator public modifier)
-	@$(foreach src,$(MY_VSRCS),\
-	sed -i '1i /*verilator public_on*/' $(src); \
-	sed -i -e '$$a /*verilator public_off*/' $(src);)
-	@touch $@
-endif
-
-
-# Chisel generates macro like `layer$xxx` to control inline layer
-# renaming them to `$(CPU_DESIGN_NAME)_xxx` to avoid conflict and
-# make them more standard as macro names (convinient to pass to verilator)
-
-RENAME_LAYER_MACRO := $(BUILD_DIR)/rename_layer_macro.done
-$(RENAME_LAYER_MACRO): $(CHISEL2V_DONE)
-	$(info # Renaming unstandard layer$$ style macro)
-	@$(foreach src,$(MY_VSRCS), sed -i 's/layer\$$\(\w\+\)/$(CPU_DESIGN_NAME)_\1/g' $(src);)
-	@touch $@
 
 # sdb
 INC_PATH += $(abspath ../sdb/include)
@@ -134,14 +85,6 @@ $(shell mkdir -p $(STA_OUT_DIR))
 $(shell mkdir -p $(SIM_BIN_DIR))
 $(shell mkdir -p $(V2CXX_EMIT_DIR))
 $(shell mkdir -p $(CHISEL2V_EMIT_DIR))
-
-
-# Chisel
-$(CHISEL2V_DONE): $(CHISEL_SRCS)
-	$(call git_commit, "generate verilog")
-	@rm -rf $(CHISEL2V_EMIT_DIR)/*
-	$(MILL) -i $(CHISEL_DESIGN).runMain Elaborate --target-dir $(CHISEL2V_EMIT_DIR)
-	@touch $(CHISEL2V_DONE)
 
 # rules for verilator
 
@@ -180,23 +123,6 @@ ifneq ($(MOLD_EXISTS),)
   LDFLAGS += -fuse-ld=mold
 endif
 
-GLOBAL_MILL_EXISTS := $(shell command -v mill 2> /dev/null)
-LOCAL_MILL_EXISTS := $(shell test -f ./mill && echo y)
-ifeq ($(MILL),)
-ifneq ($(GLOBAL_MILL_EXISTS),)
-  $(info Using global Mill: $(shell which mill))
-  MILL = mill
-else ifeq ($(LOCAL_MILL_EXISTS), y)
-  $(info Using local Mill: $(abspath ./mill))
-  MILL = ./mill
-else
-  $(error Mill build tool not found. Please install Mill or place a local copy in the project directory.)
-endif
-else
-  $(info Using specified Mill: $(MILL))
-endif
-
-
 $(SIM_BIN): verilog $(SIM_VSRCS) $(SIM_CSRCS) $(ARCHIVES) $(SIM_HEADERS) $(VERILATOR_CONTROL_FILE) 
 	@rm -rf $(V2CXX_EMIT_DIR)
 	$(info # Building simulation binary: $@)
@@ -226,14 +152,14 @@ sim-iverilog: $(IVERILOG_SIM_FILE) sim-iverilog-img-hex
 
 verilog-lint: verilog
 	$(info Lint verilog files with verilator)
-	@$(VERILATOR) --lint-only $(VERILATOR_FLAGS) -Wall $(MY_VSRCS)
+	@$(VERILATOR) --lint-only $(VERILATOR_FLAGS) -Wall $(SYNTH_VSRCS)
 
 all: default
 
 test:
 	$(MILL) -i $(CHISEL_DESIGN).test
 
-verilog: $(CHISEL2V_DONE) $(VPI_DONE) $(RENAME_LAYER_MACRO)
+verilog: chisel-emit
 	$(info # Merge verilog files into one file $(ALL_IN_ONE_VFILE))
 	@cat $(SYNTH_VSRCS) > $(ALL_IN_ONE_VFILE)
 

@@ -132,11 +132,11 @@ test:
 	$(MILL) -i $(CHISEL_DESIGN).test
 
 SYNTH_VSRCS_ALLINONE = $(BUILD_DIR)/$(CPU_DESIGN_NAME).v
-$(SYNTH_VSRCS_ALLINONE):
+$(SYNTH_VSRCS_ALLINONE): chisel-emit
 	$(info # Merge verilog files into one file $(SYNTH_VSRCS_ALLINONE))
 	@cat $(SYNTH_VSRCS) > $(SYNTH_VSRCS_ALLINONE)
 
-verilog: chisel-emit $(SYNTH_VSRCS_ALLINONE)
+verilog: $(SYNTH_VSRCS_ALLINONE)
 
 help:
 	$(MILL) -i $(CHISEL_DESIGN).runMain Elaborate --help

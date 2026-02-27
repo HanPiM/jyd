@@ -109,8 +109,14 @@ void sdb_init(word_t init_pc, size_t img_size, const char *img_file,
     }
 
     if (setting.difftest) {
+			try{
       diff_handler = sdb::make_difftest_trace_handler(
           "../nemu/build/riscv32-nemu-interpreter-so", 0);
+			}
+			catch(std::exception &e){
+				spdlog::error("Failed to create difftest trace handler: {}", e.what());
+				return;
+			}
       dbg->add_trace(diff_handler);
     }
   }

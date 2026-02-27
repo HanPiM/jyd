@@ -3,6 +3,11 @@
 # fuck CI
 $(shell echo '0.12.4' > ~/.mill-version)
 $(shell echo '0.12.4' > ../.mill-version)
+$(shell echo '0.12.4' > ../../.mill-version)
+
+$(info in ~ $(shell ls ~))
+$(info in .. $(shell ls ..))
+$(info in ../.. $(shell ls ../..))
 
 $(shell mkdir -p $(CHISEL2V_EMIT_DIR))
 $(shell touch $(CHISEL2V_EMIT_DIR)/filelist.f)

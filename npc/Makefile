@@ -35,7 +35,6 @@ MILL ?=
 
 default: $(SIM_BIN)
 
-
 IMG ?= 
 
 SAN_FLAGS?= #-fsanitize=address
@@ -45,32 +44,14 @@ VERILATOR_FLAGS ?=
 # Performance counter need VPI to fetch handshake signals
 ENABLE_VPI ?= 1
 
-# spdlog
-SPDLOG_PATH ?= /home/wuser/gitclones/spdlog
-SPDLOG_LIBPATH ?= $(SPDLOG_PATH)/build
-INC_PATH += $(abspath $(SPDLOG_PATH)/include)
-LDFLAGS += -L$(abspath $(SPDLOG_LIBPATH)) -lspdlog
-CXXFLAGS += -DSPDLOG_COMPILED_LIB
-
-# gdbstub
-GDBSTUB_PATH ?= /home/wuser/gitclones/mini-gdbstub
-GDBSTUB_LIBPATH ?= $(GDBSTUB_PATH)/build
-INC_PATH += $(abspath $(GDBSTUB_PATH)/include)
-LDFLAGS += -L$(abspath $(GDBSTUB_LIBPATH)) -lgdbstub
-
-# tabulate
-TABULATE_PATH ?= /home/wuser/gitclones/tabulate
-INC_PATH += $(abspath $(TABULATE_PATH)/include)
-
-# json
-JSON_PATH ?= /home/wuser/gitclones/json
-INC_PATH += $(abspath $(JSON_PATH)/include)
-
-VERILATOR_FLAGS += --trace-fst --trace-structs
-
 ifeq ($(ENABLE_VPI), 1)
 VERILATOR_FLAGS += --vpi
 endif
+
+# Dependencies for sim
+include ./scripts/deplibs.mk
+
+VERILATOR_FLAGS += --trace-fst --trace-structs
 
 # Chisel
 CHISEL_DESIGN = design

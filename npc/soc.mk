@@ -1,15 +1,26 @@
 # ysyxSoC
+
+ifneq ($(ARCH), riscv32e-ysyxsoc)
+$(error Shouldn't include soc.mk when not building ysyxSoC, something is wrong)
+endif
+
+TOP_NAME = ysyxSoCFull
+CXXFLAGS += -DSIM_SOC
+
+SOC_HOME ?= ../ysyxSoC
 SOC_PERIP_VSRCS = $(shell find $(abspath $(SOC_HOME)/perip) -name "*.v")
 SOC_GENED_FILE = $(abspath $(SOC_HOME)/build/ysyxSoCFull.v)
 
 $(SOC_GENED_FILE):
 	make -C $(SOC_HOME) verilog
 
-SIM_VSRCS = $(SOC_GENED_FILE)
+SIM_VSRCS += $(SOC_GENED_FILE)
 SIM_VSRCS += $(SOC_PERIP_VSRCS)
 
 VERILATOR_INCDIRS += $(abspath $(SOC_HOME)/perip/uart16550/rtl)
 VERILATOR_INCDIRS += $(abspath $(SOC_HOME)/perip/spi/rtl)
+
+RESET_PC = 30000000
 
 VERILATOR_FLAGS += --timescale "1ns/1ns" --no-timing 
 VERILATOR_FLAGS += -Wno-SYMRSVDWORD # make uart verilog happy

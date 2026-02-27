@@ -243,7 +243,7 @@ static void _copy_img(void *img, size_t img_size) {
   spdlog::info("copy img to psram for sdb read");
   g_sim_mem.psram.copy_from(img, img_size);
   spdlog::info("copy img to pmem for cpu core sim read");
-  auto pmemDataPtr = get_dut()->ysyx_25100261->vlSymsp->TOP__ysyx_25100261__npcDevices__mem__mem__mem_ext.Memory.data();
+  auto pmemDataPtr = get_dut()->NPCTestSoC->vlSymsp->TOP__NPCTestSoC__npcDevices__mem__mem__mem_ext.Memory.data();
   memcpy(pmemDataPtr, img, img_size);
 #endif
 }

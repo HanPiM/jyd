@@ -56,7 +56,8 @@ class RegisterFile(READ_PORTS: Int = 2) extends Module {
 
   val reg = Reg(Vec(N_REG, Types.UWord))
 
-  val a0 = WireDefault(reg(10))
+  val a0 = IO(Output(Types.UWord))
+  a0 := reg(10)
   dontTouch(a0)
 
   when(io.write.en) {

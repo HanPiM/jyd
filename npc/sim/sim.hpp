@@ -14,7 +14,7 @@ inline auto GetCPU() {
 #ifdef SIM_SOC
   return &get_dut()->ysyxSoCFull->vlSymsp->TOP__ysyxSoCFull__asic__cpu__cpu__core;
 #else
-  return &get_dut()->ysyx_25100261->vlSymsp->TOP__ysyx_25100261__core;
+  return &get_dut()->NPCTestSoC->vlSymsp->TOP__NPCTestSoC__cpu__core;
 #endif
 }
 

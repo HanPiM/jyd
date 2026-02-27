@@ -30,34 +30,69 @@ class TopIO extends Bundle {
   val slave     = AXI4IO.Slave
 }
 
+class CPUCoreAsBlackBox extends BlackBox {
+  override def desiredName: String = "ysyx_25100261"
+  // force chisel to generate the signals name with the same prefix `io`
+  val io = IO(new Bundle {
+    val clock = Input(Clock())
+    val reset = Input(Bool())
+    val io = new TopIO
+  })
+}
+class PCProviderAsBlackBox extends BlackBox {
+  override def desiredName: String = "ysyx_25100261_ResetPCProvider"
+  val io = IO(new Bundle {
+    val resetPC = Output(Types.UWord)
+  })
+}
+
+class NPCTestSoC extends Module {
+  val cpu       = Module(new CPUCoreAsBlackBox)
+  val npcDevices = Module(new NPCDevices)
+
+  val resetPCProvider = Module(new PCProviderAsBlackBox)
+  assert(resetPCProvider.io.resetPC === "h80000000".U, "Reset PC should be 0x80000000 for npc test SoC")
+
+  npcDevices.io <> cpu.io.io.master
+  cpu.io.clock := clock
+  cpu.io.reset := reset
+  cpu.io.io.slave := DontCare
+  cpu.io.io.interrupt := false.B
+}
+
 class ysyx_25100261 extends Module {
   val io = IO(new TopIO)
   dontTouch(io)
-
-  val isSoC = sys.env.getOrElse("ARCH", "") == "riscv32e-ysyxsoc"
-
-  if (isSoC) {
-    println("ARCH is SoC npc : INIT_PC = 0x30000000\n")
-  } else {
-    println("ARCH is normal npc : INIT_PC = 0x80000000\n")
-  }
-  val resetPC = if (isSoC) "h30000000".U else "h80000000".U
+  // val isSoC = sys.env.getOrElse("ARCH", "") == "riscv32e-ysyxsoc"
+  //
+  // if (isSoC) {
+  //   println("ARCH is SoC npc : INIT_PC = 0x30000000\n")
+  // } else {
+  //   println("ARCH is normal npc : INIT_PC = 0x80000000\n")
+  // }
+  // val resetPC = if (isSoC) "h30000000".U else "h80000000".U
   println(s"Add module prefix ${getClass.getSimpleName}")
   withModulePrefix(getClass.getSimpleName) {
-    val core = Module(new CPUCore(resetPC))
-    if (isSoC) {
-      core.io <> io
-    } else {
-      val npcDevices = Module(new NPCDevices)
-      npcDevices.io <> core.io.master
-      io.master := DontCare
-      core.io.slave <> io.slave
-      core.io.interrupt := io.interrupt
-    }
+    val core = Module(new CPUCore)
+    core.io <> io
   }
 }
 
-class CPUCore(resetPC: UInt) extends Module {
+class ysyx_25100261_ResetPCProvider extends BlackBox with HasBlackBoxInline {
+  val io = IO(new Bundle {
+    val resetPC = Output(Types.UWord)
+  })
+  setInline(s"${name}.v",
+    s"""
+       |module ${name}(
+       |  output [31:0] resetPC
+       |);
+       |  assign resetPC = `${name}_RESET_PC;
+       |endmodule
+     """.stripMargin)
+}
+
+class CPUCore extends Module {
   val io = IO(new TopIO)
   io := DontCare
 
@@ -75,7 +110,8 @@ class CPUCore(resetPC: UInt) extends Module {
   val lsu = Module(new LSU)
   val wbu = Module(new WBU)
 
-  val INIT_PC = resetPC
+  val resetPCProvider = Module(new ysyx_25100261_ResetPCProvider)
+  val INIT_PC = resetPCProvider.io.resetPC
 
   val pc             = RegInit(INIT_PC)
   val nxtPredictedPC = Wire(Types.UWord)

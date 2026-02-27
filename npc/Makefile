@@ -10,14 +10,20 @@ COMMIT_HASH = $(shell git rev-parse HEAD)
 CXXFLAGS += -DGIT_COMMIT_HASH=\"$(COMMIT_HASH)\"
 
 ifeq ($(ARCH), riscv32e-ysyxsoc)
-TOP_NAME = ysyxSoCFull
 SIM_ARCH_SUFFIX = _soc
-CXXFLAGS += -DSIM_SOC
 else
-TOP_NAME = $(CPU_DESIGN_NAME)
 SIM_ARCH_SUFFIX = _npc
-SIM_VSRCS =
 endif
+
+SIM_VSRCS =
+
+ifeq ($(ARCH), riscv32e-ysyxsoc)
+include ./soc.mk
+else
+include ./npctestsoc.mk
+endif
+
+VERILATOR_FLAGS += -D$(CPU_DESIGN_NAME)_ResetPCProvider_RESET_PC=32\'h$(RESET_PC)
 
 ALL_IN_ONE_VFILE = $(BUILD_DIR)/$(CPU_DESIGN_NAME).v
 
@@ -29,16 +35,10 @@ MILL ?=
 
 default: $(SIM_BIN)
 
-ifeq ($(ARCH), riscv32e-ysyxsoc)
-include ./soc.mk
-endif
 
 IMG ?= 
 
-SOC_HOME ?= ../ysyxSoC
-
-SAN_FLAGS?=
-# SAN_FLAGS?= -fsanitize=address
+SAN_FLAGS?= #-fsanitize=address
 
 VERILATOR_FLAGS ?=
 
@@ -76,16 +76,22 @@ endif
 CHISEL_DESIGN = design
 CHISEL_SRCS = $(shell find $(abspath $(CHISEL_DESIGN)) -name "*.scala")
 CHISEL_SRCS += build.mill
-CHISEL2V_EMIT_DIR = $(BUILD_DIR)/gened/verilog$(SIM_ARCH_SUFFIX)
-CHISEL2V_DONE = $(BUILD_DIR)/verilog$(SIM_ARCH_SUFFIX).done
+CHISEL2V_EMIT_DIR = $(BUILD_DIR)/gened/verilog
+CHISEL2V_DONE = $(BUILD_DIR)/verilog.done
 
 V2CXX_EMIT_DIR = $(BUILD_DIR)/gened/cxx
-EMITED_VSRCS = $(addprefix $(CHISEL2V_EMIT_DIR)/,$(shell cat $(CHISEL2V_EMIT_DIR)/filelist.f))
+
+define rd_filelist_indir 
+$(addprefix $(1)/, $(shell cat $(1)/filelist.f))
+endef
+
+#$(addprefix $(CHISEL2V_EMIT_DIR)/,$(shell cat $(CHISEL2V_EMIT_DIR)/filelist.f))
+EMITED_VSRCS = $(call rd_filelist_indir, $(CHISEL2V_EMIT_DIR))
+CORE_VSRCS = $(EMITED_VSRCS)
+MY_VSRCS += $(CORE_VSRCS)
 
 UNSYNTH_FILE_KEYWORDS = DPICLayer|verification
 SYNTH_VSRCS = $(addprefix $(CHISEL2V_EMIT_DIR)/,$(shell grep -vE "$(UNSYNTH_FILE_KEYWORDS)" $(CHISEL2V_EMIT_DIR)/filelist.f))
-
-MY_VSRCS = $(EMITED_VSRCS)
 
 # un synithesizable sources
 #
@@ -104,13 +110,15 @@ SIM_CSRCS += $(shell find $(abspath $(SIM_CSRC_DIR)) -name "*.c" -or -name "*.cc
 
 SIM_HEADERS = $(shell find $(abspath $(SIM_CSRC_DIR)) -name "*.h" -or -name "*.hpp")
 
+#
+# use file xxx.done as a dependency to avoid repeated insertion
+# since the sed command modifies the source files
+# the real modification only needs when CHISEL2V_DONE is updated
+#
+
 # Insert verilog public modifier for VPI
 #   see https://verilator.org/guide/latest/extensions.html#cmdoption-verilator-public_-flat-flat_rd-flat_rw-_on
 # to enable VPI work (make signal accessible from C++ side)
-#
-# use VPI_DONE as a dependency to avoid repeated insertion
-# since the sed command modifies the source files
-# the real modification only needs when CHISEL2V_DONE is updated
 VPI_DONE := $(BUILD_DIR)/vpi.done
 $(VPI_DONE): $(CHISEL2V_DONE)
 ifeq ($(ENABLE_VPI), 1)
@@ -118,7 +126,7 @@ ifeq ($(ENABLE_VPI), 1)
 	@$(foreach src,$(MY_VSRCS),\
 	sed -i '1i /*verilator public_on*/' $(src); \
 	sed -i -e '$$a /*verilator public_off*/' $(src);)
-	touch $@
+	@touch $@
 endif
 
 
@@ -128,9 +136,9 @@ endif
 
 RENAME_LAYER_MACRO := $(BUILD_DIR)/rename_layer_macro.done
 $(RENAME_LAYER_MACRO): $(CHISEL2V_DONE)
-	$(info # Removing unstandard layer$$ style macro)
+	$(info # Renaming unstandard layer$$ style macro)
 	@$(foreach src,$(MY_VSRCS), sed -i 's/layer\$$\(\w\+\)/$(CPU_DESIGN_NAME)_\1/g' $(src);)
-	touch $@
+	@touch $@
 
 # sdb
 INC_PATH += $(abspath ../sdb/include)
@@ -150,9 +158,9 @@ $(shell mkdir -p $(CHISEL2V_EMIT_DIR))
 # Chisel
 $(CHISEL2V_DONE): $(CHISEL_SRCS)
 	$(call git_commit, "generate verilog")
-	#@rm -rf $(CHISEL2V_EMIT_DIR)
+	@rm -rf $(CHISEL2V_EMIT_DIR)/*
 	$(MILL) -i $(CHISEL_DESIGN).runMain Elaborate --target-dir $(CHISEL2V_EMIT_DIR)
-	touch $(CHISEL2V_DONE)
+	@touch $(CHISEL2V_DONE)
 
 # rules for verilator
 
@@ -208,9 +216,9 @@ else
 endif
 
 
-$(SIM_BIN): $(CHISEL2V_DONE) $(VPI_DONE) $(SIM_VSRCS) $(SIM_CSRCS) $(ARCHIVES)  $(SIM_HEADERS) $(VERILATOR_CONTROL_FILE) 
+$(SIM_BIN): verilog $(SIM_VSRCS) $(SIM_CSRCS) $(ARCHIVES) $(SIM_HEADERS) $(VERILATOR_CONTROL_FILE) 
 	@rm -rf $(V2CXX_EMIT_DIR)
-	@echo "# Building simulation binary: $@"
+	$(info # Building simulation binary: $@)
 	@$(VERILATOR) $(VERILATOR_FLAGS) \
 		$(SIM_CSRCS) $(NVBOARD_ARCHIVE) \
 		--top-module $(TOP_NAME) $(VERILATOR_CONTROL_FILE) $(SIM_VSRCS) \
@@ -221,18 +229,21 @@ $(SIM_BIN): $(CHISEL2V_DONE) $(VPI_DONE) $(SIM_VSRCS) $(SIM_CSRCS) $(ARCHIVES)  
 
 IVERILOG_SIM_FILE = $(BUILD_DIR)/iverilog_sim
 IVERILOG_TESTBENCH = ./iverilog/testbench.v
+IVERILOG = iverilog -g2012 -DENABLE_INITIAL_MEM_ $(COMMON_VERILOG_DEFINES_FLAGS)
 
-$(IVERILOG_SIM_FILE): $(CHISEL2V_DONE) $(SYNTH_VSRCS) $(IVERILOG_TESTBENCH) $(RENAME_LAYER_MACRO)
+$(IVERILOG_SIM_FILE): verilog $(SYNTH_VSRCS) $(IVERILOG_TESTBENCH)
 	$(info process verilog files with iverilog)
-	iverilog -g2012 -DENABLE_INITIAL_MEM_ $(COMMON_VERILOG_DEFINES_FLAGS) -o $(IVERILOG_SIM_FILE) $(SYNTH_VSRCS) $(IVERILOG_TESTBENCH)
+	$(IVERILOG) -o $(IVERILOG_SIM_FILE) $(SYNTH_VSRCS) $(IVERILOG_TESTBENCH)
 
-sim-iverilog: $(IVERILOG_SIM_FILE)
-	$(info Generate verilog hex file for iverilog sim)
+sim-iverilog-img-hex: $(IMG)
+	$(info # Generate verilog hex file for iverilog sim)
 	@objcopy -O verilog --verilog-data-width=4 -I binary --reverse-bytes=4 $(IMG) $(BUILD_DIR)/npcmem_init.hex
-	$(info Run iverilog simulation)
+
+sim-iverilog: $(IVERILOG_SIM_FILE) sim-iverilog-img-hex
+	$(info # Run iverilog simulation)
 	vvp $(IVERILOG_SIM_FILE) -fst
 
-verilog-lint: $(MY_VSRCS) 
+verilog-lint: verilog
 	$(info Lint verilog files with verilator)
 	@$(VERILATOR) --lint-only $(VERILATOR_FLAGS) -Wall $(MY_VSRCS)
 
@@ -242,7 +253,7 @@ test:
 	$(MILL) -i $(CHISEL_DESIGN).test
 
 verilog: $(CHISEL2V_DONE) $(VPI_DONE) $(RENAME_LAYER_MACRO)
-	$(info Merge verilog files into one file $(ALL_IN_ONE_VFILE))
+	$(info # Merge verilog files into one file $(ALL_IN_ONE_VFILE))
 	@cat $(SYNTH_VSRCS) > $(ALL_IN_ONE_VFILE)
 
 help:
@@ -279,42 +290,57 @@ sim: $(SIM_BIN)
 
 YOSYS_STA_PATH ?= /home/wuser/gitclones/yosys-sta
 
-STA_NODPI_PATH = $(BUILD_DIR)/sta_nodpi
+# STA_NODPI_PATH = $(BUILD_DIR)/sta_nodpi
 
-$(shell mkdir -p $(STA_NODPI_PATH))
+# $(shell mkdir -p $(STA_NODPI_PATH))
 
-STA_VSRCS = $(shell find $(abspath $(STA_NODPI_PATH)) -maxdepth 1 -name "*.v" -or -name "*.sv")
+# STA_VSRCS = $(shell find $(abspath $(STA_NODPI_PATH)) -maxdepth 1 -name "*.v" -or -name "*.sv")
 
+STA_VSRCS = $(abspath $(SYNTH_VSRCS))
 
-STA_DEST ?= 
-ifeq ($(STA_DEST),)
-  STA_DEST_FULL_NAME = $(CPU_DESIGN_NAME)
-else
-  STA_DEST_FULL_NAME = $(CPU_DESIGN_NAME)_$(STA_DEST)
-endif
+STA_FREQ_MHZ = 2000
 
-sta: $(CHISEL2V_DONE) $(STA_VSRCS)
-	@echo "Removing DPI-C void functions from verilog sources..."
-	./scripts/remove_dpi.sh $(CHISEL2V_EMIT_DIR) $(STA_NODPI_PATH)
+STA_DEST ?= CPUCore
+STA_DEST_FULL_NAME = $(CPU_DESIGN_NAME)_$(STA_DEST)
+
+sta: verilog $(STA_VSRCS)
+	# @echo "Removing DPI-C void functions from verilog sources..."
+	# ./scripts/remove_dpi.sh $(CHISEL2V_EMIT_DIR) $(STA_NODPI_PATH)
 	make -C $(YOSYS_STA_PATH) sta \
 		DESIGN=$(STA_DEST_FULL_NAME) \
-		CLK_FREQ_MHZ=2000 \
+		CLK_FREQ_MHZ=$(STA_FREQ_MHZ) \
 		CLK_PORT_NAME=clock \
 		O=$(STA_OUT_DIR) \
 		RTL_FILES="$(STA_VSRCS)" 
 
-sta-area: $(CHISEL2V_DONE) $(STA_VSRCS)
+sta-area: verilog $(STA_VSRCS)
 	@echo "Removing DPI-C void functions from verilog sources..."
 	./scripts/remove_dpi.sh $(CHISEL2V_EMIT_DIR) $(STA_NODPI_PATH)
 	make -C $(YOSYS_STA_PATH) stat_only \
 		DESIGN=$(STA_DEST_FULL_NAME) \
-		CLK_FREQ_MHZ=2000 \
+		CLK_FREQ_MHZ=$(STA_FREQ_MHZ) \
 		CLK_PORT_NAME=clock \
 		O=$(STA_OUT_DIR) \
 		RTL_FILES="$(STA_VSRCS)" \
 
-sta-all-area: $(CHISEL2V_DONE)
+sta-all-area: verilog
 	./scripts/sta_all.sh $(CHISEL2V_EMIT_DIR)/filelist.f $(STA_OUT_DIR)
+
+# shoud be generated by STA flow
+# or passed from outside
+NETLIST ?= $(STA_OUT_DIR)/$(STA_DEST_FULL_NAME)-$(STA_FREQ_MHZ)MHz/$(STA_DEST_FULL_NAME).netlist.v
+# in CI passed from outside
+CELLS ?= $(YOSYS_STA_PATH)/pdk/nangate45/sim/cells.v
+
+# NETLIST_SIM_OTHER_MODULES = NPCDevices AXI4MemUnit AXI4LiteXBar AXI4LiteXBar_1
+# NETLIST_SIM_OTHER_VSRCS = $(addsuffix .sv, $(addprefix $(abspath $(CHISEL2V_EMIT_DIR))/$(CPU_DESIGN_NAME)_, $(NETLIST_SIM_OTHER_MODULES)))
+
+NETLIST_SIM_OTHER_VSRCS = $(filter-out %$(STA_DEST_FULL_NAME).sv, $(STA_VSRCS))
+
+sim-iverilog-netlist: sta $(NETLIST)
+	$(info Run iverilog simulation with netlist)
+	$(IVERILOG) -o $(IVERILOG_SIM_FILE) $(NETLIST) $(CELLS) $(IVERILOG_TESTBENCH) $(NETLIST_SIM_OTHER_VSRCS)
+	vvp $(IVERILOG_SIM_FILE) -fst
 
 perf: 
 	./scripts/make_perf.sh

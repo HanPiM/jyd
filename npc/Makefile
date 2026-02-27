@@ -136,12 +136,12 @@ all: default
 test:
 	$(MILL) -i $(CHISEL_DESIGN).test
 
-ALL_IN_ONE_VFILE = $(BUILD_DIR)/$(CPU_DESIGN_NAME).v
-$(ALL_IN_ONE_VFILE):
-	$(info # Merge verilog files into one file $(ALL_IN_ONE_VFILE))
-	@cat $(SYNTH_VSRCS) > $(ALL_IN_ONE_VFILE)
+SYNTH_VSRCS_ALLINONE = $(BUILD_DIR)/$(CPU_DESIGN_NAME).v
+$(SYNTH_VSRCS_ALLINONE):
+	$(info # Merge verilog files into one file $(SYNTH_VSRCS_ALLINONE))
+	@cat $(SYNTH_VSRCS) > $(SYNTH_VSRCS_ALLINONE)
 
-verilog: chisel-emit $(ALL_IN_ONE_VFILE)
+verilog: chisel-emit $(SYNTH_VSRCS_ALLINONE)
 
 help:
 	$(MILL) -i $(CHISEL_DESIGN).runMain Elaborate --help

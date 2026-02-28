@@ -1,10 +1,11 @@
 #!/bin/bash
 
-if [ -d /home/runner/work/ysyx-submit-test/ ]; then
-echo "Running in GitHub Actions environment, updating self repo"
-git config pull.rebase false
-git pull
-fi
+# no pull
+# if [ -d /home/runner/work/ysyx-submit-test/ ]; then
+# echo "Running in GitHub Actions environment, updating self repo"
+# git config pull.rebase false
+# git pull
+# fi
 
 # 1. 获取 Clang 主版本号
 # 如果没安装 clang，这里会报错，所以加个简单的判断

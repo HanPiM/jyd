@@ -11,7 +11,7 @@ CLANG_VERSION_OLDER_THAN_15 := $(shell [ $(CLANG_VERSION_MAJOR) -lt 15 ] && echo
 
 $(info Clang version $(CLANG_VERSION_MAJOR))
 ifeq ($(CLANG_VERSION_OLDER_THAN_15),1)
-	$(error Clang version must be at least 15)
+$(error Clang version must be at least 15)
 endif
 
 # overwrite ARCH_H defined in $(AM_HOME)/Makefile

@@ -186,7 +186,8 @@ $(IVERILOG_SIM_FILE): verilog $(IVERILOG_SIM_VSRCS)
 
 sim-iverilog-img-hex: $(IMG)
 	$(info # Generate verilog hex file for iverilog sim)
-	@objcopy -O verilog --verilog-data-width=4 -I binary --reverse-bytes=4 $(IMG) $(BUILD_DIR)/npcmem_init.hex
+	@echo "IMG is $(IMG)"
+	objcopy -O verilog --verilog-data-width=4 -I binary --reverse-bytes=4 $(IMG) $(BUILD_DIR)/npcmem_init.hex
 
 sim-iverilog: $(IVERILOG_SIM_FILE) sim-iverilog-img-hex
 	$(info # Run iverilog simulation)

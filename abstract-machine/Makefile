@@ -93,7 +93,8 @@ OBJDUMP   = $(CROSS_COMPILE)objdump
 OBJCOPY   = $(CROSS_COMPILE)objcopy
 READELF   = $(CROSS_COMPILE)readelf
 
-$(info LD version: $($(LD) --version))
+$(info LD version = $($(LD) --version))
+$(info LDFLAGS = $(LDFLAGS))
 
 ### Compilation flags
 INC_PATH += $(WORK_DIR)/include $(addsuffix /include/, $(addprefix $(AM_HOME)/, $(LIBS)))

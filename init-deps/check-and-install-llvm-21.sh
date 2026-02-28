@@ -34,5 +34,4 @@ if [ "$CLANG_VERSION_MAJOR" -lt 15 ]; then
     
     # # 3. 标记安装完成
     # touch "$INSTALL_FLAG"
-else
 fi

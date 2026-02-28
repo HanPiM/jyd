@@ -14,6 +14,10 @@ echo "Current clang version is [$CLANG_VERSION_MAJOR]"
 
 # 2. 检查版本是否小于 15
 if [ "$CLANG_VERSION_MAJOR" -lt 15 ]; then
+	if [ -f clang-21 ]; then
+		echo "LLVM 21 is already installed."
+		exit 0
+	fi
     
     # 执行清理和安装逻辑
     # sudo apt remove -y llvm llvm-dev
@@ -31,7 +35,8 @@ if [ "$CLANG_VERSION_MAJOR" -lt 15 ]; then
     ls /usr/lib | grep llvm | tr '\n' ' '
     ls /usr/lib/clang
     which clang-21
-    
+    sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-21 100
+		sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-21 100
     # # 3. 标记安装完成
     # touch "$INSTALL_FLAG"
 fi

@@ -14,6 +14,8 @@ ifeq ($(CLANG_VERSION_OLDER_THAN_15), 1)
 	wget 'https://apt.llvm.org/llvm.sh' && chmod +x llvm.sh
 	@echo "Installing LLVM 21"
 	sudo ./llvm.sh 21
+	$(shell sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-21 100)
+	$(shell sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-21 100)
 endif
 	touch $@
 

@@ -1,6 +1,12 @@
 #!/bin/bash
 
-LOCKFILE="/tmp/llvm_install.lock"
+DONEFILE="/tmp/ysyx_dep_installed.done"
+
+if [ -f "$DONEFILE" ]; then
+	exit 0
+fi
+
+LOCKFILE="/tmp/ysxy_dep_install.lock"
 
 DEST_CLANG_VERSION=21
 DEST_CLANG=clang-$DEST_CLANG_VERSION
@@ -107,3 +113,5 @@ if ! command -v ccache &> /dev/null; then
 else
 	echo "ccache is already installed."
 fi
+
+touch "$DONEFILE"

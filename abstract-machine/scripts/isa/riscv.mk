@@ -10,6 +10,7 @@ CLANG_VERSION_OLDER_THAN_15 := $(shell [ $(CLANG_VERSION_MAJOR) -lt 15 ] && echo
 ifeq ($(CLANG_VERSION_OLDER_THAN_15), 1)
 # older clang versions contains csr and fence.i extensions in the rv32i/e base
 RISCV_MARCH_EXT_CSRS_AND_FENCE_I :=
+COMMON_CFLAGS += -Wno-unused-command-line-argument
 else
 RISCV_MARCH_EXT_CSRS_AND_FENCE_I := _zicsr_zifencei
 endif

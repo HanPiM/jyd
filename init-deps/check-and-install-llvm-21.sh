@@ -36,7 +36,7 @@ if [ "$CLANG_VERSION_MAJOR" -lt 15 ]; then
 	chmod +x llvm.sh
 	
 	echo "Installing LLVM 21..."
-	sudo ./llvm.sh 21
+	sudo ./llvm.sh 21 > /dev/null
 	
 	# 验证安装情况
 	echo "Checking installation paths:"
@@ -54,9 +54,9 @@ if [ "$CLANG_VERSION_MAJOR" -lt 15 ]; then
 
 	echo "g++ version: $(g++ -dumpversion)"
 	echo "Installing g++-13 for new stdlib"
-	sudo add-apt-repository ppa:ubuntu-toolchain-r/test -y
-	sudo apt-get update
-  sudo apt-get install g++-13 gcc-riscv64-linux-gnu binutils-riscv64-linux-gnu -y
+	sudo add-apt-repository ppa:ubuntu-toolchain-r/test -y > /dev/null
+	sudo apt-get update > /dev/null
+  sudo apt-get install g++-13 gcc-riscv64-linux-gnu binutils-riscv64-linux-gnu -y > /dev/null
 	sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-13 100
 	sudo update-alternatives --set g++ /usr/bin/g++-13
 	echo "current g++ version: $(g++ -dumpversion)"

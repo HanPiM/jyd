@@ -113,13 +113,14 @@ endif
 
 $(SIM_BIN): sim-bin-deps verilog $(SIM_VSRCS) $(SIM_CSRCS) $(ARCHIVES) $(SIM_HEADERS) $(VERILATOR_CONTROL_FILE) 
 	@rm -rf $(V2CXX_EMIT_DIR)
-	$(info # Building simulation binary: $@)
+	$(info # Gen C++ sources with verilator)
 	@$(VERILATOR) $(VERILATOR_FLAGS) \
 		$(SIM_CSRCS) $(NVBOARD_ARCHIVE) \
 		--top-module $(TOP_NAME) $(VERILATOR_CONTROL_FILE) $(SIM_VSRCS) \
 		$(addprefix -CFLAGS , $(CXXFLAGS)) \
 		$(addprefix -LDFLAGS , $(LDFLAGS)) \
 		--Mdir $(V2CXX_EMIT_DIR) --exe -o $(abspath $(SIM_BIN))
+	$(info # Building simulation binary: $@)
 	@make -s -C $(V2CXX_EMIT_DIR) -f V$(TOP_NAME).mk -j$(shell nproc) OPT_FAST=$(VSIM_OPT) CXX=clang++ LINK=clang++ AR="ar -T"
 
 verilog-lint: verilog

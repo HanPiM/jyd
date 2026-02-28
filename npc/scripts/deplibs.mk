@@ -4,11 +4,12 @@ CLANG_VERSION_OLDER_THAN_15 := $(shell [ $(CLANG_VERSION_MAJOR) -lt 15 ] && echo
 LLVM21_INSTALLED = ./llvm21_installed.done
 $(LLVM21_INSTALLED):
 	$(info # Downloading LLVM script)
-	$(shell wget 'https://apt.llvm.org/llvm.sh' && chmod +x llvm.sh)
+	wget 'https://apt.llvm.org/llvm.sh' && chmod +x llvm.sh
 	$(info # Installing LLVM 21)
-	$(shell sudo ./llvm.sh 21)
+	sudo ./llvm.sh 21
 	$(info # Setting LLVM 21 as default clang)
-	$(shell sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-21 100 --slave /usr/bin/clang++ clang++ /usr/bin/clang++-21)
+	sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-21 100
+	sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-21 100
 	touch $@
 
 foo.mk: $(LLVM21_INSTALLED)

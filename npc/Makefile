@@ -111,7 +111,7 @@ ifneq ($(MOLD_EXISTS),)
   LDFLAGS += -fuse-ld=mold
 endif
 
-$(SIM_BIN): sim-bin-deps verilog $(SIM_VSRCS) $(SIM_CSRCS) $(ARCHIVES) $(SIM_HEADERS) $(VERILATOR_CONTROL_FILE) 
+$(SIM_BIN): $(SIM_DEP_LIBS_BUILD_DONE) $(CHISEL2V_DONE) $(SIM_VSRCS) $(SIM_CSRCS) $(ARCHIVES) $(SIM_HEADERS) $(VERILATOR_CONTROL_FILE) 
 	@rm -rf $(V2CXX_EMIT_DIR)
 	@echo "=== Gen c++ sources from verilog with verilator ==="
 	@$(VERILATOR) $(VERILATOR_FLAGS) \
@@ -134,7 +134,7 @@ test:
 	$(MILL) -i $(CHISEL_DESIGN).test
 
 SYNTH_VSRCS_ALLINONE = $(BUILD_DIR)/$(CPU_DESIGN_NAME).v
-$(SYNTH_VSRCS_ALLINONE): chisel-emit
+$(SYNTH_VSRCS_ALLINONE): $(CHISEL2V_DONE)
 	$(info # Merge verilog files into one file $(SYNTH_VSRCS_ALLINONE))
 	@cat $(SYNTH_VSRCS) > $(SYNTH_VSRCS_ALLINONE)
 

@@ -1,7 +1,7 @@
 include $(AM_HOME)/scripts/isa/riscv.mk
 include $(AM_HOME)/scripts/platform/npc.mk
 # COMMON_CFLAGS += -march=rv32i_zicsr -mabi=ilp32  # overwrite
-COMMON_CFLAGS += -march=rv32e_zicsr_zifencei -mabi=ilp32e  # overwrite
+COMMON_CFLAGS += -march=rv32e$(RISCV_MARCH_EXT_CSRS_AND_FENCE_I) -mabi=ilp32e  # overwrite
 LDFLAGS       += -melf32lriscv                    # overwrite
 
 AM_SRCS += riscv/npc/libgcc/div.S \

@@ -1,30 +1,4 @@
-CLANG_VERSION_MAJOR := $(shell clang -dumpversion | cut -f1 -d.)
-CLANG_VERSION_OLDER_THAN_15 := $(shell [ $(CLANG_VERSION_MAJOR) -lt 15 ] && echo 1 || echo 0)
-
-	# older clang versions contains csr and fence.i extensions in the rv32i/e base
-	# RISCV_MARCH_EXT_CSRS_AND_FENCE_I :=
-	# COMMON_CFLAGS += -Wno-unused-command-line-argument
-	#
-LLVM21_INSTALLED = ./llvm21_installed.done
-$(LLVM21_INSTALLED):
-ifeq ($(CLANG_VERSION_OLDER_THAN_15), 1)
-	$(info fuck clang $(CLANG_VERSION_MAJOR))
-	sudo apt remove llvm llvm-dev
-	@echo "Downloading LLVM script"
-	wget 'https://apt.llvm.org/llvm.sh' && chmod +x llvm.sh
-	@echo "Installing LLVM 21"
-	sudo ./llvm.sh 21
-	ls /usr/bin | grep clang
-	ls /usr/lib | llvm
-	ls /usr/lib/clang
-endif
-	touch $@
-
-foo.mk: $(LLVM21_INSTALLED)
-	touch $@
-
-include foo.mk
-
+include $(YSYX_HOME)/init-deps/always-install-llvm.mk
 
 # sdb
 INC_PATH += $(abspath ../sdb/include)

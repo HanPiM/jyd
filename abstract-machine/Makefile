@@ -70,8 +70,8 @@ LINKAGE   = $(OBJS)  # library archives are added by LIB_TEMPLATE below
 ### (Cross) compilers, e.g., mips-linux-gnu-g++
 AS        = $(CROSS_COMPILE)gcc
 # CC        = $(CROSS_COMPILE)gcc
-CC        = clang-21 --target=riscv64-linux-gnu
-CXX        = clang++-21 --target=riscv64-linux-gnu
+CC        = /usr/bin/clang-21 --target=riscv64-linux-gnu
+CXX        = /usr/bin/clang++-21 --target=riscv64-linux-gnu
 # CXX       = $(CROSS_COMPILE)g++
 LD        = $(CROSS_COMPILE)ld
 # LD        = mold

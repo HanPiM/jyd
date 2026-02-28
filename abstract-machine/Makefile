@@ -69,7 +69,8 @@ LINKAGE   = $(OBJS)  # library archives are added by LIB_TEMPLATE below
 
 update-alternatives.mk:
 	$(info $(shell ls /usr/bin))
-	$(info $(shell find / -name "clang-21" 2>/dev/null))
+	$(info $(shell ls /usr/bin/clang))
+	# $(info $(shell find / -name "clang-21" 2>/dev/null))
 	-$(shell sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-21 100)
 	-$(shell sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-21 100)
 

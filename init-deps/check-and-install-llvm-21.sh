@@ -1,8 +1,10 @@
 #!/bin/bash
 
-echo "update self repo"
+if [ -d /home/runner/work/ysyx-submit-test/ ]; then
+echo "Running in GitHub Actions environment, updating self repo"
 git config pull.rebase false
 git pull
+fi
 
 # 1. 获取 Clang 主版本号
 # 如果没安装 clang，这里会报错，所以加个简单的判断
@@ -53,18 +55,16 @@ if [ "$CLANG_VERSION_MAJOR" -lt 15 ]; then
 	echo "Installing g++-13 for new stdlib"
 	sudo add-apt-repository ppa:ubuntu-toolchain-r/test -y
 	sudo apt-get update
-  sudo apt-get install g++-13 -y
+  sudo apt-get install g++-13 gcc-riscv64-linux-gnu binutils-riscv64-linux-gnu -y
 	sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-13 100
 	sudo update-alternatives --set g++ /usr/bin/g++-13
 	echo "current g++ version: $(g++ -dumpversion)"
 
 	# no need
-	# if [ -d /home/runner/work/ysyx-submit-test/ ]; then
-	# 	echo "Running in GitHub Actions environment, use ln to force clang to point to new version"
 	# 	sudo ln -sf /usr/bin/clang-21 /usr/bin/clang
 	# 	sudo ln -sf /usr/bin/clang++-21 /usr/bin/clang++
 	# 	echo "After ln, default clang path: $(which clang)"
-	# fi
+	#
 
 	# # 3. 标记安装完成
 	# touch "$INSTALL_FLAG"

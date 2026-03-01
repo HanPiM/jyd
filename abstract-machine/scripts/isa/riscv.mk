@@ -11,12 +11,12 @@ CLANG_VERSION_OLDER_THAN_15 := $(shell [ $(CLANG_VERSION_MAJOR) -lt 15 ] && echo
 $(info Clang version $(CLANG_VERSION_MAJOR))
 ifeq ($(CLANG_VERSION_OLDER_THAN_15),1)
 $(warning # WARN $(CC) version should be at least 15)
-$(info fuck CI)
-RISCV_MARCH_EXT_CSRS_AND_FENCE_I := 
-COMMON_CFLAGS += -Wno-error=unused-command-line-argument
+# $(info fuck CI)
+# RISCV_MARCH_EXT_CSRS_AND_FENCE_I := 
+# COMMON_CFLAGS += -Wno-error=unused-command-line-argument
 else
-RISCV_MARCH_EXT_CSRS_AND_FENCE_I := _zicsr_zifencei
 endif
+RISCV_MARCH_EXT_CSRS_AND_FENCE_I := _zicsr_zifencei
 
 # overwrite ARCH_H defined in $(AM_HOME)/Makefile
 ARCH_H := arch/riscv.h

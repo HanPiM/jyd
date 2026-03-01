@@ -1,7 +1,7 @@
 From 6a105319e46dbf1ecd34fc0217d02d7ed087c170 Mon Sep 17 00:00:00 2001
 From: Wang Yi Jie <miwyj@mail.scut.edu.cn>
 Date: Sun, 1 Mar 2026 00:21:47 +0800
-Subject: [PATCH 25/26] use BlackBox to pass FAST_FLASH into Chisel
+Subject: [PATCH 25/27] use BlackBox to pass FAST_FLASH into Chisel
 
 ---
  perip/spi/rtl/spi_top_apb.v | 16 +++++++++++++++-

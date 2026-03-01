@@ -1,7 +1,7 @@
 From 3038d2b666d5d19bc337525a57beee297efffe67 Mon Sep 17 00:00:00 2001
 From: Wang Yi Jie <miwyj@mail.scut.edu.cn>
 Date: Sat, 24 Jan 2026 19:48:09 +0800
-Subject: [PATCH 10/26] impl sdram
+Subject: [PATCH 10/27] impl sdram
 
 ---
  src/SoC.scala          |   2 +-

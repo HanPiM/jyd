@@ -1,7 +1,7 @@
 From 90866ccc64a48208bc71ee57a7f600ceb3e10b6b Mon Sep 17 00:00:00 2001
 From: Wang Yi Jie <miwyj@mail.scut.edu.cn>
 Date: Sun, 25 Jan 2026 15:11:27 +0800
-Subject: [PATCH 12/26] impl bit extend sdram
+Subject: [PATCH 12/27] impl bit extend sdram
 
 ---
  perip/sdram/core_sdram_axi4/sdram_axi.v      |   4 +

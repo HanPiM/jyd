@@ -1,7 +1,7 @@
 From 76761bbc5f679a53ec295bdafe26f5fa6b2ab8b3 Mon Sep 17 00:00:00 2001
 From: Wang Yi Jie <miwyj@mail.scut.edu.cn>
 Date: Thu, 22 Jan 2026 09:36:07 +0800
-Subject: [PATCH 07/26] merge rename r/w data make addr and data reg no init
+Subject: [PATCH 07/27] merge rename r/w data make addr and data reg no init
 
 ---
  src/device/PSRAM.scala | 33 +++++++++++++++++++++------------

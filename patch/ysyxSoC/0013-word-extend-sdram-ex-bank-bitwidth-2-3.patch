@@ -1,7 +1,7 @@
 From 94eb6952cd865b8fa5d4ebfaf86ce8ef40de6add Mon Sep 17 00:00:00 2001
 From: Wang Yi Jie <miwyj@mail.scut.edu.cn>
 Date: Sun, 25 Jan 2026 17:30:25 +0800
-Subject: [PATCH 13/26] word extend sdram (ex bank bitwidth 2->3)
+Subject: [PATCH 13/27] word extend sdram (ex bank bitwidth 2->3)
 
 ---
  perip/sdram/core_sdram_axi4/sdram_axi_core.v |  11 +-

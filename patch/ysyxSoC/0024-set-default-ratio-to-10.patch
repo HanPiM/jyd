@@ -1,7 +1,7 @@
 From 8e278922e4f2f54c2f353de01fe724cf41f89320 Mon Sep 17 00:00:00 2001
 From: Wang Yi Jie <miwyj@mail.scut.edu.cn>
 Date: Fri, 20 Feb 2026 14:10:11 +0800
-Subject: [PATCH 24/26] set default ratio to 10
+Subject: [PATCH 24/27] set default ratio to 10
 
 ---
  src/Top.scala | 2 +-

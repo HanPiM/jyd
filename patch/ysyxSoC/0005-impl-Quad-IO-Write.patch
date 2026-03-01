@@ -1,7 +1,7 @@
 From 31fbf92af269c90dfdcd9003ae12f60eea43987a Mon Sep 17 00:00:00 2001
 From: Wang Yi Jie <miwyj@mail.scut.edu.cn>
 Date: Wed, 21 Jan 2026 19:14:29 +0800
-Subject: [PATCH 05/26] impl Quad IO Write
+Subject: [PATCH 05/27] impl Quad IO Write
 
 ---
  src/device/PSRAM.scala | 46 ++++++++++++++++++++++++++++++++++++------

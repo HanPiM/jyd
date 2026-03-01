@@ -1,7 +1,7 @@
 From 4468093818399f8c921ade2f00202497b9982234 Mon Sep 17 00:00:00 2001
 From: Wang Yi Jie <miwyj@mail.scut.edu.cn>
 Date: Mon, 26 Jan 2026 12:42:46 +0800
-Subject: [PATCH 15/26] impl ps2 keyboard ctrl
+Subject: [PATCH 15/27] impl ps2 keyboard ctrl
 
 ---
  src/device/Keyboard.scala | 121 ++++++++++++++++++++++++++++++++++----

@@ -1,7 +1,7 @@
 From 9e97166b6f7732c033d6d3791943576f9e4f7f2a Mon Sep 17 00:00:00 2001
 From: Wang Yi Jie <miwyj@mail.scut.edu.cn>
 Date: Tue, 3 Feb 2026 16:23:16 +0800
-Subject: [PATCH 22/26] add assert to AXI4delayer to notice unsupport io.in
+Subject: [PATCH 22/27] add assert to AXI4delayer to notice unsupport io.in
  unready when rdata come
 
 ---

@@ -1,7 +1,7 @@
 From 4b05c62f48e4d3ea3bed5dba1b1f26262f96576a Mon Sep 17 00:00:00 2001
 From: Wang Yi Jie <miwyj@mail.scut.edu.cn>
 Date: Sun, 25 Jan 2026 23:34:44 +0800
-Subject: [PATCH 14/26] impl gpio seg switch led
+Subject: [PATCH 14/27] impl gpio seg switch led
 
 ---
  src/Top.scala         |   1 +

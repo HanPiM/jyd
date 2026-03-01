@@ -1,7 +1,7 @@
 From d66ac6002f41109f73310bec47bfb7e760a93c98 Mon Sep 17 00:00:00 2001
 From: Wang Yi Jie <miwyj@mail.scut.edu.cn>
 Date: Sun, 1 Feb 2026 16:22:55 +0800
-Subject: [PATCH 18/26] modify sdram axi ctrl port width 16->32
+Subject: [PATCH 18/27] modify sdram axi ctrl port width 16->32
 
 ---
  perip/sdram/core_sdram_axi4/sdram_axi.v      |  8 ++++----

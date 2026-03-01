@@ -1,7 +1,7 @@
 From 1cf43e98abdb9dc016685588ea1915c83e7984e4 Mon Sep 17 00:00:00 2001
 From: Wang Yi Jie <miwyj@mail.scut.edu.cn>
 Date: Fri, 30 Jan 2026 10:57:02 +0800
-Subject: [PATCH 17/26] impl APB delayer
+Subject: [PATCH 17/27] impl APB delayer
 
 ---
  src/Top.scala             |  2 +-

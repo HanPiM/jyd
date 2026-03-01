@@ -1,7 +1,7 @@
 From d6f3f4afb18ee5b38e8421fae86e0e1deb8b6c04 Mon Sep 17 00:00:00 2001
 From: Wang Yi Jie <miwyj@mail.scut.edu.cn>
 Date: Mon, 26 Jan 2026 19:08:50 +0800
-Subject: [PATCH 16/26] impl VGA ctrl
+Subject: [PATCH 16/27] impl VGA ctrl
 
 ---
  src/device/VGA.scala | 131 +++++++++++++++++++++++++++++++++++++++----

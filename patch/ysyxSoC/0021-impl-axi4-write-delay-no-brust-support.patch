@@ -1,7 +1,7 @@
 From 4914845e3252123f348e5c6681f52a2a6eb06dbc Mon Sep 17 00:00:00 2001
 From: Wang Yi Jie <miwyj@mail.scut.edu.cn>
 Date: Mon, 2 Feb 2026 14:07:13 +0800
-Subject: [PATCH 21/26] impl axi4 write delay (no brust support)
+Subject: [PATCH 21/27] impl axi4 write delay (no brust support)
 
 ---
  src/amba/AXI4Delayer.scala | 107 ++++++++++++++++++++++++++++---------

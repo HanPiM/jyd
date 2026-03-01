@@ -1,7 +1,7 @@
 From 486d463b2cfd45bd61a1eb4fa5848405b20fd448 Mon Sep 17 00:00:00 2001
 From: Wang Yi Jie <miwyj@mail.scut.edu.cn>
 Date: Tue, 3 Feb 2026 22:03:51 +0800
-Subject: [PATCH 23/26] make APB and AXI4 delayer both use Config.delayratio
+Subject: [PATCH 23/27] make APB and AXI4 delayer both use Config.delayratio
  direct connect when ratio==1
 
 ---

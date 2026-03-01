@@ -1,7 +1,7 @@
 From e8185eb9c108c62a5ffdb11666c3fdbb5562d8a8 Mon Sep 17 00:00:00 2001
 From: Wang Yi Jie <miwyj@mail.scut.edu.cn>
 Date: Thu, 22 Jan 2026 11:46:49 +0800
-Subject: [PATCH 08/26] impl init to QPI mode and make psram ctrl use QPI mode
+Subject: [PATCH 08/27] impl init to QPI mode and make psram ctrl use QPI mode
 
 ---
  perip/psram/efabless/EF_PSRAM_CTRL.v    | 76 ++++++++++++++++---------

@@ -1,7 +1,7 @@
 From 2ddcfaa1b86853c03cf65c9e28d737e213c36815 Mon Sep 17 00:00:00 2001
 From: Wang Yi Jie <miwyj@mail.scut.edu.cn>
 Date: Sun, 1 Mar 2026 00:22:25 +0800
-Subject: [PATCH 26/26] fix using old default ratio
+Subject: [PATCH 26/27] fix using old default ratio
 
 ---
  src/amba/AXI4Delayer.scala | 10 +++++-----

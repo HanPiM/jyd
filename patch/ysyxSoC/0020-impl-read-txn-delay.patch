@@ -1,7 +1,7 @@
 From d3395d96e4a667b75304019b6cb93bc28873b1b4 Mon Sep 17 00:00:00 2001
 From: Wang Yi Jie <miwyj@mail.scut.edu.cn>
 Date: Mon, 2 Feb 2026 11:55:13 +0800
-Subject: [PATCH 20/26] impl read txn delay
+Subject: [PATCH 20/27] impl read txn delay
 
 ---
  src/amba/AXI4Delayer.scala | 169 ++++++++++++++++++++++++++-----------

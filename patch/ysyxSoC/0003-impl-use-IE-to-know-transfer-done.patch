@@ -1,7 +1,7 @@
 From cfa2c96c78567b045a920ee1ed35a7f700751e40 Mon Sep 17 00:00:00 2001
 From: Wang Yi Jie <miwyj@mail.scut.edu.cn>
 Date: Wed, 21 Jan 2026 14:27:34 +0800
-Subject: [PATCH 03/26] impl use IE to know transfer done
+Subject: [PATCH 03/27] impl use IE to know transfer done
 
 ---
  src/device/SPI.scala | 28 +++++++++++++++++++---------

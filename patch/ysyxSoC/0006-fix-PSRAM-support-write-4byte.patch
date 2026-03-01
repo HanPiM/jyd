@@ -1,7 +1,7 @@
 From 10f7ffc816552e4028550b8038dc7c3bd260a7d4 Mon Sep 17 00:00:00 2001
 From: Wang Yi Jie <miwyj@mail.scut.edu.cn>
 Date: Wed, 21 Jan 2026 21:34:00 +0800
-Subject: [PATCH 06/26] fix PSRAM support write <4byte
+Subject: [PATCH 06/27] fix PSRAM support write <4byte
 
 ---
  src/device/PSRAM.scala | 45 ++++++++++++++++++++++++++++++++++++------

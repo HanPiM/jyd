@@ -1,7 +1,7 @@
 From dc272c126c61a24b740cdaad3a55e3aafd028f45 Mon Sep 17 00:00:00 2001
 From: Wang Yi Jie <miwyj@mail.scut.edu.cn>
 Date: Sun, 1 Feb 2026 22:10:42 +0800
-Subject: [PATCH 19/26] impl ar channel delay
+Subject: [PATCH 19/27] impl ar channel delay
 
 ---
  src/amba/AXI4Delayer.scala | 78 +++++++++++++++++++++++++++++++++++++-

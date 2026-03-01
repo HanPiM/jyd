@@ -1,7 +1,7 @@
 From 4f7de626217d2d5c25d2fb1d59993be373202485 Mon Sep 17 00:00:00 2001
 From: Wang Yi Jie <miwyj@mail.scut.edu.cn>
 Date: Tue, 20 Jan 2026 20:26:32 +0800
-Subject: [PATCH 02/26] make SPI read flash fsm watchable
+Subject: [PATCH 02/27] make SPI read flash fsm watchable
 
 ---
  src/device/SPI.scala | 218 ++++++++++++++++---------------------------

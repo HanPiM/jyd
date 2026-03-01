@@ -1,7 +1,7 @@
 From be4153cb7b791b39a4d31b73b06ec01e47804f59 Mon Sep 17 00:00:00 2001
 From: Wang Yi Jie <miwyj@mail.scut.edu.cn>
 Date: Sat, 24 Jan 2026 20:38:39 +0800
-Subject: [PATCH 11/26] fix sdram dont use 4 row reg for each bank
+Subject: [PATCH 11/27] fix sdram dont use 4 row reg for each bank
 
 ---
  src/device/SDRAM.scala | 10 ++++++----

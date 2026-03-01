@@ -26,7 +26,7 @@ CXXFLAGS = $(COMMON_FLAGS) -std=c++20
 TARGET = $(BUILD_DIR)/libsdb.a
 all: $(BUILD_DIR) $(TARGET)
 
-src/disasm.c: $(LIBCAPSTONE)
+src/disasm_trace.cpp: $(LIBCAPSTONE)
 
 $(LIBCAPSTONE):
 	$(MAKE) -C tools/capstone

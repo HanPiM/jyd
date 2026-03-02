@@ -117,7 +117,10 @@ ifneq ($(MOLD_EXISTS),)
   LDFLAGS += -fuse-ld=mold
 endif
 
-$(SIM_BIN): $(SIM_DEP_LIBS_BUILD_DONE) $(CHISEL2V_DONE) $(SIM_VSRCS) $(SIM_CSRCS) $(ARCHIVES) $(SIM_HEADERS) $(VERILATOR_CONTROL_FILE) 
+$(SIM_BIN): $(SIM_DEP_LIBS_BUILD_DONE) $(CHISEL2V_DONE) $(SIM_VSRCS) $(SIM_CSRCS) $(ARCHIVES) $(SIM_HEADERS) $(VERILATOR_CONTROL_FILE)
+ifndef IN_LOCK
+	@+flock $(SIM_BIN).lock $(MAKE) $@ IN_LOCK=1
+else
 	@rm -rf $(V2CXX_EMIT_DIR)
 	@echo "=== Gen c++ sources from verilog with verilator ==="
 	@$(VERILATOR) $(VERILATOR_FLAGS) \
@@ -129,6 +132,7 @@ $(SIM_BIN): $(SIM_DEP_LIBS_BUILD_DONE) $(CHISEL2V_DONE) $(SIM_VSRCS) $(SIM_CSRCS
 	@echo "=== Build sim binary with clang++ ==="
 	@echo "clang++ version: $(shell clang++ -dumpversion)"
 	@$(MAKE) -s -C $(V2CXX_EMIT_DIR) -f V$(TOP_NAME).mk -j$(shell nproc) OPT_FAST=$(VSIM_OPT) CXX=clang++ LINK=clang++ AR="ar -T"
+endif
 
 verilog-lint: verilog
 	$(info Lint verilog files with verilator)

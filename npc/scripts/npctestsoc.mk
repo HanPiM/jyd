@@ -1,7 +1,5 @@
 # npctestsoc
 
-TOP_NAME = NPCTestSoC
-
 SOC_HOME = $(BUILD_DIR)/npctestsoc
 $(shell mkdir -p $(SOC_HOME))
 $(shell touch $(SOC_HOME)/filelist.f)

@@ -4,7 +4,6 @@ ifneq ($(ARCH), riscv32e-ysyxsoc)
 $(error Shouldn't include soc.mk when not building ysyxSoC, something is wrong)
 endif
 
-TOP_NAME = ysyxSoCFull
 CXXFLAGS += -DSIM_SOC
 
 SOC_HOME ?= ../ysyxSoC

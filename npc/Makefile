@@ -21,15 +21,21 @@ VERILATOR_FLAGS ?=
 VERILATOR_INCDIRS =
 
 ifeq ($(ARCH), riscv32e-ysyxsoc)
+TOP_NAME = ysyxSoCFull
+else
+TOP_NAME = NPCTestSoC
+endif
+
+SIM_BIN = $(SIM_BIN_DIR)/$(TOP_NAME)$(SIM_ARCH_SUFFIX)$(VSIM_OPT)
+default: $(SIM_BIN)
+
+ifeq ($(ARCH), riscv32e-ysyxsoc)
 include ./scripts/soc.mk
 else
 include ./scripts/npctestsoc.mk
 endif
 
 VERILATOR = verilator
-
-SIM_BIN = $(SIM_BIN_DIR)/$(TOP_NAME)$(SIM_ARCH_SUFFIX)$(VSIM_OPT)
-default: $(SIM_BIN)
 
 IMG ?= 
 

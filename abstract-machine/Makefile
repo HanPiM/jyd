@@ -83,10 +83,10 @@ include $(YSYX_HOME)/init-deps/fix-am.mk
 
 ### (Cross) compilers, e.g., mips-linux-gnu-g++
 AS        = $(CROSS_COMPILE)gcc
-# CC        = $(CROSS_COMPILE)gcc
-CC        = clang --target=riscv64-linux-gnu
-CXX       = clang++ --target=riscv64-linux-gnu
-# CXX       = $(CROSS_COMPILE)g++
+CC        = $(CROSS_COMPILE)gcc
+# CC        = clang --target=riscv64-linux-gnu
+# CXX       = clang++ --target=riscv64-linux-gnu
+CXX       = $(CROSS_COMPILE)g++
 LD        = $(CROSS_COMPILE)ld
 # LD        = mold
 AR        = $(CROSS_COMPILE)ar
@@ -108,20 +108,20 @@ CFLAGS   += -O2 -MMD -Wall -Werror $(INCFLAGS) \
             -Wno-main -U_FORTIFY_SOURCE -fvisibility=hidden
 
 CXXFLAGS +=  $(CFLAGS) -ffreestanding -fno-rtti -fno-exceptions
-
-CXXFLAGS += -Wno-error=non-c-typedef-for-linkage
-CXXFLAGS += -Wno-error=tautological-constant-out-of-range-compare
-
-CFLAGS	 += -ffreestanding
-
-CFLAGS += -Wno-error=unused-function
-CFLAGS += -Wno-error=misleading-indentation
-CFLAGS += -Wno-error=unused-but-set-variable
-
-CFLAGS += -Wno-error=unknown-warning-option
-CFLAGS += -Wno-error=macro-redefined
-CFLAGS += -Wno-error=pointer-bool-conversion
-CFLAGS += -Wno-error=tautological-pointer-compare
+#
+# CXXFLAGS += -Wno-error=non-c-typedef-for-linkage
+# CXXFLAGS += -Wno-error=tautological-constant-out-of-range-compare
+#
+# CFLAGS	 += -ffreestanding
+#
+# CFLAGS += -Wno-error=unused-function
+# CFLAGS += -Wno-error=misleading-indentation
+# CFLAGS += -Wno-error=unused-but-set-variable
+#
+# CFLAGS += -Wno-error=unknown-warning-option
+# CFLAGS += -Wno-error=macro-redefined
+# CFLAGS += -Wno-error=pointer-bool-conversion
+# CFLAGS += -Wno-error=tautological-pointer-compare
 
 CFLAGS	 += -ffreestanding
 

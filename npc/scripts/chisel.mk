@@ -1,7 +1,6 @@
 # Chisel
 
-IS_CI_ENV := $(shell test -d /home/runner/work/ysyx-submit-test/ysyx-submit-test/ && echo y)
-ifeq ($(IS_CI_ENV), y)
+ifdef GITHUB_ACTIONS
 $(info Detected CI environment, emit mill version file to make CI test mill version happy)
 $(shell echo '0.12.4' > ../../../.mill-version)
 endif

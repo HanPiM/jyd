@@ -168,7 +168,7 @@ FSBL_TEXT static inline const char *_rodata_loadpos(const char *ptr) {
 #define BOOT_ASSERT(cond)                                                      \
   do {                                                                         \
     if (!(cond)) {                                                             \
-      boot_log("ASSERTION FAILED @L:" TOSTR(__LINE__) ": " TOSTR(cond) "\n");                        \
+      boot_log("ASSERTION FAILED @L:" TOSTR(__LINE__) ": " TOSTR(cond) "\n");  \
       halt(-1);                                                                \
     }                                                                          \
   } while (0)
@@ -206,37 +206,42 @@ SSBL_TEXT void _ssbl_memcpy(void *dst, const void *src, size_t n) {
   BOOT_ASSERT(IS_4BYTE_ALIGNED(src));
   BOOT_ASSERT(IS_4BYTE_ALIGNED(n));
   size_t wn = n / 4;
-	size_t i = 0;
-  for (; i < wn; i+=4) {
-		uint32_t* d = &((uint32_t *)dst)[i];
-		const uint32_t* s = &((const uint32_t *)src)[i];
-		d[0] = s[0];
-		d[1] = s[1];
-		d[2] = s[2];
-		d[3] = s[3];
+  size_t i = 0;
+  for (; i < wn; i += 4) {
+    uint32_t *d = &((uint32_t *)dst)[i];
+    const uint32_t *s = &((const uint32_t *)src)[i];
+    d[0] = s[0];
+    d[1] = s[1];
+    d[2] = s[2];
+    d[3] = s[3];
   }
-	for (; i < wn; i++) {
-		((uint32_t *)dst)[i] = ((const uint32_t *)src)[i];
-	}
+  for (; i < wn; i++) {
+    ((uint32_t *)dst)[i] = ((const uint32_t *)src)[i];
+  }
 }
 
 FSBL_TEXT void boot_memcpy(void *dst, const void *src, size_t n) {
   BOOT_ASSERT(IS_4BYTE_ALIGNED(dst));
   BOOT_ASSERT(IS_4BYTE_ALIGNED(src));
-  BOOT_ASSERT(IS_4BYTE_ALIGNED(n));
-  size_t wn = n / 4;
-	size_t i;
-  for (i = 0; i < wn; i+=4) {
-		uint32_t* d = &((uint32_t *)dst)[i];
-		const uint32_t* s = &((const uint32_t *)src)[i];
-		d[0] = s[0];
-		d[1] = s[1];
-		d[2] = s[2];
-		d[3] = s[3];
+  // BOOT_ASSERT(IS_4BYTE_ALIGNED(n));
+  size_t nWords = n / 4;
+  size_t i;
+  for (i = 0; i < nWords; i += 4) {
+    uint32_t *d = &((uint32_t *)dst)[i];
+    const uint32_t *s = &((const uint32_t *)src)[i];
+    d[0] = s[0];
+    d[1] = s[1];
+    d[2] = s[2];
+    d[3] = s[3];
   }
-	for (; i < wn; i++) {
-		((uint32_t *)dst)[i] = ((const uint32_t *)src)[i];
-	}
+	// remain words
+  for (; i < nWords; i++) {
+    ((uint32_t *)dst)[i] = ((const uint32_t *)src)[i];
+  }
+	// remain bytes
+  for (i = nWords * 4; i < n; i++) {
+    ((uint8_t *)dst)[i] = ((const uint8_t *)src)[i];
+  }
 }
 
 SSBL_TEXT void _second_boot();
@@ -251,32 +256,35 @@ FSBL_TEXT void _trm_init() {
   _second_boot();
 }
 
-
-SSBL_TEXT void _ssbl_puthex(uint32_t x){
-	char buf[8];
-	int idx=0;
-	if(x==0)buf[idx++]='0';
-	while(x){
-		uint8_t t=x&0xf;
-		if(t<10)buf[idx++]=(t+'0');
-		else buf[idx++]=(t-10+'A');
-		x>>=4;
-	}
-	idx--;
-	for(;idx>=0;idx--)ssbl_putch(buf[idx]);
+SSBL_TEXT void _ssbl_puthex(uint32_t x) {
+  char buf[8];
+  int idx = 0;
+  if (x == 0)
+    buf[idx++] = '0';
+  while (x) {
+    uint8_t t = x & 0xf;
+    if (t < 10)
+      buf[idx++] = (t + '0');
+    else
+      buf[idx++] = (t - 10 + 'A');
+    x >>= 4;
+  }
+  idx--;
+  for (; idx >= 0; idx--)
+    ssbl_putch(buf[idx]);
 }
 
 SSBL_TEXT void _second_boot() {
-	ssbl_putstr("rodata load start = ");
-	_ssbl_puthex((uintptr_t)__rodata_load_start__);
-	ssbl_putstr("\nrodata start = ");
-	_ssbl_puthex((uintptr_t)_rodata_start);
-	ssbl_putstr("\nrodata size = ");
-	_ssbl_puthex((uintptr_t)__rodata_size__);
-	putch('\n');
+  ssbl_putstr("rodata load start = ");
+  _ssbl_puthex((uintptr_t)__rodata_load_start__);
+  ssbl_putstr("\nrodata start = ");
+  _ssbl_puthex((uintptr_t)_rodata_start);
+  ssbl_putstr("\nrodata size = ");
+  _ssbl_puthex((uintptr_t)__rodata_size__);
+  putch('\n');
 
   _ssbl_memcpy(_rodata_start, __rodata_load_start__, (size_t)__rodata_size__);
-	// after copy .rodata, we can directly use strings ptr in .rodata
+  // after copy .rodata, we can directly use strings ptr in .rodata
 #undef putch
 #define putch ssbl_putch
   boot_log(".rodata copied.\n");
@@ -292,7 +300,7 @@ SSBL_TEXT void _second_boot() {
     putstr(" done.\n");                                                        \
   } while (0)
 
-	LOG_STEP("copy .text", _ssbl_memcpy(_text_start, __text_load_start__,
+  LOG_STEP("copy .text", _ssbl_memcpy(_text_start, __text_load_start__,
                                       (size_t)__text_size__));
   LOG_STEP("copy .data", _ssbl_memcpy(_data_start, __data_load_start__,
                                       (size_t)__data_size__));

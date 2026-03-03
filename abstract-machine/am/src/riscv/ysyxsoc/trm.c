@@ -163,17 +163,19 @@ FSBL_TEXT static inline const char *_rodata_loadpos(const char *ptr) {
 #define boot_log(s) ssbl_putstr("[BOOT] " s)
 
 #define _TOSTR(x) #x
+#define TOSTR(x) _TOSTR(x)
+
 #define BOOT_ASSERT(cond)                                                      \
   do {                                                                         \
     if (!(cond)) {                                                             \
-      boot_log("ASSERTION FAILED: " _TOSTR(cond) "\n");                        \
+      boot_log("ASSERTION FAILED @L:" TOSTR(__LINE__) ": " TOSTR(cond) "\n");                        \
       halt(-1);                                                                \
     }                                                                          \
   } while (0)
 
 SSBL_TEXT void _ssbl_clear_word_aligned(void *dst, size_t n) {
-  assert(IS_4BYTE_ALIGNED(dst));
-  assert(IS_4BYTE_ALIGNED(n));
+  BOOT_ASSERT(IS_4BYTE_ALIGNED(dst));
+  BOOT_ASSERT(IS_4BYTE_ALIGNED(n));
   size_t wn = n / 4;
   uint32_t *d = (uint32_t *)dst;
   for (size_t i = 0; i < wn; i++) {
@@ -186,7 +188,7 @@ SSBL_TEXT void _ssbl_clear(void *dst, size_t n) {
     return;
   uintptr_t dptr = (uintptr_t)dst;
 
-  assert(IS_4BYTE_ALIGNED(dptr));
+  BOOT_ASSERT(IS_4BYTE_ALIGNED(dptr));
   size_t aligned_n = n & (~0x3);
   _ssbl_clear_word_aligned((void *)dptr, aligned_n);
   size_t remaining = n - aligned_n;
@@ -199,10 +201,10 @@ SSBL_TEXT void _ssbl_clear(void *dst, size_t n) {
 }
 
 SSBL_TEXT void _ssbl_memcpy(void *dst, const void *src, size_t n) {
-  assert(n != 0);
-  assert(IS_4BYTE_ALIGNED(dst));
-  assert(IS_4BYTE_ALIGNED(src));
-  assert(IS_4BYTE_ALIGNED(n));
+  BOOT_ASSERT(n != 0);
+  BOOT_ASSERT(IS_4BYTE_ALIGNED(dst));
+  BOOT_ASSERT(IS_4BYTE_ALIGNED(src));
+  BOOT_ASSERT(IS_4BYTE_ALIGNED(n));
   size_t wn = n / 4;
 	size_t i = 0;
   for (; i < wn; i+=4) {
@@ -290,18 +292,7 @@ SSBL_TEXT void _second_boot() {
     putstr(" done.\n");                                                        \
   } while (0)
 
-  // volatile_u32ptr u32ptr = (volatile_u32ptr)_text_start;
-  // u32ptr[0] = RISCV_INST_NOP;
-  // u32ptr[1] = RISCV_INST_MVA0ZERO;
-  // u32ptr[2] = RISCV_INST_RET;
-  //
-  // void (*foo)() = (void (*)())_text_start;
-
-  // boot_log("call foo\n");
-  // foo();
-  // boot_log("foo returned\n");
-	
-  LOG_STEP("copy .text", _ssbl_memcpy(_text_start, __text_load_start__,
+	LOG_STEP("copy .text", _ssbl_memcpy(_text_start, __text_load_start__,
                                       (size_t)__text_size__));
   LOG_STEP("copy .data", _ssbl_memcpy(_data_start, __data_load_start__,
                                       (size_t)__data_size__));
@@ -335,7 +326,7 @@ SSBL_TEXT void _second_boot() {
   // putnum_base16((uint32_t)heap.start);
   // putstr(" heap.end = ");
   // putnum_base16((uint32_t)heap.end);
-  assert(heap.start < heap.end);
+  BOOT_ASSERT(heap.start < heap.end);
   // putstr("\nheap size = ");
   // putnum_base16((uint32_t)(heap.end - heap.start));
   // putch('\n');

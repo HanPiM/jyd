@@ -1,7 +1,7 @@
 From ba8efcf4580fc77efc9fcbc1b556a7522d4b5793 Mon Sep 17 00:00:00 2001
 From: Wang Yi Jie <miwyj@mail.scut.edu.cn>
 Date: Thu, 20 Nov 2025 18:54:32 +0800
-Subject: [PATCH 2/6] impl switch ctx no use global var
+Subject: [PATCH 2/7] impl switch ctx no use global var
 
 ---
  bsp/abstract-machine/src/context.c | 21 +++++++++++++++------

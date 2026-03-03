@@ -204,10 +204,9 @@ SSBL_TEXT void _ssbl_memcpy(void *dst, const void *src, size_t n) {
   BOOT_ASSERT(n != 0);
   BOOT_ASSERT(IS_4BYTE_ALIGNED(dst));
   BOOT_ASSERT(IS_4BYTE_ALIGNED(src));
-  BOOT_ASSERT(IS_4BYTE_ALIGNED(n));
-  size_t wn = n / 4;
-  size_t i = 0;
-  for (; i < wn; i += 4) {
+  size_t nWords = n / 4;
+  size_t i;
+  for (i = 0; i < nWords; i += 4) {
     uint32_t *d = &((uint32_t *)dst)[i];
     const uint32_t *s = &((const uint32_t *)src)[i];
     d[0] = s[0];
@@ -215,15 +214,20 @@ SSBL_TEXT void _ssbl_memcpy(void *dst, const void *src, size_t n) {
     d[2] = s[2];
     d[3] = s[3];
   }
-  for (; i < wn; i++) {
+	// remain words
+  for (; i < nWords; i++) {
     ((uint32_t *)dst)[i] = ((const uint32_t *)src)[i];
+  }
+	// remain bytes
+  for (i = nWords * 4; i < n; i++) {
+    ((uint8_t *)dst)[i] = ((const uint8_t *)src)[i];
   }
 }
 
 FSBL_TEXT void boot_memcpy(void *dst, const void *src, size_t n) {
+  BOOT_ASSERT(n != 0);
   BOOT_ASSERT(IS_4BYTE_ALIGNED(dst));
   BOOT_ASSERT(IS_4BYTE_ALIGNED(src));
-  // BOOT_ASSERT(IS_4BYTE_ALIGNED(n));
   size_t nWords = n / 4;
   size_t i;
   for (i = 0; i < nWords; i += 4) {

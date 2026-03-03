@@ -17,10 +17,6 @@
 
 #include "common.hpp"
 
-#if 1
-#include <nvboard.h>
-#endif
-
 int gdb_mainloop();
 
 int main(int argc, char **argv) {

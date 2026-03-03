@@ -18,6 +18,8 @@ static const char mainargs[MAINARGS_MAX_LEN] =
 #define SERIAL_PORT 0x10000000
 
 void putch(char ch) { *(uint8_t *)(SERIAL_PORT + 0x00) = ch; }
+// unsupported now, just return 0xff to indicate no char available
+char try_getch() { return 0xff; }
 
 void halt(int code) {
   asm volatile("mv a0, %0; ebreak" : : "r"(code));

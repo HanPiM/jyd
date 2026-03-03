@@ -27,7 +27,12 @@ class UARTUnit extends Module {
 
   when(sio.wvalid) {
     val chData = sio.wdata(7, 0)
-    InlinePrintf(cf"$chData%c")
-    SkipDifftestRef(clock, sio.wvalid)
+    ClockedCallVoidDPIC("uart_putch")(
+      clock,
+      sio.wvalid,
+      chData
+    )
+    // InlinePrintf(cf"$chData%c")
+    // SkipDifftestRef(clock, sio.wvalid)
   }
 }

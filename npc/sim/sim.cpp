@@ -1,4 +1,5 @@
 #include "sim.hpp"
+#include "VNPCTestSoC__Dpi.h"
 #include "sdbWrap.hpp"
 
 #include <algorithm>
@@ -168,9 +169,10 @@ const word_t defalut_img[] = {
 
 #define _EXPAND(x) x
 
-extern "C" void uart_send(char ch) {
+extern "C" void uart_putch(char ch) {
   putchar(ch);
   fflush(stdout);
+	skip_difftest_ref();
 }
 
 extern "C" void gpr_upd(char regno, int data) {

@@ -145,7 +145,7 @@ test:
 
 SYNTH_VSRCS_ALLINONE = $(BUILD_DIR)/$(CPU_DESIGN_NAME).v
 $(SYNTH_VSRCS_ALLINONE): $(CHISEL2V_DONE)
-	$(info # Merge verilog files into one file $(SYNTH_VSRCS_ALLINONE))
+	@echo "# Merge verilog files into one file $(SYNTH_VSRCS_ALLINONE)"
 	@cat $(SYNTH_VSRCS) > $(SYNTH_VSRCS_ALLINONE)
 
 verilog: $(SYNTH_VSRCS_ALLINONE)
@@ -191,12 +191,12 @@ IVERILOG = iverilog -g2012 -DENABLE_INITIAL_MEM_ $(COMMON_VERILOG_DEFINES_FLAGS)
 IVERILOG_SIM_VSRCS = $(IVERILOG_TESTBENCH) $(SYNTH_VSRCS) $(SOC_SYNTH_VSRCS)
 
 $(IVERILOG_SIM_FILE): verilog $(IVERILOG_SIM_VSRCS)
-	$(info # Process verilog files with iverilog)
+	@echo "# Process verilog files with iverilog"
 	$(IVERILOG) -o $(IVERILOG_SIM_FILE) $(IVERILOG_SIM_VSRCS)
 
 sim-iverilog-img-hex: $(IMG)
-	$(info # Generate verilog hex file for iverilog sim)
-	@echo "IMG is $(IMG)"
+	@echo "# Generate verilog hex file for iverilog sim"
+	@echo "IMG = $(IMG)"
 	objcopy -O verilog --verilog-data-width=4 -I binary --reverse-bytes=4 $(IMG) $(BUILD_DIR)/npcmem_init.hex
 
 sim-iverilog: $(IVERILOG_SIM_FILE) sim-iverilog-img-hex

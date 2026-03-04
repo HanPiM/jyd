@@ -1,4 +1,4 @@
-include $(YSYX_HOME)/init-deps/always-install-llvm.mk
+# include $(YSYX_HOME)/init-deps/always-install-llvm.mk
 
 # sdb
 INC_PATH += $(abspath ../sdb/include)
@@ -44,6 +44,7 @@ $(SIM_DEP_LIBS_CLONE_DONE):
 
 SIM_DEP_LIBS_BUILD_DONE = $(DEPS_DIR)/build.done
 $(SIM_DEP_LIBS_BUILD_DONE): $(SIM_DEP_LIBS_CLONE_DONE) $(SDB_BUILD_LIB)
+	$(YSYX_HOME)/init-deps/check-and-install-buildtools.sh
 	@+./scripts/dev-init/build_deps.sh $(DEPS_DIR)
 	@touch $@
 

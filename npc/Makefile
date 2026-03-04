@@ -58,7 +58,7 @@ CHISEL2V_EMIT_DIR = $(BUILD_DIR)/gened/verilog
 
 include ./scripts/chisel.mk
 
-V2CXX_EMIT_DIR = $(BUILD_DIR)/gened/cxx
+V2CXX_EMIT_DIR = $(BUILD_DIR)/gened/cxx$(SIM_ARCH_SUFFIX)
 
 CORE_VSRCS = $(CHISEL_EMITED_VSRCS)
 SYNTH_VSRCS = $(CHISEL_EMITED_VSRCS_SYNTH)

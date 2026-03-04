@@ -67,8 +67,9 @@ LINKAGE   = $(OBJS)  # library archives are added by LIB_TEMPLATE below
 
 ## 3. General Compilation Flags
 
-include $(YSYX_HOME)/init-deps/always-install-llvm.mk
-include $(YSYX_HOME)/init-deps/fix-am.mk
+# No need since use gcc instead of clang
+# include $(YSYX_HOME)/init-deps/always-install-llvm.mk
+# include $(YSYX_HOME)/init-deps/fix-am.mk
 
 # update-alternatives.mk:
 # $(info $(shell ls /usr/bin | grep clang))

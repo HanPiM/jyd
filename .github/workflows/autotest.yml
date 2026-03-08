@@ -181,7 +181,6 @@ jobs:
           fi
           echo "Downloading mill with version $MILL_VERSION"
           sh -c "curl -L https://github.com/com-lihaoyi/mill/releases/download/$MILL_VERSION/$MILL_VERSION > ~/.local/bin/mill && chmod +x ~/.local/bin/mill"
-          mill --version
 
       - name: Get ysyxSoC tag
         id: soc-tag

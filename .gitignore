@@ -1,11 +1,12 @@
-*.*
-*
-!*/
+# *.*
+# *
+# !*/
 
 # like .vscode .ccache
 \.*/
 
-compile_commands.json
+!.github
+!.github/*
 
 !*.sh
 !/nemu/*

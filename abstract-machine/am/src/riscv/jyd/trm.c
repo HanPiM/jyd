@@ -11,8 +11,8 @@ Area heap = RANGE(&_heap_start, &_heap_end);
 static const char mainargs[MAINARGS_MAX_LEN] =
     TOSTRING(MAINARGS_PLACEHOLDER); // defined in CFLAGS
 
-// TODO: use real serial port address
-#define SERIAL_PORT 0x10000000
+extern char _my_ext_serial_port;
+#define SERIAL_PORT ((uintptr_t)(&_my_ext_serial_port))
 
 void putch(char ch) { *(uint8_t *)(SERIAL_PORT + 0x00) = ch; }
 // unsupported now, just return 0xff to indicate no char available

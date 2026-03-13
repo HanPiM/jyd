@@ -5,8 +5,15 @@
 
 #include "../sim.hpp"
 
+#include "mregion.hpp"
+
+#include "socmem.hpp"
+
+// impl by currently using SoC
+mem_region_group_t& get_mem_regions();
+void mem_init(void* img, const sim_config& cfg);
+
 uint8_t* mem_guest_to_host(uint32_t addr);
 bool read_guest_mem(uint32_t addr, uint32_t *data);
 bool write_guest_mem(uint32_t addr, uint32_t data);
 
-void mem_init(void* img, const sim_config& cfg);

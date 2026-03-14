@@ -12,8 +12,8 @@ import busfsm._
 
 import chisel3.util.circt.dpi._
 
-class WriteBackInfo extends Bundle {
-  val gpr = GPRegReqIO.TX.Write
+class WriteBackInfo(implicit p:CPUParameters) extends Bundle {
+  val gpr = GPRegReqIO.WriteTX
 
   val csr           = CSRegReqIO.TX.Write
   val csr_ecallflag = Bool()
@@ -28,7 +28,7 @@ class WriteBackInfo extends Bundle {
 }
 
 object ExtractFwdInfoFromWrBack {
-  def apply(info: DecoupledIO[WriteBackInfo]): WrBackForwardInfo = {
+  def apply(info: DecoupledIO[WriteBackInfo])(implicit p:CPUParameters): WrBackForwardInfo = {
     val wrBack = info.bits
 
     val out = Wire(new WrBackForwardInfo)
@@ -40,10 +40,10 @@ object ExtractFwdInfoFromWrBack {
   }
 }
 
-class WBU extends Module {
+class WBU(implicit p:CPUParameters) extends Module {
   val io = IO(new Bundle {
     val in       = Flipped(Decoupled(new WriteBackInfo))
-    val gpr      = GPRegReqIO.TX.Write
+    val gpr      = GPRegReqIO.WriteTX
     val csr      = CSRegReqIO.TX.Write
     val is_ecall = Output(Bool())
     val done     = Output(Bool())

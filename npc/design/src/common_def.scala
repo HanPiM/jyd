@@ -42,19 +42,29 @@ object AddrSpace {
   def inRng(addr: UInt, rng: (UInt, UInt)): Bool = {
     (addr >= rng._1) && (addr < rng._2)
   }
+
+  def needSkipDifftestGroup = Seq(
+    SERIAL,SPI,CLINT,VGA,PS2
+  )
+}
+
+case class CPUParameters(
+  gprAddrWidth: Int = 4,
+  skipDifftestAddrs: Seq[(UInt, UInt)] = AddrSpace.needSkipDifftestGroup
+) {
+  def GPRAddr = UInt(gprAddrWidth.W)
+  def GPRNum  = 1 << gprAddrWidth
 }
 
 object Types {
   object BitWidth {
-    // N_REG = 16
-    val reg_addr = 4
     val csr_addr = 12
     val word     = 32
 
     val inst_id = if (Config.genStageLog) 32 else 0
   }
   def UWord = UInt(BitWidth.word.W)
-  def RegAddr = UInt(BitWidth.reg_addr.W)
+  // def RegAddr = UInt(BitWidth.reg_addr.W)
 
   def InstID = UInt(BitWidth.inst_id.W)
 
@@ -105,11 +115,11 @@ class InstMetaInfo extends Bundle {
   val typ = InstType()
 }
 
-class DecodedInstInfo extends InstMetaInfo with HasRs {
+class DecodedInstInfo(implicit p : CPUParameters) extends InstMetaInfo with HasRs {
   val imm = Types.UWord
-  val rd  = Types.RegAddr
-  val rs1 = Types.RegAddr
-  val rs2 = Types.RegAddr
+  val rd  = p.GPRAddr
+  val rs1 = p.GPRAddr
+  val rs2 = p.GPRAddr
 
   val rdWrEn = Bool()
 
@@ -119,7 +129,7 @@ class DecodedInstInfo extends InstMetaInfo with HasRs {
   val snpc = Types.UWord
 }
 
-class DecodedInst extends Inst {
+class DecodedInst(implicit p : CPUParameters) extends Inst {
   val info = new DecodedInstInfo
 }
 

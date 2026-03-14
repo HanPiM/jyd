@@ -8,31 +8,31 @@ import dpiwrap._
 
 import Types.Ops._
 
-class MetaRegReqIO(addr_width: Int = Types.BitWidth.reg_addr, data_width: Int = Types.BitWidth.word) {
+class RegFileIO(AddrWidth: Int, data_width: Int = Types.BitWidth.word) {
 
-  def _AddrT = UInt(addr_width.W)
+  def _AddrT = UInt(AddrWidth.W)
   def _DataT = UInt(data_width.W)
 
-  class _VecReadRX(N: Int) extends Bundle {
-    require((1 << addr_width) >= N)
+  class VecReadIO(N: Int) extends Bundle {
+    require((1 << AddrWidth) >= N)
     // val en   = Input(Bool())
     val addr = Input(Vec(N, _AddrT))
     val data = Output(Vec(N, _DataT))
   }
-  class _SingleReadRX      extends Bundle {
+  class SingleReaIO       extends Bundle {
     val en   = Input(Bool())
     val addr = Input(_AddrT)
     val data = Output(_DataT)
   }
-  class _WriteRX           extends Bundle {
+  class WriteIO           extends Bundle {
     val en   = Input(Bool())
     val addr = Input(_AddrT)
     val data = Input(_DataT)
   }
   object RX {
-    def VecRead(N: Int) = new _VecReadRX(N)
-    def SingleRead = new _SingleReadRX()
-    def Write      = new _WriteRX()
+    def VecRead(N: Int) = new VecReadIO(N)
+    def SingleRead = new SingleReaIO()
+    def Write      = new WriteIO()
   }
   object TX {
     def VecRead(N: Int) = Flipped(RX.VecRead(N))
@@ -41,20 +41,32 @@ class MetaRegReqIO(addr_width: Int = Types.BitWidth.reg_addr, data_width: Int = 
   }
 }
 
-object GPRegReqIO extends MetaRegReqIO()
-object CSRegReqIO extends MetaRegReqIO(addr_width = Types.BitWidth.csr_addr)
+// object GPRegReqIO extends MetaRegReqIO(addr_width = Types.BitWidth.reg_addr)
 
-class GPRIO(N_RD: Int = 2) extends Bundle {
-  val read  = GPRegReqIO.RX.VecRead(N_RD)
-  val write = GPRegReqIO.RX.Write
+object GPRegReqIO {
+  def WriteTX(implicit p: CPUParameters) = new RegFileIO(p.gprAddrWidth).TX.Write
+  def ReadVecTX(N: Int)(implicit p: CPUParameters) = new RegFileIO(p.gprAddrWidth).TX.VecRead(N)
 }
 
-class RegisterFile(READ_PORTS: Int = 2) extends Module {
-  val N_REG = 1 << Types.BitWidth.reg_addr
+object CSRegReqIO extends RegFileIO(AddrWidth = Types.BitWidth.csr_addr)
 
+class GPRIO(
+  N_RD:         Int = 2
+)(
+  implicit cfg: CPUParameters)
+    extends Bundle {
+  val read  = new RegFileIO(cfg.gprAddrWidth).RX.VecRead(N_RD)
+  val write = new RegFileIO(cfg.gprAddrWidth).RX.Write
+}
+
+class RegisterFile(
+  READ_PORTS:   Int = 2
+)(
+  implicit cfg: CPUParameters)
+    extends Module {
   val io = IO(new GPRIO(READ_PORTS))
 
-  val reg = Reg(Vec(N_REG, Types.UWord))
+  val reg = Reg(Vec(cfg.GPRNum, Types.UWord))
 
   // val a0 = IO(Output(Types.UWord))
   // a0 := reg(10)

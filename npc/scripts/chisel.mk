@@ -5,8 +5,9 @@ $(info Detected CI environment, emit mill version file to make CI test mill vers
 $(shell echo '0.12.4' > ../../../.mill-version)
 endif
 
-$(shell mkdir -p $(CHISEL2V_EMIT_DIR))
-$(shell touch $(CHISEL2V_EMIT_DIR)/filelist.f)
+CHISEL2V_DEST_ISA_EMIT_DIR := $(CHISEL2V_EMIT_ROOT)/$(ARCH_ISA)
+$(shell mkdir -p $(CHISEL2V_DEST_ISA_EMIT_DIR))
+$(shell touch $(CHISEL2V_DEST_ISA_EMIT_DIR)/filelist.f)
 
 define rd_filelist_indir 
 $(addprefix $(1)/, $(shell cat $(1)/filelist.f))
@@ -41,13 +42,13 @@ CHISEL_DESIGN = design
 CHISEL_SRCS = $(shell find $(abspath $(CHISEL_DESIGN)) -name "*.scala")
 CHISEL_SRCS += build.mill
 
-VERILATOR_INCDIRS += $(shell find $(abspath $(CHISEL2V_EMIT_DIR)) -type d)
+VERILATOR_INCDIRS += $(shell find $(abspath $(CHISEL2V_DEST_ISA_EMIT_DIR)) -type d)
 
 # Core design verilog and some verification/dpic layer impl
-CHISEL_EMITED_VSRCS = $(call rd_filelist_indir, $(CHISEL2V_EMIT_DIR))
+CHISEL_EMITED_VSRCS = $(call rd_filelist_indir, $(CHISEL2V_DEST_ISA_EMIT_DIR))
 
 # Core design verilog only, remove layer impl
-CHISEL_EMITED_VSRCS_SYNTH = $(call rd_synth_filelist_indir, $(CHISEL2V_EMIT_DIR))
+CHISEL_EMITED_VSRCS_SYNTH = $(call rd_synth_filelist_indir, $(CHISEL2V_DEST_ISA_EMIT_DIR))
 
 # un synithesizable sources
 #
@@ -55,7 +56,7 @@ CHISEL_EMITED_VSRCS_SYNTH = $(call rd_synth_filelist_indir, $(CHISEL2V_EMIT_DIR)
 # 				Chisel generates these code into separate files with name like `layers-*` to
 # 				make core logic synthesizable and clean
 #
-CHISEL_EMITED_VSRCS_LAYER = $(shell find $(abspath $(CHISEL2V_EMIT_DIR)) -name "layers-*")
+CHISEL_EMITED_VSRCS_LAYER = $(shell find $(abspath $(CHISEL2V_DEST_ISA_EMIT_DIR)) -name "layers-*")
 
 $(CHISEL2V_DONE): $(CHISEL_SRCS)
 ifndef IN_LOCK
@@ -63,9 +64,9 @@ ifndef IN_LOCK
 else
 	$(call git_commit, "generate verilog")
 	@echo "# Removing old emitted verilog"
-	@rm -rf $(CHISEL2V_EMIT_DIR)/*
+	@rm -rf $(CHISEL2V_EMIT_ROOT)
 	@echo "# Emitting verilog with Mill"
-	$(MILL) -i $(CHISEL_DESIGN).runMain Elaborate --target-dir $(CHISEL2V_EMIT_DIR)
+	$(MILL) -i $(CHISEL_DESIGN).runMain Elaborate --target-dir $(CHISEL2V_EMIT_ROOT)
 	@touch $(CHISEL2V_DONE)
 endif
 

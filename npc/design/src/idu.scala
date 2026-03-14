@@ -48,15 +48,24 @@ class InstInfoDecoder extends Module {
   io.out   := MuxLookup(opcu, dontcare)(lut)
 }
 
-class WrBackForwardInfo extends Bundle {
-  val addr      = Types.RegAddr
+class WrBackForwardInfo(
+  implicit p: CPUParameters)
+    extends Bundle {
+  val addr      = p.GPRAddr
   val enWr      = Bool()
   val dataVaild = Bool()
   val data      = Types.UWord
 }
 
 object WrBackForwardInfo {
-  def apply(infoValid: Bool, dinstInfo: DecodedInst, dataVaild: Bool, data: UInt): WrBackForwardInfo = {
+  def apply(
+    infoValid:  Bool,
+    dinstInfo:  DecodedInst,
+    dataVaild:  Bool,
+    data:       UInt
+  )(
+    implicit p: CPUParameters
+  ): WrBackForwardInfo = {
     val res = Wire(new WrBackForwardInfo)
     res.addr      := dinstInfo.info.rd
     res.enWr      := dinstInfo.info.rdWrEn && infoValid
@@ -64,27 +73,41 @@ object WrBackForwardInfo {
     res.data      := data
     res
   }
-  def apply(dinst: DecoupledIO[DecodedInst], dataVaild: Bool, data: UInt):         WrBackForwardInfo = {
+  def apply(
+    dinst:      DecoupledIO[DecodedInst],
+    dataVaild:  Bool,
+    data:       UInt
+  )(
+    implicit p: CPUParameters
+  ): WrBackForwardInfo = {
     apply(dinst.valid, dinst.bits, dataVaild, data)
   }
-  def apply(dinst: DecoupledIO[DecodedInst]):                                      WrBackForwardInfo = {
+  def apply(
+    dinst:      DecoupledIO[DecodedInst]
+  )(
+    implicit p: CPUParameters
+  ): WrBackForwardInfo = {
     val foo = Wire(Types.UWord)
     foo := DontCare
     apply(dinst, false.B, foo)
   }
 }
 
-class WrBackInfoGroup extends Bundle {
+class WrBackInfoGroup(
+  implicit p: CPUParameters)
+    extends Bundle {
   val exus1 = new WrBackForwardInfo
   val exus2 = new WrBackForwardInfo
   val lsu   = new WrBackForwardInfo
   val wbu   = new WrBackForwardInfo
 }
 
-class ByPassMux extends Module {
+class ByPassMux(
+  implicit p: CPUParameters)
+    extends Module {
   val io = IO(new Bundle {
-    val rs1      = Input(Types.RegAddr)
-    val rs2      = Input(Types.RegAddr)
+    val rs1      = Input(p.GPRAddr)
+    val rs2      = Input(p.GPRAddr)
     val regData1 = Input(Types.UWord)
     val regData2 = Input(Types.UWord)
 
@@ -161,10 +184,12 @@ class ByPassMux extends Module {
   io.needStall := needStall
 }
 
-class IDU extends Module {
+class IDU(
+  implicit p: CPUParameters)
+    extends Module {
   val io = IO(new Bundle {
     val in   = Flipped(Decoupled(new Inst))
-    val rvec = GPRegReqIO.TX.VecRead(2)
+    val rvec = GPRegReqIO.ReadVecTX(2)
 
     val flush = Input(Bool())
 

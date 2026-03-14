@@ -1,6 +1,6 @@
 # testsoc
 
-SOC_HOME = $(BUILD_DIR)/testsoc
+SOC_HOME = $(CHISEL2V_EMIT_ROOT)/testsoc/$(ARCH_PLATFORM)
 $(shell mkdir -p $(SOC_HOME))
 $(shell touch $(SOC_HOME)/filelist.f)
 

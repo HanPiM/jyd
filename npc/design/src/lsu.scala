@@ -8,10 +8,11 @@ import chisel3.util.circt.dpi._
 import axi4._
 
 import dpiwrap._
-import regfile.GPRegReqIO
 import dpiwrap.ClockedCallVoidDPIC
 
-class LSUInput extends Bundle {
+class LSUInput(
+  implicit p: CPUParameters)
+    extends Bundle {
   val isLoad       = Bool()
   val isStore      = Bool()
   val destAddr     = Types.UWord
@@ -21,7 +22,11 @@ class LSUInput extends Bundle {
 }
 
 object ExtractFwdInfoFromLSU {
-  def apply(info: DecoupledIO[LSUInput]): WrBackForwardInfo = {
+  def apply(
+    info:       DecoupledIO[LSUInput]
+  )(
+    implicit p: CPUParameters
+  ): WrBackForwardInfo = {
     val wrBack = info.bits.exuWriteBack
 
     val out = Wire(new WrBackForwardInfo)
@@ -46,7 +51,9 @@ object ExtractFwdInfoFromLSU {
 //   }
 // }
 
-class LSUIO extends Bundle {
+class LSUIO(
+  implicit p: CPUParameters)
+    extends Bundle {
   val mem = AXI4IO.Master
 
   val mcycle64 = Input(UInt(64.W))
@@ -55,7 +62,9 @@ class LSUIO extends Bundle {
   val out = Decoupled(new WriteBackInfo)
 }
 
-class LSU extends Module {
+class LSU(
+  implicit p: CPUParameters)
+    extends Module {
   val io = IO(new LSUIO)
 
   object State extends ChiselEnum {
@@ -313,48 +322,53 @@ class LSU extends Module {
 }
 
 class LSUInputForDifftest extends Bundle {
-  val isLoad       = Bool()
-  val isStore      = Bool()
-  val destAddr     = Types.UWord
-  val pc           = Types.UWord
-  val nxtPC       = Types.UWord
-  val isEBreak    = Bool()
+  val isLoad   = Bool()
+  val isStore  = Bool()
+  val destAddr = Types.UWord
+  val pc       = Types.UWord
+  val nxtPC    = Types.UWord
+  val isEBreak = Bool()
 }
 
-class LSUForDifftest extends Module {
+class LSUForDifftest(
+  implicit p: CPUParameters)
+    extends Module {
   val io = IO(new Bundle {
     val in = Flipped(Decoupled(new LSUInputForDifftest))
 
     val actualLSU = new Bundle {
-      val inReady = Input(Bool())
+      val inReady  = Input(Bool())
       val outValid = Input(Bool())
     }
 
     val out = Decoupled(new DifftestWriteBackInfo)
   })
 
-  io.in.ready := io.actualLSU.inReady
+  io.in.ready  := io.actualLSU.inReady
   io.out.valid := io.actualLSU.outValid
 
-  val memAddr = io.in.bits.destAddr
-  val isSerialAddr = AddrSpace.inRng(memAddr, AddrSpace.SERIAL)
-  val isSPIAddr    = AddrSpace.inRng(memAddr, AddrSpace.SPI)
-  val isClintAddr  = AddrSpace.inRng(memAddr, AddrSpace.CLINT)
-  val isVGAAddr    = AddrSpace.inRng(memAddr, AddrSpace.VGA)
-  val isPS2Addr    = AddrSpace.inRng(memAddr, AddrSpace.PS2)
+  val memAddr     = io.in.bits.destAddr
+  // val isSerialAddr = AddrSpace.inRng(memAddr, AddrSpace.SERIAL)
+  // val isSPIAddr    = AddrSpace.inRng(memAddr, AddrSpace.SPI)
+  val isClintAddr = AddrSpace.inRng(memAddr, AddrSpace.CLINT)
+  // val isVGAAddr    = AddrSpace.inRng(memAddr, AddrSpace.VGA)
+  // val isPS2Addr    = AddrSpace.inRng(memAddr, AddrSpace.PS2)
 
-  val isLoadOp = io.in.bits.isLoad && io.in.valid
-  val isStore  = io.in.bits.isStore && io.in.valid
+  val isLoadOp  = io.in.bits.isLoad && io.in.valid
+  val isStore   = io.in.bits.isStore && io.in.valid
   val isMemLoad = isLoadOp && (!isClintAddr)
-  val isMemOp = isMemLoad || isStore
+  val isMemOp   = isMemLoad || isStore
 
+  val inSkipRng = p.skipDifftestAddrs.map(addr => AddrSpace.inRng(memAddr, addr)).reduce(_ || _)
   val needSkipDifftest =
-    (isMemOp && (isSerialAddr || isSPIAddr || isClintAddr || isVGAAddr || isPS2Addr)) || (isLoadOp && isClintAddr)
+    (isMemOp && inSkipRng) || (isLoadOp && isClintAddr)
+
+  // val needSkipDifftest =
+  //   (isMemOp && (isSerialAddr || isSPIAddr || isClintAddr || isVGAAddr || isPS2Addr)) || (isLoadOp && isClintAddr)
 
   val outInfo = io.out.bits
-  outInfo.pc := io.in.bits.pc
+  outInfo.pc          := io.in.bits.pc
   outInfo.needSkipRef := needSkipDifftest
-  outInfo.isEBreak := io.in.bits.isEBreak
-  outInfo.nxtPC := io.in.bits.nxtPC
+  outInfo.isEBreak    := io.in.bits.isEBreak
+  outInfo.nxtPC       := io.in.bits.nxtPC
 }
-

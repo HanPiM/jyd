@@ -9,11 +9,12 @@ SIM_BIN_DIR = $(BUILD_DIR)/bin
 COMMIT_HASH = $(shell git rev-parse HEAD)
 CXXFLAGS += -DGIT_COMMIT_HASH=$(COMMIT_HASH)
 
-ifeq ($(ARCH), riscv32e-ysyxsoc)
-SIM_ARCH_SUFFIX = _soc
-else
-SIM_ARCH_SUFFIX = _npc
-endif
+ARCH ?= riscv32e-foo
+
+ARCH_PLATFORM = $(lastword $(subst -, ,$(ARCH)))
+ARCH_ISA = $(firstword $(subst -, ,$(ARCH)))
+
+CXXFLAGS += -DSIM_ARCH_$(shell echo $(ARCH_PLATFORM) | tr a-z A-Z)
 
 SIM_VSRCS =
 
@@ -26,11 +27,13 @@ else
 TOP_NAME = TestSoC
 endif
 
-SIM_BIN = $(SIM_BIN_DIR)/$(TOP_NAME)$(SIM_ARCH_SUFFIX)$(VSIM_OPT)
+SIM_BIN = $(SIM_BIN_DIR)/$(TOP_NAME)-$(ARCH_PLATFORM)$(VSIM_OPT)
 default: $(SIM_BIN)
 
+CHISEL2V_EMIT_ROOT = $(BUILD_DIR)/gened/verilog
+
 ifeq ($(ARCH), riscv32e-ysyxsoc)
-include ./scripts/soc.mk
+include ./scripts/ysyxsoc.mk
 else
 include ./scripts/mytestsoc.mk
 endif
@@ -41,7 +44,6 @@ IMG ?=
 
 SAN_FLAGS?= #-fsanitize=address
 
-
 # Performance counter need VPI to fetch handshake signals
 ENABLE_VPI ?= 1
 
@@ -51,14 +53,11 @@ endif
 
 # Dependencies for sim
 include ./scripts/deplibs.mk
+include ./scripts/chisel.mk
 
 VERILATOR_FLAGS += --trace-fst --trace-structs
 
-CHISEL2V_EMIT_DIR = $(BUILD_DIR)/gened/verilog
-
-include ./scripts/chisel.mk
-
-V2CXX_EMIT_DIR = $(BUILD_DIR)/gened/cxx$(SIM_ARCH_SUFFIX)
+V2CXX_EMIT_DIR = $(BUILD_DIR)/gened/cxx/$(ARCH_PLATFORM)
 
 CORE_VSRCS = $(CHISEL_EMITED_VSRCS)
 SYNTH_VSRCS = $(CHISEL_EMITED_VSRCS_SYNTH)

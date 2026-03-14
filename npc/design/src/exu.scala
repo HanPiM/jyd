@@ -8,7 +8,7 @@ import regfile._
 import cpu.alu._
 import axi4._
 
-class EXUStageCalcOut extends Bundle {
+class EXUStageCalcOut(implicit p:CPUParameters) extends Bundle {
   val aluOut = Types.UWord
 
   val isTypSys = Bool()
@@ -30,7 +30,7 @@ class EXUStageCalcOut extends Bundle {
   val gprWeEn = Bool()
 }
 
-class EXUStageCalc extends Module {
+class EXUStageCalc(implicit p:CPUParameters) extends Module {
   val io = IO(new Bundle {
     val in       = Flipped(Decoupled(new DecodedInst))
     val csr_rvec = CSRegReqIO.TX.SingleRead
@@ -156,7 +156,7 @@ class EXUStageCalc extends Module {
   io.out.bits.takeBranch := Mux(func3t(0), ~branchCalc, branchCalc)
 }
 
-class EXUStageChooseNxt extends Module {
+class EXUStageChooseNxt(implicit p:CPUParameters) extends Module {
   val io = IO(new Bundle {
     val in        = Flipped(Decoupled(new EXUStageCalcOut))
     val jmpHappen = Output(Bool())
@@ -265,7 +265,7 @@ class EXUStageChooseNxt extends Module {
   dontTouch(dbgIsCSRJmp)
 }
 
-class EXU extends Module {
+class EXU(implicit p:CPUParameters) extends Module {
   val io = IO(new Bundle {
     val in        = Flipped(Decoupled(new DecodedInst))
     val csr_rvec  = CSRegReqIO.TX.SingleRead
@@ -319,7 +319,7 @@ class EXU extends Module {
 
 }
 
-class EXUForDifftest extends Module {
+class EXUForDifftest(implicit p:CPUParameters) extends Module {
   val io = IO(new Bundle {
     val in     = Flipped(Decoupled(new DecodedInst))
     val actual = new Bundle {

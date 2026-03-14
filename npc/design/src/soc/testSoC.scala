@@ -7,8 +7,6 @@ import axi4._
 import xbar._
 import uart._
 
-import mem._
-
 import top.{CPUCoreAsBlackBox, PCProviderAsBlackBox}
 
 trait TestSoCDevice extends Module {

@@ -43,7 +43,7 @@ jobs:
           git config --global user.email "ci@ysyx.org"
           git config --global user.name "ysyx-ci"
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
@@ -118,30 +118,8 @@ jobs:
             false
           fi
 
-      - name: Cache oss-cad-suite
-        id: oss-cad-suite-cache
-        uses: actions/cache@v4
-        with:
-          path: oss-cad-suite
-          key: ${{ runner.os }}-oss-cad-suite-${{ env.OSS_CAD_SUITE_RELEASE_TAG }}
-
-      - name: Download oss-cad-suite
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-        if: steps.oss-cad-suite-cache.outputs.cache-hit != 'true'
-        run: |
-          TAG=${{ env.OSS_CAD_SUITE_RELEASE_TAG }}
-          echo "oss-cad-suite cache missed. Downloading and extracting release $TAG"
-          ASSET_NAME=$(gh release view $TAG --repo YosysHQ/oss-cad-suite-build --json assets --jq ".assets[] | select(.name | contains(\"linux-x64\")) | .name")
-          gh release download $TAG --repo YosysHQ/oss-cad-suite-build --pattern "$ASSET_NAME"
-          tar xf $ASSET_NAME
-
       - name: Setup tools
         run: |
-          OSS_CAD_SUITE_BIN_PATH=`pwd`/oss-cad-suite/bin
-          echo "PATH=$PATH:$OSS_CAD_SUITE_BIN_PATH" >> $GITHUB_ENV
-
           mkdir -p ~/.local/bin
           MILL_VERSION=0.11.13
           if [[ -e $YSYX_HOME/npc/.mill-version ]]; then
@@ -158,7 +136,7 @@ jobs:
 
       - name: Cache ysyxSoC verilog
         id: soc-verilog-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ysyxSoC-verilog
           key: ${{ runner.os }}-soc-verilog-${{ steps.check-stuid.outputs.STUID }}-${{ steps.soc-tag.outputs.tag }}-${{ hashFiles('patch/ysyxSoC/*') }}
@@ -166,7 +144,7 @@ jobs:
       - name: Cache inited ysyxSoC
         id: soc-cache
         if: steps.soc-verilog-cache.outputs.cache-hit != 'true'
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ysyxSoC-inited
           key: ${{ runner.os }}-soc-inited-${{ steps.soc-tag.outputs.tag }}
@@ -271,7 +249,7 @@ jobs:
           fi
 
       - name: Upload verilog file
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: verilog
           path: ${{ steps.vfilename.outputs.VFILE }}
@@ -289,7 +267,7 @@ jobs:
             --exclude="$BASENAME/ysyxSoC-verilog" \
             $BASENAME
       - name: Upload workbench
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: workbench
           path: /tmp/artifact-upload/
@@ -299,7 +277,7 @@ jobs:
     needs: setup
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
@@ -318,7 +296,7 @@ jobs:
     needs: setup
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
@@ -337,7 +315,7 @@ jobs:
     needs: setup
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
@@ -357,7 +335,7 @@ jobs:
     needs: setup
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
@@ -377,7 +355,7 @@ jobs:
     needs: setup
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
@@ -396,7 +374,7 @@ jobs:
     needs: setup
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
@@ -420,7 +398,7 @@ jobs:
     needs: setup
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
@@ -446,7 +424,7 @@ jobs:
     needs: setup
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
@@ -501,13 +479,13 @@ jobs:
           echo "AREA=$AREA" >> $GITHUB_ENV
 
       - name: Upload STA result
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: sta-result
           path: yosys-sta/result/ysyx_${{ needs.setup.outputs.STUID }}-500MHz
 
       - name: Upload netlist file
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: netlist
           path: yosys-sta/result/ysyx_${{ needs.setup.outputs.STUID }}-500MHz/ysyx_${{ needs.setup.outputs.STUID }}.netlist.fixed.v
@@ -516,7 +494,7 @@ jobs:
     needs: [setup, yosys-sta]
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
@@ -527,7 +505,7 @@ jobs:
           MAKEFLAGS: ${{ needs.setup.outputs.MAKEFLAGS }}
 
       - name: Download verilog file
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v6
         with:
           name: netlist
 

@@ -1,5 +1,5 @@
-include $(AM_HOME)/scripts/isa/riscv.mk
-include $(AM_HOME)/scripts/platform/jyd.mk
+include $(JYD_AM_HOME)/scripts/isa/riscv.mk
+include $(JYD_AM_HOME)/scripts/platform/jyd.mk
 COMMON_CFLAGS += -march=rv32i_zicsr_zifencei -mabi=ilp32  # overwrite
 LDFLAGS       += -melf32lriscv                    # overwrite
 

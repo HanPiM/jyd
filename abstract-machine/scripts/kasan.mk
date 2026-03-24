@@ -1,5 +1,5 @@
-CFLAGS += -I$(AM_HOME)/kasan/
-CFLAGS += -DKASAN_MEM_H=\"$(AM_HOME)/kasan/common.h\"
+CFLAGS += -I$(JYD_AM_HOME)/kasan/
+CFLAGS += -DKASAN_MEM_H=\"$(JYD_AM_HOME)/kasan/common.h\"
 
 KASAN_CC_FLAGS :=
 KASAN_CC_FLAGS += -DKASAN_ENABLED

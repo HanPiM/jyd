@@ -17,7 +17,7 @@ NAME  = $(GUEST_ISA)-qemu
 SRCS  = $(shell find src/ -name "*.c")
 
 SHARE = 1
-CFLAGS += -DNEMU_HOME=\"$(NEMU_HOME)\" -DCONFIG_ISA_$(GUEST_ISA)
-INC_PATH += $(NEMU_HOME)/include
+CFLAGS += -DJYD_NEMU_HOME=\"$(JYD_NEMU_HOME)\" -DCONFIG_ISA_$(GUEST_ISA)
+INC_PATH += $(JYD_NEMU_HOME)/include
 
-include $(NEMU_HOME)/scripts/build.mk
+include $(JYD_NEMU_HOME)/scripts/build.mk

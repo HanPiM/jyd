@@ -20,4 +20,4 @@ SRCS += $(shell find . -name '*.c')
 
 IS_BUILDKASAN = 1
 
-include $(AM_HOME)/Makefile
+include $(JYD_AM_HOME)/Makefile

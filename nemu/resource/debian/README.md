@@ -108,7 +108,7 @@ cmd=(
 # compile and run x86-nemu
   "ls /root/nemu"
   "cp -r /root/nemu $TMP_DIR"
-  "export NEMU_HOME=$TMP_DIR/nemu"
+  "export JYD_NEMU_HOME=$TMP_DIR/nemu"
   "make -C $TMP_DIR/nemu ISA=x86"
   "ls -lh /root/nemu-prog"
   "file /root/nemu-prog/amtest-x86-nemu.elf"

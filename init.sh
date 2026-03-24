@@ -42,10 +42,10 @@ function init() {
 
 case $1 in
   nemu)
-    init NJU-ProjectN/nemu ics2024 nemu true NEMU_HOME
+    init NJU-ProjectN/nemu ics2024 nemu true JYD_NEMU_HOME
     ;;
   abstract-machine)
-    init NJU-ProjectN/abstract-machine ics2024 abstract-machine true AM_HOME
+    init NJU-ProjectN/abstract-machine ics2024 abstract-machine true JYD_AM_HOME
     init NJU-ProjectN/fceux-am ics2021 fceux-am false
     ;;
   am-kernels)
@@ -65,11 +65,11 @@ case $1 in
       echo "chisel repo is already initialized, skipping..."
     else
       rm -rf npc
-      init OSCPU/chisel-playground master npc true NPC_HOME
+      init OSCPU/chisel-playground master npc true JYD_NPC_HOME
     fi
     ;;
   npc)
-    addenv NPC_HOME npc
+    addenv JYD_NPC_HOME npc
     ;;
   *)
     echo "Invalid input..."

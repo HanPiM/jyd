@@ -1,7 +1,7 @@
-include $(AM_HOME)/scripts/isa/riscv.mk
-include $(AM_HOME)/scripts/platform/nemu.mk
+include $(JYD_AM_HOME)/scripts/isa/riscv.mk
+include $(JYD_AM_HOME)/scripts/platform/nemu.mk
 
-export PATH := $(PATH):$(abspath $(AM_HOME)/tools/minirv)
+export PATH := $(PATH):$(abspath $(JYD_AM_HOME)/tools/minirv)
 CC = minirv-gcc
 AS = minirv-gcc
 CXX = minirv-g++

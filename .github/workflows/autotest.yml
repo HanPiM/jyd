@@ -75,16 +75,16 @@ jobs:
         id: set-env
         run: |
           cd $YSYX_HOME
-          NEMU_HOME="`pwd`/nemu"
-          AM_HOME="`pwd`/abstract-machine"
+          JYD_NEMU_HOME="`pwd`/nemu"
+          JYD_AM_HOME="`pwd`/abstract-machine"
           NAVY_HOME="`pwd`/navy-apps"
-          NPC_HOME="`pwd`/npc"
+          JYD_NPC_HOME="`pwd`/npc"
           NVBOARD_HOME="`pwd`/nvboard"
 
-          echo "NEMU_HOME=$NEMU_HOME" >> $GITHUB_ENV
-          echo "AM_HOME=$AM_HOME" >> $GITHUB_ENV
+          echo "JYD_NEMU_HOME=$JYD_NEMU_HOME" >> $GITHUB_ENV
+          echo "JYD_AM_HOME=$JYD_AM_HOME" >> $GITHUB_ENV
           echo "NAVY_HOME=$NAVY_HOME" >> $GITHUB_ENV
-          echo "NPC_HOME=$NPC_HOME" >> $GITHUB_ENV
+          echo "JYD_NPC_HOME=$JYD_NPC_HOME" >> $GITHUB_ENV
           echo "NVBOARD_HOME=$NVBOARD_HOME" >> $GITHUB_ENV
 
           MAKEFLAGS="-j`nproc`"
@@ -93,15 +93,15 @@ jobs:
 
       - name: Check the version of AM
         run: |
-          if [[ ! -e $AM_HOME/tools/insert-arg.py ]] ; then
+          if [[ ! -e $JYD_AM_HOME/tools/insert-arg.py ]] ; then
             URL="https://github.com/NJU-ProjectN/abstract-machine/commit/c52a41181f8ea5d0e970008e51f58867a3ce65bb"
-            echo "$AM_HOME/tools/insert-arg.py does not exist. Abort."
+            echo "$JYD_AM_HOME/tools/insert-arg.py does not exist. Abort."
             echo "You may use AM with the version older than May, 2024."
             echo "Please refer to $URL to apply the patch to AM. After that, the CI flow can insert mainargs to the binary by the python script."
             false
           fi
 
-          sed -i -e 's/MAINARGS_PLACEHOLDER = .*/MAINARGS_PLACEHOLDER = the_insert-arg_rule_in_Makefile_will_insert_mainargs_here/' $AM_HOME/scripts/platform/npc.mk
+          sed -i -e 's/MAINARGS_PLACEHOLDER = .*/MAINARGS_PLACEHOLDER = the_insert-arg_rule_in_Makefile_will_insert_mainargs_here/' $JYD_AM_HOME/scripts/platform/npc.mk
 
       - name: Disable git tracer
         run: |
@@ -182,21 +182,21 @@ jobs:
 
       - name: Clean up
         run: |
-          make -C $NEMU_HOME clean
-          make -C $AM_HOME clean-all
-          make -C $NPC_HOME clean
+          make -C $JYD_NEMU_HOME clean
+          make -C $JYD_AM_HOME clean-all
+          make -C $JYD_NPC_HOME clean
 
         # TODO: 考虑优化使用 Chisel 的学员生成 verilog 的流程
       - name: Generate verilog for NPC
         run: |
-          touch $NPC_HOME/.timestamp
-          make -C $NPC_HOME verilog
+          touch $JYD_NPC_HOME/.timestamp
+          make -C $JYD_NPC_HOME verilog
 
       - name: Check verilog file name
         id: vfilename
         run: |
-          FILE_SV=$NPC_HOME/build/ysyx_$STUID.sv
-          FILE_V=$NPC_HOME/build/ysyx_$STUID.v
+          FILE_SV=$JYD_NPC_HOME/build/ysyx_$STUID.sv
+          FILE_V=$JYD_NPC_HOME/build/ysyx_$STUID.v
           if [[ -f $FILE_SV ]]; then
             echo "Find $FILE_SV"
             VFILE=$FILE_SV
@@ -208,7 +208,7 @@ jobs:
             false
           fi
 
-          if [[ $NPC_HOME/.timestamp -nt $VFILE ]]; then
+          if [[ $JYD_NPC_HOME/.timestamp -nt $VFILE ]]; then
             echo "$VFILE is older than .timestamp. Abort."
             false
           fi
@@ -414,11 +414,11 @@ jobs:
 
       - name: run microbench with iverilog
         run: |
-          make -C $NPC_HOME clean
+          make -C $JYD_NPC_HOME clean
           KEY=$(head -c 5 /dev/urandom | base32)
           IMG=$YSYX_HOME/am-kernels/benchmarks/microbench/build/microbench-riscv32e-npc.bin
-          python $AM_HOME/tools/insert-arg.py $IMG 64 the_insert-arg_rule_in_Makefile_will_insert_mainargs_here $KEY
-          python $MONITOR_PY --good=$KEY make -C $NPC_HOME sim-iverilog IMG=$IMG
+          python $JYD_AM_HOME/tools/insert-arg.py $IMG 64 the_insert-arg_rule_in_Makefile_will_insert_mainargs_here $KEY
+          python $MONITOR_PY --good=$KEY make -C $JYD_NPC_HOME sim-iverilog IMG=$IMG
 
   yosys-sta:
     needs: setup
@@ -448,7 +448,7 @@ jobs:
 
       - name: Generate Verilog
         run: |
-          make -C $NPC_HOME verilog
+          make -C $JYD_NPC_HOME verilog
 
       - name: Set environment variables
         run: |
@@ -522,10 +522,10 @@ jobs:
 
       - name: run microbench with iverilog netlist
         run: |
-          make -C $NPC_HOME clean
+          make -C $JYD_NPC_HOME clean
           NETLIST=`pwd`/ysyx_${{ needs.setup.outputs.STUID }}.netlist.fixed.v
           CELLS=`pwd`/yosys-sta/pdk/nangate45/sim/cells.v
           KEY=$(head -c 5 /dev/urandom | base32)
           IMG=$YSYX_HOME/am-kernels/benchmarks/microbench/build/microbench-riscv32e-npc.bin
-          python $AM_HOME/tools/insert-arg.py $IMG 64 the_insert-arg_rule_in_Makefile_will_insert_mainargs_here $KEY
-          python $MONITOR_PY --good=$KEY make -C $NPC_HOME sim-iverilog-netlist IMG=$IMG NETLIST=$NETLIST CELLS=$CELLS
+          python $JYD_AM_HOME/tools/insert-arg.py $IMG 64 the_insert-arg_rule_in_Makefile_will_insert_mainargs_here $KEY
+          python $MONITOR_PY --good=$KEY make -C $JYD_NPC_HOME sim-iverilog-netlist IMG=$IMG NETLIST=$NETLIST CELLS=$CELLS

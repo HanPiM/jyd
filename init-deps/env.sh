@@ -12,8 +12,8 @@ echo "Setting up environment variables for the project..."
 
 YXYX_HOME=$(realpath $ROOT_PATH/ysyx-workbench)
 
-export AM_HOME=$YXYX_HOME/abstract-machine
-export NEMU_HOME=$YXYX_HOME/nemu
-export NPC_HOME=$YXYX_HOME/npc
+export JYD_AM_HOME=$YXYX_HOME/abstract-machine
+export JYD_NEMU_HOME=$YXYX_HOME/nemu
+export JYD_NPC_HOME=$YXYX_HOME/npc
 export SOC_HOME=$YXYX_HOME/ysyxSoC
 export NVBOARD_HOME=$YXYX_HOME/nvboard

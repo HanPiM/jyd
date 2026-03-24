@@ -1,3 +1,3 @@
 NAME = klib
 SRCS = $(shell find src/ -name "*.c")
-include $(AM_HOME)/Makefile
+include $(JYD_AM_HOME)/Makefile

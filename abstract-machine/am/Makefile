@@ -1,7 +1,7 @@
 NAME     := am
 SRCS      = $(addprefix src/, $(AM_SRCS))
-INC_PATH += $(AM_HOME)/am/src
+INC_PATH += $(JYD_AM_HOME)/am/src
 
 CFLAGS += -g
 
-include $(AM_HOME)/Makefile
+include $(JYD_AM_HOME)/Makefile

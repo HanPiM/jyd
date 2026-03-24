@@ -11,7 +11,7 @@ AM_SRCS := riscv/jyd/start.S \
 CFLAGS += -g
 
 CFLAGS    += -fdata-sections -ffunction-sections
-LDSCRIPTS += $(AM_HOME)/am/src/riscv/jyd/linker.ld
+LDSCRIPTS += $(JYD_AM_HOME)/am/src/riscv/jyd/linker.ld
 LDFLAGS   += --gc-sections -e _start
 
 MAINARGS_MAX_LEN = 64
@@ -19,7 +19,7 @@ MAINARGS_PLACEHOLDER = the_insert-arg_rule_in_Makefile_will_insert_mainargs_here
 CFLAGS += -DMAINARGS_MAX_LEN=$(MAINARGS_MAX_LEN) -DMAINARGS_PLACEHOLDER=$(MAINARGS_PLACEHOLDER)
 
 insert-arg: image
-	@python $(AM_HOME)/tools/insert-arg.py $(IMAGE).bin $(MAINARGS_MAX_LEN) $(MAINARGS_PLACEHOLDER) "$(mainargs)"
+	@python $(JYD_AM_HOME)/tools/insert-arg.py $(IMAGE).bin $(MAINARGS_MAX_LEN) $(MAINARGS_PLACEHOLDER) "$(mainargs)"
 
 IMG_DATA_COE = $(IMAGE_REL).data.coe
 
@@ -42,6 +42,6 @@ image: image-dep
 	@sed -i '$$s/,/;/' $(IMG_DATA_COE)
 
 run: insert-arg
-	@$(MAKE) -C $(NPC_HOME) sim ARGS='-b' IMG=$(IMAGE).bin
+	@$(MAKE) -C $(JYD_NPC_HOME) sim ARGS='-b' IMG=$(IMAGE).bin
 
 .PHONY: insert-arg

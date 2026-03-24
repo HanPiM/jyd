@@ -19,13 +19,13 @@ ifeq ($(findstring $(MAKECMDGOALS),clean|clean-all|html),)
 ### Print build info message
 $(info # Building $(NAME)-$(MAKECMDGOALS) [$(ARCH)])
 
-### Check: environment variable `$AM_HOME` looks sane
-ifeq ($(wildcard $(AM_HOME)/am/include/am.h),)
-  $(error $$AM_HOME must be an AbstractMachine repo)
+### Check: environment variable `$JYD_AM_HOME` looks sane
+ifeq ($(wildcard $(JYD_AM_HOME)/am/include/am.h),)
+  $(error $$JYD_AM_HOME must be an AbstractMachine repo)
 endif
 
 ### Check: environment variable `$ARCH` must be in the supported list
-ARCHS = $(basename $(notdir $(shell ls $(AM_HOME)/scripts/*.mk)))
+ARCHS = $(basename $(notdir $(shell ls $(JYD_AM_HOME)/scripts/*.mk)))
 ifeq ($(filter $(ARCHS), $(ARCH)), )
   $(error Expected $$ARCH in {$(ARCHS)}, Got "$(ARCH)")
 endif
@@ -96,7 +96,7 @@ OBJCOPY   = $(CROSS_COMPILE)objcopy
 READELF   = $(CROSS_COMPILE)readelf
 
 ### Compilation flags
-INC_PATH += $(WORK_DIR)/include $(addsuffix /include/, $(addprefix $(AM_HOME)/, $(LIBS)))
+INC_PATH += $(WORK_DIR)/include $(addsuffix /include/, $(addprefix $(JYD_AM_HOME)/, $(LIBS)))
 INCFLAGS += $(addprefix -I, $(INC_PATH))
 
 ARCH_H := arch/$(ARCH).h
@@ -133,12 +133,12 @@ LDFLAGS  += -z noexecstack $(addprefix -T, $(LDSCRIPTS))
 
 ## kasan
 
-include $(AM_HOME)/scripts/kasan.mk
+include $(JYD_AM_HOME)/scripts/kasan.mk
 
 ## 4. Arch-Specific Configurations
 
 ### Paste in arch-specific configurations (e.g., from `scripts/x86_64-qemu.mk`)
--include $(AM_HOME)/scripts/$(ARCH).mk
+-include $(JYD_AM_HOME)/scripts/$(ARCH).mk
 
 ## 5. Compilation Rules
 
@@ -170,9 +170,9 @@ $(ARCHIVE): $(OBJS)
 else
 # $(1): library name
 define LIB_TEMPLATE =
-$$(AM_HOME)/$(1)/build/$(1)-$$(ARCH).a: force
-	@$$(MAKE) -s -C $$(AM_HOME)/$(1) archive
-LINKAGE += $$(AM_HOME)/$(1)/build/$(1)-$$(ARCH).a
+$$(JYD_AM_HOME)/$(1)/build/$(1)-$$(ARCH).a: force
+	@$$(MAKE) -s -C $$(JYD_AM_HOME)/$(1) archive
+LINKAGE += $$(JYD_AM_HOME)/$(1)/build/$(1)-$$(ARCH).a
 endef
 
 ### Rule (recursive make): build a dependent library (am, klib, ...)

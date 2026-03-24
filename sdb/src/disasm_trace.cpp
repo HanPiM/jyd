@@ -27,7 +27,7 @@ static void init_disasm() {
   void *dl_handle;
   char buf[512];
   buf[0] = 0;
-  const char *am_home_env = getenv("AM_HOME");
+  const char *am_home_env = getenv("JYD_AM_HOME");
   assert(am_home_env);
   strcpy(buf, am_home_env);
   strcat(buf, "/../sdb/tools/capstone/repo/libcapstone.so.5");

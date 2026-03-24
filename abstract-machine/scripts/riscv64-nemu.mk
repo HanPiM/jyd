@@ -1,5 +1,5 @@
-include $(AM_HOME)/scripts/isa/riscv.mk
-include $(AM_HOME)/scripts/platform/nemu.mk
+include $(JYD_AM_HOME)/scripts/isa/riscv.mk
+include $(JYD_AM_HOME)/scripts/platform/nemu.mk
 CFLAGS  += -DISA_H=\"riscv/riscv.h\"
 
 AM_SRCS += riscv/nemu/start.S \

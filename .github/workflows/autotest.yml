@@ -34,7 +34,7 @@ jobs:
     runs-on: ubuntu-22.04
     outputs:
       STUID:     ${{ steps.check-stuid.outputs.STUID }}
-      YSYX_HOME: ${{ steps.set-ysyx-home.outputs.YSYX_HOME }}
+      JYD_HOME: ${{ steps.set-ysyx-home.outputs.JYD_HOME }}
       VFILE:     ${{ steps.vfilename.outputs.VFILE }}
       MAKEFLAGS: ${{ steps.set-env.outputs.MAKEFLAGS }}
     steps:
@@ -51,17 +51,17 @@ jobs:
         run: |
           git branch --show-current
 
-      - name: Set YSYX_HOME
+      - name: Set JYD_HOME
         id: set-ysyx-home
         run: |
-          YSYX_HOME=$(pwd)
-          echo "YSYX_HOME=$YSYX_HOME" >> $GITHUB_ENV
-          echo "YSYX_HOME=$YSYX_HOME" >> $GITHUB_OUTPUT
+          JYD_HOME=$(pwd)
+          echo "JYD_HOME=$JYD_HOME" >> $GITHUB_ENV
+          echo "JYD_HOME=$JYD_HOME" >> $GITHUB_OUTPUT
 
       - name: Check student ID
         id: check-stuid
         run: |
-          cd $YSYX_HOME
+          cd $JYD_HOME
           stuid=$(grep -E -o "STUID = ysyx_[0-9]{8}" Makefile)
           if [[ $stuid == "" ]]; then
             echo "Missing STUID in Makefile (format: STUID = ysyx_XXXXXXXX). Abort."
@@ -74,7 +74,7 @@ jobs:
       - name: Set environment variables
         id: set-env
         run: |
-          cd $YSYX_HOME
+          cd $JYD_HOME
           JYD_NEMU_HOME="`pwd`/nemu"
           JYD_AM_HOME="`pwd`/abstract-machine"
           NAVY_HOME="`pwd`/navy-apps"
@@ -105,13 +105,13 @@ jobs:
 
       - name: Disable git tracer
         run: |
-          cd $YSYX_HOME
+          cd $JYD_HOME
           echo ".git_commit:" >> Makefile
           echo -e "\t@echo git tracer is disabled" >> Makefile
 
       - name: Check patch size
         run: |
-          SIZE=`du -sb $YSYX_HOME/patch | grep -o '^[0-9]*'`
+          SIZE=`du -sb $JYD_HOME/patch | grep -o '^[0-9]*'`
           SIZE_LIMIT=1048576 # 1MB
           if [[ $SIZE -gt $SIZE_LIMIT ]] ; then
             echo "Patch size($SIZE) is larger than the limit($SIZE_LIMIT)."
@@ -122,8 +122,8 @@ jobs:
         run: |
           mkdir -p ~/.local/bin
           MILL_VERSION=0.11.13
-          if [[ -e $YSYX_HOME/npc/.mill-version ]]; then
-            MILL_VERSION=`cat $YSYX_HOME/npc/.mill-version`
+          if [[ -e $JYD_HOME/npc/.mill-version ]]; then
+            MILL_VERSION=`cat $JYD_HOME/npc/.mill-version`
           fi
           echo "Downloading mill with version $MILL_VERSION"
           sh -c "curl -L https://github.com/com-lihaoyi/mill/releases/download/$MILL_VERSION/$MILL_VERSION > ~/.local/bin/mill && chmod +x ~/.local/bin/mill"
@@ -165,19 +165,19 @@ jobs:
       - name: Patch ysyxSoC
         run: |
           if [[ "${{ steps.soc-verilog-cache.outputs.cache-hit }}" != "true" ]]; then
-            mkdir -p $YSYX_HOME/ysyxSoC/
-            cp -a ysyxSoC-inited/. $YSYX_HOME/ysyxSoC/
+            mkdir -p $JYD_HOME/ysyxSoC/
+            cp -a ysyxSoC-inited/. $JYD_HOME/ysyxSoC/
           else
-            cd $YSYX_HOME
+            cd $JYD_HOME
             # 命中生成结果，不需要初始化的缓存，直接克隆不传递初始化的缓存
             git clone --depth 1 -b ysyx6 https://github.com/OSCPU/ysyxSoC
           fi
-          cd $YSYX_HOME/ysyxSoC
-          git am $YSYX_HOME/patch/ysyxSoC/*
+          cd $JYD_HOME/ysyxSoC
+          git am $JYD_HOME/patch/ysyxSoC/*
 
       - name: Clone other repos
         run: |
-          cd $YSYX_HOME
+          cd $JYD_HOME
           git clone --depth 1 -b no-gui https://github.com/NJU-ProjectN/nvboard
 
       - name: Clean up
@@ -236,16 +236,16 @@ jobs:
         run: |
           CACHED_SOC_VERILOG_DIR=`pwd`/ysyxSoC-verilog
           if [[ "${{ steps.soc-verilog-cache.outputs.cache-hit }}" == "true" ]]; then
-            mkdir -p $YSYX_HOME/ysyxSoC/build
-            cp -a $CACHED_SOC_VERILOG_DIR/. $YSYX_HOME/ysyxSoC/build
-            if [[ ! -f $YSYX_HOME/ysyxSoC/build/ysyxSoCFull.v ]]; then
+            mkdir -p $JYD_HOME/ysyxSoC/build
+            cp -a $CACHED_SOC_VERILOG_DIR/. $JYD_HOME/ysyxSoC/build
+            if [[ ! -f $JYD_HOME/ysyxSoC/build/ysyxSoCFull.v ]]; then
               echo "Cached verilog file does not exist. Abort."
               false
             fi
           else
-            make -C $YSYX_HOME/ysyxSoC verilog
+            make -C $JYD_HOME/ysyxSoC verilog
             mkdir -p $CACHED_SOC_VERILOG_DIR
-            cp -a $YSYX_HOME/ysyxSoC/build/. $CACHED_SOC_VERILOG_DIR
+            cp -a $JYD_HOME/ysyxSoC/build/. $CACHED_SOC_VERILOG_DIR
           fi
 
       - name: Upload verilog file
@@ -256,8 +256,8 @@ jobs:
 
       - name: Pack workbench
         run: |
-          PARENT=$(dirname $YSYX_HOME)
-          BASENAME=$(basename $YSYX_HOME)
+          PARENT=$(dirname $JYD_HOME)
+          BASENAME=$(basename $JYD_HOME)
           mkdir -p /tmp/artifact-upload
           cd $PARENT
           tar -czf /tmp/artifact-upload/ysyx-workbench.tar.gz \
@@ -284,13 +284,13 @@ jobs:
       - name: Common operations
         uses: ./.github/actions/common
         with:
-          YSYX_HOME: ${{ needs.setup.outputs.YSYX_HOME }}
+          JYD_HOME: ${{ needs.setup.outputs.JYD_HOME }}
           MAKEFLAGS: ${{ needs.setup.outputs.MAKEFLAGS }}
 
       - name: hello
         run: |
           KEY=$(head -c 5 /dev/urandom | base32)
-          python $MONITOR_PY --middle="Hello, AbstractMachine!" --good=$KEY make ARCH=riscv32e-ysyxsoc -C $YSYX_HOME/am-kernels/kernels/hello run mainargs=$KEY
+          python $MONITOR_PY --middle="Hello, AbstractMachine!" --good=$KEY make ARCH=riscv32e-ysyxsoc -C $JYD_HOME/am-kernels/kernels/hello run mainargs=$KEY
 
   cpu-tests:
     needs: setup
@@ -303,13 +303,13 @@ jobs:
       - name: Common operations
         uses: ./.github/actions/common
         with:
-          YSYX_HOME: ${{ needs.setup.outputs.YSYX_HOME }}
+          JYD_HOME: ${{ needs.setup.outputs.JYD_HOME }}
           MAKEFLAGS: ${{ needs.setup.outputs.MAKEFLAGS }}
 
       - name: cpu-tests
         run: |
-          make ARCH=riscv32e-ysyxsoc -C $YSYX_HOME/am-kernels/tests/cpu-tests run ALL=dummy
-          make ARCH=riscv32e-ysyxsoc -C $YSYX_HOME/am-kernels/tests/cpu-tests run
+          make ARCH=riscv32e-ysyxsoc -C $JYD_HOME/am-kernels/tests/cpu-tests run ALL=dummy
+          make ARCH=riscv32e-ysyxsoc -C $JYD_HOME/am-kernels/tests/cpu-tests run
 
   riscv-tests:
     needs: setup
@@ -322,7 +322,7 @@ jobs:
       - name: Common operations
         uses: ./.github/actions/common
         with:
-          YSYX_HOME: ${{ needs.setup.outputs.YSYX_HOME }}
+          JYD_HOME: ${{ needs.setup.outputs.JYD_HOME }}
           MAKEFLAGS: ${{ needs.setup.outputs.MAKEFLAGS }}
 
       - name: riscv-tests
@@ -342,7 +342,7 @@ jobs:
       - name: Common operations
         uses: ./.github/actions/common
         with:
-          YSYX_HOME: ${{ needs.setup.outputs.YSYX_HOME }}
+          JYD_HOME: ${{ needs.setup.outputs.JYD_HOME }}
           MAKEFLAGS: ${{ needs.setup.outputs.MAKEFLAGS }}
 
       - name: riscv-arch-test
@@ -362,13 +362,13 @@ jobs:
       - name: Common operations
         uses: ./.github/actions/common
         with:
-          YSYX_HOME: ${{ needs.setup.outputs.YSYX_HOME }}
+          JYD_HOME: ${{ needs.setup.outputs.JYD_HOME }}
           MAKEFLAGS: ${{ needs.setup.outputs.MAKEFLAGS }}
 
       - name: microbench
         run: |
           KEY=$(head -c 5 /dev/urandom | base32)
-          python $MONITOR_PY --good="$KEY" make ARCH=riscv32e-ysyxsoc -C $YSYX_HOME/am-kernels/benchmarks/microbench run mainargs=$KEY
+          python $MONITOR_PY --good="$KEY" make ARCH=riscv32e-ysyxsoc -C $JYD_HOME/am-kernels/benchmarks/microbench run mainargs=$KEY
 
   rt-thread:
     needs: setup
@@ -381,7 +381,7 @@ jobs:
       - name: Common operations
         uses: ./.github/actions/common
         with:
-          YSYX_HOME: ${{ needs.setup.outputs.YSYX_HOME }}
+          JYD_HOME: ${{ needs.setup.outputs.JYD_HOME }}
           MAKEFLAGS: ${{ needs.setup.outputs.MAKEFLAGS }}
 
       - name: Install dependency
@@ -389,7 +389,7 @@ jobs:
 
       - name: rt-thread
         run: |
-          cd $YSYX_HOME/rt-thread-am/bsp/abstract-machine
+          cd $JYD_HOME/rt-thread-am/bsp/abstract-machine
           make ARCH=riscv32e-ysyxsoc init
           KEY=$(head -c 5 /dev/urandom | base32)
           python $MONITOR_PY --good=$KEY make ARCH=riscv32e-ysyxsoc run
@@ -405,18 +405,18 @@ jobs:
       - name: Common operations
         uses: ./.github/actions/common
         with:
-          YSYX_HOME: ${{ needs.setup.outputs.YSYX_HOME }}
+          JYD_HOME: ${{ needs.setup.outputs.JYD_HOME }}
           MAKEFLAGS: ${{ needs.setup.outputs.MAKEFLAGS }}
 
       - name: compile microbench
         run: |
-          make ARCH=riscv32e-npc -C $YSYX_HOME/am-kernels/benchmarks/microbench mainargs=the_insert-arg_rule_in_Makefile_will_insert_mainargs_here
+          make ARCH=riscv32e-npc -C $JYD_HOME/am-kernels/benchmarks/microbench mainargs=the_insert-arg_rule_in_Makefile_will_insert_mainargs_here
 
       - name: run microbench with iverilog
         run: |
           make -C $JYD_NPC_HOME clean
           KEY=$(head -c 5 /dev/urandom | base32)
-          IMG=$YSYX_HOME/am-kernels/benchmarks/microbench/build/microbench-riscv32e-npc.bin
+          IMG=$JYD_HOME/am-kernels/benchmarks/microbench/build/microbench-riscv32e-npc.bin
           python $JYD_AM_HOME/tools/insert-arg.py $IMG 64 the_insert-arg_rule_in_Makefile_will_insert_mainargs_here $KEY
           python $MONITOR_PY --good=$KEY make -C $JYD_NPC_HOME sim-iverilog IMG=$IMG
 
@@ -431,7 +431,7 @@ jobs:
       - name: Common operations
         uses: ./.github/actions/common
         with:
-          YSYX_HOME: ${{ needs.setup.outputs.YSYX_HOME }}
+          JYD_HOME: ${{ needs.setup.outputs.JYD_HOME }}
           MAKEFLAGS: ${{ needs.setup.outputs.MAKEFLAGS }}
           install-toolchain: 'false'
 
@@ -501,7 +501,7 @@ jobs:
       - name: Common operations
         uses: ./.github/actions/common
         with:
-          YSYX_HOME: ${{ needs.setup.outputs.YSYX_HOME }}
+          JYD_HOME: ${{ needs.setup.outputs.JYD_HOME }}
           MAKEFLAGS: ${{ needs.setup.outputs.MAKEFLAGS }}
 
       - name: Download verilog file
@@ -518,7 +518,7 @@ jobs:
 
       - name: compile microbench
         run: |
-          make ARCH=riscv32e-npc -C $YSYX_HOME/am-kernels/benchmarks/microbench mainargs=the_insert-arg_rule_in_Makefile_will_insert_mainargs_here
+          make ARCH=riscv32e-npc -C $JYD_HOME/am-kernels/benchmarks/microbench mainargs=the_insert-arg_rule_in_Makefile_will_insert_mainargs_here
 
       - name: run microbench with iverilog netlist
         run: |
@@ -526,6 +526,6 @@ jobs:
           NETLIST=`pwd`/ysyx_${{ needs.setup.outputs.STUID }}.netlist.fixed.v
           CELLS=`pwd`/yosys-sta/pdk/nangate45/sim/cells.v
           KEY=$(head -c 5 /dev/urandom | base32)
-          IMG=$YSYX_HOME/am-kernels/benchmarks/microbench/build/microbench-riscv32e-npc.bin
+          IMG=$JYD_HOME/am-kernels/benchmarks/microbench/build/microbench-riscv32e-npc.bin
           python $JYD_AM_HOME/tools/insert-arg.py $IMG 64 the_insert-arg_rule_in_Makefile_will_insert_mainargs_here $KEY
           python $MONITOR_PY --good=$KEY make -C $JYD_NPC_HOME sim-iverilog-netlist IMG=$IMG NETLIST=$NETLIST CELLS=$CELLS

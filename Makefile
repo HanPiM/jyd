@@ -6,12 +6,12 @@ STUNAME = Wang Yi Jie
 TRACER = tracer-ysyx
 GITFLAGS = -q --author='$(TRACER) <tracer@ysyx.org>' --no-verify --allow-empty
 
-YSYX_HOME = $(JYD_NEMU_HOME)/..
+JYD_HOME = $(JYD_NEMU_HOME)/..
 WORK_BRANCH = $(shell git rev-parse --abbrev-ref HEAD)
-WORK_INDEX = $(YSYX_HOME)/.git/index.$(WORK_BRANCH)
+WORK_INDEX = $(JYD_HOME)/.git/index.$(WORK_BRANCH)
 TRACER_BRANCH = $(TRACER)
 
-LOCK_DIR = $(YSYX_HOME)/.git/
+LOCK_DIR = $(JYD_HOME)/.git/
 
 # prototype: git_soft_checkout(branch)
 define git_soft_checkout
@@ -20,7 +20,7 @@ endef
 
 # prototype: git_commit(msg)
 define git_commit
-	-@+flock $(LOCK_DIR) $(MAKE) -C $(YSYX_HOME) .git_commit MSG='$(1)'
+	-@+flock $(LOCK_DIR) $(MAKE) -C $(JYD_HOME) .git_commit MSG='$(1)'
 	-@sync $(LOCK_DIR)
 endef
 

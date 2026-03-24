@@ -1,4 +1,4 @@
-# include $(YSYX_HOME)/init-deps/always-install-llvm.mk
+# include $(JYD_HOME)/init-deps/always-install-llvm.mk
 
 # sdb
 INC_PATH += $(abspath ../sdb/include)
@@ -7,7 +7,7 @@ ARCHIVES += $(NVBOARD_ARCHIVE) $(abspath ../sdb/build/libsdb.a)
 
 SDB_BUILD_LIB = $(abspath ../sdb/build/libsdb.a)
 $(SDB_BUILD_LIB):
-	$(YSYX_HOME)/init-deps/check-and-install-buildtools.sh
+	$(JYD_HOME)/init-deps/check-and-install-buildtools.sh
 	@mkdir -p $(dir $@)
 	@flock $@.lock -c '\
 		if [ ! -f $(SDB_BUILD_LIB) ]; then \

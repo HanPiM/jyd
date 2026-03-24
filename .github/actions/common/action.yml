@@ -1,6 +1,6 @@
 name: common
 inputs:
-  YSYX_HOME:
+  JYD_HOME:
     required: true
   MAKEFLAGS:
     required: true
@@ -18,7 +18,7 @@ runs:
     - name: Extract workbench
       shell: bash
       run: |
-        PARENT=$(dirname ${{ inputs.YSYX_HOME }})
+        PARENT=$(dirname ${{ inputs.JYD_HOME }})
         mkdir -p $PARENT
         cd $PARENT
         tar -xzf /tmp/artifact-download/ysyx-workbench.tar.gz
@@ -47,8 +47,8 @@ runs:
       run: |
         mkdir -p ~/.local/bin
         MILL_VERSION=0.11.13
-        if [[ -e $YSYX_HOME/npc/.mill-version ]]; then
-          MILL_VERSION=`cat $YSYX_HOME/npc/.mill-version`
+        if [[ -e $JYD_HOME/npc/.mill-version ]]; then
+          MILL_VERSION=`cat $JYD_HOME/npc/.mill-version`
         fi
         echo "Downloading mill with version $MILL_VERSION"
         curl -L "https://github.com/com-lihaoyi/mill/releases/download/$MILL_VERSION/$MILL_VERSION" -o ~/.local/bin/mill
@@ -61,13 +61,13 @@ runs:
         MONITOR_PY="$GITHUB_WORKSPACE/.github/monitor.py"
         echo "MONITOR_PY=$MONITOR_PY" >> $GITHUB_ENV
 
-        YSYX_HOME=${{ inputs.YSYX_HOME }}
-        echo "YSYX_HOME=$YSYX_HOME" >> $GITHUB_ENV
-        echo "JYD_NEMU_HOME=$YSYX_HOME/nemu" >> $GITHUB_ENV
-        echo "JYD_AM_HOME=$YSYX_HOME/abstract-machine" >> $GITHUB_ENV
-        echo "NAVY_HOME=$YSYX_HOME/navy-apps" >> $GITHUB_ENV
-        echo "JYD_NPC_HOME=$YSYX_HOME/npc" >> $GITHUB_ENV
-        echo "NVBOARD_HOME=$YSYX_HOME/nvboard" >> $GITHUB_ENV
+        JYD_HOME=${{ inputs.JYD_HOME }}
+        echo "JYD_HOME=$JYD_HOME" >> $GITHUB_ENV
+        echo "JYD_NEMU_HOME=$JYD_HOME/nemu" >> $GITHUB_ENV
+        echo "JYD_AM_HOME=$JYD_HOME/abstract-machine" >> $GITHUB_ENV
+        echo "NAVY_HOME=$JYD_HOME/navy-apps" >> $GITHUB_ENV
+        echo "JYD_NPC_HOME=$JYD_HOME/npc" >> $GITHUB_ENV
+        echo "NVBOARD_HOME=$JYD_HOME/nvboard" >> $GITHUB_ENV
 
         MAKEFLAGS=${{ inputs.MAKEFLAGS }}
         echo "MAKEFLAGS=$MAKEFLAGS" >> $GITHUB_ENV
@@ -95,12 +95,12 @@ runs:
       run: |
         git config --global user.email "ci@ysyx.org"
         git config --global user.name "ysyx-ci"
-        cd $YSYX_HOME
+        cd $JYD_HOME
         git clone --depth 1 -b ci https://github.com/NJU-ProjectN/am-kernels
         git clone --depth 1 https://github.com/NJU-ProjectN/rt-thread-am
 
         cd rt-thread-am
-        git am $YSYX_HOME/patch/rt-thread-am/*
-        cd $YSYX_HOME
+        git am $JYD_HOME/patch/rt-thread-am/*
+        cd $JYD_HOME
 
 

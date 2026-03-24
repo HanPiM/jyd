@@ -23,7 +23,7 @@ bash init.sh abstract-machine
 bash init.sh navy-apps
 ```
 
-Required environment variables: `JYD_NEMU_HOME`, `JYD_AM_HOME`, `JYD_NPC_HOME`, `NAVY_HOME`, `NVBOARD_HOME`.
+Required environment variables: `JYD_HOME`, `JYD_NEMU_HOME`, `JYD_AM_HOME`, `JYD_NPC_HOME`, `NAVY_HOME`, `NVBOARD_HOME`.
 
 > **Note:** The original ysyx names (`NEMU_HOME`, `AM_HOME`, `NPC_HOME`) are being renamed to `JYD_*` throughout the codebase to avoid conflicts with an ysyx installation on the same machine. When touching Makefiles or scripts, use the `JYD_*` names.
 

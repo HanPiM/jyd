@@ -1,7 +1,7 @@
-From a608209c4932c260b542114de0604633958abb8f Mon Sep 17 00:00:00 2001
+From e0e5d683f13c24e3950c9e4abf520588addf3f81 Mon Sep 17 00:00:00 2001
 From: Wang Yi Jie <miwyj@mail.scut.edu.cn>
 Date: Fri, 27 Feb 2026 17:28:21 +0800
-Subject: [PATCH 5/7] fix rt-thread old version bug
+Subject: [PATCH 5/8] fix rt-thread old version bug
 
 ---
  components/libc/compilers/common/ctime.c | 4 ++--

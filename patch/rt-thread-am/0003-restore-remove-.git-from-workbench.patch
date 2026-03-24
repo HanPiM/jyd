@@ -1,7 +1,7 @@
-From 6f24032aed0a052c903c637eabd76a73b22e5ad9 Mon Sep 17 00:00:00 2001
+From 7dee3d840351ad04e5003ba0485091615a302408 Mon Sep 17 00:00:00 2001
 From: Wang Yi Jie <miwyj@mail.scut.edu.cn>
 Date: Fri, 27 Feb 2026 16:49:16 +0800
-Subject: [PATCH 3/7] restore remove .git from workbench
+Subject: [PATCH 3/8] restore remove .git from workbench
 
 ---
  bsp/abstract-machine/extra.soc.ld  | 53 ++++++++++++++++++++++++++++++

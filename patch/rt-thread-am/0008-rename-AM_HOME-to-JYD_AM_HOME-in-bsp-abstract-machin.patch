@@ -1,0 +1,54 @@
+From 245f638ad5aa22fffdcb352575afff92ff233328 Mon Sep 17 00:00:00 2001
+From: Wang Yi Jie <miwyj@mail.scut.edu.cn>
+Date: Tue, 24 Mar 2026 13:42:50 +0800
+Subject: [PATCH 8/8] rename AM_HOME to JYD_AM_HOME in bsp/abstract-machine
+
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+---
+ bsp/abstract-machine/Makefile             | 2 +-
+ bsp/abstract-machine/integrate-am-apps.py | 8 ++++----
+ 2 files changed, 5 insertions(+), 5 deletions(-)
+
+diff --git a/bsp/abstract-machine/Makefile b/bsp/abstract-machine/Makefile
+index 5511658..e28334b 100644
+--- a/bsp/abstract-machine/Makefile
++++ b/bsp/abstract-machine/Makefile
+@@ -18,7 +18,7 @@ endif
+ LDFLAGS += -T $(LINKSCRIPT)
+ -include $(FILE_MK)
+ -include $(AM_APPS_MK)
+-include $(AM_HOME)/Makefile
++include $(JYD_AM_HOME)/Makefile
+ 
+ $(RTCONFIG_H):
+ 	touch $@
+diff --git a/bsp/abstract-machine/integrate-am-apps.py b/bsp/abstract-machine/integrate-am-apps.py
+index 8968df3..d4c2d8d 100644
+--- a/bsp/abstract-machine/integrate-am-apps.py
++++ b/bsp/abstract-machine/integrate-am-apps.py
+@@ -4,8 +4,8 @@ import sys, os, shutil, subprocess
+ from pathlib import Path
+ 
+ # global settings
+-AM_HOME = Path(os.environ["AM_HOME"])
+-AM_KERNELS_HOME = (AM_HOME / ".." / "am-kernels").resolve()
++JYD_AM_HOME = Path(os.environ["JYD_AM_HOME"])
++AM_KERNELS_HOME = (JYD_AM_HOME / ".." / "am-kernels").resolve()
+ app_dir_list = [
+   AM_KERNELS_HOME / "kernels" / "hello",
+   AM_KERNELS_HOME / "benchmarks" / "microbench",
+@@ -38,9 +38,9 @@ lib_sym = [
+ am_init_sym = [ "trm_init", "ioe_init", "cte_init", "vme_init", "mpe_init" ]
+ 
+ def read_lib_symbols(lib):
+-    libfile = AM_HOME / lib / "build" / f"{lib}-{ARCH}.a"
++    libfile = JYD_AM_HOME / lib / "build" / f"{lib}-{ARCH}.a"
+     if (not libfile.exists()):
+-        os.system("make -j ARCH=" + ARCH + " -C " + str(AM_HOME / lib))
++        os.system("make -j ARCH=" + ARCH + " -C " + str(JYD_AM_HOME / lib))
+     cmd = f"{CROSS_COMPILE}nm -g --defined-only --format=just-symbols {str(libfile)}"
+     res = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+     global lib_sym
+-- 
+2.43.0
+

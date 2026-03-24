@@ -1,7 +1,7 @@
-From 4df83c4a68ca69498dc190f7cbc6189f2bb50ca6 Mon Sep 17 00:00:00 2001
+From d1ed519f6c1d43f9c0e31fa04c1e7ce7e6c8a0e3 Mon Sep 17 00:00:00 2001
 From: Wang Yi Jie <miwyj@mail.scut.edu.cn>
 Date: Tue, 3 Mar 2026 14:25:21 +0800
-Subject: [PATCH 7/7] make data.extra bss.extra both ALIGN 8
+Subject: [PATCH 7/8] make data.extra bss.extra both ALIGN 8
 
 ---
  bsp/abstract-machine/extra.soc.ld | 4 ++--

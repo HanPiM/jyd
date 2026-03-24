@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This repo is a fork of the "一生一芯" (YSYx) project, refactored for the **JYD competition**. The ysyx-specific academic tracking (tracer branch, `STUID`/`STUNAME`) is being removed. Do not add or restore any ysyx tracing/tracking code.
+This repo is a fork of the "一生一芯" (YSYx) project, refactored for the **JYD competition**. The ysyx-specific academic tracking (tracer branch, `STUID`/`STUNAME`) has been removed. Do not add or restore any ysyx tracing/tracking code.
 
 **Core subprojects:**
 - **npc/**: RISC-V CPU hardware design in Chisel/Scala, simulated via Verilator
@@ -24,8 +24,6 @@ bash init.sh navy-apps
 ```
 
 Required environment variables: `JYD_HOME`, `JYD_NEMU_HOME`, `JYD_AM_HOME`, `JYD_NPC_HOME`, `NAVY_HOME`, `NVBOARD_HOME`.
-
-> **Note:** The original ysyx names (`NEMU_HOME`, `AM_HOME`, `NPC_HOME`) are being renamed to `JYD_*` throughout the codebase to avoid conflicts with an ysyx installation on the same machine. When touching Makefiles or scripts, use the `JYD_*` names.
 
 ## Build Commands
 
@@ -60,7 +58,7 @@ make clean
 ### Abstract Machine
 ```bash
 cd abstract-machine
-make image          # Default build (requires AM_HOME set)
+make image          # Default build (requires JYD_AM_HOME set)
 ```
 
 ### Performance/analysis tools
@@ -130,15 +128,20 @@ Abstract Machine (AM)  ←  hardware-independent API
 ## CI/CD
 
 - `.github/workflows/autotest.yml` — runs on push to `main` and PRs
+- `.github/actions/common/action.yml` — shared setup: extracts workbench artifact, clones `am-kernels` (branch `ci`) and `rt-thread-am`, applies `patch/am-kernels/*` and `patch/rt-thread-am/*` via `git am`
 - `.github/monitor.py` — monitors simulation output for `HIT GOOD TRAP` / `HIT BAD TRAP` / benchmark PASS markers
-- Tests AM kernel execution and RT-Thread benchmarks
+- NPC verilog output is detected by globbing `npc/build/*.sv` / `*.v`; the filename stem is used as the design name for yosys-sta
 
-## Off-limits directories
+## patch/ directory
 
-- **`patch/`** — ysyx-specific git-am patches for CI testing of student submissions. Not used in JYD (rt-thread-am and other submodules live outside this repo). Do not modify files here.
+`patch/am-kernels/` and `patch/rt-thread-am/` contain flat `git format-patch` files applied by CI after cloning each external repo. **Do not edit patch files directly.** The workflow for updating patches is:
+
+1. Make commits inside the external repo (`./am-kernels/` or `./rt-thread-am/`)
+2. Regenerate with `git format-patch HEAD~N -o /tmp/patches/`
+3. Replace the contents of the relevant `patch/` subdirectory
+
+`patch/rt-thread-am/` — do not modify outside of `bsp/abstract-machine/`; the rest of rt-thread-am is upstream-maintained.
 
 ## Pending Refactors
 
-- **Env var rename** (in progress): `NEMU_HOME` → `JYD_NEMU_HOME`, `AM_HOME` → `JYD_AM_HOME`, `NPC_HOME` → `JYD_NPC_HOME` across all Makefiles and scripts.
-- **Remove ysyx tracing**: `STUID`, `STUNAME`, `tracer-ysyx` branch logic in root `Makefile` and `init.sh` should be deleted.
 - **Bus replacement** (waiting on spec): AXI4 (`axi4.scala` and all consumers) to be replaced with JYD simple bus once the competition spec is provided.

@@ -1,0 +1,223 @@
+From e817e19844b53c51a518bcae3198f1a3f62fd46d Mon Sep 17 00:00:00 2001
+From: Wang Yi Jie <miwyj@mail.scut.edu.cn>
+Date: Tue, 24 Mar 2026 13:33:46 +0800
+Subject: [PATCH 2/2] rename AM_HOME/NEMU_HOME to JYD_AM_HOME/JYD_NEMU_HOME
+
+Avoid env var conflicts with ysyx installation on the same machine.
+
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+---
+ benchmarks/coremark/Makefile   |  2 +-
+ benchmarks/dhrystone/Makefile  |  2 +-
+ benchmarks/microbench/Makefile |  2 +-
+ kernels/bad-apple/Makefile     |  2 +-
+ kernels/blockchain/Makefile    |  2 +-
+ kernels/demo/Makefile          |  2 +-
+ kernels/hello/Makefile         |  2 +-
+ kernels/litenes/Makefile       |  2 +-
+ kernels/nemu/Makefile          | 14 +++++++-------
+ kernels/slider/Makefile        |  2 +-
+ kernels/snake/Makefile         |  2 +-
+ kernels/thread-os/Makefile     |  2 +-
+ kernels/typing-game/Makefile   |  2 +-
+ kernels/yield-os/Makefile      |  2 +-
+ tests/alu-tests/Makefile       |  2 +-
+ tests/am-tests/Makefile        |  2 +-
+ tests/cpu-tests/Makefile       |  2 +-
+ 17 files changed, 23 insertions(+), 23 deletions(-)
+
+diff --git a/benchmarks/coremark/Makefile b/benchmarks/coremark/Makefile
+index 479088b..c7b6921 100644
+--- a/benchmarks/coremark/Makefile
++++ b/benchmarks/coremark/Makefile
+@@ -1,3 +1,3 @@
+ NAME = coremark
+ SRCS = $(shell find src/ -name "*.c")
+-include $(AM_HOME)/Makefile
++include $(JYD_AM_HOME)/Makefile
+diff --git a/benchmarks/dhrystone/Makefile b/benchmarks/dhrystone/Makefile
+index 5021855..f7be5ea 100644
+--- a/benchmarks/dhrystone/Makefile
++++ b/benchmarks/dhrystone/Makefile
+@@ -1,3 +1,3 @@
+ NAME = dhrystone
+ SRCS = dry.c
+-include $(AM_HOME)/Makefile
++include $(JYD_AM_HOME)/Makefile
+diff --git a/benchmarks/microbench/Makefile b/benchmarks/microbench/Makefile
+index fb51024..98da3a5 100644
+--- a/benchmarks/microbench/Makefile
++++ b/benchmarks/microbench/Makefile
+@@ -1,3 +1,3 @@
+ NAME = microbench
+ SRCS = $(shell find src/ -name "*.c" -o -name "*.cc")
+-include $(AM_HOME)/Makefile
++include $(JYD_AM_HOME)/Makefile
+diff --git a/kernels/bad-apple/Makefile b/kernels/bad-apple/Makefile
+index 671827e..9b97690 100644
+--- a/kernels/bad-apple/Makefile
++++ b/kernels/bad-apple/Makefile
+@@ -9,7 +9,7 @@ AUDIO = build/audio.pcm
+ 
+ NAME = bad-apple
+ SRCS = bad-apple.c resources.S
+-include $(AM_HOME)/Makefile
++include $(JYD_AM_HOME)/Makefile
+ 
+ CFLAGS  += -DVIDEO_ROW=$(VIDEO_ROW) -DVIDEO_COL=$(VIDEO_COL) \
+            -DAUDIO_FREQ=$(AUDIO_FREQ) -DAUDIO_CHANNEL=$(AUDIO_CHANNEL)
+diff --git a/kernels/blockchain/Makefile b/kernels/blockchain/Makefile
+index bde8ee7..d61a980 100644
+--- a/kernels/blockchain/Makefile
++++ b/kernels/blockchain/Makefile
+@@ -1,3 +1,3 @@
+ NAME = blockchain
+ SRCS = $(shell find src/ -name "*.cpp")
+-include $(AM_HOME)/Makefile
++include $(JYD_AM_HOME)/Makefile
+diff --git a/kernels/demo/Makefile b/kernels/demo/Makefile
+index 61835c5..ab2b9e3 100644
+--- a/kernels/demo/Makefile
++++ b/kernels/demo/Makefile
+@@ -1,3 +1,3 @@
+ NAME = demo
+ SRCS = $(shell find src -name "*.c")
+-include $(AM_HOME)/Makefile
++include $(JYD_AM_HOME)/Makefile
+diff --git a/kernels/hello/Makefile b/kernels/hello/Makefile
+index db9464c..37d96fb 100644
+--- a/kernels/hello/Makefile
++++ b/kernels/hello/Makefile
+@@ -1,3 +1,3 @@
+ NAME = hello
+ SRCS = hello.c
+-include $(AM_HOME)/Makefile
++include $(JYD_AM_HOME)/Makefile
+diff --git a/kernels/litenes/Makefile b/kernels/litenes/Makefile
+index 831e8b7..fd94836 100644
+--- a/kernels/litenes/Makefile
++++ b/kernels/litenes/Makefile
+@@ -1,3 +1,3 @@
+ NAME = litenes
+ SRCS = $(shell find src/ -name "*.c")
+-include $(AM_HOME)/Makefile
++include $(JYD_AM_HOME)/Makefile
+diff --git a/kernels/nemu/Makefile b/kernels/nemu/Makefile
+index deb8a14..ee64136 100644
+--- a/kernels/nemu/Makefile
++++ b/kernels/nemu/Makefile
+@@ -7,25 +7,25 @@ $(error Only support with NEMU)
+ endif
+ 
+ TMPDEFCONFIG = tmp_defconfig
+-TMPDEFCONFIG_FILE = $(NEMU_HOME)/configs/$(TMPDEFCONFIG)
++TMPDEFCONFIG_FILE = $(JYD_NEMU_HOME)/configs/$(TMPDEFCONFIG)
+ 
+ all:
+ 	$(MAKE) save_config
+ 	$(MAKE) build_am
+ 	$(MAKE) restore_config
+-	$(MAKE) -C $(NEMU_HOME) run IMG=$(NEMU_HOME)/build/$(ISA)-nemu-interpreter-$(ARCH).bin
++	$(MAKE) -C $(JYD_NEMU_HOME) run IMG=$(JYD_NEMU_HOME)/build/$(ISA)-nemu-interpreter-$(ARCH).bin
+ 
+ save_config:
+-	$(MAKE) -C $(NEMU_HOME) savedefconfig
+-	mv $(NEMU_HOME)/configs/defconfig $(TMPDEFCONFIG_FILE)
++	$(MAKE) -C $(JYD_NEMU_HOME) savedefconfig
++	mv $(JYD_NEMU_HOME)/configs/defconfig $(TMPDEFCONFIG_FILE)
+ 
+ build_am:
+-	$(MAKE) -C $(NEMU_HOME) $(ISA)-am_defconfig
+-	$(MAKE) -C $(NEMU_HOME) ARCH=$(ARCH) mainargs=$(mainargs) || \
++	$(MAKE) -C $(JYD_NEMU_HOME) $(ISA)-am_defconfig
++	$(MAKE) -C $(JYD_NEMU_HOME) ARCH=$(ARCH) mainargs=$(mainargs) || \
+ 		($(MAKE) restore_config; false)
+ 
+ restore_config:
+-	$(MAKE) -C $(NEMU_HOME) ARCH=$(ARCH) $(TMPDEFCONFIG)
++	$(MAKE) -C $(JYD_NEMU_HOME) ARCH=$(ARCH) $(TMPDEFCONFIG)
+ 	rm $(TMPDEFCONFIG_FILE)
+ 
+ .PHONY: all save_config build_am restore_config
+diff --git a/kernels/slider/Makefile b/kernels/slider/Makefile
+index 1f20441..9f731e2 100644
+--- a/kernels/slider/Makefile
++++ b/kernels/slider/Makefile
+@@ -1,3 +1,3 @@
+ NAME = slider
+ SRCS = main.c image.S
+-include $(AM_HOME)/Makefile
++include $(JYD_AM_HOME)/Makefile
+diff --git a/kernels/snake/Makefile b/kernels/snake/Makefile
+index a4fb92c..3296624 100644
+--- a/kernels/snake/Makefile
++++ b/kernels/snake/Makefile
+@@ -1,3 +1,3 @@
+ NAME = snake
+ SRCS = snake.c
+-include $(AM_HOME)/Makefile
++include $(JYD_AM_HOME)/Makefile
+diff --git a/kernels/thread-os/Makefile b/kernels/thread-os/Makefile
+index 3998b17..14a9795 100644
+--- a/kernels/thread-os/Makefile
++++ b/kernels/thread-os/Makefile
+@@ -1,3 +1,3 @@
+ NAME = thread-os
+ SRCS = thread-os.c
+-include $(AM_HOME)/Makefile
++include $(JYD_AM_HOME)/Makefile
+diff --git a/kernels/typing-game/Makefile b/kernels/typing-game/Makefile
+index 58717ba..33469d8 100644
+--- a/kernels/typing-game/Makefile
++++ b/kernels/typing-game/Makefile
+@@ -1,3 +1,3 @@
+ NAME = typing-game
+ SRCS = game.c font.c
+-include $(AM_HOME)/Makefile
++include $(JYD_AM_HOME)/Makefile
+diff --git a/kernels/yield-os/Makefile b/kernels/yield-os/Makefile
+index ba8c264..08c5498 100644
+--- a/kernels/yield-os/Makefile
++++ b/kernels/yield-os/Makefile
+@@ -1,3 +1,3 @@
+ NAME = yield-os
+ SRCS = yield-os.c
+-include $(AM_HOME)/Makefile
++include $(JYD_AM_HOME)/Makefile
+diff --git a/tests/alu-tests/Makefile b/tests/alu-tests/Makefile
+index ac9e507..353547b 100644
+--- a/tests/alu-tests/Makefile
++++ b/tests/alu-tests/Makefile
+@@ -1,6 +1,6 @@
+ NAME = alutest
+ SRCS = build/alu_test.c
+-include $(AM_HOME)/Makefile
++include $(JYD_AM_HOME)/Makefile
+ 
+ GENERATOR = build/gen_alu_test
+ 
+diff --git a/tests/am-tests/Makefile b/tests/am-tests/Makefile
+index de6da42..b88161b 100644
+--- a/tests/am-tests/Makefile
++++ b/tests/am-tests/Makefile
+@@ -1,3 +1,3 @@
+ NAME = amtest
+ SRCS = $(shell find src/ -name "*.[cS]")
+-include $(AM_HOME)/Makefile
++include $(JYD_AM_HOME)/Makefile
+diff --git a/tests/cpu-tests/Makefile b/tests/cpu-tests/Makefile
+index b4499dc..cecc508 100644
+--- a/tests/cpu-tests/Makefile
++++ b/tests/cpu-tests/Makefile
+@@ -15,7 +15,7 @@ all: $(addprefix Makefile., $(ALL))
+ $(ALL): %: Makefile.%
+ 
+ Makefile.%: tests/%.c latest
+-	@/bin/echo -e "NAME = $*\nSRCS = $<\ninclude $${AM_HOME}/Makefile" > $@
++	@/bin/echo -e "NAME = $*\nSRCS = $<\ninclude $${JYD_AM_HOME}/Makefile" > $@
+ 	@if make -s -f $@ ARCH=$(ARCH) $(MAKECMDGOALS); then \
+ 		printf "[%14s] $(COLOR_GREEN)PASS$(COLOR_NONE)\n" $* >> $(RESULT); \
+ 	else \
+-- 
+2.43.0
+

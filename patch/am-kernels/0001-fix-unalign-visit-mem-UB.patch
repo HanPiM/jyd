@@ -1,7 +1,7 @@
-From fc434ebf564d63ac2ff8c53509ba61ed50ffd04c Mon Sep 17 00:00:00 2001
+From bd0fc50fe91dcb625f75eb6894057e309261a680 Mon Sep 17 00:00:00 2001
 From: Wang Yi Jie <miwyj@mail.scut.edu.cn>
 Date: Sun, 1 Mar 2026 16:19:37 +0800
-Subject: [PATCH] fix unalign visit mem UB
+Subject: [PATCH 1/2] fix unalign visit mem UB
 
 ---
  tests/cpu-tests/tests/load-store.c | 2 +-

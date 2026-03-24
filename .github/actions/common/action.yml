@@ -97,8 +97,11 @@ runs:
         git config --global user.name "ysyx-ci"
         cd $JYD_HOME
         git clone --depth 1 -b ci https://github.com/NJU-ProjectN/am-kernels
-        git clone --depth 1 https://github.com/NJU-ProjectN/rt-thread-am
+        cd am-kernels
+        git am $JYD_HOME/patch/am-kernels/*
+        cd $JYD_HOME
 
+        git clone --depth 1 https://github.com/NJU-ProjectN/rt-thread-am
         cd rt-thread-am
         git am $JYD_HOME/patch/rt-thread-am/*
         cd $JYD_HOME

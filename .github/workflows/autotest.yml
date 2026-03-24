@@ -33,9 +33,9 @@ jobs:
   setup:
     runs-on: ubuntu-22.04
     outputs:
-      STUID:     ${{ steps.check-stuid.outputs.STUID }}
-      JYD_HOME: ${{ steps.set-ysyx-home.outputs.JYD_HOME }}
+      JYD_HOME:  ${{ steps.set-ysyx-home.outputs.JYD_HOME }}
       VFILE:     ${{ steps.vfilename.outputs.VFILE }}
+      DESIGN:    ${{ steps.vfilename.outputs.DESIGN }}
       MAKEFLAGS: ${{ steps.set-env.outputs.MAKEFLAGS }}
     steps:
       - name: Set Git user and email
@@ -57,19 +57,6 @@ jobs:
           JYD_HOME=$(pwd)
           echo "JYD_HOME=$JYD_HOME" >> $GITHUB_ENV
           echo "JYD_HOME=$JYD_HOME" >> $GITHUB_OUTPUT
-
-      - name: Check student ID
-        id: check-stuid
-        run: |
-          cd $JYD_HOME
-          stuid=$(grep -E -o "STUID = ysyx_[0-9]{8}" Makefile)
-          if [[ $stuid == "" ]]; then
-            echo "Missing STUID in Makefile (format: STUID = ysyx_XXXXXXXX). Abort."
-            false
-          fi
-          STUID=$(echo $stuid | grep -E -o "[0-9]{8}$")
-          echo "STUID=$STUID" >> $GITHUB_ENV
-          echo "STUID=$STUID" >> $GITHUB_OUTPUT
 
       - name: Set environment variables
         id: set-env
@@ -103,12 +90,6 @@ jobs:
 
           sed -i -e 's/MAINARGS_PLACEHOLDER = .*/MAINARGS_PLACEHOLDER = the_insert-arg_rule_in_Makefile_will_insert_mainargs_here/' $JYD_AM_HOME/scripts/platform/npc.mk
 
-      - name: Disable git tracer
-        run: |
-          cd $JYD_HOME
-          echo ".git_commit:" >> Makefile
-          echo -e "\t@echo git tracer is disabled" >> Makefile
-
       - name: Check patch size
         run: |
           SIZE=`du -sb $JYD_HOME/patch | grep -o '^[0-9]*'`
@@ -139,7 +120,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ysyxSoC-verilog
-          key: ${{ runner.os }}-soc-verilog-${{ steps.check-stuid.outputs.STUID }}-${{ steps.soc-tag.outputs.tag }}-${{ hashFiles('patch/ysyxSoC/*') }}
+          key: ${{ runner.os }}-soc-verilog-${{ steps.soc-tag.outputs.tag }}-${{ hashFiles('patch/ysyxSoC/*') }}
 
       - name: Cache inited ysyxSoC
         id: soc-cache
@@ -195,34 +176,21 @@ jobs:
       - name: Check verilog file name
         id: vfilename
         run: |
-          FILE_SV=$JYD_NPC_HOME/build/ysyx_$STUID.sv
-          FILE_V=$JYD_NPC_HOME/build/ysyx_$STUID.v
-          if [[ -f $FILE_SV ]]; then
-            echo "Find $FILE_SV"
-            VFILE=$FILE_SV
-          elif [[ -f $FILE_V ]]; then
-            echo "Find $FILE_V"
-            VFILE=$FILE_V
-          else
-            echo "$FILE_SV or $FILE_V does not exist. Abort."
+          VFILE=$(ls $JYD_NPC_HOME/build/*.sv $JYD_NPC_HOME/build/*.v 2>/dev/null | head -1)
+          if [[ -z $VFILE ]]; then
+            echo "No .sv or .v file found in $JYD_NPC_HOME/build/. Abort."
             false
           fi
+          echo "Find $VFILE"
 
           if [[ $JYD_NPC_HOME/.timestamp -nt $VFILE ]]; then
             echo "$VFILE is older than .timestamp. Abort."
             false
           fi
 
+          DESIGN=$(basename $VFILE | sed 's/\.[^.]*$//')
           echo "VFILE=$VFILE" >> $GITHUB_OUTPUT
-
-      - name: Check verilog top module name
-        run: |
-          VFILE=${{ steps.vfilename.outputs.VFILE }}
-          STR=`cat $VFILE | tr '\n' ' ' | grep -E "module\s+ysyx_$STUID" 2> /dev/null`
-          if [[ $STR == "" ]]; then
-            echo "Can not find module ysyx_$STUID in $VFILE. Abort."
-            false
-          fi
+          echo "DESIGN=$DESIGN" >> $GITHUB_OUTPUT
 
       - name: Check verilog clock edge
         run: |
@@ -452,16 +420,16 @@ jobs:
 
       - name: Set environment variables
         run: |
-          echo "STUID=${{ needs.setup.outputs.STUID }}" >> $GITHUB_ENV
           echo "VFILE=${{ needs.setup.outputs.VFILE }}" >> $GITHUB_ENV
+          echo "DESIGN=${{ needs.setup.outputs.DESIGN }}" >> $GITHUB_ENV
 
       - name: Run STA
         run: |
-          make -C yosys-sta sta DESIGN=ysyx_$STUID CLK_FREQ_MHZ=500 CLK_PORT_NAME=clock RTL_FILES=$VFILE
+          make -C yosys-sta sta DESIGN=$DESIGN CLK_FREQ_MHZ=500 CLK_PORT_NAME=clock RTL_FILES=$VFILE
 
       - name: Check latch
         run: |
-          YOSYS_LOG=yosys-sta/result/ysyx_$STUID-500MHz/synth_stat.txt
+          YOSYS_LOG=yosys-sta/result/$DESIGN-500MHz/synth_stat.txt
           if grep "DLL\|DLH" $YOSYS_LOG ; then
             echo "The design contains latch, which is not allowed."
             false
@@ -469,7 +437,7 @@ jobs:
 
       - name: Parse area
         run: |
-          YOSYS_LOG=yosys-sta/result/ysyx_$STUID-500MHz/yosys-fixed.log
+          YOSYS_LOG=yosys-sta/result/$DESIGN-500MHz/yosys-fixed.log
           AREA=`grep -o "Chip area for module .*: .*" $YOSYS_LOG | sed -e 's/.*: \([0-9]*\.[0-9]*\)$/\1/'`
           if [[ $AREA == "" ]] ; then
             echo "Can not obtain area from yosys-sta. Abort."
@@ -482,13 +450,13 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: sta-result
-          path: yosys-sta/result/ysyx_${{ needs.setup.outputs.STUID }}-500MHz
+          path: yosys-sta/result/${{ needs.setup.outputs.DESIGN }}-500MHz
 
       - name: Upload netlist file
         uses: actions/upload-artifact@v6
         with:
           name: netlist
-          path: yosys-sta/result/ysyx_${{ needs.setup.outputs.STUID }}-500MHz/ysyx_${{ needs.setup.outputs.STUID }}.netlist.fixed.v
+          path: yosys-sta/result/${{ needs.setup.outputs.DESIGN }}-500MHz/${{ needs.setup.outputs.DESIGN }}.netlist.fixed.v
 
   iverilog-netlist-microbench:
     needs: [setup, yosys-sta]
@@ -523,7 +491,7 @@ jobs:
       - name: run microbench with iverilog netlist
         run: |
           make -C $JYD_NPC_HOME clean
-          NETLIST=`pwd`/ysyx_${{ needs.setup.outputs.STUID }}.netlist.fixed.v
+          NETLIST=`pwd`/${{ needs.setup.outputs.DESIGN }}.netlist.fixed.v
           CELLS=`pwd`/yosys-sta/pdk/nangate45/sim/cells.v
           KEY=$(head -c 5 /dev/urandom | base32)
           IMG=$JYD_HOME/am-kernels/benchmarks/microbench/build/microbench-riscv32e-npc.bin

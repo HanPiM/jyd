@@ -65,6 +65,7 @@ runs:
         echo "JYD_HOME=$JYD_HOME" >> $GITHUB_ENV
         echo "JYD_NEMU_HOME=$JYD_HOME/nemu" >> $GITHUB_ENV
         echo "JYD_AM_HOME=$JYD_HOME/abstract-machine" >> $GITHUB_ENV
+        echo "AM_HOME=$JYD_AM_HOME" >> $GITHUB_ENV
         echo "NAVY_HOME=$JYD_HOME/navy-apps" >> $GITHUB_ENV
         echo "JYD_NPC_HOME=$JYD_HOME/npc" >> $GITHUB_ENV
         echo "NVBOARD_HOME=$JYD_HOME/nvboard" >> $GITHUB_ENV

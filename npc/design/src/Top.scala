@@ -40,7 +40,7 @@ class CPUCoreAsBlackBox    extends BlackBox {
   })
 }
 class PCProviderAsBlackBox extends BlackBox {
-  override def desiredName: String = "ResetPCProvider"
+  override def desiredName: String = "CPUTop_ResetPCProvider"
   val io = IO(new Bundle {
     val resetPC = Output(Types.UWord)
   })

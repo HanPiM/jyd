@@ -31,6 +31,17 @@ mem_region_group_t &get_mem_regions() {
 
 static size_t dram_difftest_need_init_size = 0;
 
+template <typename T, size_t N>
+auto MakeDirectMappedMemFromVlUnpacked(const char *name,
+                                       VlUnpacked<T, N> &vlUnpacked,
+                                       uint32_t base, uint32_t end = 0) {
+  if (end == 0) {
+    end = base + sizeof(T) * N;
+  }
+  return std::make_shared<direct_mapped_mem>(base, end, name, sizeof(T) * N,
+                                             vlUnpacked.data());
+}
+
 void init_mem(void *img, const sim_config &cfg) {
   fs::path img_path(cfg.img_file_path);
   auto dram_path = img_path;
@@ -41,16 +52,17 @@ void init_mem(void *img, const sim_config &cfg) {
     exit(1);
   }
 
-  irom_ptr = std::make_shared<direct_mapped_mem>(
-      0x80000000u, 0x80004000u, "irom", 16 * 1024,
+  irom_ptr = MakeDirectMappedMemFromVlUnpacked(
+      "irom",
       get_dut()
-          ->TestSoC->vlSymsp->TOP__TestSoC__devices__irom__mem__mem_ext.Memory
-          .data());
-  dram_ptr = std::make_shared<direct_mapped_mem>(
-      0x80100000u, 0x80140000u, "dram", 256 * 1024,
+          ->TestSoC->vlSymsp->TOP__TestSoC__devices__irom__mem__mem_ext.Memory,
+      0x80000000u);
+
+  dram_ptr = MakeDirectMappedMemFromVlUnpacked(
+      "dram",
       get_dut()
-          ->TestSoC->vlSymsp->TOP__TestSoC__devices__dram__mem__mem_ext.Memory
-          .data());
+          ->TestSoC->vlSymsp->TOP__TestSoC__devices__dram__mem__mem_ext.Memory,
+      0x80100000u);
 
   spdlog::info("copy {} to irom of jydsoc", img_path.filename().string());
   irom_ptr->copy_from(img, cfg.img_size);

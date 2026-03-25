@@ -11,8 +11,8 @@ import top.{CPUCoreAsBlackBox, PCProviderAsBlackBox}
 import testSoC._
 
 object AddrSpace {
-  val IROM = ("h80000000".U, "h80004000".U)
-  val DRAM = ("h80100000".U, "h80140000".U)
+  val IROM = ("h80000000".U, "h80040000".U) // 16K (required by doc) + (256-16)K (for extra test requirement)
+  val DRAM = ("h80100000".U, "h80180000".U) // 256K (required by doc) + 256K (for heap)
   val MMIO = ("h80200000".U, "h80200100".U)
 
   val LED = ("h80200040".U, "h80200044".U)
@@ -118,8 +118,8 @@ class JYDDevices extends Module with TestSoCDevice {
   io := DontCare
 
   val uart = Module(new UARTUnit)
-  val irom = Module(new AXI4MemUnit(1024 * 16))
-  val dram = Module(new AXI4MemUnit(1024 * 256))
+  val irom = Module(new AXI4MemUnit(1024 * 256))
+  val dram = Module(new AXI4MemUnit(1024 * 512))
 
   val led = Module(new OneWordRWDevice("jyd_update_led"))
   val seg = Module(new OneWordRWDevice("jyd_update_seg"))

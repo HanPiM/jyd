@@ -29,7 +29,7 @@ mem_region_group_t &get_mem_regions() {
   return mem_regions;
 }
 
-static size_t dram_need_init_size = 0;
+static size_t dram_difftest_need_init_size = 0;
 
 void init_mem(void *img, const sim_config &cfg) {
   fs::path img_path(cfg.img_file_path);
@@ -75,7 +75,14 @@ void init_mem(void *img, const sim_config &cfg) {
   spdlog::info("read {} bytes from DRAM data file {}", bytes_read,
                dram_path.filename().string());
 
-  dram_need_init_size = bytes_read;
+  // if the DRAM data file is smaller than the DRAM capacity, difftest other
+  // bytes are randomly, which may cause difftest failure. So we make difftest
+  // cpy all DRAM size, to make difftest dram content exactly the same as the
+  // sim DRAM content
+  dram_difftest_need_init_size = dram_ptr->actualSizeInBytes;
+  spdlog::info("DRAM need init size set to {}, to make difftest DRAM content "
+               "exactly the same as sim DRAM content",
+               dram_difftest_need_init_size);
 }
 
 static constexpr std::string_view fg_red = "\33[1;31m", fg_green = "\33[1;32m",
@@ -96,15 +103,15 @@ bool jyd_is_good_trap() {
 
   if (seg_high != 0x37) {
     spdlog::error("7-seg high byte is 0x{:02x}, expected 0x37, not a good trap",
-                 seg_high);
+                  seg_high);
     return false;
   }
-	if (last_led != good_trap_led) {
-		spdlog::error("LED state is 0b{:032b}, expected 0b{:032b}, not a good trap",
-								 last_led, good_trap_led);
-		return false;
-	}
-	return true;
+  if (last_led != good_trap_led) {
+    spdlog::error("LED state is 0b{:032b}, expected 0b{:032b}, not a good trap",
+                  last_led, good_trap_led);
+    return false;
+  }
+  return true;
 }
 
 static void print_board() {
@@ -158,7 +165,7 @@ mem_region_data_span_vec get_mem_regions_need_init_difftest() {
   return {mem_region_data_span{
       .name = dram_ptr->name,
       .host_base = dram_ptr->base(),
-      .size = dram_need_init_size,
+      .size = dram_difftest_need_init_size,
       .data = dram_ptr->data,
   }};
 }

@@ -8,41 +8,23 @@ import regfile._
 import cpu.alu._
 import axi4._
 
-class EXUStageCalcOut(implicit p:CPUParameters) extends Bundle {
-  val aluOut = Types.UWord
-
-  val isTypSys = Bool()
-  val isECALL  = Bool()
-  val isMRET   = Bool()
-  // val isEBREAK = Bool()
-
-  val csrRdata = Types.UWord
-  val csrWr    = CSRegReqIO.TX.Write
-
-  val dinst = new DecodedInst
-
-  val reg1AddImm = Types.UWord
-
-  val pcAddImm = Types.UWord
-
-  val takeBranch = Bool()
-
-  val gprWeEn = Bool()
-}
-
-class EXUStageCalc(implicit p:CPUParameters) extends Module {
+class EXU(implicit p:CPUParameters) extends Module {
   val io = IO(new Bundle {
-    val in       = Flipped(Decoupled(new DecodedInst))
-    val csr_rvec = CSRegReqIO.TX.SingleRead
-    val fwd      = Output(new WrBackForwardInfo)
-    val flush    = Input(Bool())
-    val out      = Decoupled(new EXUStageCalcOut)
+    val in        = Flipped(Decoupled(new DecodedInst))
+    val csr_rvec  = CSRegReqIO.TX.SingleRead
+    val jmpHappen = Output(Bool())
+    val isJAL     = Output(Bool())
+
+    val predWrong = Output(Bool())
+    val pc        = Output(Types.UWord)
+    val nxtPC     = Output(Types.UWord)
+
+    val fencei = Output(Bool())
+
+    val fwd = Output(new WrBackForwardInfo)
+
+    val out = Decoupled(new LSUInput)
   })
-
-  val GARBAGE_UNINIT_VALUE = Wire(Types.UWord)
-  GARBAGE_UNINIT_VALUE := DontCare
-
-  io.fwd := WrBackForwardInfo(io.in)
 
   val alu = Module(new ALU)
 
@@ -57,51 +39,34 @@ class EXUStageCalc(implicit p:CPUParameters) extends Module {
   val isFmtI   = InstFmt.hasSame(dinst.info.fmt, InstFmt.imm)
   val isTypSys = InstType.hasSame(dinst.info.typ, InstType.system)
 
-  io.out.bits.gprWeEn := dinst.info.rdWrEn
+  io.in.ready  := io.out.ready
+  io.out.valid := io.in.valid
 
-  io.in.ready  := io.out.ready || io.flush
-  io.out.valid := io.in.valid && !io.flush
+  val pcAddImm   = dinst.pc + dinst.info.imm
+  val reg_v1     = dinst.info.reg1
+  val reg_v2     = dinst.info.reg2
+  val reg1AddImm = reg_v1 + dinst.info.imm
 
-  io.out.bits.pcAddImm := dinst.pc + dinst.info.imm
-  io.out.bits.dinst    := dinst
-
-  // reg
-
-  val reg_v1 = dinst.info.reg1
-  val reg_v2 = dinst.info.reg2
-
-  alu_in.src1 := reg_v1
-  alu_in.src2 := Mux(isFmtI, dinst.info.imm, reg_v2)
-
+  alu_in.src1   := reg_v1
+  alu_in.src2   := Mux(isFmtI, dinst.info.imm, reg_v2)
   alu_in.is_imm := isFmtI
   alu_in.func3t := func3t
   alu_in.func7t := func7t
 
-  io.out.bits.aluOut     := alu.io.out.bits
-  io.out.bits.reg1AddImm := reg_v1 + dinst.info.imm
+  val aluOut = alu.io.out.bits
 
-  // csr
-
+  // --- CSR ---
   val is_mret  = dinst.code === "h30200073".U
   val is_ecall = dinst.code === "h73".U
-  // val is_ebreak = dinst.code === "h00100073".U
-
-  val outInfo = io.out.bits
-
-  outInfo.isTypSys := isTypSys
-  outInfo.isECALL  := is_ecall
-  outInfo.isMRET   := is_mret
-  // outInfo.isEBREAK := is_ebreak
 
   val csrren    = io.csr_rvec.en
   val csr_raddr = io.csr_rvec.addr
   val csr_rdata = io.csr_rvec.data
 
-  io.out.bits.csrRdata := csr_rdata
-
-  val csrwen    = io.out.bits.csrWr.en
-  val csr_waddr = io.out.bits.csrWr.addr
-  val csr_wdata = io.out.bits.csrWr.data
+  val writeBackInfo = io.out.bits.exuWriteBack
+  val csrwen    = writeBackInfo.csr.en
+  val csr_waddr = writeBackInfo.csr.addr
+  val csr_wdata = writeBackInfo.csr.data
 
   object CSROp {
     val csrrw = 1.U
@@ -116,15 +81,12 @@ class EXUStageCalc(implicit p:CPUParameters) extends Module {
 
   when(isTypSys) {
     when(is_ecall) {
-      // csrren    := true.B
-      // csrwen    := false.B
       csr_waddr := CSRAddr.mepc
       csr_raddr := CSRAddr.mtvec
-
       // ecall: set mepc to pc
       // !!!note:
-      // although wen = falase
-      // is_ecall flag make csr to write wdata to mepc
+      // although wen = false
+      // is_ecall flag makes csr to write wdata to mepc
       csr_wdata := dinst.pc
     }.elsewhen(is_mret) {
       csr_raddr := CSRAddr.mepc
@@ -145,6 +107,9 @@ class EXUStageCalc(implicit p:CPUParameters) extends Module {
     csr_wdata := DontCare
   }
 
+  writeBackInfo.csr_ecallflag := is_ecall
+
+  // --- Branch ---
   // blt/bge 10x
   // bltu/bgeu 11x
   //
@@ -153,29 +118,9 @@ class EXUStageCalc(implicit p:CPUParameters) extends Module {
   val isLessThanS = (reg_v1.asSInt < reg_v2.asSInt)
   val isLessThan  = Mux(func3t(1), isLessThanU, isLessThanS)
   val branchCalc  = Mux(func3t(2), isLessThan, (reg_v1 === reg_v2))
-  io.out.bits.takeBranch := Mux(func3t(0), ~branchCalc, branchCalc)
-}
+  val takeBranch  = Mux(func3t(0), ~branchCalc, branchCalc)
 
-class EXUStageChooseNxt(implicit p:CPUParameters) extends Module {
-  val io = IO(new Bundle {
-    val in        = Flipped(Decoupled(new EXUStageCalcOut))
-    val jmpHappen = Output(Bool())
-    val isJAL     = Output(Bool())
-    val predWrong = Output(Bool())
-    val nxtPC     = Output(Types.UWord)
-    val pc        = Output(Types.UWord)
-
-    val fencei = Output(Bool())
-
-    val fwd = Output(new WrBackForwardInfo)
-    val out = Decoupled(new LSUInput)
-  })
-
-  io.in.ready  := io.out.ready
-  io.out.valid := io.in.valid
-
-  val dinst = io.in.bits.dinst
-
+  // --- Inst type decode ---
   val isTypLoad       = InstType.hasSame(dinst.info.typ, InstType.load)
   val isTypStore      = InstType.hasSame(dinst.info.typ, InstType.store)
   val isTypAUIPC      = InstType.hasSame(dinst.info.typ, InstType.auipc)
@@ -185,75 +130,60 @@ class EXUStageChooseNxt(implicit p:CPUParameters) extends Module {
   val isTypArithmetic = InstType.hasSame(dinst.info.typ, InstType.arithmetic)
   val isTypLUI        = InstType.hasSame(dinst.info.typ, InstType.lui)
   val isFenceI        = InstType.hasSame(dinst.info.typ, InstType.fencei)
+  val isFmtB          = InstFmt.hasSame(dinst.info.fmt, InstFmt.branch)
 
-  val isFmtB = InstFmt.hasSame(dinst.info.fmt, InstFmt.branch)
-
+  // --- LSU input ---
   val lsuInfo = io.out.bits
-  lsuInfo.destAddr  := io.in.bits.reg1AddImm
+  lsuInfo.destAddr  := reg1AddImm
   lsuInfo.isLoad    := isTypLoad
   lsuInfo.isStore   := isTypStore
-  lsuInfo.func3t    := io.in.bits.dinst.code(14, 12)
-  lsuInfo.storeData := io.in.bits.dinst.info.reg2
-  val writeBackInfo = lsuInfo.exuWriteBack
-  writeBackInfo.csr <> io.in.bits.csrWr
-  // writeBackInfo.is_ebreak     := io.in.bits.isEBREAK
-  writeBackInfo.csr_ecallflag := io.in.bits.isECALL
+  lsuInfo.func3t    := dinst.code(14, 12)
+  lsuInfo.storeData := dinst.info.reg2
 
-  // No consider exception
-  val normalNxtPC = Wire(Types.UWord)
-  val nxtPC       = Wire(Types.UWord)
+  val snpc = dinst.info.snpc
 
-  // need pc+imm:
-  // auipc, jal(r), branch
-  val pcAddImm = io.in.bits.pcAddImm
-  val snpc     = io.in.bits.dinst.info.snpc
-
-  writeBackInfo.gpr.en   := io.in.bits.gprWeEn
+  writeBackInfo.gpr.en   := dinst.info.rdWrEn
   writeBackInfo.gpr.addr := dinst.info.rd
-  val sysInstWrBackData = io.in.bits.csrRdata
 
   writeBackInfo.gpr.data := Mux1H(
     Seq(
-      isTypArithmetic         -> io.in.bits.aluOut,
+      isTypArithmetic         -> aluOut,
       isTypLUI                -> dinst.info.imm,
       isTypAUIPC              -> pcAddImm,
       (isTypJALR || isTypJAL) -> snpc,
-      io.in.bits.isTypSys     -> sysInstWrBackData
+      isTypSys                -> csr_rdata
     )
   )
 
   val isMemOP = isTypLoad || isTypStore
-
-  io.fwd := WrBackForwardInfo(io.in.valid, io.in.bits.dinst, ~isMemOP, writeBackInfo.gpr.data)
+  io.fwd := WrBackForwardInfo(io.in.valid, dinst, ~isMemOP, writeBackInfo.gpr.data)
 
   writeBackInfo.iid := dinst.iid
 
-  val isJmpCsr   = io.in.bits.isECALL || io.in.bits.isMRET
-  val takeBranch = WireDefault(false.B)
-  takeBranch := io.in.bits.takeBranch
-  val willJmp = (isTypBranch && takeBranch) || isTypJALR || isTypJAL || isJmpCsr
+  // --- Next PC ---
+  val isJmpCsr = is_ecall || is_mret
+  val willJmp  = (isTypBranch && takeBranch) || isTypJALR || isTypJAL || isJmpCsr
 
-  io.jmpHappen := willJmp
-  io.isJAL     := isTypJAL
-  // when fence.i, also treat it as jump
-  // to make flush to refetch the inst nxt fence.i
-  io.predWrong := (normalNxtPC =/= dinst.predictedNextPC) || isJmpCsr || isFenceI
-  io.fencei    := isFenceI && io.in.valid
-
-  val r1AddImm = io.in.bits.reg1AddImm
+  val normalNxtPC = Wire(Types.UWord)
+  val nxtPC       = Wire(Types.UWord)
 
   normalNxtPC := Mux(
     isTypJALR,
-    (r1AddImm(31, 1) ## 0.U(1.W)),
+    (reg1AddImm(31, 1) ## 0.U(1.W)),
     Mux(
       isTypJAL || (isFmtB && takeBranch),
       pcAddImm,
       snpc
     )
   )
-  nxtPC       := Mux(isJmpCsr, io.in.bits.csrRdata, normalNxtPC)
-  io.nxtPC    := nxtPC
-  io.pc       := io.in.bits.dinst.pc
+  nxtPC    := Mux(isJmpCsr, csr_rdata, normalNxtPC)
+  io.nxtPC := nxtPC
+  io.pc    := dinst.pc
+
+  io.jmpHappen := willJmp
+  io.isJAL     := isTypJAL
+  io.fencei    := isFenceI && io.in.valid
+  io.predWrong := (normalNxtPC =/= dinst.predictedNextPC) || isJmpCsr || isFenceI
 
   val dbgIsBranch = WireDefault(isTypBranch)
   val dbgIsJALR   = WireDefault(isTypJALR)
@@ -263,60 +193,6 @@ class EXUStageChooseNxt(implicit p:CPUParameters) extends Module {
   dontTouch(dbgIsJALR)
   dontTouch(dbgIsJAL)
   dontTouch(dbgIsCSRJmp)
-}
-
-class EXU(implicit p:CPUParameters) extends Module {
-  val io = IO(new Bundle {
-    val in        = Flipped(Decoupled(new DecodedInst))
-    val csr_rvec  = CSRegReqIO.TX.SingleRead
-    val jmpHappen = Output(Bool())
-    val isJAL     = Output(Bool())
-
-    val predWrong = Output(Bool())
-    val pc        = Output(Types.UWord)
-    val nxtPC     = Output(Types.UWord)
-
-    val flush1 = Input(Bool())
-
-    val fencei = Output(Bool())
-
-    val fwd1 = Output(new WrBackForwardInfo)
-    val fwd2 = Output(new WrBackForwardInfo)
-
-    val out = Decoupled(new LSUInput)
-  })
-
-  def dontTouchValidReady[T <: Data](x: DecoupledIO[T]): Unit = {
-    dontTouch(x.valid)
-    dontTouch(x.ready)
-  }
-
-  val stageCalc      = Module(new EXUStageCalc)
-  val stageChooseNxt = Module(new EXUStageChooseNxt)
-
-  io.fwd1 := stageCalc.io.fwd
-  io.fwd2 := stageChooseNxt.io.fwd
-
-  dontTouchValidReady(stageCalc.io.in)
-  dontTouchValidReady(stageCalc.io.out)
-  dontTouchValidReady(stageChooseNxt.io.in)
-  dontTouchValidReady(stageChooseNxt.io.out)
-
-  io.in <> stageCalc.io.in
-  io.out <> stageChooseNxt.io.out
-
-  stageCalc.io.csr_rvec <> io.csr_rvec
-  io.jmpHappen := stageChooseNxt.io.jmpHappen
-  io.isJAL     := stageChooseNxt.io.isJAL
-  io.predWrong := stageChooseNxt.io.predWrong
-  io.nxtPC     := stageChooseNxt.io.nxtPC
-  io.pc        := stageChooseNxt.io.pc
-  io.fencei    := stageChooseNxt.io.fencei
-
-  stageCalc.io.flush := io.flush1
-
-  pipelineConnect(stageCalc.io.out, stageChooseNxt.io.in, stageChooseNxt.io.out)
-
 }
 
 class EXUForDifftest(implicit p:CPUParameters) extends Module {

@@ -264,15 +264,11 @@ class CPUCore(
   // idu.io.exuWrBack   := ExtractGPRInfoFromLSU(exu.io.out)
   // idu.io.lsuWrBack   := ExtractGPRInfoFromLSU(lsu.io.in)
   // idu.io.wbuWrBack   := ExtractGPRInfoFromWrBack(wbu.io.in)
-  idu.io.wrBackInfo.exus1 := exu.io.fwd1
-  idu.io.wrBackInfo.exus2 := exu.io.fwd2
-  idu.io.wrBackInfo.lsu   := ExtractFwdInfoFromLSU(lsu.io.in)
+  idu.io.wrBackInfo.exu := exu.io.fwd
+  idu.io.wrBackInfo.lsu := ExtractFwdInfoFromLSU(lsu.io.in)
   idu.io.wrBackInfo.wbu   := ExtractFwdInfoFromWrBack(wbu.io.in)
 
-  val exuWrBackDataVaild = !(exu.io.out.bits.isLoad || exu.io.out.bits.isStore)
-
-  idu.io.flush  := needFlushPipeline
-  exu.io.flush1 := needFlushPipeline
+  idu.io.flush := needFlushPipeline
 
   // Write back
 

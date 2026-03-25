@@ -58,7 +58,7 @@ class CPUTop(parm:CPUParameters) extends Module {
   // }
 }
 
-class ResetPCProvider extends BlackBox with HasBlackBoxInline {
+class CPUTop_ResetPCProvider extends BlackBox with HasBlackBoxInline {
   val io      = IO(new Bundle {
     val resetPC = Output(Types.UWord)
   })
@@ -103,7 +103,7 @@ class CPUCore(
 
   lsu.io.mcycle64 := csrs.io.mcycle64
 
-  val resetPCProvider = Module(new ResetPCProvider)
+  val resetPCProvider = Module(new CPUTop_ResetPCProvider)
   val INIT_PC         = resetPCProvider.io.resetPC
 
   val pc             = RegInit(INIT_PC)

@@ -6,7 +6,7 @@ endif
 
 CXXFLAGS += -DSIM_SOC
 
-SOC_HOME ?= ../ysyxSoC
+SOC_HOME = ../ysyxSoC
 SOC_PERIP_VSRCS = $(shell find $(abspath $(SOC_HOME)/perip) -name "*.v")
 SOC_GENED_FILE = $(abspath $(SOC_HOME)/build/ysyxSoCFull.v)
 

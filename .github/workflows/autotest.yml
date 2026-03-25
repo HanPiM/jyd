@@ -6,6 +6,7 @@ on:
     paths:
       - 'npc/**'
       - 'patch/**'
+      - '.github/**'
   pull_request:
     branches: [main]
   workflow_dispatch:

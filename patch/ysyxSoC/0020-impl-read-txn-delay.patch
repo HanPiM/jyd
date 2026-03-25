@@ -1,14 +1,14 @@
-From d3395d96e4a667b75304019b6cb93bc28873b1b4 Mon Sep 17 00:00:00 2001
+From f69f00007d4f8638b646bca4468ec00fa950f976 Mon Sep 17 00:00:00 2001
 From: Wang Yi Jie <miwyj@mail.scut.edu.cn>
 Date: Mon, 2 Feb 2026 11:55:13 +0800
-Subject: [PATCH 20/28] impl read txn delay
+Subject: [PATCH 20/29] impl read txn delay
 
 ---
  src/amba/AXI4Delayer.scala | 169 ++++++++++++++++++++++++++-----------
  1 file changed, 120 insertions(+), 49 deletions(-)
 
 diff --git a/src/amba/AXI4Delayer.scala b/src/amba/AXI4Delayer.scala
-index 8a1d40f2..5e551032 100644
+index 8a1d40f..5e55103 100644
 --- a/src/amba/AXI4Delayer.scala
 +++ b/src/amba/AXI4Delayer.scala
 @@ -12,87 +12,158 @@ import freechips.rocketchip.util._

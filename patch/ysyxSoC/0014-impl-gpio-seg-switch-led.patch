@@ -1,7 +1,7 @@
-From 4b05c62f48e4d3ea3bed5dba1b1f26262f96576a Mon Sep 17 00:00:00 2001
+From 8171958ebb6bfb8e83b3258b4ca750b3593875da Mon Sep 17 00:00:00 2001
 From: Wang Yi Jie <miwyj@mail.scut.edu.cn>
 Date: Sun, 25 Jan 2026 23:34:44 +0800
-Subject: [PATCH 14/28] impl gpio seg switch led
+Subject: [PATCH 14/29] impl gpio seg switch led
 
 ---
  src/Top.scala         |   1 +
@@ -10,7 +10,7 @@ Subject: [PATCH 14/28] impl gpio seg switch led
  3 files changed, 102 insertions(+), 11 deletions(-)
 
 diff --git a/src/Top.scala b/src/Top.scala
-index c00378a6..8cd5a774 100644
+index c00378a..8cd5a77 100644
 --- a/src/Top.scala
 +++ b/src/Top.scala
 @@ -8,6 +8,7 @@ import freechips.rocketchip.diplomacy.LazyModule
@@ -22,7 +22,7 @@ index c00378a6..8cd5a774 100644
  
  class ysyxSoCTop extends Module {
 diff --git a/src/device/GPIO.scala b/src/device/GPIO.scala
-index f770e96a..13fd6c3c 100644
+index f770e96..13fd6c3 100644
 --- a/src/device/GPIO.scala
 +++ b/src/device/GPIO.scala
 @@ -17,7 +17,9 @@ class GPIOIO extends Bundle {
@@ -158,7 +158,7 @@ index f770e96a..13fd6c3c 100644
      mgpio.io.reset := reset
      mgpio.io.in <> in
 diff --git a/src/device/SPI.scala b/src/device/SPI.scala
-index e30997ad..2b2ca053 100644
+index e30997a..2b2ca05 100644
 --- a/src/device/SPI.scala
 +++ b/src/device/SPI.scala
 @@ -119,7 +119,7 @@ class APBSPI(address: Seq[AddressSet])(implicit p: Parameters)

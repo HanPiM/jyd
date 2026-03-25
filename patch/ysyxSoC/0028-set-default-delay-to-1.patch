@@ -1,14 +1,14 @@
-From cc6c04e5a7928d38ad1ae482b90c6e342cfc60f5 Mon Sep 17 00:00:00 2001
+From 2e2e5e50bf32876390325f8808d6b237b4e96c5f Mon Sep 17 00:00:00 2001
 From: Wang Yi Jie <miwyj@mail.scut.edu.cn>
 Date: Mon, 2 Mar 2026 22:27:02 +0800
-Subject: [PATCH 28/28] set default delay to 1
+Subject: [PATCH 28/29] set default delay to 1
 
 ---
  src/Top.scala | 2 +-
  1 file changed, 1 insertion(+), 1 deletion(-)
 
 diff --git a/src/Top.scala b/src/Top.scala
-index 84e7d8a4..0488090b 100644
+index 84e7d8a..0488090 100644
 --- a/src/Top.scala
 +++ b/src/Top.scala
 @@ -8,7 +8,7 @@ import freechips.rocketchip.diplomacy.LazyModule

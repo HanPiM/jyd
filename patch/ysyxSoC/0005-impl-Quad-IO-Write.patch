@@ -1,14 +1,14 @@
-From 31fbf92af269c90dfdcd9003ae12f60eea43987a Mon Sep 17 00:00:00 2001
+From 602e5f77ff8f5713b7c2da5fe9eb02dbfdac00fd Mon Sep 17 00:00:00 2001
 From: Wang Yi Jie <miwyj@mail.scut.edu.cn>
 Date: Wed, 21 Jan 2026 19:14:29 +0800
-Subject: [PATCH 05/28] impl Quad IO Write
+Subject: [PATCH 05/29] impl Quad IO Write
 
 ---
  src/device/PSRAM.scala | 46 ++++++++++++++++++++++++++++++++++++------
  1 file changed, 40 insertions(+), 6 deletions(-)
 
 diff --git a/src/device/PSRAM.scala b/src/device/PSRAM.scala
-index 6c7d22cd..c3efdbe0 100644
+index 6c7d22c..c3efdbe 100644
 --- a/src/device/PSRAM.scala
 +++ b/src/device/PSRAM.scala
 @@ -45,7 +45,7 @@ class psramChisel extends RawModule {

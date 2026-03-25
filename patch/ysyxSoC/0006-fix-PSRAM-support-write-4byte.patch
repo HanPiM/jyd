@@ -1,14 +1,14 @@
-From 10f7ffc816552e4028550b8038dc7c3bd260a7d4 Mon Sep 17 00:00:00 2001
+From d5344171dee249d95147997ca57ab5eeed32555f Mon Sep 17 00:00:00 2001
 From: Wang Yi Jie <miwyj@mail.scut.edu.cn>
 Date: Wed, 21 Jan 2026 21:34:00 +0800
-Subject: [PATCH 06/28] fix PSRAM support write <4byte
+Subject: [PATCH 06/29] fix PSRAM support write <4byte
 
 ---
  src/device/PSRAM.scala | 45 ++++++++++++++++++++++++++++++++++++------
  1 file changed, 39 insertions(+), 6 deletions(-)
 
 diff --git a/src/device/PSRAM.scala b/src/device/PSRAM.scala
-index c3efdbe0..6dfdad90 100644
+index c3efdbe..6dfdad9 100644
 --- a/src/device/PSRAM.scala
 +++ b/src/device/PSRAM.scala
 @@ -48,12 +48,16 @@ class psramChisel extends RawModule {

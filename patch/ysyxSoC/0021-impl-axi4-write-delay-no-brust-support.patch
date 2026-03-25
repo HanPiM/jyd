@@ -1,14 +1,14 @@
-From 4914845e3252123f348e5c6681f52a2a6eb06dbc Mon Sep 17 00:00:00 2001
+From d1c723ba1887742083dfd5390b8be0b19da66dde Mon Sep 17 00:00:00 2001
 From: Wang Yi Jie <miwyj@mail.scut.edu.cn>
 Date: Mon, 2 Feb 2026 14:07:13 +0800
-Subject: [PATCH 21/28] impl axi4 write delay (no brust support)
+Subject: [PATCH 21/29] impl axi4 write delay (no brust support)
 
 ---
  src/amba/AXI4Delayer.scala | 107 ++++++++++++++++++++++++++++---------
  1 file changed, 81 insertions(+), 26 deletions(-)
 
 diff --git a/src/amba/AXI4Delayer.scala b/src/amba/AXI4Delayer.scala
-index 5e551032..94bf02fd 100644
+index 5e55103..94bf02f 100644
 --- a/src/amba/AXI4Delayer.scala
 +++ b/src/amba/AXI4Delayer.scala
 @@ -69,7 +69,11 @@ class DelayCounter(val ratio: Double = 4.0, val scale: Int = 32)

@@ -1,0 +1,34 @@
+From f633c0a488c0915917a4a6afdbfb7a08a0850675 Mon Sep 17 00:00:00 2001
+From: Wang Yi Jie <miwyj@mail.scut.edu.cn>
+Date: Wed, 25 Mar 2026 18:59:58 +0800
+Subject: [PATCH 29/29] change Top name for jyd test
+
+---
+ src/CPU.scala | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/src/CPU.scala b/src/CPU.scala
+index 5bae960..84ea026 100644
+--- a/src/CPU.scala
++++ b/src/CPU.scala
+@@ -13,7 +13,7 @@ object CPUAXI4BundleParameters {
+   def apply() = AXI4BundleParameters(addrBits = 32, dataBits = 32, idBits = ChipLinkParam.idBits)
+ }
+ 
+-class ysyx_25100261 extends BlackBox {
++class CPUTop extends BlackBox {
+   val io = IO(new Bundle {
+     val clock = Input(Clock())
+     val reset = Input(Reset())
+@@ -35,7 +35,7 @@ class CPU(idBits: Int)(implicit p: Parameters) extends LazyModule {
+     val interrupt = IO(Input(Bool()))
+     val slave = IO(Flipped(AXI4Bundle(CPUAXI4BundleParameters())))
+ 
+-    val cpu = Module(new ysyx_25100261)
++    val cpu = Module(new CPUTop)
+     cpu.io.clock := clock
+     cpu.io.reset := reset
+     cpu.io.io_interrupt := interrupt
+-- 
+2.43.0
+

@@ -1,7 +1,7 @@
-From 90866ccc64a48208bc71ee57a7f600ceb3e10b6b Mon Sep 17 00:00:00 2001
+From f1fb7c497ee29a6cd35ce95a1545351e10a086b3 Mon Sep 17 00:00:00 2001
 From: Wang Yi Jie <miwyj@mail.scut.edu.cn>
 Date: Sun, 25 Jan 2026 15:11:27 +0800
-Subject: [PATCH 12/28] impl bit extend sdram
+Subject: [PATCH 12/29] impl bit extend sdram
 
 ---
  perip/sdram/core_sdram_axi4/sdram_axi.v      |   4 +
@@ -15,7 +15,7 @@ Subject: [PATCH 12/28] impl bit extend sdram
  8 files changed, 171 insertions(+), 89 deletions(-)
 
 diff --git a/perip/sdram/core_sdram_axi4/sdram_axi.v b/perip/sdram/core_sdram_axi4/sdram_axi.v
-index 64641f58..d8fe4eda 100644
+index 64641f5..d8fe4ed 100644
 --- a/perip/sdram/core_sdram_axi4/sdram_axi.v
 +++ b/perip/sdram/core_sdram_axi4/sdram_axi.v
 @@ -1,3 +1,5 @@
@@ -31,7 +31,7 @@ index 64641f58..d8fe4eda 100644
 +/*verilator public_off*/
 +/*verilator public_off*/
 diff --git a/perip/sdram/core_sdram_axi4/sdram_axi_core.v b/perip/sdram/core_sdram_axi4/sdram_axi_core.v
-index cedbf77b..5443bc10 100644
+index cedbf77..5443bc1 100644
 --- a/perip/sdram/core_sdram_axi4/sdram_axi_core.v
 +++ b/perip/sdram/core_sdram_axi4/sdram_axi_core.v
 @@ -1,3 +1,5 @@
@@ -279,7 +279,7 @@ index cedbf77b..5443bc10 100644
 +/*verilator public_off*/
 +/*verilator public_off*/
 diff --git a/perip/sdram/core_sdram_axi4/sdram_axi_pmem.v b/perip/sdram/core_sdram_axi4/sdram_axi_pmem.v
-index 3d6a5bb4..d135001b 100644
+index 3d6a5bb..d135001 100644
 --- a/perip/sdram/core_sdram_axi4/sdram_axi_pmem.v
 +++ b/perip/sdram/core_sdram_axi4/sdram_axi_pmem.v
 @@ -1,3 +1,5 @@
@@ -295,7 +295,7 @@ index 3d6a5bb4..d135001b 100644
 +/*verilator public_off*/
 +/*verilator public_off*/
 diff --git a/perip/sdram/sdram.v b/perip/sdram/sdram.v
-index 3613b231..00918567 100644
+index 3613b23..0091856 100644
 --- a/perip/sdram/sdram.v
 +++ b/perip/sdram/sdram.v
 @@ -1,3 +1,5 @@
@@ -311,7 +311,7 @@ index 3613b231..00918567 100644
 +/*verilator public_off*/
 +/*verilator public_off*/
 diff --git a/perip/sdram/sdram_top_apb.v b/perip/sdram/sdram_top_apb.v
-index 3bc5b93b..5fb16c8f 100644
+index 3bc5b93..5fb16c8 100644
 --- a/perip/sdram/sdram_top_apb.v
 +++ b/perip/sdram/sdram_top_apb.v
 @@ -1,3 +1,5 @@
@@ -354,7 +354,7 @@ index 3bc5b93b..5fb16c8f 100644
 +/*verilator public_off*/
 +/*verilator public_off*/
 diff --git a/perip/sdram/sdram_top_axi.v b/perip/sdram/sdram_top_axi.v
-index f0fd6fdb..0208f1bd 100644
+index f0fd6fd..0208f1b 100644
 --- a/perip/sdram/sdram_top_axi.v
 +++ b/perip/sdram/sdram_top_axi.v
 @@ -1,3 +1,5 @@
@@ -370,7 +370,7 @@ index f0fd6fdb..0208f1bd 100644
 +/*verilator public_off*/
 +/*verilator public_off*/
 diff --git a/src/device/SDRAM.scala b/src/device/SDRAM.scala
-index f867af6f..e3da13e8 100644
+index f867af6..e3da13e 100644
 --- a/src/device/SDRAM.scala
 +++ b/src/device/SDRAM.scala
 @@ -3,6 +3,7 @@ package ysyx
@@ -534,7 +534,7 @@ index f867af6f..e3da13e8 100644
      extends LazyModule {
    val beatBytes = 4
 diff --git a/src/device/SPI.scala b/src/device/SPI.scala
-index c106ef0e..e30997ad 100644
+index c106ef0..e30997a 100644
 --- a/src/device/SPI.scala
 +++ b/src/device/SPI.scala
 @@ -119,9 +119,11 @@ class APBSPI(address: Seq[AddressSet])(implicit p: Parameters)

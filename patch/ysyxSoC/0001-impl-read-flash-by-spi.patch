@@ -1,7 +1,7 @@
-From 33a5ca33d81baecad6b949e3af599ef5f5bfad68 Mon Sep 17 00:00:00 2001
+From c1878c747e02b4035e2cd47f0e47c0d77223705d Mon Sep 17 00:00:00 2001
 From: Wang Yi Jie <miwyj@mail.scut.edu.cn>
 Date: Tue, 20 Jan 2026 17:40:51 +0800
-Subject: [PATCH 01/28] impl read flash by spi
+Subject: [PATCH 01/29] impl read flash by spi
 
 ---
  src/CPU.scala           |   4 +-
@@ -11,7 +11,7 @@ Subject: [PATCH 01/28] impl read flash by spi
  4 files changed, 207 insertions(+), 15 deletions(-)
 
 diff --git a/src/CPU.scala b/src/CPU.scala
-index 7559195f..5bae9605 100644
+index 7559195..5bae960 100644
 --- a/src/CPU.scala
 +++ b/src/CPU.scala
 @@ -13,7 +13,7 @@ object CPUAXI4BundleParameters {
@@ -33,7 +33,7 @@ index 7559195f..5bae9605 100644
      cpu.io.reset := reset
      cpu.io.io_interrupt := interrupt
 diff --git a/src/SoC.scala b/src/SoC.scala
-index 1c65cd87..29267c58 100644
+index 1c65cd8..29267c5 100644
 --- a/src/SoC.scala
 +++ b/src/SoC.scala
 @@ -135,7 +135,7 @@ class ysyxSoCFull(implicit p: Parameters) extends LazyModule {
@@ -46,7 +46,7 @@ index 1c65cd87..29267c58 100644
      bitrev.io.ss := masic.spi.ss(7)
      masic.spi.miso := List(bitrev.io, flash.io).map(_.miso).reduce(_&&_)
 diff --git a/src/device/BitRev.scala b/src/device/BitRev.scala
-index 6bd3d572..0c856060 100644
+index 6bd3d57..0c85606 100644
 --- a/src/device/BitRev.scala
 +++ b/src/device/BitRev.scala
 @@ -7,7 +7,21 @@ class bitrev extends BlackBox {
@@ -74,7 +74,7 @@ index 6bd3d572..0c856060 100644
 +  }
  }
 diff --git a/src/device/SPI.scala b/src/device/SPI.scala
-index c354bb92..e8415926 100644
+index c354bb9..e841592 100644
 --- a/src/device/SPI.scala
 +++ b/src/device/SPI.scala
 @@ -19,7 +19,8 @@ class spi_top_apb extends BlackBox {

@@ -1,14 +1,14 @@
-From d6f3f4afb18ee5b38e8421fae86e0e1deb8b6c04 Mon Sep 17 00:00:00 2001
+From ae64c57f59ae7cc151fbc79dcef3b4b3b1b4e9c2 Mon Sep 17 00:00:00 2001
 From: Wang Yi Jie <miwyj@mail.scut.edu.cn>
 Date: Mon, 26 Jan 2026 19:08:50 +0800
-Subject: [PATCH 16/28] impl VGA ctrl
+Subject: [PATCH 16/29] impl VGA ctrl
 
 ---
  src/device/VGA.scala | 131 +++++++++++++++++++++++++++++++++++++++----
  1 file changed, 121 insertions(+), 10 deletions(-)
 
 diff --git a/src/device/VGA.scala b/src/device/VGA.scala
-index 6724bc38..7faca82f 100644
+index 6724bc3..7faca82 100644
 --- a/src/device/VGA.scala
 +++ b/src/device/VGA.scala
 @@ -7,6 +7,7 @@ import freechips.rocketchip.amba.apb._

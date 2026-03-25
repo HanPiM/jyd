@@ -1,7 +1,7 @@
-From 486d463b2cfd45bd61a1eb4fa5848405b20fd448 Mon Sep 17 00:00:00 2001
+From b039c52555d516e2e3aecd5e053c6c5cf2d65e6e Mon Sep 17 00:00:00 2001
 From: Wang Yi Jie <miwyj@mail.scut.edu.cn>
 Date: Tue, 3 Feb 2026 22:03:51 +0800
-Subject: [PATCH 23/28] make APB and AXI4 delayer both use Config.delayratio
+Subject: [PATCH 23/29] make APB and AXI4 delayer both use Config.delayratio
  direct connect when ratio==1
 
 ---
@@ -11,7 +11,7 @@ Subject: [PATCH 23/28] make APB and AXI4 delayer both use Config.delayratio
  3 files changed, 186 insertions(+), 164 deletions(-)
 
 diff --git a/src/Top.scala b/src/Top.scala
-index 1b346ccd..410985f7 100644
+index 1b346cc..410985f 100644
 --- a/src/Top.scala
 +++ b/src/Top.scala
 @@ -8,6 +8,7 @@ import freechips.rocketchip.diplomacy.LazyModule
@@ -23,7 +23,7 @@ index 1b346ccd..410985f7 100644
  }
  
 diff --git a/src/amba/APBDelayer.scala b/src/amba/APBDelayer.scala
-index e6e87e06..162798f5 100644
+index e6e87e0..162798f 100644
 --- a/src/amba/APBDelayer.scala
 +++ b/src/amba/APBDelayer.scala
 @@ -25,24 +25,6 @@ class apb_delayer extends BlackBox {
@@ -196,7 +196,7 @@ index e6e87e06..162798f5 100644
  
  class APBDelayerWrapper(implicit p: Parameters) extends LazyModule {
 diff --git a/src/amba/AXI4Delayer.scala b/src/amba/AXI4Delayer.scala
-index 4a66ad52..a48c722c 100644
+index 4a66ad5..a48c722 100644
 --- a/src/amba/AXI4Delayer.scala
 +++ b/src/amba/AXI4Delayer.scala
 @@ -53,8 +53,8 @@ class DelayCounter(val ratio: Double = 4.0, val scale: Int = 32)

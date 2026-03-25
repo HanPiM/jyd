@@ -1,7 +1,7 @@
-From d66ac6002f41109f73310bec47bfb7e760a93c98 Mon Sep 17 00:00:00 2001
+From f14591bb684b6eec32f6d22f83c21337e8c0d53e Mon Sep 17 00:00:00 2001
 From: Wang Yi Jie <miwyj@mail.scut.edu.cn>
 Date: Sun, 1 Feb 2026 16:22:55 +0800
-Subject: [PATCH 18/28] modify sdram axi ctrl port width 16->32
+Subject: [PATCH 18/29] modify sdram axi ctrl port width 16->32
 
 ---
  perip/sdram/core_sdram_axi4/sdram_axi.v      |  8 ++++----
@@ -12,7 +12,7 @@ Subject: [PATCH 18/28] modify sdram axi ctrl port width 16->32
  5 files changed, 18 insertions(+), 16 deletions(-)
 
 diff --git a/perip/sdram/core_sdram_axi4/sdram_axi.v b/perip/sdram/core_sdram_axi4/sdram_axi.v
-index d8fe4eda..30bcfac6 100644
+index d8fe4ed..30bcfac 100644
 --- a/perip/sdram/core_sdram_axi4/sdram_axi.v
 +++ b/perip/sdram/core_sdram_axi4/sdram_axi.v
 @@ -55,7 +55,7 @@ module sdram_axi
@@ -39,7 +39,7 @@ index d8fe4eda..30bcfac6 100644
  );
  
 diff --git a/perip/sdram/core_sdram_axi4/sdram_axi_core.v b/perip/sdram/core_sdram_axi4/sdram_axi_core.v
-index 9a5c1fb7..2e65e086 100644
+index 9a5c1fb..2e65e08 100644
 --- a/perip/sdram/core_sdram_axi4/sdram_axi_core.v
 +++ b/perip/sdram/core_sdram_axi4/sdram_axi_core.v
 @@ -70,7 +70,9 @@ module sdram_axi_core
@@ -54,7 +54,7 @@ index 9a5c1fb7..2e65e086 100644
  // parameter SDRAM_READ_LATENCY     = 1;
  // NEED modified by passing it from user module!!!
 diff --git a/perip/sdram/sdram_top_axi.v b/perip/sdram/sdram_top_axi.v
-index 0208f1bd..c6509501 100644
+index 0208f1b..c650950 100644
 --- a/perip/sdram/sdram_top_axi.v
 +++ b/perip/sdram/sdram_top_axi.v
 @@ -40,19 +40,19 @@ module sdram_top_axi(
@@ -85,7 +85,7 @@ index 0208f1bd..c6509501 100644
      .clk_i(clock),
      .rst_i(reset),
 diff --git a/src/Top.scala b/src/Top.scala
-index cb82ca74..1b346ccd 100644
+index cb82ca7..1b346cc 100644
 --- a/src/Top.scala
 +++ b/src/Top.scala
 @@ -7,8 +7,8 @@ import freechips.rocketchip.diplomacy.LazyModule
@@ -100,7 +100,7 @@ index cb82ca74..1b346ccd 100644
  
  class ysyxSoCTop extends Module {
 diff --git a/src/amba/APBDelayer.scala b/src/amba/APBDelayer.scala
-index 2b09726a..e6e87e06 100644
+index 2b09726..e6e87e0 100644
 --- a/src/amba/APBDelayer.scala
 +++ b/src/amba/APBDelayer.scala
 @@ -52,7 +52,7 @@ class APBDelayerChisel extends Module {

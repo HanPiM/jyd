@@ -1,14 +1,14 @@
-From dc272c126c61a24b740cdaad3a55e3aafd028f45 Mon Sep 17 00:00:00 2001
+From 49b3fdcaae4597ef99b1f7e2dad94c3e636f0d2b Mon Sep 17 00:00:00 2001
 From: Wang Yi Jie <miwyj@mail.scut.edu.cn>
 Date: Sun, 1 Feb 2026 22:10:42 +0800
-Subject: [PATCH 19/28] impl ar channel delay
+Subject: [PATCH 19/29] impl ar channel delay
 
 ---
  src/amba/AXI4Delayer.scala | 78 +++++++++++++++++++++++++++++++++++++-
  1 file changed, 76 insertions(+), 2 deletions(-)
 
 diff --git a/src/amba/AXI4Delayer.scala b/src/amba/AXI4Delayer.scala
-index b60bb57d..8a1d40f2 100644
+index b60bb57..8a1d40f 100644
 --- a/src/amba/AXI4Delayer.scala
 +++ b/src/amba/AXI4Delayer.scala
 @@ -20,9 +20,83 @@ class axi4_delayer extends BlackBox {

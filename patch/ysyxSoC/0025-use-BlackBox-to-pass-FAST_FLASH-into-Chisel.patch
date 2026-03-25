@@ -1,7 +1,7 @@
-From 6a105319e46dbf1ecd34fc0217d02d7ed087c170 Mon Sep 17 00:00:00 2001
+From a6295ece99eb7bf34c10a348be504e973483c5bd Mon Sep 17 00:00:00 2001
 From: Wang Yi Jie <miwyj@mail.scut.edu.cn>
 Date: Sun, 1 Mar 2026 00:21:47 +0800
-Subject: [PATCH 25/28] use BlackBox to pass FAST_FLASH into Chisel
+Subject: [PATCH 25/29] use BlackBox to pass FAST_FLASH into Chisel
 
 ---
  perip/spi/rtl/spi_top_apb.v | 16 +++++++++++++++-
@@ -10,7 +10,7 @@ Subject: [PATCH 25/28] use BlackBox to pass FAST_FLASH into Chisel
  3 files changed, 24 insertions(+), 4 deletions(-)
 
 diff --git a/perip/spi/rtl/spi_top_apb.v b/perip/spi/rtl/spi_top_apb.v
-index 92d37516..4f36f0d6 100644
+index 92d3751..4f36f0d 100644
 --- a/perip/spi/rtl/spi_top_apb.v
 +++ b/perip/spi/rtl/spi_top_apb.v
 @@ -1,6 +1,18 @@
@@ -40,7 +40,7 @@ index 92d37516..4f36f0d6 100644
 +/*verilator public_off*/
 +/*verilator public_off*/
 diff --git a/src/Top.scala b/src/Top.scala
-index 52a09489..5c882d56 100644
+index 52a0948..5c882d5 100644
 --- a/src/Top.scala
 +++ b/src/Top.scala
 @@ -9,7 +9,6 @@ object Config {
@@ -52,7 +52,7 @@ index 52a09489..5c882d56 100644
  
  class ysyxSoCTop extends Module {
 diff --git a/src/device/SPI.scala b/src/device/SPI.scala
-index 2b2ca053..ce7cedca 100644
+index 2b2ca05..ce7cedc 100644
 --- a/src/device/SPI.scala
 +++ b/src/device/SPI.scala
 @@ -30,6 +30,13 @@ class flash extends BlackBox {

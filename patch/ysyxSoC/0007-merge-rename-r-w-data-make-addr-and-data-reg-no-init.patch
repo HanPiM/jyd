@@ -1,14 +1,14 @@
-From 76761bbc5f679a53ec295bdafe26f5fa6b2ab8b3 Mon Sep 17 00:00:00 2001
+From ad59d8ab8fb8a7d901fa5d74908df677ee05dfd1 Mon Sep 17 00:00:00 2001
 From: Wang Yi Jie <miwyj@mail.scut.edu.cn>
 Date: Thu, 22 Jan 2026 09:36:07 +0800
-Subject: [PATCH 07/28] merge rename r/w data make addr and data reg no init
+Subject: [PATCH 07/29] merge rename r/w data make addr and data reg no init
 
 ---
  src/device/PSRAM.scala | 33 +++++++++++++++++++++------------
  1 file changed, 21 insertions(+), 12 deletions(-)
 
 diff --git a/src/device/PSRAM.scala b/src/device/PSRAM.scala
-index 6dfdad90..9d16f143 100644
+index 6dfdad9..9d16f14 100644
 --- a/src/device/PSRAM.scala
 +++ b/src/device/PSRAM.scala
 @@ -42,6 +42,7 @@ class psramChisel extends RawModule {

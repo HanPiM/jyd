@@ -1,7 +1,7 @@
-From 9e97166b6f7732c033d6d3791943576f9e4f7f2a Mon Sep 17 00:00:00 2001
+From 56af6345af2a4e2f81b5e35574835e69c9c064ab Mon Sep 17 00:00:00 2001
 From: Wang Yi Jie <miwyj@mail.scut.edu.cn>
 Date: Tue, 3 Feb 2026 16:23:16 +0800
-Subject: [PATCH 22/28] add assert to AXI4delayer to notice unsupport io.in
+Subject: [PATCH 22/29] add assert to AXI4delayer to notice unsupport io.in
  unready when rdata come
 
 ---
@@ -9,7 +9,7 @@ Subject: [PATCH 22/28] add assert to AXI4delayer to notice unsupport io.in
  1 file changed, 6 insertions(+)
 
 diff --git a/src/amba/AXI4Delayer.scala b/src/amba/AXI4Delayer.scala
-index 94bf02fd..4a66ad52 100644
+index 94bf02f..4a66ad5 100644
 --- a/src/amba/AXI4Delayer.scala
 +++ b/src/amba/AXI4Delayer.scala
 @@ -176,9 +176,15 @@ class AXI4DelayerChisel extends Module {

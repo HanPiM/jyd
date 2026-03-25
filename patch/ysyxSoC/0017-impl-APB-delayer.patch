@@ -1,7 +1,7 @@
-From 1cf43e98abdb9dc016685588ea1915c83e7984e4 Mon Sep 17 00:00:00 2001
+From fe20b449b8eca5cc5e3eca13c4fcd530349d59f5 Mon Sep 17 00:00:00 2001
 From: Wang Yi Jie <miwyj@mail.scut.edu.cn>
 Date: Fri, 30 Jan 2026 10:57:02 +0800
-Subject: [PATCH 17/28] impl APB delayer
+Subject: [PATCH 17/29] impl APB delayer
 
 ---
  src/Top.scala             |  2 +-
@@ -10,7 +10,7 @@ Subject: [PATCH 17/28] impl APB delayer
  3 files changed, 94 insertions(+), 5 deletions(-)
 
 diff --git a/src/Top.scala b/src/Top.scala
-index 8cd5a774..cb82ca74 100644
+index 8cd5a77..cb82ca7 100644
 --- a/src/Top.scala
 +++ b/src/Top.scala
 @@ -8,7 +8,7 @@ import freechips.rocketchip.diplomacy.LazyModule
@@ -23,7 +23,7 @@ index 8cd5a774..cb82ca74 100644
  
  class ysyxSoCTop extends Module {
 diff --git a/src/amba/APBDelayer.scala b/src/amba/APBDelayer.scala
-index 0cfc3d0c..2b09726a 100644
+index 0cfc3d0..2b09726 100644
 --- a/src/amba/APBDelayer.scala
 +++ b/src/amba/APBDelayer.scala
 @@ -12,7 +12,9 @@ import freechips.rocketchip.util._
@@ -143,7 +143,7 @@ index 0cfc3d0c..2b09726a 100644
        delayer.io.reset := reset
        delayer.io.in <> in
 diff --git a/src/device/SDRAM.scala b/src/device/SDRAM.scala
-index b7f44875..52186604 100644
+index b7f4487..5218660 100644
 --- a/src/device/SDRAM.scala
 +++ b/src/device/SDRAM.scala
 @@ -151,7 +151,7 @@ class sdramChisel extends RawModule {

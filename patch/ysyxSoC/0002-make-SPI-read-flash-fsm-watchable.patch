@@ -1,14 +1,14 @@
-From 4f7de626217d2d5c25d2fb1d59993be373202485 Mon Sep 17 00:00:00 2001
+From 15d1254ce10669e7cbe91b7fef6e3516ccc075e6 Mon Sep 17 00:00:00 2001
 From: Wang Yi Jie <miwyj@mail.scut.edu.cn>
 Date: Tue, 20 Jan 2026 20:26:32 +0800
-Subject: [PATCH 02/28] make SPI read flash fsm watchable
+Subject: [PATCH 02/29] make SPI read flash fsm watchable
 
 ---
  src/device/SPI.scala | 218 ++++++++++++++++---------------------------
  1 file changed, 78 insertions(+), 140 deletions(-)
 
 diff --git a/src/device/SPI.scala b/src/device/SPI.scala
-index e8415926..456bc489 100644
+index e841592..456bc48 100644
 --- a/src/device/SPI.scala
 +++ b/src/device/SPI.scala
 @@ -57,19 +57,6 @@ class APBSPI(address: Seq[AddressSet])(implicit p: Parameters)

@@ -1,14 +1,14 @@
-From 4468093818399f8c921ade2f00202497b9982234 Mon Sep 17 00:00:00 2001
+From a3bd1fabd832efbae279af271a6b4a6d7b32a633 Mon Sep 17 00:00:00 2001
 From: Wang Yi Jie <miwyj@mail.scut.edu.cn>
 Date: Mon, 26 Jan 2026 12:42:46 +0800
-Subject: [PATCH 15/28] impl ps2 keyboard ctrl
+Subject: [PATCH 15/29] impl ps2 keyboard ctrl
 
 ---
  src/device/Keyboard.scala | 121 ++++++++++++++++++++++++++++++++++----
  1 file changed, 111 insertions(+), 10 deletions(-)
 
 diff --git a/src/device/Keyboard.scala b/src/device/Keyboard.scala
-index 5bd7f5b4..2c3ad853 100644
+index 5bd7f5b..2c3ad85 100644
 --- a/src/device/Keyboard.scala
 +++ b/src/device/Keyboard.scala
 @@ -16,7 +16,9 @@ class PS2IO extends Bundle {

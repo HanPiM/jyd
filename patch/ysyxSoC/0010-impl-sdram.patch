@@ -1,7 +1,7 @@
-From 3038d2b666d5d19bc337525a57beee297efffe67 Mon Sep 17 00:00:00 2001
+From 69534a8195191b0da30a3460a5d439a1a1939971 Mon Sep 17 00:00:00 2001
 From: Wang Yi Jie <miwyj@mail.scut.edu.cn>
 Date: Sat, 24 Jan 2026 19:48:09 +0800
-Subject: [PATCH 10/28] impl sdram
+Subject: [PATCH 10/29] impl sdram
 
 ---
  src/SoC.scala          |   2 +-
@@ -9,7 +9,7 @@ Subject: [PATCH 10/28] impl sdram
  2 files changed, 187 insertions(+), 26 deletions(-)
 
 diff --git a/src/SoC.scala b/src/SoC.scala
-index a86a9498..e82b3ad1 100644
+index a86a949..e82b3ad 100644
 --- a/src/SoC.scala
 +++ b/src/SoC.scala
 @@ -142,7 +142,7 @@ class ysyxSoCFull(implicit p: Parameters) extends LazyModule {
@@ -22,7 +22,7 @@ index a86a9498..e82b3ad1 100644
  
      val externalPins = IO(new Bundle{
 diff --git a/src/device/SDRAM.scala b/src/device/SDRAM.scala
-index a823c718..9ebf9107 100644
+index a823c71..9ebf910 100644
 --- a/src/device/SDRAM.scala
 +++ b/src/device/SDRAM.scala
 @@ -9,25 +9,30 @@ import freechips.rocketchip.amba.apb._

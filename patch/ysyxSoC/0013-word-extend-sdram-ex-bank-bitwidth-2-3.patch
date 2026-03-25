@@ -1,7 +1,7 @@
-From 94eb6952cd865b8fa5d4ebfaf86ce8ef40de6add Mon Sep 17 00:00:00 2001
+From 7490b3398f397169b0800909759596a254aea875 Mon Sep 17 00:00:00 2001
 From: Wang Yi Jie <miwyj@mail.scut.edu.cn>
 Date: Sun, 25 Jan 2026 17:30:25 +0800
-Subject: [PATCH 13/28] word extend sdram (ex bank bitwidth 2->3)
+Subject: [PATCH 13/29] word extend sdram (ex bank bitwidth 2->3)
 
 ---
  perip/sdram/core_sdram_axi4/sdram_axi_core.v |  11 +-
@@ -10,7 +10,7 @@ Subject: [PATCH 13/28] word extend sdram (ex bank bitwidth 2->3)
  3 files changed, 98 insertions(+), 58 deletions(-)
 
 diff --git a/perip/sdram/core_sdram_axi4/sdram_axi_core.v b/perip/sdram/core_sdram_axi4/sdram_axi_core.v
-index 5443bc10..9a5c1fb7 100644
+index 5443bc1..9a5c1fb 100644
 --- a/perip/sdram/core_sdram_axi4/sdram_axi_core.v
 +++ b/perip/sdram/core_sdram_axi4/sdram_axi_core.v
 @@ -59,7 +59,7 @@ module sdram_axi_core
@@ -46,7 +46,7 @@ index 5443bc10..9a5c1fb7 100644
  //-----------------------------------------------------------------
  // SDRAM State Machine
 diff --git a/perip/sdram/sdram_top_apb.v b/perip/sdram/sdram_top_apb.v
-index 5fb16c8f..11782a28 100644
+index 5fb16c8..11782a2 100644
 --- a/perip/sdram/sdram_top_apb.v
 +++ b/perip/sdram/sdram_top_apb.v
 @@ -21,7 +21,7 @@ module sdram_top_apb (
@@ -68,7 +68,7 @@ index 5fb16c8f..11782a28 100644
      .SDRAM_READ_LATENCY(1)
    ) u_sdram_ctrl(
 diff --git a/src/device/SDRAM.scala b/src/device/SDRAM.scala
-index e3da13e8..b7f44875 100644
+index e3da13e..b7f4487 100644
 --- a/src/device/SDRAM.scala
 +++ b/src/device/SDRAM.scala
 @@ -12,7 +12,7 @@ import freechips.rocketchip.diplomacy._

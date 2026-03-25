@@ -1,14 +1,14 @@
-From 2ddcfaa1b86853c03cf65c9e28d737e213c36815 Mon Sep 17 00:00:00 2001
+From 27c12f5755187b120ed77176c1adcb998dbf8a72 Mon Sep 17 00:00:00 2001
 From: Wang Yi Jie <miwyj@mail.scut.edu.cn>
 Date: Sun, 1 Mar 2026 00:22:25 +0800
-Subject: [PATCH 26/28] fix using old default ratio
+Subject: [PATCH 26/29] fix using old default ratio
 
 ---
  src/amba/AXI4Delayer.scala | 10 +++++-----
  1 file changed, 5 insertions(+), 5 deletions(-)
 
 diff --git a/src/amba/AXI4Delayer.scala b/src/amba/AXI4Delayer.scala
-index a48c722c..f3e8796e 100644
+index a48c722..f3e8796 100644
 --- a/src/amba/AXI4Delayer.scala
 +++ b/src/amba/AXI4Delayer.scala
 @@ -26,7 +26,7 @@ class axi4_delayer extends BlackBox {

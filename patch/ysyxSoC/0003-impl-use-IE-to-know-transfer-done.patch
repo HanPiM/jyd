@@ -1,14 +1,14 @@
-From cfa2c96c78567b045a920ee1ed35a7f700751e40 Mon Sep 17 00:00:00 2001
+From 5cd7e95a57d736e9d8eb7cff2ff95e265d18cbdd Mon Sep 17 00:00:00 2001
 From: Wang Yi Jie <miwyj@mail.scut.edu.cn>
 Date: Wed, 21 Jan 2026 14:27:34 +0800
-Subject: [PATCH 03/28] impl use IE to know transfer done
+Subject: [PATCH 03/29] impl use IE to know transfer done
 
 ---
  src/device/SPI.scala | 28 +++++++++++++++++++---------
  1 file changed, 19 insertions(+), 9 deletions(-)
 
 diff --git a/src/device/SPI.scala b/src/device/SPI.scala
-index 456bc489..07526b12 100644
+index 456bc48..07526b1 100644
 --- a/src/device/SPI.scala
 +++ b/src/device/SPI.scala
 @@ -63,6 +63,7 @@ class APBSPI(address: Seq[AddressSet])(implicit p: Parameters)

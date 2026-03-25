@@ -20,7 +20,7 @@ object Elaborate extends App {
     "-strip-debug-info"
   )
 
-  val designName = "ysyx_25100261"
+  val designName = "jyd"
 
   def emit(gen: => chisel3.RawModule, emitDir: String) = {
     println(s"Emitting Verilog... to $emitDir")
@@ -38,8 +38,8 @@ object Elaborate extends App {
 
   val emitRootDir = args(1)
 
-  emit(new top.ysyx_25100261(CPUParameters(gprAddrWidth = 4)), s"$emitRootDir/riscv32e")
-  emit(new top.ysyx_25100261(CPUParameters(gprAddrWidth = 5, skipDifftestAddrs = jyd.AddrSpace.needSkipDifftestGroup)), s"$emitRootDir/riscv32")
+  emit(new top.CPUTop(CPUParameters(gprAddrWidth = 4)), s"$emitRootDir/riscv32e")
+  emit(new top.CPUTop(CPUParameters(gprAddrWidth = 5, skipDifftestAddrs = jyd.AddrSpace.needSkipDifftestGroup)), s"$emitRootDir/riscv32")
 
   emit(new TestSoC(new npc.NPCDevices), s"$emitRootDir/testsoc/npc")
   emit(new TestSoC(new jyd.JYDDevices), s"$emitRootDir/testsoc/jyd")

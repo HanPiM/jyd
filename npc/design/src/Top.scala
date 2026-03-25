@@ -31,7 +31,7 @@ class TopIO extends Bundle {
 }
 
 class CPUCoreAsBlackBox    extends BlackBox {
-  override def desiredName: String = "ysyx_25100261"
+  override def desiredName: String = "CPUTop"
   // force chisel to generate the signals name with the same prefix `io`
   val io = IO(new Bundle {
     val clock = Input(Clock())
@@ -40,25 +40,25 @@ class CPUCoreAsBlackBox    extends BlackBox {
   })
 }
 class PCProviderAsBlackBox extends BlackBox {
-  override def desiredName: String = "ysyx_25100261_ResetPCProvider"
+  override def desiredName: String = "ResetPCProvider"
   val io = IO(new Bundle {
     val resetPC = Output(Types.UWord)
   })
 }
 
-class ysyx_25100261(parm:CPUParameters) extends Module {
+class CPUTop(parm:CPUParameters) extends Module {
   val io = IO(new TopIO)
   implicit val p: CPUParameters = parm
 
   dontTouch(io)
-  println(s"Add module prefix ${getClass.getSimpleName}")
-  withModulePrefix(getClass.getSimpleName) {
+  // println(s"Add module prefix ${getClass.getSimpleName}")
+  // withModulePrefix(getClass.getSimpleName) {
     val core = Module(new CPUCore)
     core.io <> io
-  }
+  // }
 }
 
-class ysyx_25100261_ResetPCProvider extends BlackBox with HasBlackBoxInline {
+class ResetPCProvider extends BlackBox with HasBlackBoxInline {
   val io      = IO(new Bundle {
     val resetPC = Output(Types.UWord)
   })
@@ -103,7 +103,7 @@ class CPUCore(
 
   lsu.io.mcycle64 := csrs.io.mcycle64
 
-  val resetPCProvider = Module(new ysyx_25100261_ResetPCProvider)
+  val resetPCProvider = Module(new ResetPCProvider)
   val INIT_PC         = resetPCProvider.io.resetPC
 
   val pc             = RegInit(INIT_PC)

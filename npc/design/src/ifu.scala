@@ -22,7 +22,11 @@ class IFU extends Module {
 
   val pcReg     = RegEnable(io.pc.bits, io.pc.fire)
   val pc        = Mux(io.pc.fire, io.pc.bits, pcReg)
-  val predNxtPC = RegEnableReadNew(io.predictedNextPC, io.pc.fire)
+
+  val predNxtPCReg = RegEnable(io.predictedNextPC, io.pc.fire)
+  val predNxtPC    = Mux(io.pc.fire, io.predictedNextPC, predNxtPCReg)
+
+  // val predNxtPC = RegEnableReadNew(io.predictedNextPC, io.pc.fire)
   dontTouch(pc)
   val state     = RegInit(State.idle)
 
@@ -32,10 +36,13 @@ class IFU extends Module {
   }
   dontTouch(instID)
 
-  io.out.bits.iid := Mux(io.pc.fire, instID + 1.U, instID)
+  io.out.bits.iid := instID//Mux(io.pc.fire, instID + 1.U, instID)
 
-  io.pc.ready  := (state === State.idle) && memIO.req_ready
-  memIO.req_valid := (state === State.idle) && io.pc.valid
+  val isWaitingRespMeetValid        = (state === State.waitResp) && memIO.resp_valid
+  val isWaitingRespAndCanFireNewReq = isWaitingRespMeetValid && io.out.ready
+
+  io.pc.ready     := (state === State.idle || isWaitingRespAndCanFireNewReq) && memIO.req_ready
+  memIO.req_valid := (state === State.idle || isWaitingRespAndCanFireNewReq) && io.pc.valid
   memIO.addr      := io.pc.bits
   memIO.size      := 2.U
   memIO.wen       := false.B
@@ -44,11 +51,12 @@ class IFU extends Module {
 
   val inst = RegEnableReadNew(memIO.rdata, memIO.resp_valid)
   io.out.bits.code            := inst
-  io.out.bits.pc              := pc
-  io.out.bits.predictedNextPC := predNxtPC
-  io.out.valid                := (state === State.waitResp && memIO.resp_valid) || (state === State.waitOut)
+  io.out.bits.pc              := pcReg
+  io.out.bits.predictedNextPC := predNxtPCReg
+  io.out.valid                := isWaitingRespMeetValid || (state === State.waitOut)
 
-  val nxtStateWhenWaitOut  = Mux(io.out.ready, State.idle, State.waitOut)
+  val nxtStateWhenWaitOut  =
+    Mux(io.out.ready, Mux(isWaitingRespAndCanFireNewReq, State.waitResp, State.idle), State.waitOut)
   val nxtStateWhenWaitResp = Mux(memIO.resp_valid, nxtStateWhenWaitOut, State.waitResp)
   val nxtStateWhenIdle     = Mux(io.pc.fire, nxtStateWhenWaitResp, State.idle)
 

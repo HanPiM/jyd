@@ -227,6 +227,7 @@ class JYDPeripheralBridge extends Module {
     val hit = targetSel === sel
     bus.req_valid := !waitingResp && io.cpu.req_valid && hit
     bus.addr      := io.cpu.addr
+    bus.size      := io.cpu.size
     bus.wdata     := io.cpu.wdata
     bus.wmask     := io.cpu.wmask
     bus.wen       := io.cpu.wen

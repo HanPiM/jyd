@@ -37,6 +37,7 @@ class IFU extends Module {
   io.pc.ready  := (state === State.idle) && memIO.req_ready
   memIO.req_valid := (state === State.idle) && io.pc.valid
   memIO.addr      := io.pc.bits
+  memIO.size      := 2.U
   memIO.wen       := false.B
   memIO.wdata     := 0.U
   memIO.wmask     := 0.U

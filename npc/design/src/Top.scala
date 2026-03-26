@@ -115,6 +115,7 @@ class DualSimpleBusToAXI4 extends Module {
 
   val selLSU = RegInit(false.B)
   val reqAddr = Reg(UInt(32.W))
+  val reqSize = Reg(UInt(3.W))
   val reqWData = Reg(UInt(32.W))
   val reqWMask = Reg(UInt(4.W))
   val reqWEn = Reg(Bool())
@@ -124,6 +125,7 @@ class DualSimpleBusToAXI4 extends Module {
 
   val takeLSU = io.lsu.req_valid
   val selAddr = Mux(takeLSU, io.lsu.addr, io.ifu.addr)
+  val selSize = Mux(takeLSU, io.lsu.size, io.ifu.size)
   val selWData = Mux(takeLSU, io.lsu.wdata, io.ifu.wdata)
   val selWMask = Mux(takeLSU, io.lsu.wmask, io.ifu.wmask)
   val selWEn   = Mux(takeLSU, io.lsu.wen, io.ifu.wen)
@@ -134,6 +136,7 @@ class DualSimpleBusToAXI4 extends Module {
   when(state === State.idle && (io.lsu.req_valid || io.ifu.req_valid)) {
     selLSU   := takeLSU
     reqAddr  := selAddr
+    reqSize  := selSize
     reqWData := selWData
     reqWMask := selWMask
     reqWEn   := selWEn
@@ -147,7 +150,7 @@ class DualSimpleBusToAXI4 extends Module {
     io.out.araddr  := reqAddr
     io.out.arid    := 0.U
     io.out.arlen   := 0.U
-    io.out.arsize  := AXI4IO.SizeType.WORD
+    io.out.arsize  := reqSize
     io.out.arburst := AXI4IO.BurstType.INCR
     when(io.out.arready) {
       state := State.waitR
@@ -173,7 +176,7 @@ class DualSimpleBusToAXI4 extends Module {
     io.out.awaddr  := reqAddr
     io.out.awid    := 0.U
     io.out.awlen   := 0.U
-    io.out.awsize  := AXI4IO.SizeType.WORD
+    io.out.awsize  := reqSize
     io.out.awburst := AXI4IO.BurstType.INCR
 
     io.out.wvalid := !wSent

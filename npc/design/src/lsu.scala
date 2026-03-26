@@ -141,6 +141,7 @@ class LSU(
 
   memIO.req_valid := reqActive
   memIO.addr      := in.destAddr
+  memIO.size      := in.func3t(1, 0)
   memIO.wdata     := MuxLookup(in.destAddr(1, 0), 0.U(32.W))(
     Seq(
       0.U -> in.storeData,

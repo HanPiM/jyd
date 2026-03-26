@@ -7,6 +7,7 @@ object SimpleBusIO {
     val req_ready  = Input(Bool())
     val req_valid  = Output(Bool())
     val addr       = Output(UInt(32.W))
+    val size       = Output(UInt(3.W))
     val wdata      = Output(UInt(32.W))
     val wmask      = Output(UInt(4.W))
     val wen        = Output(Bool())
@@ -18,6 +19,7 @@ object SimpleBusIO {
     def dontCareReq() = {
       req_valid := false.B
       addr      := 0.U
+      size      := 0.U
       wdata     := 0.U
       wmask     := 0.U
       wen       := false.B

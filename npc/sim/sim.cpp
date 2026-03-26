@@ -352,6 +352,7 @@ bool sim_init(int argc, char **argv, sim_setting setting) {
   konata_logger->start(sim_get_cycle());
   spdlog::info("KonataLogger initialized, start at cycle {}, sim time {}ps",
                sim_get_cycle(), sim_get_time());
+	konata_logger->update();
 
   return true;
 }

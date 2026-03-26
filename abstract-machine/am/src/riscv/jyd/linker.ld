@@ -19,7 +19,7 @@ SECTIONS {
 	.rodata : ALIGN(4) {
 		*(.rodata*)
 		*(.srodata*)
-	} > IROM
+	} > DRAM
 
 	.data : {
 		*(.data*)

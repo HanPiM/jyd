@@ -19,16 +19,16 @@ MAINARGS_PLACEHOLDER = the_insert-arg_rule_in_Makefile_will_insert_mainargs_here
 CFLAGS += -DMAINARGS_MAX_LEN=$(MAINARGS_MAX_LEN) -DMAINARGS_PLACEHOLDER=$(MAINARGS_PLACEHOLDER)
 
 insert-arg: image
-	@python $(JYD_AM_HOME)/tools/insert-arg.py $(IMAGE).bin $(MAINARGS_MAX_LEN) $(MAINARGS_PLACEHOLDER) "$(mainargs)"
+	@python $(JYD_AM_HOME)/tools/insert-arg.py $(IMAGE).data.bin $(MAINARGS_MAX_LEN) $(MAINARGS_PLACEHOLDER) "$(mainargs)"
 
 IMG_DATA_COE = $(IMAGE_REL).data.coe
 
 image: image-dep
 	@$(OBJDUMP) -d $(IMAGE).elf > $(IMAGE).txt
 	@echo + OBJCOPY "->" $(IMAGE_REL).bin without .data section
-	@$(OBJCOPY) -S -R .data -R .data.extra -O binary $(IMAGE).elf $(IMAGE).bin
+	@$(OBJCOPY) -S -R .data -R .data.extra -R .rodata -O binary $(IMAGE).elf $(IMAGE).bin
 	@echo + Extract .data section "->" $(IMAGE_REL).data.bin
-	@$(OBJCOPY) -j .data -j .data.extra -O binary $(IMAGE).elf $(IMAGE_REL).data.bin
+	@$(OBJCOPY) -j .data -j .data.extra -j .rodata -O binary $(IMAGE).elf $(IMAGE_REL).data.bin
 	@echo + Convert .data section "->" $(IMG_DATA_COE)
 	@echo "memory_initialization_radix=16;" > $(IMG_DATA_COE)
 	@echo "memory_initialization_vector=" >> $(IMG_DATA_COE)

@@ -2,10 +2,9 @@ package cpu
 import chisel3._
 import chisel3.util._
 import common_def._
-import busfsm._
 
 import chisel3.util.circt.dpi._
-import axi4._
+import simplebus._
 
 import dpiwrap._
 import dpiwrap.ClockedCallVoidDPIC
@@ -54,7 +53,7 @@ object ExtractFwdInfoFromLSU {
 class LSUIO(
   implicit p: CPUParameters)
     extends Bundle {
-  val mem = AXI4IO.Master
+  val mem = SimpleBusIO.Master
 
   val mcycle64 = Input(UInt(64.W))
 
@@ -68,28 +67,19 @@ class LSU(
   val io = IO(new LSUIO)
 
   object State extends ChiselEnum {
-    val idle, waitAR, waitAW, waitR, waitW, waitB, waitOut = Value
+    val idle, waitReq, waitResp, waitOut = Value
   }
   val state = RegInit(State.idle)
-  val isIdle    = state === State.idle
-  val isWaitAR  = state === State.waitAR
-  val isWaitAW  = state === State.waitAW
-  val isWaitR   = state === State.waitR
-  val isWaitW   = state === State.waitW
-  val isWaitB   = state === State.waitB
-  val isWaitOut = state === State.waitOut
+  val isIdle = state === State.idle
 
   val outWriteBackInfo = io.out.bits
 
-  // val inReg = RegEnable(io.in.bits, io.in.fire)
-  // val inReg = RegEnableReadNew(io.in.bits, io.in.fire)
+  val in       = io.in.bits
+  val memIO    = io.mem
+  val respData = Reg(Types.UWord)
 
-  val in                 = io.in.bits
-  val inExuWriteBackInfo = in.exuWriteBack
-
-  // val memRdRawData = Reg(Types.UWord)
-  val memRdRawData = Wire(Types.UWord)
-  memRdRawData := io.mem.rdata
+  memIO.dontCareReq()
+  dontTouch(io.mem)
 
   val isLoadOp    = in.isLoad && io.in.valid
   // only compare high 8 bit since clint addr is 0x0200_0048/4c, 0x02 is unique in whole addr space
@@ -98,167 +88,27 @@ class LSU(
   val isStore     = in.isStore && io.in.valid
 
   val isMemOp = isMemLoad || isStore
+  val fireLocalBypass = isIdle && io.in.valid && (!isMemOp) && io.out.ready
+  val reqActive       = io.in.valid && isMemOp && (state === State.idle || state === State.waitReq)
+  val fireMemReq      = reqActive && memIO.req_ready
 
-  // Lo: 0x20000048 -> 08 -> 0b1000
-  // Hi: 0x2000004c -> 12 -> 0b1100
-  val clintRdData = Mux(in.destAddr(2), io.mcycle64(63, 32), io.mcycle64(31, 0))
+  when(state === State.waitResp && memIO.resp_valid) {
+    respData := memIO.rdata
+  }
 
-  val memIO = io.mem
-  io.out.valid := io.in.valid && ((!isMemOp) || isWaitOut || ((isWaitB | isWaitW) && memIO.bvalid) || ((isWaitR | isIdle) && memIO.rvalid))
-  io.in.ready  := ((!isMemOp) || (isWaitOut) || ((isWaitW | isWaitB) && memIO.bvalid) || ((isWaitR | isIdle) && memIO.rvalid)) && io.out.ready
+  val activeReq      = io.in.bits
+  val memAddr        = activeReq.destAddr
+  val func3t         = activeReq.func3t
+  val storeData      = activeReq.storeData
+  val memAddrOffset  = memAddr(1, 0)
+  val memRdRawData   = Mux(state === State.waitResp && memIO.resp_valid, memIO.rdata, respData)
+  val memOpIsWord    = func3t(1)
+  val memOpIsHalf    = (~func3t(1)) && func3t(0)
+  val memOpIsByte    = (~func3t(1)) && (~func3t(0))
+  val activeIsCLINT  = memAddr(31, 27) === AddrSpace.CLINT._1(31, 27)
+  val clintRdData    = Mux(memAddr(2), io.mcycle64(63, 32), io.mcycle64(31, 0))
 
-  val addrAck = Mux(isMemLoad, io.mem.arready, io.mem.awready)
-
-  val nxtStateWhenIdleMeetMemOp = Mux(isMemLoad, State.waitAR, State.waitAW)
-
-  val nxtStateWhenWaitOut = Mux(io.out.ready, State.idle, State.waitOut)
-  val nxtStateWhenWaitB   = Mux(memIO.bvalid && memIO.bready, nxtStateWhenWaitOut, State.waitB)
-
-  val nxtStateWhenWaitR = Mux(memIO.rvalid && memIO.rready, nxtStateWhenWaitOut, State.waitR)
-  val nxtStateWhenWaitW = Mux(memIO.wvalid && memIO.wready, nxtStateWhenWaitB, State.waitW)
-
-  val nxtStateWhenAddrAck = Mux(isMemLoad, nxtStateWhenWaitR, nxtStateWhenWaitW)
-
-  state := MuxLookup(state, State.idle)(
-    Seq(
-      State.idle    -> Mux(
-        isMemOp,
-        Mux(addrAck, nxtStateWhenAddrAck, nxtStateWhenIdleMeetMemOp),
-        State.idle
-      ),
-      State.waitAR  -> Mux(addrAck, nxtStateWhenWaitR, State.waitAR),
-      State.waitAW  -> Mux(addrAck, nxtStateWhenWaitW, State.waitAW),
-      State.waitR   -> nxtStateWhenWaitR,
-      State.waitW   -> nxtStateWhenWaitW,
-      State.waitB   -> nxtStateWhenWaitB,
-      State.waitOut -> nxtStateWhenWaitOut
-    )
-  )
-
-  val memAddr            = in.destAddr
-  val func3t             = in.func3t
-  val storeData          = in.storeData
-  val memAddrUnalignPart = memAddr(1, 0)
-  // val memAddrUnalignPartBitlen = memAddrUnalignPart << 3
-
-  memIO.araddr  := memAddr
-  memIO.arvalid := isMemLoad && (isIdle || isWaitAR)
-
-  // val memOpSize = MuxLookup(func3t, 0.U)(
-  //   Seq(
-  //     MemOp.byte     -> 0.U,
-  //     MemOp.halfword -> 1.U,
-  //     MemOp.word     -> 2.U,
-  //     MemOp.lbu      -> 0.U,
-  //     MemOp.lhu      -> 1.U
-  //   )
-  // )
-  val memOpSize = func3t(1, 0)
-
-  val memOpIsWord = func3t(1)
-  val memOpIsHalf = (~func3t(1)) && func3t(0)
-  val memOpIsByte = (~func3t(1)) && (~func3t(0))
-
-  memIO.arid    := 0.U
-  memIO.arlen   := 0.U
-  memIO.arsize  := memOpSize
-  memIO.arburst := 1.U
-
-  // val memRdData = memRdRawData >> memAddrUnalignPartBitlen
-  val memRdData = MuxLookup(memAddrUnalignPart, 0.U(8.W))(
-    Seq(
-      0.U -> memRdRawData,
-      1.U -> memRdRawData(31, 8).pad(32),
-      2.U -> memRdRawData(31, 16).pad(32),
-      3.U -> memRdRawData(31, 24).pad(32)
-    )
-  )
-  // val memRdData = memRdRawData
-
-  val memRdDataByte = Cat(Fill(24, memRdData(7) && (~func3t(2))), memRdData(7, 0))
-  val memRdDataHalf = Cat(Fill(16, memRdData(15) && (~func3t(2))), memRdData(15, 0))
-  val loadResult    = Mux(func3t(1), memRdData, Mux(func3t(0), memRdDataHalf, memRdDataByte))
-
-  // val loadResult = MuxLookup(func3t, GARBAGE_UNINIT_VALUE)(
-  //   Seq(
-  //     MemOp.byte     -> Cat(Fill(24, memRdData(7)), memRdData(7, 0)),
-  //     MemOp.halfword -> Cat(Fill(16, memRdData(15)), memRdData(15, 0)),
-  //     MemOp.word     -> memRdData,
-  //     MemOp.lbu      -> Cat(Fill(24, 0.U), memRdData(7, 0)),
-  //     MemOp.lhu      -> Cat(Fill(16, 0.U), memRdData(15, 0))
-  //   )
-  // )
-
-  // when(memIO.arvalid && memIO.arready) {
-  //   memAddrSent := true.B
-  // }
-
-  // memRdRawData := memIO.rdata
-  // when(memIO.rvalid && !memRDone) {
-  //   memRdRawData := memIO.rdata
-  //   memRDone     := true.B
-  // }
-  // val downStreamRecved = Reg(Bool())
-  // dontTouch(downStreamRecved)
-  // memIO.rready := io.out.ready
-
-  // TODO: fix SoC AXI4 Delayer support delay ready
-  memIO.rready := true.B
-  // when(io.out.ready && io.out.valid) {
-  //   downStreamRecved := true.B
-  // }.elsewhen(io.dinst.valid && isMemOp){
-  //   downStreamRecved := false.B
-  // }
-  // when((!isMemOp) || (io.out.fire)) {
-  //   memRDone    := false.B
-  //   memWDone    := false.B
-  //   memAddrSent := false.B
-  // }
-
-  // mem write
-
-  // for now sw only consider align addr
-
-  val memWAddr = memIO.awaddr
-  val memWData = memIO.wdata
-  val memWMask = memIO.wstrb
-
-  // memIO.awvalid := isStore && (!memWDone) && (!memAddrSent)
-  // memIO.wvalid  := isStore && (!memWDone)
-  memIO.awvalid := isStore && (isIdle || isWaitAW)
-  memIO.wvalid  := isStore && (isIdle || isWaitAW || isWaitW)
-  memIO.wlast   := true.B
-
-  // NOTE: need keep to make simulation bind signal by names
-  dontTouch(io.mem)
-
-  // dontTouch(memIO.wlast)
-
-  memIO.awid    := 0.U
-  memIO.awlen   := 0.U
-  memIO.awsize  := memOpSize
-  memIO.awburst := 1.U
-
-  // when(memIO.awvalid && memIO.awready) {
-  //   memAddrSent := true.B
-  // }
-  // when(memIO.wvalid && memIO.wready) {
-  //   memWDone := true.B
-  // }
-
-  //
-  // need wait for bresp
-  // since w done only means data has been sent
-  // later read operation may have higher priority and
-  // the write may not be finished yet
-  //
-  // when(memIO.bvalid && memIO.bready) {
-  //   memWDone := true.B
-  // }
-  memIO.bready := true.B
-
-  // memWData := storeData << memAddrUnalignPartBitlen
-  memWData := MuxLookup(memAddrUnalignPart, 0.U(32.W))(
+  val memWData = MuxLookup(memAddrOffset, 0.U(32.W))(
     Seq(
       0.U -> storeData,
       1.U -> Cat(storeData(23, 0), 0.U(8.W)),
@@ -266,8 +116,7 @@ class LSU(
       3.U -> Cat(storeData(7, 0), 0.U(24.W))
     )
   )
-  // memWData := storeData
-  val wByteMask = MuxLookup(memAddrUnalignPart, 0.U(4.W))(
+  val wByteMask = MuxLookup(memAddrOffset, 0.U(4.W))(
     Seq(
       0.U -> "b0001".U(4.W),
       1.U -> "b0010".U(4.W),
@@ -275,48 +124,92 @@ class LSU(
       3.U -> "b1000".U(4.W)
     )
   )
-  val wByteMaskHalf = MuxLookup(memAddrUnalignPart, 0.U(4.W))(
+  val wByteMaskHalf = MuxLookup(memAddrOffset, 0.U(4.W))(
     Seq(
       0.U -> "b0011".U(4.W),
       1.U -> "b0110".U(4.W),
       2.U -> "b1100".U(4.W)
     )
   )
-
-  memWAddr := memAddr
-  memWMask := Mux1H(
+  val memWMask = Mux1H(
     Seq(
       memOpIsByte -> wByteMask,
       memOpIsHalf -> wByteMaskHalf,
       memOpIsWord -> "b1111".U(4.W)
     )
   )
-  // memWMask := MuxLookup(func3t, 0.U)(
-  //   Seq(
-  //     MemOp.byte     -> wByteMask,
-  //     MemOp.halfword -> wByteMaskHalf,
-  //     MemOp.word     -> 15.U(4.W)
-  //   )
-  // )
 
-  outWriteBackInfo.csr           := inExuWriteBackInfo.csr
-  outWriteBackInfo.csr_ecallflag := inExuWriteBackInfo.csr_ecallflag
-  outWriteBackInfo.gpr.addr      := inExuWriteBackInfo.gpr.addr
-  outWriteBackInfo.gpr.en        := inExuWriteBackInfo.gpr.en
-  outWriteBackInfo.gpr.data      := Mux(isLoadOp, Mux(isCLINTAddr, clintRdData, loadResult), inExuWriteBackInfo.gpr.data)
-  // outWriteBackInfo.is_ebreak     := inExuWriteBackInfo.is_ebreak
-  // outWriteBackInfo.pc            := inExuWriteBackInfo.pc
-  // outWriteBackInfo.nxt_pc        := inExuWriteBackInfo.nxt_pc
-  outWriteBackInfo.iid           := inExuWriteBackInfo.iid
+  memIO.req_valid := reqActive
+  memIO.addr      := in.destAddr
+  memIO.wdata     := MuxLookup(in.destAddr(1, 0), 0.U(32.W))(
+    Seq(
+      0.U -> in.storeData,
+      1.U -> Cat(in.storeData(23, 0), 0.U(8.W)),
+      2.U -> Cat(in.storeData(15, 0), 0.U(16.W)),
+      3.U -> Cat(in.storeData(7, 0), 0.U(24.W))
+    )
+  )
+  memIO.wmask     := Mux1H(
+    Seq(
+      ((~in.func3t(1)) && (~in.func3t(0))) -> MuxLookup(in.destAddr(1, 0), 0.U(4.W))(
+        Seq(0.U -> "b0001".U, 1.U -> "b0010".U, 2.U -> "b0100".U, 3.U -> "b1000".U)
+      ),
+      ((~in.func3t(1)) && in.func3t(0)) -> MuxLookup(in.destAddr(1, 0), 0.U(4.W))(
+        Seq(0.U -> "b0011".U, 1.U -> "b0110".U, 2.U -> "b1100".U)
+      ),
+      in.func3t(1) -> "b1111".U(4.W)
+    )
+  )
+  memIO.wen       := in.isStore
 
-  val isSRAMAddr = AddrSpace.inRng(memAddr, AddrSpace.SRAM)
-  when(io.mem.awvalid && io.mem.awready && isSRAMAddr) {
+  io.in.ready := Mux(
+    isMemOp,
+    (((state === State.waitResp) && memIO.resp_valid) || (state === State.waitOut)) && io.out.ready,
+    isIdle && io.out.ready
+  )
+
+  val respLoadDataRaw = MuxLookup(memAddrOffset, 0.U(32.W))(
+    Seq(
+      0.U -> memRdRawData,
+      1.U -> memRdRawData(31, 8).pad(32),
+      2.U -> memRdRawData(31, 16).pad(32),
+      3.U -> memRdRawData(31, 24).pad(32)
+    )
+  )
+  val respLoadByte = Cat(Fill(24, respLoadDataRaw(7) && (~func3t(2))), respLoadDataRaw(7, 0))
+  val respLoadHalf = Cat(Fill(16, respLoadDataRaw(15) && (~func3t(2))), respLoadDataRaw(15, 0))
+  val loadResult   = Mux(func3t(1), respLoadDataRaw, Mux(func3t(0), respLoadHalf, respLoadByte))
+
+  io.out.valid := fireLocalBypass || (state === State.waitResp && memIO.resp_valid) || (state === State.waitOut)
+
+  val nxtStateWhenWaitOut  = Mux(io.out.ready, State.idle, State.waitOut)
+  val nxtStateWhenWaitResp = Mux(memIO.resp_valid, nxtStateWhenWaitOut, State.waitResp)
+  state := MuxLookup(state, State.idle)(
+    Seq(
+      State.idle     -> Mux(io.in.valid && isMemOp, Mux(memIO.req_ready, State.waitResp, State.waitReq), State.idle),
+      State.waitReq  -> Mux(fireMemReq, State.waitResp, State.waitReq),
+      State.waitResp -> nxtStateWhenWaitResp,
+      State.waitOut  -> nxtStateWhenWaitOut
+    )
+  )
+
+  outWriteBackInfo.csr.en        := activeReq.exuWriteBack.csr.en
+  outWriteBackInfo.csr.addr      := activeReq.exuWriteBack.csr.addr
+  outWriteBackInfo.csr.data      := activeReq.exuWriteBack.csr.data
+  outWriteBackInfo.csr_ecallflag := activeReq.exuWriteBack.csr_ecallflag
+  outWriteBackInfo.gpr.addr      := activeReq.exuWriteBack.gpr.addr
+  outWriteBackInfo.gpr.en        := activeReq.exuWriteBack.gpr.en
+  outWriteBackInfo.gpr.data      := Mux(activeReq.isLoad, Mux(activeIsCLINT, clintRdData, loadResult), activeReq.exuWriteBack.gpr.data)
+  outWriteBackInfo.iid           := activeReq.exuWriteBack.iid
+
+  val isSRAMAddr = AddrSpace.inRng(in.destAddr, AddrSpace.SRAM)
+  when(memIO.req_valid && memIO.req_ready && memIO.wen && isSRAMAddr) {
     ClockedCallVoidDPIC("sram_upd", Some(Seq("addr", "data", "mask")))(
       clock,
       isSRAMAddr,
-      memWAddr,
-      memWData,
-      memWMask.pad(8)
+      in.destAddr,
+      memIO.wdata,
+      memIO.wmask.pad(8)
     )
   }
 }

@@ -54,14 +54,12 @@ void init_mem(void *img, const sim_config &cfg) {
 
   irom_ptr = MakeDirectMappedMemFromVlUnpacked(
       "irom",
-      get_dut()
-          ->TestSoC->vlSymsp->TOP__TestSoC__devices__irom__mem__mem_ext.Memory,
+      get_dut()->JYDSoC->vlSymsp->TOP__JYDSoC__irom.__PVT__mem__DOT__Memory,
       0x80000000u);
 
   dram_ptr = MakeDirectMappedMemFromVlUnpacked(
       "dram",
-      get_dut()
-          ->TestSoC->vlSymsp->TOP__TestSoC__devices__dram__mem__mem_ext.Memory,
+      get_dut()->JYDSoC->vlSymsp->TOP__JYDSoC__dram__mem__mem_ext.Memory,
       0x80100000u);
 
   spdlog::info("copy {} to irom of jydsoc", img_path.filename().string());

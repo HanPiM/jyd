@@ -42,5 +42,5 @@ object Elaborate extends App {
   emit(new top.CPUTop(CPUParameters(gprAddrWidth = 5, skipDifftestAddrs = jyd.AddrSpace.needSkipDifftestGroup)), s"$emitRootDir/riscv32")
 
   emit(new TestSoC(new npc.NPCDevices), s"$emitRootDir/testsoc/npc")
-  emit(new TestSoC(new jyd.JYDDevices), s"$emitRootDir/testsoc/jyd")
+  emit(new jyd.JYDSoC, s"$emitRootDir/testsoc/jyd")
 }

@@ -1,20 +1,24 @@
 package testSoC
 
 import chisel3._
-import chisel3.util._
-
 import axi4._
-import xbar._
-import uart._
-
-import top.{CPUCoreAsBlackBox, PCProviderAsBlackBox}
+import top._
 
 trait TestSoCDevice extends Module {
   val io: AXI4IO.SlaveT
 }
 
+class CPUTopAsBlackBox extends BlackBox {
+  override def desiredName: String = "CPUTop"
+  val io = IO(new Bundle {
+    val clock = Input(Clock())
+    val reset = Input(Bool())
+    val io    = new TopIO
+  })
+}
+
 class TestSoC[T <: TestSoCDevice](deviceGen: => T, val resetPC: UInt = "h80000000".U) extends Module {
-  val cpu     = Module(new CPUCoreAsBlackBox)
+  val cpu     = Module(new CPUTopAsBlackBox)
   val devices = Module(deviceGen)
 
   val resetPCProvider = Module(new PCProviderAsBlackBox)

@@ -1,28 +1,18 @@
 package top
 
 import chisel3._
-
 import regfile._
-
 import cpu._
-
 import chisel3.util.circt.dpi._
 import chisel3.util._
 
 import axi4._
-import uart._
-import clint._
-import xbar._
-
-import icache._
 import common_def._
-
 import btb._
 import branchpredictor._
-
 import config._
-
 import dpiwrap.DifftestLayer
+import simplebus._
 
 class TopIO extends Bundle {
   val interrupt = Input(Bool())
@@ -30,15 +20,21 @@ class TopIO extends Bundle {
   val slave     = AXI4IO.Slave
 }
 
-class CPUCoreAsBlackBox    extends BlackBox {
-  override def desiredName: String = "CPUTop"
-  // force chisel to generate the signals name with the same prefix `io`
+class CPUCoreIO extends Bundle {
+  val interrupt = Input(Bool())
+  val irom      = SimpleBusIO.Master
+  val dram      = SimpleBusIO.Master
+}
+
+class CPUCoreAsBlackBox extends BlackBox {
+  override def desiredName: String = "CPUCore"
   val io = IO(new Bundle {
     val clock = Input(Clock())
     val reset = Input(Bool())
-    val io    = new TopIO
+    val io    = new CPUCoreIO
   })
 }
+
 class PCProviderAsBlackBox extends BlackBox {
   override def desiredName: String = "CPUTop_ResetPCProvider"
   val io = IO(new Bundle {
@@ -46,20 +42,36 @@ class PCProviderAsBlackBox extends BlackBox {
   })
 }
 
-class CPUTop(parm:CPUParameters) extends Module {
+class CPUTop(parm: CPUParameters) extends Module {
   val io = IO(new TopIO)
   implicit val p: CPUParameters = parm
 
   dontTouch(io)
-  // println(s"Add module prefix ${getClass.getSimpleName}")
-  // withModulePrefix(getClass.getSimpleName) {
-    val core = Module(new CPUCore)
-    core.io <> io
-  // }
+
+  val core = Module(new CPUCore)
+  core.io.interrupt := io.interrupt
+
+  val memBridge = Module(new DualSimpleBusToAXI4)
+  SimpleBusIO.connectMasterSlave(core.io.irom, memBridge.io.ifu)
+  SimpleBusIO.connectMasterSlave(core.io.dram, memBridge.io.lsu)
+  memBridge.io.out <> io.master
+
+  io.slave := DontCare
+
+  when(io.master.bvalid && io.master.bresp === AXI4IO.BResp.DECERR) {
+    printf("AXI4 DECERR on write address 0x%x\n", io.master.awaddr)
+    stop()
+    stop()
+  }
+  when(io.master.rvalid && io.master.rresp === AXI4IO.RResp.DECERR) {
+    printf("AXI4 DECERR on read address 0x%x\n", io.master.araddr)
+    stop()
+    stop()
+  }
 }
 
 class CPUTop_ResetPCProvider extends BlackBox with HasBlackBoxInline {
-  val io      = IO(new Bundle {
+  val io = IO(new Bundle {
     val resetPC = Output(Types.UWord)
   })
   val pcMacro = name + "_RESET_PC"
@@ -78,14 +90,124 @@ class CPUTop_ResetPCProvider extends BlackBox with HasBlackBoxInline {
   )
 }
 
+class DualSimpleBusToAXI4 extends Module {
+  val io = IO(new Bundle {
+    val ifu = SimpleBusIO.Slave
+    val lsu = SimpleBusIO.Slave
+    val out = AXI4IO.Master
+  })
+
+  io.out.dontCareAW()
+  io.out.dontCareW()
+  io.out.dontCareB()
+  io.out.dontCareAR()
+  io.out.dontCareR()
+
+  io.ifu.dontCareReq()
+  io.ifu.dontCareResp()
+  io.lsu.dontCareReq()
+  io.lsu.dontCareResp()
+
+  object State extends ChiselEnum {
+    val idle, sendAR, waitR, sendAWW, waitB = Value
+  }
+  val state = RegInit(State.idle)
+
+  val selLSU = RegInit(false.B)
+  val reqAddr = Reg(UInt(32.W))
+  val reqWData = Reg(UInt(32.W))
+  val reqWMask = Reg(UInt(4.W))
+  val reqWEn = Reg(Bool())
+
+  val awSent = RegInit(false.B)
+  val wSent = RegInit(false.B)
+
+  val takeLSU = io.lsu.req_valid
+  val selAddr = Mux(takeLSU, io.lsu.addr, io.ifu.addr)
+  val selWData = Mux(takeLSU, io.lsu.wdata, io.ifu.wdata)
+  val selWMask = Mux(takeLSU, io.lsu.wmask, io.ifu.wmask)
+  val selWEn   = Mux(takeLSU, io.lsu.wen, io.ifu.wen)
+
+  io.lsu.req_ready := state === State.idle
+  io.ifu.req_ready := (state === State.idle) && !takeLSU
+
+  when(state === State.idle && (io.lsu.req_valid || io.ifu.req_valid)) {
+    selLSU   := takeLSU
+    reqAddr  := selAddr
+    reqWData := selWData
+    reqWMask := selWMask
+    reqWEn   := selWEn
+    awSent   := false.B
+    wSent    := false.B
+    state    := Mux(selWEn, State.sendAWW, State.sendAR)
+  }
+
+  when(state === State.sendAR) {
+    io.out.arvalid := true.B
+    io.out.araddr  := reqAddr
+    io.out.arid    := 0.U
+    io.out.arlen   := 0.U
+    io.out.arsize  := AXI4IO.SizeType.WORD
+    io.out.arburst := AXI4IO.BurstType.INCR
+    when(io.out.arready) {
+      state := State.waitR
+    }
+  }
+
+  when(state === State.waitR) {
+    io.out.rready := true.B
+    when(io.out.rvalid) {
+      when(selLSU) {
+        io.lsu.resp_valid := true.B
+        io.lsu.rdata      := io.out.rdata
+      }.otherwise {
+        io.ifu.resp_valid := true.B
+        io.ifu.rdata      := io.out.rdata
+      }
+      state := State.idle
+    }
+  }
+
+  when(state === State.sendAWW) {
+    io.out.awvalid := !awSent
+    io.out.awaddr  := reqAddr
+    io.out.awid    := 0.U
+    io.out.awlen   := 0.U
+    io.out.awsize  := AXI4IO.SizeType.WORD
+    io.out.awburst := AXI4IO.BurstType.INCR
+
+    io.out.wvalid := !wSent
+    io.out.wdata  := reqWData
+    io.out.wstrb  := reqWMask
+    io.out.wlast  := true.B
+
+    when(io.out.awvalid && io.out.awready) {
+      awSent := true.B
+    }
+    when(io.out.wvalid && io.out.wready) {
+      wSent := true.B
+    }
+    when((awSent || io.out.awready) && (wSent || io.out.wready)) {
+      state := State.waitB
+    }
+  }
+
+  when(state === State.waitB) {
+    io.out.bready := true.B
+    when(io.out.bvalid) {
+      io.lsu.resp_valid := selLSU
+      io.ifu.resp_valid := !selLSU
+      state             := State.idle
+    }
+  }
+}
+
 class CPUCore(
   implicit p: CPUParameters)
     extends Module {
-  val io = IO(new TopIO)
+  val io = IO(new CPUCoreIO)
   dontTouch(io)
   io := DontCare
-
-  // withModulePrefix(getClass.getSimpleName) {
 
   val isBranchGuessWrong = Wire(Bool())
 
@@ -127,20 +249,6 @@ class CPUCore(
     nxtPredictedPC := bp.io.predictTarget
   } else {
     nxtPredictedPC := pc + 4.U
-    // val isBranch = ifu.io.out.bits.code(6, 0) === "b1100011".U
-    // val immSign  = ifu.io.out.bits.code(31)
-    // val imm      = Cat(
-    //   Fill(20, immSign),
-    //   ifu.io.out.bits.code(7),
-    //   ifu.io.out.bits.code(30, 25),
-    //   ifu.io.out.bits.code(11, 8),
-    //   0.U(1.W)
-    // )
-    // nxtPredictedPC := ifu.io.out. + Mux(
-    //   isBranch && immSign,
-    //   imm,
-    //   4.U
-    // )
   }
 
   ifu.io.predictedNextPC := nxtPredictedPC
@@ -179,7 +287,7 @@ class CPUCore(
     isFlushIDUReg := false.B
   }
 
-  needFlushPipeline := (isFlushIDUReg) || isBranchGuessWrong
+  needFlushPipeline := isFlushIDUReg || isBranchGuessWrong
   dontTouch(needFlushPipeline)
 
   pc := Mux(
@@ -190,44 +298,8 @@ class CPUCore(
     pc
   )
 
-  val memArbiter = Module(new EXUIFU_MemVisitArbiter)
-  AXI4IO.connectMasterSlave(lsu.io.mem, memArbiter.io.exu)
-
-  val icache = Module(new ICache)
-  icache.io.flush := exu.io.fencei
-  AXI4IO.connectMasterSlave(ifu.io.mem, icache.io.cpu)
-  AXI4IO.connectMasterSlave(icache.io.mem, memArbiter.io.ifu)
-
-  // AXI4IO.connectMasterSlave(ifu.io.mem, memArbiter.io.ifu)
-
-  // val clint = Module(new CLINTUnit)
-  //
-  // val otherReqSlave = Wire(AXI4IO.Slave)
-  // AXI4IO.transformSlaveToMasterValidIf(!reset.asBool)(io.master, otherReqSlave)
-  // val memXBar       = Module(
-  //   new AXI4LiteXBar(
-  //     Seq(
-  //       AddrSpace.CLINT -> clint.io,
-  //       AddrSpace.SOC   -> otherReqSlave
-  //     )
-  //   )
-  // )
-
-  // AXI4IO.connectMasterSlave(memArbiter.io.out, memXBar.io.in)
-  // memXBar.connect()
-
-  memArbiter.io.out <> io.master
-
-  when(io.master.bvalid && io.master.bresp === AXI4IO.BResp.DECERR) {
-    printf("AXI4 DECERR on write address 0x%x\n", io.master.awaddr)
-    stop()
-    stop()
-  }
-  when(io.master.rvalid && io.master.rresp === AXI4IO.RResp.DECERR) {
-    printf("AXI4 DECERR on read address 0x%x\n", io.master.araddr)
-    stop()
-    stop()
-  }
+  io.irom <> ifu.io.mem
+  io.dram <> lsu.io.mem
 
   ifu.io.pc.bits  := pc
   ifu.io.pc.valid := true.B
@@ -261,16 +333,11 @@ class CPUCore(
   idu.io.rvec <> gprs.io.read
   exu.io.csr_rvec <> csrs.io.read
 
-  // idu.io.exuWrBack   := ExtractGPRInfoFromLSU(exu.io.out)
-  // idu.io.lsuWrBack   := ExtractGPRInfoFromLSU(lsu.io.in)
-  // idu.io.wbuWrBack   := ExtractGPRInfoFromWrBack(wbu.io.in)
   idu.io.wrBackInfo.exu := exu.io.fwd
   idu.io.wrBackInfo.lsu := ExtractFwdInfoFromLSU(lsu.io.in)
-  idu.io.wrBackInfo.wbu   := ExtractFwdInfoFromWrBack(wbu.io.in)
+  idu.io.wrBackInfo.wbu := ExtractFwdInfoFromWrBack(wbu.io.in)
 
   idu.io.flush := needFlushPipeline
-
-  // Write back
 
   val foo = Wire(Decoupled(Bool()))
   foo       := DontCare
@@ -278,10 +345,7 @@ class CPUCore(
   foo.valid := true.B
   pipelineConnect(lsu.io.out, wbu.io.in, foo)
 
-  // wbu.io.in <> exu.io.out
   gprs.io.write <> wbu.io.gpr
   csrs.io.write <> wbu.io.csr
   csrs.io.is_ecall := wbu.io.is_ecall
-
-  // }
 }

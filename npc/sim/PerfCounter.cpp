@@ -50,35 +50,15 @@ void PipeStagePerfCounter::update() {
 }
 
 void CachePerfCounter::bind() {
-  hARValid = &GetICache()->io_cpu_arvalid;
-  hARReady = &GetICache()->io_cpu_arready;
-  hCacheHit = &GetICache()->cacheHit;
-  hState = &GetICache()->state;
-
-  rdMemCtr.BIND_AXI4_R_BASE(GetICache()->io_mem);
+  // Cache is currently disabled in the simple-bus refactor.
 }
 
 void CachePerfCounter::update() {
-  rdMemCtr.update();
-  if (hARValid.get() && hARReady.get()) {
-    totalVisitCount++;
-    currentHitAccessStartCycle = sim_get_cycle();
-  }
-
-  auto s = (State)hState.get();
-  if (s == checkHit && hCacheHit.get()) {
-    hitCount++;
-    totalHitAccessCycles += sim_get_cycle() - currentHitAccessStartCycle;
-  }
+  // Cache is currently disabled in the simple-bus refactor.
 }
 
 void CachePerfCounter::dumpStatistics(std::ostream &os) {
-  os << "Cache Performance Counter Statistics:\n";
-  os << "hit rate: " << hitCount << " / " << totalVisitCount << " = "
-     << hitRate() * 100.0 << " %\n";
-  os << "average hit access cycles: " << avgHitAccessCycles() << "\n";
-  os << "average miss access cycles: " << avgMissPenaltyCycles() << "\n";
-  os << "AMAT : " << AMAT() << "\n";
+  os << "Cache Performance Counter Statistics: disabled\n";
 }
 
 void RAWStallPerfCounter::update() {
@@ -114,12 +94,8 @@ IDUFlushPerfCounter::IDUFlushReason IDUFlushPerfCounter::getCurReason() const {
   else if (exu.dbgIsCSRJmp)
     reason = IDUFlushReason::Exception;
   else {
-    if (exu.io_fencei)
-      reason = IDUFlushReason::Fence;
-    else {
-      reason = IDUFlushReason::Unknown;
-      spdlog::warn("Unknown flush reason at {}ps", sim_get_time());
-    }
+    reason = IDUFlushReason::Unknown;
+    spdlog::warn("Unknown flush reason at {}ps", sim_get_time());
   }
 
   return reason;
@@ -174,32 +150,10 @@ void BranchPredPerfCounter::update() {
 std::vector<PerfCounterVariant> perf_counters;
 
 void initPerfCounters() {
-
-  HandShakeCounterManager handshakeCtr;
-  // EXUPerfCounter exuCtr;
-  AXI4PerfCounterManager axi4Ctr;
-
   PipePerfManager pipeCtr;
   RAWStallPerfCounter rawStallCtr;
   IDUFlushPerfCounter iduFlushCtr;
-
-  CachePerfCounter cacheCtr;
-
   BranchPredPerfCounter branchPredCtr;
-
-  handshakeCtr.add(&GetIFU()->io_mem_rvalid, &GetIFU()->io_mem_rready,
-                   "IFU fetch inst");
-  handshakeCtr.add(&GetLSU()->io_mem_rvalid, &GetLSU()->io_mem_rready,
-                   "EXU load data");
-  handshakeCtr.add(&GetIDU()->io_out_valid, &GetIDU()->io_out_ready,
-                   "IDU decode inst");
-
-  axi4Ctr.add(AXI4WritePerfCounter().BIND_AXI4_W_BASE(GetLSU()->io_mem),
-              "lsu_mem_write");
-  axi4Ctr.add(AXI4ReadPerfCounter().BIND_AXI4_R_BASE(GetLSU()->io_mem),
-              "lsu_mem_read");
-  axi4Ctr.add(AXI4ReadPerfCounter().BIND_AXI4_R_BASE(GetIFU()->io_mem),
-              "ifu_mem_read");
 
   pipeCtr.add(PipeStagePerfCounter().bind(
                   &GetIFU()->io_pc_valid, &GetIFU()->io_pc_ready,
@@ -210,18 +164,13 @@ void initPerfCounters() {
   pipeCtr.add(PipeStagePerfCounter().BIND_PIPE_STAGE_BASE(GetLSU()->io), "LSU");
 
   iduFlushCtr.bind();
-  cacheCtr.bind();
   rawStallCtr.bind();
   branchPredCtr.bind();
 
-  perf_counters.push_back(std::move(handshakeCtr));
-  // perf_counters.push_back(std::move(exuCtr));
-  perf_counters.push_back(std::move(axi4Ctr));
   perf_counters.push_back(std::move(pipeCtr));
   perf_counters.push_back(std::move(rawStallCtr));
   perf_counters.push_back(std::move(iduFlushCtr));
   perf_counters.push_back(std::move(branchPredCtr));
-  perf_counters.push_back(std::move(cacheCtr));
 }
 
 void updatePerfCounters() {

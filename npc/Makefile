@@ -23,6 +23,8 @@ VERILATOR_INCDIRS =
 
 ifeq ($(ARCH), riscv32e-ysyxsoc)
 TOP_NAME = ysyxSoCFull
+else ifeq ($(ARCH_PLATFORM), jyd)
+TOP_NAME = JYDSoC
 else
 TOP_NAME = TestSoC
 endif

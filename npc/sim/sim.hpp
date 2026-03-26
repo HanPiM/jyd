@@ -13,6 +13,8 @@ inline auto GetCPU() {
   // use vlSymsp to get inner module/signal
 #ifdef SIM_SOC
   return &get_dut()->ysyxSoCFull->vlSymsp->TOP__ysyxSoCFull__asic__cpu__cpu__core;
+#elif defined(SIM_ARCH_JYD)
+  return &get_dut()->JYDSoC->vlSymsp->TOP__JYDSoC__cpu;
 #else
   return &get_dut()->TestSoC->vlSymsp->TOP__TestSoC__cpu__core;
 #endif
@@ -23,7 +25,6 @@ inline auto GetEXU() { return GetCPU()->exu; }
 inline auto GetLSU() { return GetCPU()->lsu; }
 inline auto GetALU() { return GetEXU()->alu; }
 inline auto GetIDU() { return GetCPU()->idu; }
-inline auto GetICache() { return GetCPU()->icache; }
 } // namespace DirectSignals
 
 typedef void (*cycle_end_callback_t)();

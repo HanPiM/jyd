@@ -13,37 +13,61 @@ class IFU extends Module {
   })
 
   object State extends ChiselEnum {
-    val idle, waitResp, waitOut = Value
+    val idle, waitReq, waitResp, waitOut = Value
   }
 
   dontTouch(io)
   val memIO = io.mem
   memIO.dontCareReq()
 
-  val pcReg     = RegEnable(io.pc.bits, io.pc.fire)
-  val pc        = Mux(io.pc.fire, io.pc.bits, pcReg)
+  val state = RegInit(State.idle)
 
-  val predNxtPCReg = RegEnable(io.predictedNextPC, io.pc.fire)
-  val predNxtPC    = Mux(io.pc.fire, io.predictedNextPC, predNxtPCReg)
-
-  // val predNxtPC = RegEnableReadNew(io.predictedNextPC, io.pc.fire)
-  dontTouch(pc)
-  val state     = RegInit(State.idle)
+  val pcReg          = Reg(Types.UWord)
+  val predNxtPCReg   = Reg(Types.UWord)
+  val reqIIDReg      = Reg(UInt(Types.BitWidth.inst_id.W))
+  val pendingPCReg   = Reg(Types.UWord)
+  val pendingPredReg = Reg(Types.UWord)
+  val pendingIIDReg  = Reg(UInt(Types.BitWidth.inst_id.W))
+  dontTouch(pcReg)
 
   val instID = RegInit(0.U(Types.BitWidth.inst_id.W))
-  when(io.pc.fire) {
-    instID := instID + 1.U
-  }
   dontTouch(instID)
 
-  io.out.bits.iid := instID//Mux(io.pc.fire, instID + 1.U, instID)
+  val isWaitingRespMeetValid = (state === State.waitResp) && memIO.resp_valid
+  val consumeResp           = isWaitingRespMeetValid && io.out.ready
+  val canAcceptInputReq     = (state === State.idle) || consumeResp
 
-  val isWaitingRespMeetValid        = (state === State.waitResp) && memIO.resp_valid
-  val isWaitingRespAndCanFireNewReq = isWaitingRespMeetValid && io.out.ready
+  io.pc.ready := canAcceptInputReq
 
-  io.pc.ready     := (state === State.idle || isWaitingRespAndCanFireNewReq) && memIO.req_ready
-  memIO.req_valid := (state === State.idle || isWaitingRespAndCanFireNewReq) && io.pc.valid
-  memIO.addr      := io.pc.bits
+  val inputReqValid   = canAcceptInputReq && io.pc.valid
+  val inputReqFire    = inputReqValid && memIO.req_ready
+  val pendingReqValid = (state === State.waitReq)
+  val pendingReqFire  = pendingReqValid && memIO.req_ready
+  val acceptInputReq  = io.pc.fire
+  val nextIID         = instID + 1.U
+
+  when(acceptInputReq) {
+    instID := nextIID
+  }
+
+  when(inputReqFire) {
+    pcReg        := io.pc.bits
+    predNxtPCReg := io.predictedNextPC
+    reqIIDReg    := nextIID
+  }.elsewhen(pendingReqFire) {
+    pcReg        := pendingPCReg
+    predNxtPCReg := pendingPredReg
+    reqIIDReg    := pendingIIDReg
+  }
+
+  when(acceptInputReq && !inputReqFire) {
+    pendingPCReg   := io.pc.bits
+    pendingPredReg := io.predictedNextPC
+    pendingIIDReg  := nextIID
+  }
+
+  memIO.req_valid := inputReqValid || pendingReqValid
+  memIO.addr      := Mux(pendingReqValid, pendingPCReg, io.pc.bits)
   memIO.size      := 2.U
   memIO.wen       := false.B
   memIO.wdata     := 0.U
@@ -53,19 +77,28 @@ class IFU extends Module {
   io.out.bits.code            := inst
   io.out.bits.pc              := pcReg
   io.out.bits.predictedNextPC := predNxtPCReg
+  io.out.bits.iid             := reqIIDReg
   io.out.valid                := isWaitingRespMeetValid || (state === State.waitOut)
 
-  val nxtStateWhenWaitOut  =
-    Mux(io.out.ready, Mux(isWaitingRespAndCanFireNewReq, State.waitResp, State.idle), State.waitOut)
-  val nxtStateWhenWaitResp = Mux(memIO.resp_valid, nxtStateWhenWaitOut, State.waitResp)
-  val nxtStateWhenIdle     = Mux(io.pc.fire, nxtStateWhenWaitResp, State.idle)
+  val nxtStateWhenWaitOut = Mux(io.out.ready, State.idle, State.waitOut)
+  val nxtStateWhenConsumeResp = Mux(
+    io.pc.valid,
+    Mux(memIO.req_ready, State.waitResp, State.waitReq),
+    State.idle
+  )
+  val nxtStateWhenIdle = Mux(
+    io.pc.valid,
+    Mux(memIO.req_ready, State.waitResp, State.waitReq),
+    State.idle
+  )
 
   dontTouch(nxtStateWhenIdle)
 
   state := MuxLookup(state, State.idle)(
     Seq(
       State.idle     -> nxtStateWhenIdle,
-      State.waitResp -> nxtStateWhenWaitResp,
+      State.waitReq  -> Mux(pendingReqFire, State.waitResp, State.waitReq),
+      State.waitResp -> Mux(memIO.resp_valid, Mux(io.out.ready, nxtStateWhenConsumeResp, State.waitOut), State.waitResp),
       State.waitOut  -> nxtStateWhenWaitOut
     )
   )

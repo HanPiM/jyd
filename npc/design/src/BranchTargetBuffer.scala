@@ -6,7 +6,7 @@ import chisel3.util._
 import common_def._
 
 object BTBParameters {
-  val ENTRY_NUM   = 2
+  val ENTRY_NUM   = 8
   val INDEX_WIDTH = log2Ceil(ENTRY_NUM)
   val TAG_WIDTH   = Types.BitWidth.word - INDEX_WIDTH - 2 // 2 for word-alignment
 

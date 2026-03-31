@@ -16,6 +16,8 @@ public:
   using InstUserIDType = uint64_t;
   using InstRetireIDType = uint64_t;
   using LaneIDType = uint32_t;
+  enum EventKind : uint32_t { Stage = 0, Retire = 1, Flush = 2 };
+  enum StageID : uint32_t { IF = 0, DE = 1, EX = 2, LS = 3, WB = 4 };
 
 private:
   static constexpr std::string_view _Header = "Kanata\t0004";
@@ -43,33 +45,8 @@ private:
 
   _RetireInfo _lastRetireInfo{0, 0, false};
 
-  struct _StageSnapshot {
-    bool valid = false;
-    bool ready = false;
-    InstFileIDType iid = 0;
-    std::string_view name;
-
-    bool fire() const { return valid && ready; }
-  };
-
-  struct _CycleSnapshot {
-    bool isValid = false;
-    bool ifFire = false;
-    InstFileIDType ifIID = 0;
-    uint32_t ifPC = 0;
-    bool needFlushPipeline = false;
-    bool iduInputValid = false;
-    InstFileIDType iduInputIID = 0;
-    std::vector<_StageSnapshot> stages;
-  };
-
-  _CycleSnapshot _snapshot;
-
   InstRetireIDType __NxtRetireID = 1;
   InstRetireIDType _GenNextRetireID() { return __NxtRetireID++; }
-  InstRetireIDType _GetCurrentRetireID() const { return __NxtRetireID; }
-
-  bool lastCycIDUStall = false;
 
 public:
   KonataLogger(std::string_view filePath) {
@@ -121,8 +98,10 @@ public:
     }
   }
 
-  void capturePreEdge();
-
-  // Must be called every cycle
-  void update();
+  void handleEvent(uint32_t eventKind, uint32_t stageID, InstFileIDType iid,
+                   uint32_t data, uint32_t flags);
 };
+
+void init_konata_logger(std::string_view filePath);
+void start_konata_logger(KonataLogger::CycleType startSimCycle);
+bool has_konata_logger();

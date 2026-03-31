@@ -79,8 +79,6 @@ public:
   }
 };
 
-std::shared_ptr<KonataLogger> konata_logger;
-
 static void _sim_eval() {
   dut.eval();
   if (tfp) {
@@ -94,15 +92,8 @@ void sim_step_cycle() {
     printf("[Clock Cycle Begin]\n");
   }
 
-  if (dut.reset == 0 && konata_logger) {
-    konata_logger->capturePreEdge();
-  }
-
   dut.clock = 1;
   _sim_eval();
-  if (dut.reset == 0 && konata_logger) {
-    konata_logger->update();
-  }
 
   dut.clock = 0;
   _sim_eval();
@@ -352,8 +343,8 @@ bool sim_init(int argc, char **argv, sim_setting setting) {
     return true;
   }
 
-  konata_logger = std::make_shared<KonataLogger>(genLogFilePath("konata"));
-  konata_logger->start(sim_get_cycle());
+  init_konata_logger(genLogFilePath("konata"));
+  start_konata_logger(sim_get_cycle());
   spdlog::info("KonataLogger initialized, start at cycle {}, sim time {}ps",
                sim_get_cycle(), sim_get_time());
 

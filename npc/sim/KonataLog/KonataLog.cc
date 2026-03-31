@@ -1,151 +1,89 @@
 #include "KonataLog.hpp"
-#include "../sim.hpp"
-#include <functional>
 
 #include "../memory/mem.hpp"
+#include "../sim.hpp"
+
+#include <algorithm>
+#include <array>
+#include <memory>
 #include <tracers.hpp>
 
-using namespace DirectSignals;
+namespace {
 
-using SignalBoolType = unsigned char;
+constexpr std::array<std::string_view, 5> kStageNames = {"IF", "DE", "EX", "LS", "WB"};
 
-struct HandshakeBus {
-  SignalBoolType *hValid = nullptr;
-  SignalBoolType *hReady = nullptr;
-  HandshakeBus() = default;
-  HandshakeBus(SignalBoolType *valid, SignalBoolType *ready)
-      : hValid(valid), hReady(ready) {}
-  bool valid() const { return hValid && *hValid; }
-  bool ready() const { return hReady && *hReady; }
-  bool fire() const { return valid() && ready(); }
-};
+std::shared_ptr<KonataLogger> g_konata_logger;
 
-template <typename T>
-concept PipeStage = requires(T stage) {
-  { &stage.io_in_valid } -> std::convertible_to<SignalBoolType *>;
-  { &stage.io_in_ready } -> std::convertible_to<SignalBoolType *>;
-  { &stage.io_out_valid } -> std::convertible_to<SignalBoolType *>;
-  { &stage.io_out_ready } -> std::convertible_to<SignalBoolType *>;
-};
+std::string_view getStageName(uint32_t stageID) {
+  if (stageID < kStageNames.size()) {
+    return kStageNames[stageID];
+  }
+  return "UNKNOWN";
+}
 
-struct Stage {
-  HandshakeBus in;
-  HandshakeBus out;
-  uint32_t *inIID = nullptr;
-
-  std::string name;
-
-  Stage() = default;
-  Stage(HandshakeBus in, HandshakeBus out, std::string name, uint32_t *inIID)
-      : in(in), out(out), inIID(inIID), name(name) {}
-  template <PipeStage T>
-  Stage(T &stage, std::string name, uint32_t *inIID)
-      : in(&stage.io_in_valid, &stage.io_in_ready),
-        out(&stage.io_out_valid, &stage.io_out_ready), inIID(inIID), name(name) {}
-};
+} // namespace
 
 void KonataLogger::_output(const std::string &str) {
-  constexpr size_t _maxLogFileSize = 64 * 1024 * 1024;
-  if (_fileStream.tellp() >= static_cast<std::streampos>(_maxLogFileSize)) {
+  constexpr size_t kMaxLogFileSize = 64 * 1024 * 1024;
+  if (_fileStream.tellp() >= static_cast<std::streampos>(kMaxLogFileSize)) {
     _fileStream.close();
     spdlog::warn("Log file size exceeded {} MB. KonataLogger stopped logging",
-                 _maxLogFileSize / (1024 * 1024));
+                 kMaxLogFileSize / (1024 * 1024));
   } else {
     _fileStream << str << std::endl;
   }
 }
 
-void KonataLogger::capturePreEdge() {
-  static auto &cpu = *GetCPU();
-  static auto &ifu = *GetIFU();
-  static auto &idu = *GetIDU();
-  static auto &exu = *GetEXU();
-  static auto &lsu = *GetLSU();
-  static auto &wbu = *GetCPU()->wbu;
-  static std::vector<Stage> stages = {
-      Stage({&ifu.io_pc_valid, &ifu.io_pc_ready},
-            {&ifu.io_out_valid, &ifu.io_out_ready}, "IF", nullptr),
-      Stage(idu, "DE", &idu.io_in_bits_iid),
-      Stage(exu, "EX", &exu.io_in_bits_iid),
-      Stage(lsu, "LS", &lsu.io_in_bits_exuWriteBack_iid),
-      Stage({&wbu.io_in_valid, &wbu.io_in_ready}, {nullptr, nullptr}, "WB",
-            &wbu.io_in_bits_iid),
-  };
+void KonataLogger::handleEvent(uint32_t eventKind, uint32_t stageID,
+                               InstFileIDType iid, uint32_t data,
+                               uint32_t /*flags*/) {
+  auto stageName = getStageName(stageID);
 
-  _snapshot = {};
-  _snapshot.isValid = true;
-  _snapshot.needFlushPipeline = cpu.needFlushPipeline;
-  _snapshot.ifFire = stages[0].in.fire();
-  _snapshot.ifIID = static_cast<InstFileIDType>(ifu.instID) + 1;
-  _snapshot.ifPC = ifu.io_pc_bits;
-  _snapshot.iduInputValid = idu.io_in_valid;
-  _snapshot.iduInputIID = idu.io_in_bits_iid;
-  _snapshot.stages.reserve(stages.size());
-
-  for (const auto &stage : stages) {
-    _snapshot.stages.push_back(_StageSnapshot{
-        .valid = stage.in.valid(),
-        .ready = stage.in.ready(),
-        .iid = stage.inIID ? *stage.inIID : 0,
-        .name = stage.name,
-    });
+  switch (eventKind) {
+  case EventKind::Stage:
+    if (stageID == StageID::IF) {
+      declare(iid, iid);
+      sdb::vlen_inst_code code(4);
+      auto pc = data;
+      read_guest_mem(pc, (uint32_t *)code.data());
+      auto disasm = sdb::default_inst_disasm(pc, code);
+      std::ranges::replace(disasm, '\t', ' ');
+      addLabel(iid, std::format("{:08x}: {}", pc, disasm));
+      addLabel(iid, std::format("{}ps", sim_get_time()), true);
+    }
+    stageStart(iid, stageName);
+    break;
+  case EventKind::Retire:
+    retire(iid, _GenNextRetireID());
+    break;
+  case EventKind::Flush:
+    retire(iid, 0, true);
+    break;
+  default:
+    spdlog::warn("Unknown konata event kind {} stage {} iid {}", eventKind,
+                 stageID, iid);
+    break;
   }
 }
 
-void KonataLogger::update() {
-  if (!_snapshot.isValid) {
-    return;
+void init_konata_logger(std::string_view filePath) {
+  g_konata_logger = std::make_shared<KonataLogger>(filePath);
+}
+
+void start_konata_logger(KonataLogger::CycleType startSimCycle) {
+  if (g_konata_logger) {
+    g_konata_logger->start(startSimCycle);
   }
+}
 
-  if (_snapshot.ifFire) {
-    auto iid = _snapshot.ifIID;
-    declare(iid, iid);
-    sdb::vlen_inst_code code(4);
-    auto pc = _snapshot.ifPC;
-    read_guest_mem(pc, (uint32_t *)code.data());
-    auto disasm = sdb::default_inst_disasm(pc, code);
-    std::ranges::replace(disasm, '\t', ' ');
-    addLabel(iid, std::format("{:08x}: {}", pc, disasm));
-    addLabel(iid, std::format("{}ps", sim_get_time()), true);
+bool has_konata_logger() { return static_cast<bool>(g_konata_logger); }
+
+extern "C" void konata_event(int eventKind, int stageID, int iid, int data, int flags) {
+  if (g_konata_logger) {
+    g_konata_logger->handleEvent(static_cast<uint32_t>(eventKind),
+                                 static_cast<uint32_t>(stageID),
+                                 static_cast<KonataLogger::InstFileIDType>(static_cast<uint32_t>(iid)),
+                                 static_cast<uint32_t>(data),
+                                 static_cast<uint32_t>(flags));
   }
-
-  std::ranges::for_each(_snapshot.stages, [&](const auto &stage) {
-    bool isIFU = stage.name == "IF";
-    bool isIDU = stage.name == "DE";
-    if (isIDU && _snapshot.needFlushPipeline) {
-      return;
-    }
-    if (isIFU) {
-      if (_snapshot.ifFire) {
-        stageStart(_snapshot.ifIID, stage.name);
-      }
-    } else if (stage.fire()) {
-      stageStart(stage.iid, stage.name);
-    }
-  });
-
-  // bool iduStall = cpu.isIDUStall;
-  // bool isIDUStallBegin = iduStall && !lastCycIDUStall;
-  // bool isIDUStallEnd = !iduStall && lastCycIDUStall;
-  // lastCycIDUStall = iduStall;
-  //
-  // if (isIDUStallBegin) {
-  // 	stageStart(*idu_stage.iid, "IDU_STALL");
-  // 	addLabel(*idu_stage.iid, std::format("IDU_STALL beg@{}ps",
-  // sim_get_time()), true); } else if (isIDUStallEnd) {
-  // 	// stageEnd(*idu_stage.iid, "IDU_STALL");
-  // }
-
-  if (_snapshot.stages.back().fire()) {
-    retire(_snapshot.stages.back().iid, _GenNextRetireID());
-    // stageEnd(*wbu_stage.iid, wbu_stage.name);
-  }
-
-  if (_snapshot.needFlushPipeline && _snapshot.iduInputValid) {
-    // addLabel(*idu_stage.iid, std::format("FLUSHED@{}ps", sim_get_time()),
-    // true);
-    retire(_snapshot.iduInputIID, 0, true);
-  }
-
-  _snapshot.isValid = false;
 }

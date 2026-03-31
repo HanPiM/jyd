@@ -3,6 +3,7 @@ import chisel3._
 import chisel3.util._
 import common_def._
 import simplebus._
+import dpiwrap._
 
 class IFU extends Module {
   val io = IO(new Bundle {
@@ -48,6 +49,17 @@ class IFU extends Module {
 
   when(acceptInputReq) {
     instID := nextIID
+  }
+
+  if (config.Config.genStageLog) {
+    StageLogger(
+      clock,
+      StageLogConst.Event.stage,
+      StageLogConst.Stage.ifu,
+      acceptInputReq,
+      nextIID,
+      io.pc.bits
+    )
   }
 
   when(inputReqFire) {

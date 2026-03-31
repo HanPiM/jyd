@@ -12,6 +12,7 @@ import btb._
 import branchpredictor._
 import config._
 import dpiwrap.DifftestLayer
+import dpiwrap._
 import simplebus._
 
 class TopIO extends Bundle {
@@ -341,6 +342,16 @@ class CPUCore(
   idu.io.wrBackInfo.wbu := ExtractFwdInfoFromWrBack(wbu.io.in)
 
   idu.io.flush := needFlushPipeline
+
+  if (Config.genStageLog) {
+    StageLogger(
+      clock,
+      StageLogConst.Event.flush,
+      StageLogConst.Stage.idu,
+      needFlushPipeline && idu.io.in.valid,
+      idu.io.in.bits.iid
+    )
+  }
 
   val foo = Wire(Decoupled(Bool()))
   foo       := DontCare

@@ -94,8 +94,15 @@ void sim_step_cycle() {
     printf("[Clock Cycle Begin]\n");
   }
 
+  if (dut.reset == 0 && konata_logger) {
+    konata_logger->capturePreEdge();
+  }
+
   dut.clock = 1;
   _sim_eval();
+  if (dut.reset == 0 && konata_logger) {
+    konata_logger->update();
+  }
 
   dut.clock = 0;
   _sim_eval();
@@ -118,9 +125,6 @@ void sim_step_cycle() {
 
   if (dut.reset == 0) {
     updatePerfCounters();
-    if (konata_logger) {
-      konata_logger->update();
-    }
   }
 }
 static void reset(int n) {
@@ -352,7 +356,6 @@ bool sim_init(int argc, char **argv, sim_setting setting) {
   konata_logger->start(sim_get_cycle());
   spdlog::info("KonataLogger initialized, start at cycle {}, sim time {}ps",
                sim_get_cycle(), sim_get_time());
-	konata_logger->update();
 
   return true;
 }

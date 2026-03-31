@@ -5,6 +5,7 @@
 #include <iostream>
 #include <string>
 #include <string_view>
+#include <vector>
 
 uint64_t sim_get_cycle();
 
@@ -41,6 +42,28 @@ private:
   };
 
   _RetireInfo _lastRetireInfo{0, 0, false};
+
+  struct _StageSnapshot {
+    bool valid = false;
+    bool ready = false;
+    InstFileIDType iid = 0;
+    std::string_view name;
+
+    bool fire() const { return valid && ready; }
+  };
+
+  struct _CycleSnapshot {
+    bool isValid = false;
+    bool ifFire = false;
+    InstFileIDType ifIID = 0;
+    uint32_t ifPC = 0;
+    bool needFlushPipeline = false;
+    bool iduInputValid = false;
+    InstFileIDType iduInputIID = 0;
+    std::vector<_StageSnapshot> stages;
+  };
+
+  _CycleSnapshot _snapshot;
 
   InstRetireIDType __NxtRetireID = 1;
   InstRetireIDType _GenNextRetireID() { return __NxtRetireID++; }
@@ -97,6 +120,8 @@ public:
       log("R", id, retireID, isFlushed ? '1' : '0');
     }
   }
+
+  void capturePreEdge();
 
   // Must be called every cycle
   void update();

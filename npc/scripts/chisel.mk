@@ -13,7 +13,7 @@ define rd_filelist_indir
 $(addprefix $(1)/, $(shell cat $(1)/filelist.f))
 endef
 
-CHISEL_UNSYNTH_KEYWORDS = DPICLayer|DifftestLayer|verification
+CHISEL_UNSYNTH_KEYWORDS = DPICLayer|DifftestLayer|StageLogLayer|verification
 define rd_synth_filelist_indir
 $(addprefix $(1)/, $(shell grep -vE "$(CHISEL_UNSYNTH_KEYWORDS)" $(1)/filelist.f))
 endef
@@ -99,4 +99,3 @@ endif
 # 	$(info # Renaming unstandard layer$$ style macro)
 # 	@$(foreach src,$(MY_SIM_VSRCS), sed -i 's/layer\$$\(\w\+\)/$(CPU_DESIGN_NAME)_\1/g' $(src);)
 # 	@touch $@
-

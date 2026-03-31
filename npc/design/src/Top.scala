@@ -343,15 +343,13 @@ class CPUCore(
 
   idu.io.flush := needFlushPipeline
 
-  if (Config.genStageLog) {
-    StageLogger(
-      clock,
-      StageLogConst.Event.flush,
-      StageLogConst.Stage.idu,
-      needFlushPipeline && idu.io.in.valid,
-      idu.io.in.bits.iid
-    )
-  }
+  StageLogger(
+    clock,
+    StageLogConst.Event.flush,
+    StageLogConst.Stage.idu,
+    needFlushPipeline && idu.io.in.valid,
+    idu.io.in.bits.iid
+  )
 
   val foo = Wire(Decoupled(Bool()))
   foo       := DontCare

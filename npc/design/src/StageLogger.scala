@@ -3,6 +3,7 @@ package dpiwrap
 import chisel3._
 import chisel3.layer.{Layer, LayerConfig}
 import chisel3.util.circt.dpi.RawClockedVoidFunctionCall
+import config.Config
 
 object StageLogLayer extends Layer(LayerConfig.Extract())
 
@@ -35,8 +36,10 @@ object StageLogger {
     data: UInt = 0.U(32.W),
     flags: UInt = 0.U(32.W)
   ): Unit = {
-    layer.block(StageLogLayer) {
-      RawClockedVoidFunctionCall("konata_event")(clock, enable, event, stage, iid, data, flags)
+    if (Config.genStageLog) {
+      layer.block(StageLogLayer) {
+        RawClockedVoidFunctionCall("konata_event")(clock, enable, event, stage, iid, data, flags)
+      }
     }
   }
 }

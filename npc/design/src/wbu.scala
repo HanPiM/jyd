@@ -65,22 +65,20 @@ class WBU(implicit p:CPUParameters) extends Module {
 
   io.done := valid
 
-  if (config.Config.genStageLog) {
-    StageLogger(
-      clock,
-      StageLogConst.Event.stage,
-      StageLogConst.Stage.wbu,
-      io.in.fire,
-      wbinfo.iid
-    )
-    StageLogger(
-      clock,
-      StageLogConst.Event.retire,
-      StageLogConst.Stage.wbu,
-      io.in.fire,
-      wbinfo.iid
-    )
-  }
+  StageLogger(
+    clock,
+    StageLogConst.Event.stage,
+    StageLogConst.Stage.wbu,
+    io.in.fire,
+    wbinfo.iid
+  )
+  StageLogger(
+    clock,
+    StageLogConst.Event.retire,
+    StageLogConst.Stage.wbu,
+    io.in.fire,
+    wbinfo.iid
+  )
 
   dontTouch(io)
 }

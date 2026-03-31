@@ -186,15 +186,13 @@ class EXU(implicit p:CPUParameters) extends Module {
   io.fencei    := isFenceI && io.in.valid
   io.predWrong := (normalNxtPC =/= dinst.predictedNextPC) || isJmpCsr || isFenceI
 
-  if (config.Config.genStageLog) {
-    StageLogger(
-      clock,
-      StageLogConst.Event.stage,
-      StageLogConst.Stage.exu,
-      io.in.fire,
-      dinst.iid
-    )
-  }
+  StageLogger(
+    clock,
+    StageLogConst.Event.stage,
+    StageLogConst.Stage.exu,
+    io.in.fire,
+    dinst.iid
+  )
 
   val dbgIsBranch = WireDefault(isTypBranch)
   val dbgIsJALR   = WireDefault(isTypJALR)

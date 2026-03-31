@@ -257,13 +257,11 @@ class IDU(
   io.in.ready  := (io.out.ready && !needStall) || io.flush
   io.out.valid := io.in.valid && !needStall && !io.flush
 
-  if (config.Config.genStageLog) {
-    StageLogger(
-      clock,
-      StageLogConst.Event.stage,
-      StageLogConst.Stage.idu,
-      io.in.fire && !needStall && !io.flush,
-      io.in.bits.iid
-    )
-  }
+  StageLogger(
+    clock,
+    StageLogConst.Event.stage,
+    StageLogConst.Stage.idu,
+    io.in.fire && !needStall && !io.flush,
+    io.in.bits.iid
+  )
 }

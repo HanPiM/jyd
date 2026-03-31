@@ -51,16 +51,14 @@ class IFU extends Module {
     instID := nextIID
   }
 
-  if (config.Config.genStageLog) {
-    StageLogger(
-      clock,
-      StageLogConst.Event.stage,
-      StageLogConst.Stage.ifu,
-      acceptInputReq,
-      nextIID,
-      io.pc.bits
-    )
-  }
+  StageLogger(
+    clock,
+    StageLogConst.Event.stage,
+    StageLogConst.Stage.ifu,
+    acceptInputReq,
+    nextIID,
+    io.pc.bits
+  )
 
   when(inputReqFire) {
     pcReg        := io.pc.bits

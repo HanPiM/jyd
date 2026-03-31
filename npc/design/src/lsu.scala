@@ -183,15 +183,13 @@ class LSU(
 
   io.out.valid := fireLocalBypass || (state === State.waitResp && memIO.resp_valid) || (state === State.waitOut)
 
-  if (config.Config.genStageLog) {
-    StageLogger(
-      clock,
-      StageLogConst.Event.stage,
-      StageLogConst.Stage.lsu,
-      io.in.fire,
-      io.in.bits.exuWriteBack.iid
-    )
-  }
+  StageLogger(
+    clock,
+    StageLogConst.Event.stage,
+    StageLogConst.Stage.lsu,
+    io.in.fire,
+    io.in.bits.exuWriteBack.iid
+  )
 
   val nxtStateWhenWaitOut  = Mux(io.out.ready, State.idle, State.waitOut)
   val nxtStateWhenWaitResp = Mux(memIO.resp_valid, nxtStateWhenWaitOut, State.waitResp)

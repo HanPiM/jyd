@@ -155,6 +155,23 @@ $(SYNTH_VSRCS_ALLINONE): $(CHISEL2V_DONE)
 
 verilog: $(SYNTH_VSRCS_ALLINONE)
 
+FPGA_WRAP_HOME = $(CHISEL2V_EMIT_ROOT)/testsoc/jydFPGA
+FPGA_WRAP_SYNTH_VSRCS = $(call rd_synth_filelist_indir, $(FPGA_WRAP_HOME))
+PACK_FPGA_CPU_VSRCS = $(filter-out %/$(CPU_DESIGN_NAME).sv,$(CHISEL_EMITED_VSRCS_SYNTH))
+PACK_FPGA_FILE = $(BUILD_DIR)/pack-fpga.zip
+PACK_FPGA_STAGE = $(BUILD_DIR)/pack-fpga
+
+$(PACK_FPGA_FILE): $(CHISEL2V_DONE)
+	@echo "# Packing FPGA verilog sources into $(PACK_FPGA_FILE)"
+	@rm -rf $(PACK_FPGA_STAGE)
+	@mkdir -p $(PACK_FPGA_STAGE)/cpu $(PACK_FPGA_STAGE)/fpgawrap
+	@cp -t $(PACK_FPGA_STAGE)/cpu $(PACK_FPGA_CPU_VSRCS)
+	@cp -t $(PACK_FPGA_STAGE)/fpgawrap $(FPGA_WRAP_SYNTH_VSRCS)
+	@rm -f $@
+	@cd $(PACK_FPGA_STAGE) && zip -qr ../$(notdir $@) cpu fpgawrap
+
+pack-fpga: $(PACK_FPGA_FILE)
+
 help:
 	$(MILL) -i $(CHISEL_DESIGN).runMain Elaborate --help
 
@@ -176,7 +193,7 @@ clean:
 clean-bin:
 	-rm -rf $(SIM_BIN_DIR)
 
-.PHONY: test help reformat checkformat clean
+.PHONY: test help reformat checkformat clean pack-fpga
 
 ARGS?=
 sim: $(SIM_BIN) 

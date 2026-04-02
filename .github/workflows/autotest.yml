@@ -110,53 +110,6 @@ jobs:
           echo "Downloading mill with version $MILL_VERSION"
           sh -c "curl -L https://github.com/com-lihaoyi/mill/releases/download/$MILL_VERSION/$MILL_VERSION > ~/.local/bin/mill && chmod +x ~/.local/bin/mill"
 
-      - name: Get ysyxSoC tag
-        id: soc-tag
-        run: |
-          SOC_REV=$(git ls-remote https://github.com/OSCPU/ysyxSoC.git ysyx6 | cut -f1)
-          echo "tag=$SOC_REV" >> $GITHUB_OUTPUT
-
-      - name: Cache ysyxSoC verilog
-        id: soc-verilog-cache
-        uses: actions/cache@v5
-        with:
-          path: ysyxSoC-verilog
-          key: ${{ runner.os }}-soc-verilog-${{ steps.soc-tag.outputs.tag }}-${{ hashFiles('patch/ysyxSoC/*') }}
-
-      - name: Cache inited ysyxSoC
-        id: soc-cache
-        if: steps.soc-verilog-cache.outputs.cache-hit != 'true'
-        uses: actions/cache@v5
-        with:
-          path: ysyxSoC-inited
-          key: ${{ runner.os }}-soc-inited-${{ steps.soc-tag.outputs.tag }}
-
-      - name: Init ysyxSoC
-        if: steps.soc-verilog-cache.outputs.cache-hit != 'true' && steps.soc-cache.outputs.cache-hit != 'true'
-        run: |
-          echo "No inited ysyxSoC cache. Cloning and initializing ..."
-
-          git clone --depth 1 -b ysyx6 https://github.com/OSCPU/ysyxSoC ysyxSoC-inited
-          # 代替原先的 sed 修改 .gitmodules, 有学员的 patch 中修改了 .gitmodules
-          # 现在的流程中 soc 的初始化在 patch 之前，需要保证之后能正常 apply patch
-          git config --global url."https://github.com/".insteadOf "git@github.com:"
-          cd ysyxSoC-inited
-          make dev-init
-          mill __.compile
-
-      - name: Patch ysyxSoC
-        run: |
-          if [[ "${{ steps.soc-verilog-cache.outputs.cache-hit }}" != "true" ]]; then
-            mkdir -p $JYD_HOME/ysyxSoC/
-            cp -a ysyxSoC-inited/. $JYD_HOME/ysyxSoC/
-          else
-            cd $JYD_HOME
-            # 命中生成结果，不需要初始化的缓存，直接克隆不传递初始化的缓存
-            git clone --depth 1 -b ysyx6 https://github.com/OSCPU/ysyxSoC
-          fi
-          cd $JYD_HOME/ysyxSoC
-          git am $JYD_HOME/patch/ysyxSoC/*
-
       - name: Clone other repos
         run: |
           cd $JYD_HOME
@@ -201,22 +154,6 @@ jobs:
             false
           fi
 
-      - name: Generate verilog for ysyxSoC
-        run: |
-          CACHED_SOC_VERILOG_DIR=`pwd`/ysyxSoC-verilog
-          if [[ "${{ steps.soc-verilog-cache.outputs.cache-hit }}" == "true" ]]; then
-            mkdir -p $JYD_HOME/ysyxSoC/build
-            cp -a $CACHED_SOC_VERILOG_DIR/. $JYD_HOME/ysyxSoC/build
-            if [[ ! -f $JYD_HOME/ysyxSoC/build/ysyxSoCFull.v ]]; then
-              echo "Cached verilog file does not exist. Abort."
-              false
-            fi
-          else
-            make -C $JYD_HOME/ysyxSoC verilog
-            mkdir -p $CACHED_SOC_VERILOG_DIR
-            cp -a $JYD_HOME/ysyxSoC/build/. $CACHED_SOC_VERILOG_DIR
-          fi
-
       - name: Upload verilog file
         uses: actions/upload-artifact@v6
         with:
@@ -232,8 +169,6 @@ jobs:
           tar -czf /tmp/artifact-upload/ysyx-workbench.tar.gz \
             --exclude="$BASENAME/.git" \
             --exclude="$BASENAME/oss-cad-suite" \
-            --exclude="$BASENAME/ysyxSoC-inited" \
-            --exclude="$BASENAME/ysyxSoC-verilog" \
             $BASENAME
       - name: Upload workbench
         uses: actions/upload-artifact@v6

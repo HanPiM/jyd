@@ -6,10 +6,6 @@ import common_def._
 import axi4._
 import simplebus._
 
-import chisel3.util.circt.dpi._
-
-import dpiwrap._
-
 class UARTToStdOut extends BlackBox with HasBlackBoxInline {
   val io = IO(new Bundle {
     val clock   = Input(Clock())
@@ -33,6 +29,38 @@ class UARTToStdOut extends BlackBox with HasBlackBoxInline {
   """.stripMargin)
 }
 
+class UARTTryGetCh extends BlackBox with HasBlackBoxInline {
+  val io = IO(new Bundle {
+    val clock  = Input(Clock())
+    val enable = Input(Bool())
+    val chData = Output(UInt(32.W))
+  })
+  setInline("UARTTryGetCh.v",
+  s"""
+     |`ifndef __ICARUS__
+     |import "DPI-C" function void uart_try_getch(output int ch);
+     |`endif
+     |
+     |module UARTTryGetCh(
+     |  input clock,
+     |  input enable,
+     |  output reg [31:0] chData
+     |);
+     |  initial chData = 32'hff;
+     |
+     |  always @(posedge clock) begin
+     |    if (enable) begin
+     |`ifdef __ICARUS__
+     |      chData <= 32'hff;
+     |`else
+     |      uart_try_getch(chData);
+     |`endif
+     |    end
+     |  end
+     |endmodule
+  """.stripMargin)
+}
+
 class SimpleBusUART extends Module {
   val io = IO(SimpleBusIO.Slave)
   io.dontCareResp()
@@ -47,10 +75,12 @@ class SimpleBusUART extends Module {
   uartToStdOut.io.enable := doWrite
   uartToStdOut.io.chData := io.wdata(7, 0)
 
-  val stdinData = RawClockedNonVoidFunctionCall("uart_try_getch", UInt(32.W))(clock, doRead)
+  val uartTryGetCh = Module(new UARTTryGetCh)
+  uartTryGetCh.io.clock  := clock
+  uartTryGetCh.io.enable := doRead
 
   io.resp_valid := RegNext(doReq, false.B)
-  io.rdata      := Mux(RegNext(doRead, false.B), stdinData, 0.U(32.W))
+  io.rdata      := Mux(RegNext(doRead, false.B), uartTryGetCh.io.chData, 0.U(32.W))
 }
 
 class UARTUnit extends Module {

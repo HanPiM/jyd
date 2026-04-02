@@ -43,4 +43,5 @@ object Elaborate extends App {
 
   emit(new TestSoC(new npc.NPCDevices), s"$emitRootDir/testsoc/npc")
   emit(new jyd.JYDSoC, s"$emitRootDir/testsoc/jyd")
+  emit(new jyd.JYDFPGATop, s"$emitRootDir/testsoc/jydFPGA")
 }

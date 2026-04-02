@@ -31,6 +31,15 @@ object AddrSpace {
   }
 }
 
+object JYDSoCConfig {
+  val iromSizeInByte    = 1024 * 256
+  val dramSizeInByte    = 1024 * 512
+  val fpgaMemAddrWidth  = 18
+  val fpgaMemDataWidth  = 32
+  val iromBaseAddr: BigInt = 0x80000000L
+  val dramBaseAddr: BigInt = 0x80100000L
+}
+
 class SimpleBusMem(sizeInByte: Int, baseAddr: BigInt, readOnly: Boolean = false) extends Module {
   val io = IO(SimpleBusIO.Slave)
   io.dontCareResp()
@@ -108,22 +117,28 @@ class SimpleBusROM(sizeInByte: Int, baseAddr: BigInt) extends Module {
   io.rdata      := mem.io.data
 }
 
-class SimpleBusOneWordRWDevice(updFuncName: String) extends Module {
-  val io = IO(SimpleBusIO.Slave)
-  io.dontCareResp()
-  io.req_ready := true.B
+class SimpleBusOneWordRWDevice(updFuncName: Option[String] = None) extends Module {
+  val io = IO(new Bundle {
+    val bus   = SimpleBusIO.Slave
+    val value = Output(UInt(32.W))
+  })
+  io.bus.dontCareResp()
+  io.bus.req_ready := true.B
 
   val dataReg = RegInit(0.U(32.W))
-  val doReq   = io.req_valid && io.req_ready
-  val doWrite = doReq && io.wen
+  val doReq   = io.bus.req_valid && io.bus.req_ready
+  val doWrite = doReq && io.bus.wen
 
   when(doWrite) {
-    dataReg := io.wdata
-    dpiwrap.ClockedCallVoidDPIC(updFuncName)(clock, true.B, io.wdata)
+    dataReg := io.bus.wdata
+  }
+  updFuncName.foreach { name =>
+    dpiwrap.ClockedCallVoidDPIC(name)(clock, doWrite, io.bus.wdata)
   }
 
-  io.resp_valid := RegNext(doReq, false.B)
-  io.rdata      := dataReg
+  io.bus.resp_valid := RegNext(doReq, false.B)
+  io.bus.rdata      := dataReg
+  io.value          := dataReg
 }
 
 class SimpleBusTimer extends Module {
@@ -173,7 +188,71 @@ class SimpleBusUART extends Module {
   io.rdata      := 0.U
 }
 
-class JYDPeripheralBridge extends Module {
+class JYDFPGAIROMBlackBox extends BlackBox {
+  override def desiredName: String = "blk_mem_gen_irom"
+  val io = IO(new Bundle {
+    val clka  = Input(Clock())
+    val ena   = Input(Bool())
+    val addra = Input(UInt(JYDSoCConfig.fpgaMemAddrWidth.W))
+    val douta = Output(UInt(JYDSoCConfig.fpgaMemDataWidth.W))
+  })
+}
+
+class JYDFPGADRAMBlackBox extends BlackBox {
+  override def desiredName: String = "blk_mem_gen_dram"
+  val io = IO(new Bundle {
+    val clka  = Input(Clock())
+    val ena   = Input(Bool())
+    val wea   = Input(UInt(4.W))
+    val addra = Input(UInt(JYDSoCConfig.fpgaMemAddrWidth.W))
+    val dina  = Input(UInt(JYDSoCConfig.fpgaMemDataWidth.W))
+    val douta = Output(UInt(JYDSoCConfig.fpgaMemDataWidth.W))
+  })
+}
+
+class SimpleBusFPGAROM(sizeInByte: Int, baseAddr: BigInt) extends Module {
+  val io = IO(SimpleBusIO.Slave)
+  io.dontCareResp()
+  io.req_ready := true.B
+
+  val mem = Module(new JYDFPGAIROMBlackBox)
+  val localWordAddr = (io.addr - baseAddr.U(32.W))(log2Ceil(sizeInByte) - 1, 2)
+  val doRead        = io.req_valid && io.req_ready && !io.wen
+
+  mem.io.clka  := clock
+  mem.io.ena   := doRead
+  mem.io.addra := localWordAddr
+
+  io.resp_valid := RegNext(doRead, false.B)
+  io.rdata      := mem.io.douta
+}
+
+class SimpleBusFPGAMem(sizeInByte: Int, baseAddr: BigInt) extends Module {
+  val io = IO(SimpleBusIO.Slave)
+  io.dontCareResp()
+  io.req_ready := true.B
+
+  val mem = Module(new JYDFPGADRAMBlackBox)
+  val localWordAddr = (io.addr - baseAddr.U(32.W))(log2Ceil(sizeInByte) - 1, 2)
+  val doReq         = io.req_valid && io.req_ready
+  val doWrite       = doReq && io.wen
+
+  mem.io.clka  := clock
+  mem.io.ena   := doReq
+  mem.io.wea   := Mux(doWrite, io.wmask, 0.U)
+  mem.io.addra := localWordAddr
+  mem.io.dina  := io.wdata
+
+  io.resp_valid := RegNext(doReq, false.B)
+  io.rdata      := mem.io.douta
+}
+
+class JYDPeripheralBridge(
+  hasLED:  Boolean = true,
+  hasSEG:  Boolean = true,
+  hasCNT:  Boolean = true,
+  hasUART: Boolean = true)
+    extends Module {
   val io = IO(new Bundle {
     val cpu  = SimpleBusIO.Slave
     val dram = SimpleBusIO.Master
@@ -187,36 +266,22 @@ class JYDPeripheralBridge extends Module {
   io.cpu.req_ready := false.B
   Seq(io.dram, io.led, io.seg, io.cnt, io.uart).foreach(_.dontCareReq())
 
-  object DevSel extends ChiselEnum {
-    val dram, led, seg, cnt, uart = Value
-  }
-
-  val pendingSel  = RegInit(DevSel.dram.asUInt)
+  val pendingSel  = RegInit(0.U(3.W))
   val waitingResp = RegInit(false.B)
 
-  val isDRAM = AddrSpace.inRng(io.cpu.addr, AddrSpace.DRAM)
-  val isLED  = AddrSpace.inRng(io.cpu.addr, AddrSpace.LED)
-  val isSEG  = AddrSpace.inRng(io.cpu.addr, AddrSpace.SEG)
-  val isCNT  = AddrSpace.inRng(io.cpu.addr, AddrSpace.CNT)
-  val isUART = AddrSpace.inRng(io.cpu.addr, AddrSpace.SelfExtSpace.UART)
+  val extraTargets = Seq(
+    Option.when(hasLED)((1.U(3.W), io.led, AddrSpace.inRng(io.cpu.addr, AddrSpace.LED))),
+    Option.when(hasSEG)((2.U(3.W), io.seg, AddrSpace.inRng(io.cpu.addr, AddrSpace.SEG))),
+    Option.when(hasCNT)((3.U(3.W), io.cnt, AddrSpace.inRng(io.cpu.addr, AddrSpace.CNT))),
+    Option.when(hasUART)((4.U(3.W), io.uart, AddrSpace.inRng(io.cpu.addr, AddrSpace.SelfExtSpace.UART)))
+  ).flatten
 
   val targetSel = MuxCase(
-    DevSel.dram.asUInt,
-    Seq(
-      isLED  -> DevSel.led.asUInt,
-      isSEG  -> DevSel.seg.asUInt,
-      isCNT  -> DevSel.cnt.asUInt,
-      isUART -> DevSel.uart.asUInt
-    )
+    0.U(3.W),
+    extraTargets.map { case (sel, _, hit) => hit -> sel }
   )
 
-  val targets = Seq(
-    DevSel.dram.asUInt -> io.dram,
-    DevSel.led.asUInt  -> io.led,
-    DevSel.seg.asUInt  -> io.seg,
-    DevSel.cnt.asUInt  -> io.cnt,
-    DevSel.uart.asUInt -> io.uart
-  )
+  val targets = Seq((0.U(3.W), io.dram)) ++ extraTargets.map { case (sel, bus, _) => (sel, bus) }
 
   val selectedReady = MuxLookup(targetSel, io.dram.req_ready)(
     targets.map { case (sel, bus) => sel -> bus.req_ready }
@@ -253,29 +318,63 @@ class JYDPeripheralBridge extends Module {
   }
 }
 
-class JYDSoC(val resetPC: UInt = "h80000000".U) extends Module {
-  val cpu   = Module(new CPUCoreAsBlackBox)
-  val irom  = Module(new SimpleBusROM(1024 * 256, 0x80000000L))
-  val dram  = Module(new SimpleBusMem(1024 * 512, 0x80100000L))
-  val led   = Module(new SimpleBusOneWordRWDevice("jyd_update_led"))
-  val seg   = Module(new SimpleBusOneWordRWDevice("jyd_update_seg"))
-  val cnt   = Module(new SimpleBusTimer)
-  val uart  = Module(new SimpleBusUART)
-  val perip = Module(new JYDPeripheralBridge)
+trait HasJYDCPUAndResetPC { this: Module =>
+  def resetPC: UInt
 
+  val cpu             = Module(new CPUCoreAsBlackBox)
   val resetPCProvider = Module(new PCProviderAsBlackBox)
-  assert(resetPCProvider.io.resetPC === resetPC, f"Reset PC should be 0x${resetPC.litValue}%x for JYDSoC")
+  private val socName = this.getClass.getSimpleName.stripSuffix("$")
+
+  assert(resetPCProvider.io.resetPC === resetPC, f"Reset PC should be 0x${resetPC.litValue}%x for $socName")
 
   cpu.io.clock        := clock
   cpu.io.reset        := reset
   cpu.io.io.interrupt := false.B
+}
+
+class JYDSoC(val resetPC: UInt = "h80000000".U) extends Module with HasJYDCPUAndResetPC {
+  val irom  = Module(new SimpleBusROM(JYDSoCConfig.iromSizeInByte, JYDSoCConfig.iromBaseAddr))
+  val dram  = Module(new SimpleBusMem(JYDSoCConfig.dramSizeInByte, JYDSoCConfig.dramBaseAddr))
+  val led   = Module(new SimpleBusOneWordRWDevice(Some("jyd_update_led")))
+  val seg   = Module(new SimpleBusOneWordRWDevice(Some("jyd_update_seg")))
+  val cnt   = Module(new SimpleBusTimer)
+  val uart  = Module(new SimpleBusUART)
+  val perip = Module(new JYDPeripheralBridge)
 
   cpu.io.io.irom <> irom.io
   cpu.io.io.dram <> perip.io.cpu
 
   perip.io.dram <> dram.io
-  perip.io.led <> led.io
-  perip.io.seg <> seg.io
+  perip.io.led <> led.io.bus
+  perip.io.seg <> seg.io.bus
   perip.io.cnt <> cnt.io
   perip.io.uart <> uart.io
+}
+
+class JYDFPGATop(val resetPC: UInt = "h80000000".U) extends Module with HasJYDCPUAndResetPC {
+  val led = IO(Output(UInt(32.W)))
+  val seg = IO(Output(UInt(32.W)))
+
+  val irom  = Module(new SimpleBusFPGAROM(JYDSoCConfig.iromSizeInByte, JYDSoCConfig.iromBaseAddr))
+  val dram  = Module(new SimpleBusFPGAMem(JYDSoCConfig.dramSizeInByte, JYDSoCConfig.dramBaseAddr))
+  val ledReg = Module(new SimpleBusOneWordRWDevice())
+  val segReg = Module(new SimpleBusOneWordRWDevice())
+  val cnt   = Module(new SimpleBusTimer)
+  val perip = Module(new JYDPeripheralBridge(hasUART = false))
+  val dummyUART = Wire(SimpleBusIO.Slave)
+
+  dummyUART.dontCareReq()
+  dummyUART.dontCareResp()
+
+  cpu.io.io.irom <> irom.io
+  cpu.io.io.dram <> perip.io.cpu
+
+  perip.io.dram <> dram.io
+  perip.io.led <> ledReg.io.bus
+  perip.io.seg <> segReg.io.bus
+  perip.io.cnt <> cnt.io
+  perip.io.uart <> dummyUART
+
+  led := ledReg.io.value
+  seg := segReg.io.value
 }

@@ -53,8 +53,8 @@ class CPUTop(parm: CPUParameters) extends Module {
   core.io.interrupt := io.interrupt
 
   val memBridge = Module(new DualSimpleBusToAXI4)
-  SimpleBusIO.connectMasterSlave(core.io.irom, memBridge.io.ifu)
-  SimpleBusIO.connectMasterSlave(core.io.dram, memBridge.io.lsu)
+  core.io.irom <> memBridge.io.ifu
+  core.io.dram <> memBridge.io.lsu
   memBridge.io.out <> io.master
 
   io.slave := DontCare
@@ -72,7 +72,7 @@ class CPUTop(parm: CPUParameters) extends Module {
 }
 
 class CPUTop_ResetPCProvider extends BlackBox with HasBlackBoxInline {
-  val io = IO(new Bundle {
+  val io      = IO(new Bundle {
     val resetPC = Output(Types.UWord)
   })
   val pcMacro = name + "_RESET_PC"
@@ -114,19 +114,19 @@ class DualSimpleBusToAXI4 extends Module {
   }
   val state = RegInit(State.idle)
 
-  val selLSU = RegInit(false.B)
-  val reqAddr = Reg(UInt(32.W))
-  val reqSize = Reg(UInt(3.W))
+  val selLSU   = RegInit(false.B)
+  val reqAddr  = Reg(UInt(32.W))
+  val reqSize  = Reg(UInt(3.W))
   val reqWData = Reg(UInt(32.W))
   val reqWMask = Reg(UInt(4.W))
-  val reqWEn = Reg(Bool())
+  val reqWEn   = Reg(Bool())
 
   val awSent = RegInit(false.B)
-  val wSent = RegInit(false.B)
+  val wSent  = RegInit(false.B)
 
-  val takeLSU = io.lsu.req_valid
-  val selAddr = Mux(takeLSU, io.lsu.addr, io.ifu.addr)
-  val selSize = Mux(takeLSU, io.lsu.size, io.ifu.size)
+  val takeLSU  = io.lsu.req_valid
+  val selAddr  = Mux(takeLSU, io.lsu.addr, io.ifu.addr)
+  val selSize  = Mux(takeLSU, io.lsu.size, io.ifu.size)
   val selWData = Mux(takeLSU, io.lsu.wdata, io.ifu.wdata)
   val selWMask = Mux(takeLSU, io.lsu.wmask, io.ifu.wmask)
   val selWEn   = Mux(takeLSU, io.lsu.wen, io.ifu.wen)

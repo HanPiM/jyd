@@ -63,7 +63,7 @@ class SimpleBusMem(sizeInByte: Int, baseAddr: BigInt, readOnly: Boolean = false)
 class SimIROMMem(sizeInByte: Int) extends BlackBox with HasBlackBoxInline {
   val addrWidth = log2Ceil(sizeInByte) - 2
   val depth     = sizeInByte / 4
-  val io = IO(new Bundle {
+  val io        = IO(new Bundle {
     val clock = Input(Clock())
     val en    = Input(Bool())
     val addr  = Input(UInt(addrWidth.W))
@@ -191,7 +191,7 @@ class JYDPeripheralBridge extends Module {
     val dram, led, seg, cnt, uart = Value
   }
 
-  val pendingSel = RegInit(DevSel.dram.asUInt)
+  val pendingSel  = RegInit(DevSel.dram.asUInt)
   val waitingResp = RegInit(false.B)
 
   val isDRAM = AddrSpace.inRng(io.cpu.addr, AddrSpace.DRAM)
@@ -241,7 +241,7 @@ class JYDPeripheralBridge extends Module {
   val respValid = MuxLookup(pendingSel, io.dram.resp_valid)(
     targets.map { case (sel, bus) => sel -> bus.resp_valid }
   )
-  val respData = MuxLookup(pendingSel, io.dram.rdata)(
+  val respData  = MuxLookup(pendingSel, io.dram.rdata)(
     targets.map { case (sel, bus) => sel -> bus.rdata }
   )
 
@@ -270,11 +270,12 @@ class JYDSoC(val resetPC: UInt = "h80000000".U) extends Module {
   cpu.io.reset        := reset
   cpu.io.io.interrupt := false.B
 
-  SimpleBusIO.connectMasterSlave(cpu.io.io.irom, irom.io)
-  SimpleBusIO.connectMasterSlave(cpu.io.io.dram, perip.io.cpu)
-  SimpleBusIO.connectMasterSlave(perip.io.dram, dram.io)
-  SimpleBusIO.connectMasterSlave(perip.io.led, led.io)
-  SimpleBusIO.connectMasterSlave(perip.io.seg, seg.io)
-  SimpleBusIO.connectMasterSlave(perip.io.cnt, cnt.io)
-  SimpleBusIO.connectMasterSlave(perip.io.uart, uart.io)
+  cpu.io.io.irom <> irom.io
+  cpu.io.io.dram <> perip.io.cpu
+
+  perip.io.dram <> dram.io
+  perip.io.led <> led.io
+  perip.io.seg <> seg.io
+  perip.io.cnt <> cnt.io
+  perip.io.uart <> uart.io
 }

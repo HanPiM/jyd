@@ -43,8 +43,4 @@ object SimpleBusIO {
 
   def Master = new MasterT
   def Slave  = Flipped(new SlaveT)
-
-  def connectMasterSlave(master: MasterT, slave: SlaveT) = {
-    master <> slave
-  }
 }

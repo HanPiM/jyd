@@ -130,11 +130,22 @@ class DualSimpleBusToAXI4 extends Module {
   val selWData = Mux(takeLSU, io.lsu.wdata, io.ifu.wdata)
   val selWMask = Mux(takeLSU, io.lsu.wmask, io.ifu.wmask)
   val selWEn   = Mux(takeLSU, io.lsu.wen, io.ifu.wen)
+  val hasReq   = io.lsu.req_valid || io.ifu.req_valid
 
   io.lsu.req_ready := state === State.idle
   io.ifu.req_ready := (state === State.idle) && !takeLSU
 
-  when(state === State.idle && (io.lsu.req_valid || io.ifu.req_valid)) {
+  state := MuxLookup(state, State.idle)(
+    Seq(
+      State.idle -> Mux(hasReq, Mux(selWEn, State.sendAWW, State.sendAR), State.idle),
+      State.sendAR -> Mux(io.out.arready, State.waitR, State.sendAR),
+      State.waitR -> Mux(io.out.rvalid, State.idle, State.waitR),
+      State.sendAWW -> Mux((awSent || io.out.awready) && (wSent || io.out.wready), State.waitB, State.sendAWW),
+      State.waitB -> Mux(io.out.bvalid, State.idle, State.waitB)
+    )
+  )
+
+  when(state === State.idle && hasReq) {
     selLSU   := takeLSU
     reqAddr  := selAddr
     reqSize  := selSize
@@ -143,7 +154,6 @@ class DualSimpleBusToAXI4 extends Module {
     reqWEn   := selWEn
     awSent   := false.B
     wSent    := false.B
-    state    := Mux(selWEn, State.sendAWW, State.sendAR)
   }
 
   when(state === State.sendAR) {
@@ -153,9 +163,6 @@ class DualSimpleBusToAXI4 extends Module {
     io.out.arlen   := 0.U
     io.out.arsize  := reqSize
     io.out.arburst := AXI4IO.BurstType.INCR
-    when(io.out.arready) {
-      state := State.waitR
-    }
   }
 
   when(state === State.waitR) {
@@ -168,7 +175,6 @@ class DualSimpleBusToAXI4 extends Module {
         io.ifu.resp_valid := true.B
         io.ifu.rdata      := io.out.rdata
       }
-      state := State.idle
     }
   }
 
@@ -191,9 +197,6 @@ class DualSimpleBusToAXI4 extends Module {
     when(io.out.wvalid && io.out.wready) {
       wSent := true.B
     }
-    when((awSent || io.out.awready) && (wSent || io.out.wready)) {
-      state := State.waitB
-    }
   }
 
   when(state === State.waitB) {
@@ -201,7 +204,6 @@ class DualSimpleBusToAXI4 extends Module {
     when(io.out.bvalid) {
       io.lsu.resp_valid := selLSU
       io.ifu.resp_valid := !selLSU
-      state             := State.idle
     }
   }
 }

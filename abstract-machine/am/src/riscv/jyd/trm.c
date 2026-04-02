@@ -15,8 +15,7 @@ extern char _my_ext_serial_port;
 #define SERIAL_PORT ((uintptr_t)(&_my_ext_serial_port))
 
 void putch(char ch) { *(uint8_t *)(SERIAL_PORT + 0x00) = ch; }
-// unsupported now, just return 0xff to indicate no char available
-char try_getch() { return 0xff; }
+char try_getch() { return *(volatile uint8_t *)(SERIAL_PORT + 0x00); }
 
 void halt(int code) {
   asm volatile("mv a0, %0; ebreak" : : "r"(code));

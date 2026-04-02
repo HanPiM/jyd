@@ -12,9 +12,8 @@ This repository is a multi-project hardware/software workbench. The main active 
 Treat `build/`, `out/`, generated Verilog, and cache directories as disposable outputs.
 
 ## Build, Test, and Development Commands
-- `bash init.sh <subproject>`: initialize a subproject as described in the root `README.md`.
 - `make -C npc verilog`: emit merged Verilog into `npc/build/`.
-- `make -C npc sim IMG=<image>`: build and run the Verilator simulator.
+- `make -C npc ARCH=riscv32e-npc`: build the Verilator sim binary.
 - `make -C npc verilog-lint`: lint generated RTL with Verilator.
 - `make -C am-kernels/tests/cpu-tests run ARCH=riscv32e-npc ALL=add`: build and run a CPU test on the selected platform.
 - `make -C npc reformat` / `make -C npc checkformat`: apply or verify Scala formatting.

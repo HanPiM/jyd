@@ -173,21 +173,6 @@ class SimpleBusTimer extends Module {
   io.rdata      := timer
 }
 
-class SimpleBusUART extends Module {
-  val io = IO(SimpleBusIO.Slave)
-  io.dontCareResp()
-  io.req_ready := true.B
-
-  val uartToStdOut = Module(new UARTToStdOut)
-  val doWrite      = io.req_valid && io.req_ready && io.wen
-  uartToStdOut.io.clock  := clock
-  uartToStdOut.io.enable := doWrite
-  uartToStdOut.io.chData := io.wdata(7, 0)
-
-  io.resp_valid := RegNext(io.req_valid && io.req_ready, false.B)
-  io.rdata      := 0.U
-}
-
 class JYDFPGAIROMBlackBox extends BlackBox {
   override def desiredName: String = "blk_mem_gen_irom"
   val io = IO(new Bundle {

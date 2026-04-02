@@ -30,6 +30,7 @@
 #endif
 
 #include <getopt.h>
+#include <poll.h>
 #include <unistd.h>
 #include <vector>
 
@@ -166,6 +167,27 @@ extern "C" void uart_putch(char ch) {
   putchar(ch);
   fflush(stdout);
   skip_difftest_ref();
+}
+
+extern "C" void uart_try_getch(int *out_0) {
+  struct pollfd stdin_poll = {
+      .fd = STDIN_FILENO,
+      .events = POLLIN,
+      .revents = 0,
+  };
+  int poll_ret = poll(&stdin_poll, 1, 0);
+  if (poll_ret <= 0 || !(stdin_poll.revents & POLLIN)) {
+    *out_0 = 0xff;
+    return;
+  }
+
+  unsigned char ch = 0xff;
+  ssize_t read_ret = read(STDIN_FILENO, &ch, 1);
+  if (read_ret != 1) {
+    *out_0 = 0xff;
+    return;
+  }
+  *out_0 = ch;
 }
 
 extern "C" void gpr_upd(char regno, int data) {

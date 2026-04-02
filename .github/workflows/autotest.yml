@@ -359,9 +359,9 @@ jobs:
       - name: rt-thread
         run: |
           cd $JYD_HOME/rt-thread-am/bsp/abstract-machine
-          make ARCH=riscv32e-ysyxsoc init
+          make ARCH=riscv32-jyd init
           KEY=$(head -c 5 /dev/urandom | base32)
-          python $MONITOR_PY --good=$KEY make ARCH=riscv32e-ysyxsoc run
+          python $MONITOR_PY --good=$KEY make ARCH=riscv32-jyd run
 
   iverilog-microbench:
     needs: setup

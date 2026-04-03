@@ -29,7 +29,6 @@ permissions:
 
 env:
   OSS_CAD_SUITE_RELEASE_TAG: 2025-11-24
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   setup:
@@ -369,7 +368,7 @@ jobs:
           }
 
       - name: Download packed FPGA zip
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v8
         with:
           name: packed-fpga
           path: 'D:\jyd-vivado'
@@ -483,7 +482,7 @@ jobs:
           MAKEFLAGS: ${{ needs.setup.outputs.MAKEFLAGS }}
 
       - name: Download verilog file
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v8
         with:
           name: netlist
 

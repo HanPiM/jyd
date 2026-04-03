@@ -29,6 +29,7 @@ permissions:
 
 env:
   OSS_CAD_SUITE_RELEASE_TAG: 2025-11-24
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   setup:

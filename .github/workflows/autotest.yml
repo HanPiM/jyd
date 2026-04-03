@@ -374,9 +374,9 @@ jobs:
           path: 'D:\jyd-vivado'
 
       - name: Run Vivado workflow
-        shell: bash
+        shell: pwsh
         run: |
-          /d/jyd-vivado/run.sh
+          D:\jyd-vivado\run.ps1
 
       - name: Pack Vivado result
         shell: pwsh

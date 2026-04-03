@@ -12,8 +12,8 @@ TEST_NAME := $(firstword $(TEST_GOALS))
 
 IROM_COE := $(COE_ROOT)/$(TEST_NAME)/irom.coe
 DRAM_COE := $(COE_ROOT)/$(TEST_NAME)/dram.coe
-IMG_BIN := $(BIN_ROOT)/$(TEST_NAME).bin
-DATA_BIN := $(BIN_ROOT)/$(TEST_NAME).data.bin
+IMG_BIN := $(BIN_ROOT)/irom.bin
+DATA_BIN := $(BIN_ROOT)/irom.data.bin
 DISASM_TXT := $(BIN_ROOT)/$(TEST_NAME).txt
 
 .PHONY: run help list $(TEST_GOALS)

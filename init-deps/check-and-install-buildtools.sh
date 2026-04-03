@@ -93,8 +93,8 @@ echo "Waiting for file lock on $LOCKFILE..."
 flock -x 200
 
 # 获得锁后执行逻辑
-do_install_clang
-do_install_gpp
+# do_install_clang
+# do_install_gpp
 #
 # echo "check ccache installation..."
 # if ! command -v ccache &> /dev/null; then

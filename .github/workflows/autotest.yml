@@ -215,6 +215,27 @@ jobs:
           make ARCH=riscv32-jyd -C $JYD_HOME/am-kernels/tests/cpu-tests run ALL=dummy
           make ARCH=riscv32-jyd -C $JYD_HOME/am-kernels/tests/cpu-tests run
 
+  jyd-tests:
+    needs: setup
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        sample: [src0, src1, src2]
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Common operations
+        uses: ./.github/actions/common
+        with:
+          JYD_HOME: ${{ needs.setup.outputs.JYD_HOME }}
+          MAKEFLAGS: ${{ needs.setup.outputs.MAKEFLAGS }}
+
+      - name: jyd-tests (${{ matrix.sample }})
+        run: |
+          make -C $JYD_HOME/jyd-tests run ${{ matrix.sample }}
+
   riscv-tests:
     needs: setup
     runs-on: ubuntu-24.04

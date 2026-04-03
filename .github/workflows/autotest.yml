@@ -161,6 +161,16 @@ jobs:
           name: verilog
           path: ${{ steps.vfilename.outputs.VFILE }}
 
+      - name: Pack FPGA sources
+        run: |
+          make -C $JYD_NPC_HOME pack-fpga
+
+      - name: Upload packed FPGA zip
+        uses: actions/upload-artifact@v6
+        with:
+          name: packed-fpga
+          path: ${{ steps.set-ysyx-home.outputs.JYD_HOME }}/npc/build/pack-fpga.zip
+
       - name: Pack workbench
         run: |
           PARENT=$(dirname $JYD_HOME)
@@ -345,6 +355,48 @@ jobs:
           IMG=$JYD_HOME/am-kernels/benchmarks/microbench/build/microbench-riscv32e-npc.bin
           python $JYD_AM_HOME/tools/insert-arg.py $IMG 64 the_insert-arg_rule_in_Makefile_will_insert_mainargs_here $KEY
           python $MONITOR_PY --good=$KEY make -C $JYD_NPC_HOME sim-iverilog IMG=$IMG
+
+  vivado-fpga:
+    needs: setup
+    runs-on: [self-hosted, Windows]
+    steps:
+      - name: Remove old packed FPGA zip
+        shell: pwsh
+        run: |
+          $packedZip = 'D:\jyd-vivado\pack-fpga.zip'
+          if (Test-Path $packedZip) {
+            Remove-Item -Path $packedZip -Force
+          }
+
+      - name: Download packed FPGA zip
+        uses: actions/download-artifact@v6
+        with:
+          name: packed-fpga
+          path: 'D:\jyd-vivado'
+
+      - name: Run Vivado workflow
+        shell: bash
+        run: |
+          /d/jyd-vivado/run.sh
+
+      - name: Pack Vivado result
+        shell: pwsh
+        run: |
+          $resultDir = 'D:\jyd-vivado\result'
+          $resultZip = 'D:\jyd-vivado\result.zip'
+          if (Test-Path $resultZip) {
+            Remove-Item -Path $resultZip -Force
+          }
+          if (-not (Test-Path $resultDir)) {
+            throw "Vivado result directory not found: $resultDir"
+          }
+          Compress-Archive -Path "$resultDir\*" -DestinationPath $resultZip
+
+      - name: Upload Vivado result zip
+        uses: actions/upload-artifact@v6
+        with:
+          name: vivado-result
+          path: 'D:\jyd-vivado\result.zip'
 
   yosys-sta:
     needs: setup

@@ -378,24 +378,11 @@ jobs:
         run: |
           D:\jyd-vivado\run.ps1
 
-      - name: Pack Vivado result
-        shell: pwsh
-        run: |
-          $resultDir = 'D:\jyd-vivado\result'
-          $resultZip = 'D:\jyd-vivado\result.zip'
-          if (Test-Path $resultZip) {
-            Remove-Item -Path $resultZip -Force
-          }
-          if (-not (Test-Path $resultDir)) {
-            throw "Vivado result directory not found: $resultDir"
-          }
-          Compress-Archive -Path "$resultDir\*" -DestinationPath $resultZip
-
-      - name: Upload Vivado result zip
+      - name: Upload Vivado result
         uses: actions/upload-artifact@v6
         with:
           name: vivado-result
-          path: 'D:\jyd-vivado\result.zip'
+          path: 'D:\jyd-vivado\result'
 
   yosys-sta:
     needs: setup

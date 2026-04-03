@@ -401,12 +401,17 @@ jobs:
           }
 
           if (Test-Path $resultRoot) {
-              Get-ChildItem -Path $resultRoot -Recurse -Force | Remove-Item -Recurse -Force
-              Write-Host "Remove old result: $resultRoot"
-          } else {
-              New-Item -ItemType Directory -Path $resultRoot -Force | Out-Null
-              Write-Host "Created result directory: $resultRoot"
+              Remove-Item -Path $resultRoot -Recurse -Force
+              Write-Host "Removed directory and contents: $resultRoot"
           }
+
+          # if (Test-Path $resultRoot) {
+          #     Get-ChildItem -Path $resultRoot -Recurse -Force | Remove-Item -Recurse -Force
+          #     Write-Host "Remove old result: $resultRoot"
+          # } else {
+          #     New-Item -ItemType Directory -Path $resultRoot -Force | Out-Null
+          #     Write-Host "Created result directory: $resultRoot"
+          # }
 
           .\run-single.ps1 -CoeSourcePath ".\test-coes\${{ matrix.sample }}" -ResultPath ".\result"
 

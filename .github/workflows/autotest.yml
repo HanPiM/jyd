@@ -379,10 +379,19 @@ jobs:
           D:\jyd-vivado\run.ps1
 
       - name: Upload Vivado result
+        id: upload-vivado-result
         uses: actions/upload-artifact@v6
         with:
           name: vivado-result
           path: 'D:\jyd-vivado\result'
+
+      - name: Add Vivado summary
+        shell: pwsh
+        run: |
+          @"
+          ## Vivado FPGA
+          Download result: [vivado-result](${{ steps.upload-vivado-result.outputs.artifact-url }})
+          "@ >> $env:GITHUB_STEP_SUMMARY
 
   yosys-sta:
     needs: setup

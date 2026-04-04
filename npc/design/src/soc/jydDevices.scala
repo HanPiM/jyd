@@ -141,14 +141,12 @@ class SimpleBusOneWordRWDevice(updFuncName: Option[String] = None) extends Modul
   io.value          := dataReg
 }
 
-class SimpleBusTimer(clockFreqHz: Int) extends Module {
-  require(clockFreqHz > 0, s"clockFreqHz must be positive, got $clockFreqHz")
-  require(clockFreqHz % 1000 == 0, s"clockFreqHz must be divisible by 1000, got $clockFreqHz")
-
+class SimpleBusTimer extends Module {
   val io = IO(SimpleBusIO.Slave)
   io.dontCareResp()
   io.req_ready := true.B
 
+  private val clockFreqHz      = 50000000
   private val cyclesPerMs      = clockFreqHz / 1000
   private val cycleCounterMax  = cyclesPerMs - 1
   private val cycleCounterBits = math.max(1, log2Ceil(cyclesPerMs))
@@ -206,6 +204,17 @@ class JYDFPGADRAMBlackBox extends BlackBox {
   })
 }
 
+class JYDFPGACounterBlackBox extends BlackBox {
+  override def desiredName: String = "counter"
+  val io = IO(new Bundle {
+    val clk         = Input(Clock())
+    val rst         = Input(Bool())
+    val perip_wdata = Input(UInt(32.W))
+    val cnt_wen     = Input(Bool())
+    val perip_rdata = Output(UInt(32.W))
+  })
+}
+
 class SimpleBusFPGAROM(sizeInByte: Int, baseAddr: BigInt) extends Module {
   val io = IO(SimpleBusIO.Slave)
   io.dontCareResp()
@@ -241,6 +250,27 @@ class SimpleBusFPGAMem(sizeInByte: Int, baseAddr: BigInt) extends Module {
 
   io.resp_valid := RegNext(doReq, false.B)
   io.rdata      := mem.io.douta
+}
+
+class SimpleBusFPGACounter extends Module {
+  val io = IO(new Bundle {
+    val bus       = SimpleBusIO.Slave
+    val clk_50Mhz = Input(Clock())
+    val rst       = Input(Bool())
+  })
+  io.bus.dontCareResp()
+  io.bus.req_ready := true.B
+
+  val counter = Module(new JYDFPGACounterBlackBox)
+  val doReq   = io.bus.req_valid && io.bus.req_ready
+
+  counter.io.clk         := io.clk_50Mhz
+  counter.io.rst         := io.rst
+  counter.io.perip_wdata := io.bus.wdata
+  counter.io.cnt_wen     := doReq && io.bus.wen
+
+  io.bus.resp_valid := RegNext(doReq, false.B)
+  io.bus.rdata      := counter.io.perip_rdata
 }
 
 class JYDPeripheralBridge(
@@ -328,12 +358,12 @@ trait HasJYDCPUAndResetPC { this: Module =>
   cpu.io.io.interrupt := false.B
 }
 
-class JYDSoC(val resetPC: UInt = "h80000000".U, clockFreqHz: Int) extends Module with HasJYDCPUAndResetPC {
+class JYDSoC(val resetPC: UInt = "h80000000".U) extends Module with HasJYDCPUAndResetPC {
   val irom  = Module(new SimpleBusROM(JYDSoCConfig.iromSizeInByte, JYDSoCConfig.iromBaseAddr))
   val dram  = Module(new SimpleBusMem(JYDSoCConfig.dramSizeInByte, JYDSoCConfig.dramBaseAddr))
   val led   = Module(new SimpleBusOneWordRWDevice(Some("jyd_update_led")))
   val seg   = Module(new SimpleBusOneWordRWDevice(Some("jyd_update_seg")))
-  val cnt   = Module(new SimpleBusTimer(clockFreqHz))
+  val cnt   = Module(new SimpleBusTimer)
   val uart  = Module(new SimpleBusUART)
   val perip = Module(new JYDPeripheralBridge)
 
@@ -347,16 +377,17 @@ class JYDSoC(val resetPC: UInt = "h80000000".U, clockFreqHz: Int) extends Module
   perip.io.uart <> uart.io
 }
 
-class JYDFPGATop(val resetPC: UInt = "h80000000".U, clockFreqHz: Int) extends Module with HasJYDCPUAndResetPC {
-  val led = IO(Output(UInt(32.W)))
-  val seg = IO(Output(UInt(32.W)))
+class JYDFPGATop(val resetPC: UInt = "h80000000".U) extends Module with HasJYDCPUAndResetPC {
+  val clk_50Mhz = IO(Input(Clock()))
+  val led       = IO(Output(UInt(32.W)))
+  val seg       = IO(Output(UInt(32.W)))
 
-  val irom  = Module(new SimpleBusFPGAROM(JYDSoCConfig.iromSizeInByte, JYDSoCConfig.iromBaseAddr))
-  val dram  = Module(new SimpleBusFPGAMem(JYDSoCConfig.dramSizeInByte, JYDSoCConfig.dramBaseAddr))
+  val irom     = Module(new SimpleBusFPGAROM(JYDSoCConfig.iromSizeInByte, JYDSoCConfig.iromBaseAddr))
+  val dram     = Module(new SimpleBusFPGAMem(JYDSoCConfig.dramSizeInByte, JYDSoCConfig.dramBaseAddr))
   val ledReg = Module(new SimpleBusOneWordRWDevice())
   val segReg = Module(new SimpleBusOneWordRWDevice())
-  val cnt   = Module(new SimpleBusTimer(clockFreqHz))
-  val perip = Module(new JYDPeripheralBridge(hasUART = false))
+  val cnt      = Module(new SimpleBusFPGACounter)
+  val perip    = Module(new JYDPeripheralBridge(hasUART = false))
   val dummyUART = Wire(SimpleBusIO.Slave)
 
   dummyUART.dontCareReq()
@@ -368,8 +399,11 @@ class JYDFPGATop(val resetPC: UInt = "h80000000".U, clockFreqHz: Int) extends Mo
   perip.io.dram <> dram.io
   perip.io.led <> ledReg.io.bus
   perip.io.seg <> segReg.io.bus
-  perip.io.cnt <> cnt.io
+  perip.io.cnt <> cnt.io.bus
   perip.io.uart <> dummyUART
+
+  cnt.io.clk_50Mhz := clk_50Mhz
+  cnt.io.rst       := reset.asBool
 
   led := ledReg.io.value
   seg := segReg.io.value

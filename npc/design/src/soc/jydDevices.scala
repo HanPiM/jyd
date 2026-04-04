@@ -141,36 +141,47 @@ class SimpleBusOneWordRWDevice(updFuncName: Option[String] = None) extends Modul
   io.value          := dataReg
 }
 
-class SimpleBusTimer extends Module {
+class SimpleBusTimer(clockFreqHz: Int) extends Module {
+  require(clockFreqHz > 0, s"clockFreqHz must be positive, got $clockFreqHz")
+  require(clockFreqHz % 1000 == 0, s"clockFreqHz must be divisible by 1000, got $clockFreqHz")
+
   val io = IO(SimpleBusIO.Slave)
   io.dontCareResp()
   io.req_ready := true.B
 
-  object State extends ChiselEnum {
-    val idle, ticking, finished = Value
-  }
+  private val cyclesPerMs      = clockFreqHz / 1000
+  private val cycleCounterMax  = cyclesPerMs - 1
+  private val cycleCounterBits = math.max(1, log2Ceil(cyclesPerMs))
 
-  val MAGIC_START = "h80000000".U
-  val MAGIC_STOP  = "hffffffff".U
+  val MAGIC_START = "h80000000".U(32.W)
+  val MAGIC_STOP  = "hffffffff".U(32.W)
 
-  val state = RegInit(State.idle)
-  val timer = RegInit(0.U(32.W))
-  val doReq = io.req_valid && io.req_ready
+  val start        = RegInit(false.B)
+  val cycleCounter = RegInit(0.U(cycleCounterBits.W))
+  val timerMs      = RegInit(0.U(32.W))
+  val doReq        = io.req_valid && io.req_ready
 
-  when(state === State.ticking) {
-    timer := timer + 1.U
+  when(start) {
+    when(cycleCounter === cycleCounterMax.U) {
+      cycleCounter := 0.U
+      timerMs      := timerMs + 1.U
+    }.otherwise {
+      cycleCounter := cycleCounter + 1.U
+    }
+  }.otherwise {
+    cycleCounter := 0.U
   }
 
   when(doReq && io.wen) {
     when(io.wdata === MAGIC_START) {
-      state := State.ticking
+      start := true.B
     }.elsewhen(io.wdata === MAGIC_STOP) {
-      state := State.finished
+      start := false.B
     }
   }
 
   io.resp_valid := RegNext(doReq, false.B)
-  io.rdata      := timer
+  io.rdata      := timerMs
 }
 
 class JYDFPGAIROMBlackBox extends BlackBox {
@@ -317,12 +328,12 @@ trait HasJYDCPUAndResetPC { this: Module =>
   cpu.io.io.interrupt := false.B
 }
 
-class JYDSoC(val resetPC: UInt = "h80000000".U) extends Module with HasJYDCPUAndResetPC {
+class JYDSoC(val resetPC: UInt = "h80000000".U, clockFreqHz: Int) extends Module with HasJYDCPUAndResetPC {
   val irom  = Module(new SimpleBusROM(JYDSoCConfig.iromSizeInByte, JYDSoCConfig.iromBaseAddr))
   val dram  = Module(new SimpleBusMem(JYDSoCConfig.dramSizeInByte, JYDSoCConfig.dramBaseAddr))
   val led   = Module(new SimpleBusOneWordRWDevice(Some("jyd_update_led")))
   val seg   = Module(new SimpleBusOneWordRWDevice(Some("jyd_update_seg")))
-  val cnt   = Module(new SimpleBusTimer)
+  val cnt   = Module(new SimpleBusTimer(clockFreqHz))
   val uart  = Module(new SimpleBusUART)
   val perip = Module(new JYDPeripheralBridge)
 
@@ -336,7 +347,7 @@ class JYDSoC(val resetPC: UInt = "h80000000".U) extends Module with HasJYDCPUAnd
   perip.io.uart <> uart.io
 }
 
-class JYDFPGATop(val resetPC: UInt = "h80000000".U) extends Module with HasJYDCPUAndResetPC {
+class JYDFPGATop(val resetPC: UInt = "h80000000".U, clockFreqHz: Int) extends Module with HasJYDCPUAndResetPC {
   val led = IO(Output(UInt(32.W)))
   val seg = IO(Output(UInt(32.W)))
 
@@ -344,7 +355,7 @@ class JYDFPGATop(val resetPC: UInt = "h80000000".U) extends Module with HasJYDCP
   val dram  = Module(new SimpleBusFPGAMem(JYDSoCConfig.dramSizeInByte, JYDSoCConfig.dramBaseAddr))
   val ledReg = Module(new SimpleBusOneWordRWDevice())
   val segReg = Module(new SimpleBusOneWordRWDevice())
-  val cnt   = Module(new SimpleBusTimer)
+  val cnt   = Module(new SimpleBusTimer(clockFreqHz))
   val perip = Module(new JYDPeripheralBridge(hasUART = false))
   val dummyUART = Wire(SimpleBusIO.Slave)
 

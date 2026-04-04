@@ -4,6 +4,8 @@ import testSoC._
 import common_def.CPUParameters
 
 object Elaborate extends App {
+  private val jydClockFreqHz = 50000000
+
   if (args.size != 2) {
     println("Usage: --target-dir <dir>")
     sys.exit(1)
@@ -42,6 +44,6 @@ object Elaborate extends App {
   emit(new top.CPUTop(CPUParameters(gprAddrWidth = 5, skipDifftestAddrs = jyd.AddrSpace.needSkipDifftestGroup)), s"$emitRootDir/riscv32")
 
   emit(new TestSoC(new npc.NPCDevices), s"$emitRootDir/testsoc/npc")
-  emit(new jyd.JYDSoC, s"$emitRootDir/testsoc/jyd")
-  emit(new jyd.JYDFPGATop, s"$emitRootDir/testsoc/jydFPGA")
+  emit(new jyd.JYDSoC(clockFreqHz = jydClockFreqHz), s"$emitRootDir/testsoc/jyd")
+  emit(new jyd.JYDFPGATop(clockFreqHz = jydClockFreqHz), s"$emitRootDir/testsoc/jydFPGA")
 }

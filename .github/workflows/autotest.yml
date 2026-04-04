@@ -121,10 +121,19 @@ jobs:
           make -C $JYD_AM_HOME clean-all
           make -C $JYD_NPC_HOME clean
 
-        # TODO: 考虑优化使用 Chisel 的学员生成 verilog 的流程
+      - name: Cache generated NPC verilog
+        id: npc-verilog-cache
+        uses: actions/cache@v5
+        with:
+          path: |
+            npc/build/gened/verilog/
+            npc/build/verilog.done
+            npc/build/*.v
+            npc/build/*.sv
+          key: ${{ runner.os }}-npc-verilog-${{ hashFiles('npc/design/**', 'npc/scripts/**', 'npc/Makefile') }}
+
       - name: Generate verilog for NPC
         run: |
-          touch $JYD_NPC_HOME/.timestamp
           make -C $JYD_NPC_HOME verilog
 
       - name: Check verilog file name
@@ -136,11 +145,6 @@ jobs:
             false
           fi
           echo "Find $VFILE"
-
-          if [[ $JYD_NPC_HOME/.timestamp -nt $VFILE ]]; then
-            echo "$VFILE is older than .timestamp. Abort."
-            false
-          fi
 
           DESIGN=$(basename $VFILE | sed 's/\.[^.]*$//')
           echo "VFILE=$VFILE" >> $GITHUB_OUTPUT

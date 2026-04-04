@@ -132,6 +132,16 @@ jobs:
             npc/build/*.sv
           key: ${{ runner.os }}-npc-verilog-${{ hashFiles('npc/design/**', 'npc/scripts/**', 'npc/Makefile') }}
 
+      - name: Refresh cached NPC verilog timestamps
+        if: steps.npc-verilog-cache.outputs.cache-hit == 'true'
+        run: |
+          touch $JYD_NPC_HOME/build/verilog.done
+          for vfile in $JYD_NPC_HOME/build/*.v $JYD_NPC_HOME/build/*.sv; do
+            if [[ -e $vfile ]]; then
+              touch $vfile
+            fi
+          done
+
       - name: Generate verilog for NPC
         run: |
           make -C $JYD_NPC_HOME verilog

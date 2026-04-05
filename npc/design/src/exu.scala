@@ -155,8 +155,10 @@ class EXU(implicit p:CPUParameters) extends Module {
       isTypSys                -> csr_rdata
     )
   )
-  writeBackInfo.isLoad    := DontCare
-  writeBackInfo.lsuResult := DontCare
+  writeBackInfo.isLoad        := false.B
+  writeBackInfo.lsuResult     := 0.U
+  writeBackInfo.lsuFunc3t     := 0.U
+  writeBackInfo.lsuAddrOffset := 0.U
 
   val isMemOP = isTypLoad || isTypStore
   io.fwd := WrBackForwardInfo(io.in.valid, dinst, ~isMemOP, writeBackInfo.gpr.data)

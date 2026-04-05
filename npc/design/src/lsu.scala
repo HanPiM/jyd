@@ -169,18 +169,7 @@ class LSU(
     isIdle && io.out.ready
   )
 
-  val respLoadDataRaw = MuxLookup(memAddrOffset, 0.U(32.W))(
-    Seq(
-      0.U -> memRdRawData,
-      1.U -> memRdRawData(31, 8).pad(32),
-      2.U -> memRdRawData(31, 16).pad(32),
-      3.U -> memRdRawData(31, 24).pad(32)
-    )
-  )
-  val respLoadByte = Cat(Fill(24, respLoadDataRaw(7) && (~func3t(2))), respLoadDataRaw(7, 0))
-  val respLoadHalf = Cat(Fill(16, respLoadDataRaw(15) && (~func3t(2))), respLoadDataRaw(15, 0))
-  val loadResult   = Mux(func3t(1), respLoadDataRaw, Mux(func3t(0), respLoadHalf, respLoadByte))
-  val lsuResult    = Mux(activeIsCLINT, clintRdData, loadResult)
+  val lsuResult    = Mux(activeIsCLINT, clintRdData, memRdRawData)
 
   io.out.valid := fireLocalBypass || (state === State.waitResp && memIO.resp_valid) || (state === State.waitOut)
 
@@ -212,6 +201,8 @@ class LSU(
   outWriteBackInfo.gpr.data      := activeReq.exuWriteBack.gpr.data
   outWriteBackInfo.isLoad        := activeReq.isLoad
   outWriteBackInfo.lsuResult     := lsuResult
+  outWriteBackInfo.lsuFunc3t     := activeReq.func3t
+  outWriteBackInfo.lsuAddrOffset := activeReq.destAddr(1, 0)
   outWriteBackInfo.iid           := activeReq.exuWriteBack.iid
 
   val isSRAMAddr = AddrSpace.inRng(in.destAddr, AddrSpace.SRAM)

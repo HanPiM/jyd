@@ -14,6 +14,8 @@ import chisel3.util.circt.dpi._
 
 class WriteBackInfo(implicit p:CPUParameters) extends Bundle {
   val gpr = GPRegReqIO.WriteTX
+  val isLoad = Bool()
+  val lsuResult = Types.UWord
 
   val csr           = CSRegReqIO.TX.Write
   val csr_ecallflag = Bool()
@@ -30,12 +32,13 @@ class WriteBackInfo(implicit p:CPUParameters) extends Bundle {
 object ExtractFwdInfoFromWrBack {
   def apply(info: DecoupledIO[WriteBackInfo])(implicit p:CPUParameters): WrBackForwardInfo = {
     val wrBack = info.bits
+    val gprData = Mux(wrBack.isLoad, wrBack.lsuResult, wrBack.gpr.data)
 
     val out = Wire(new WrBackForwardInfo)
     out.addr      := wrBack.gpr.addr
     out.enWr      := wrBack.gpr.en && info.valid
     out.dataVaild := info.valid
-    out.data      := wrBack.gpr.data
+    out.data      := gprData
     out
   }
 }
@@ -56,7 +59,7 @@ class WBU(implicit p:CPUParameters) extends Module {
 
   io.gpr.en   := wbinfo.gpr.en && valid
   io.gpr.addr := wbinfo.gpr.addr
-  io.gpr.data := wbinfo.gpr.data
+  io.gpr.data := Mux(wbinfo.isLoad, wbinfo.lsuResult, wbinfo.gpr.data)
 
   io.csr.en   := wbinfo.csr.en && valid
   io.csr.addr := wbinfo.csr.addr

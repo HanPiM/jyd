@@ -180,6 +180,7 @@ class LSU(
   val respLoadByte = Cat(Fill(24, respLoadDataRaw(7) && (~func3t(2))), respLoadDataRaw(7, 0))
   val respLoadHalf = Cat(Fill(16, respLoadDataRaw(15) && (~func3t(2))), respLoadDataRaw(15, 0))
   val loadResult   = Mux(func3t(1), respLoadDataRaw, Mux(func3t(0), respLoadHalf, respLoadByte))
+  val lsuResult    = Mux(activeIsCLINT, clintRdData, loadResult)
 
   io.out.valid := fireLocalBypass || (state === State.waitResp && memIO.resp_valid) || (state === State.waitOut)
 
@@ -208,7 +209,9 @@ class LSU(
   outWriteBackInfo.csr_ecallflag := activeReq.exuWriteBack.csr_ecallflag
   outWriteBackInfo.gpr.addr      := activeReq.exuWriteBack.gpr.addr
   outWriteBackInfo.gpr.en        := activeReq.exuWriteBack.gpr.en
-  outWriteBackInfo.gpr.data      := Mux(activeReq.isLoad, Mux(activeIsCLINT, clintRdData, loadResult), activeReq.exuWriteBack.gpr.data)
+  outWriteBackInfo.gpr.data      := activeReq.exuWriteBack.gpr.data
+  outWriteBackInfo.isLoad        := activeReq.isLoad
+  outWriteBackInfo.lsuResult     := lsuResult
   outWriteBackInfo.iid           := activeReq.exuWriteBack.iid
 
   val isSRAMAddr = AddrSpace.inRng(in.destAddr, AddrSpace.SRAM)

@@ -133,6 +133,8 @@ class DecodedInstInfo(implicit p : CPUParameters) extends InstMetaInfo with HasR
 
   val isECall = Bool()
   val isMRet  = Bool()
+
+  val takeIfBranch = Bool()
 }
 
 class DecodedInst(implicit p : CPUParameters) extends Inst {

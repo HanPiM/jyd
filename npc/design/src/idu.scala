@@ -242,13 +242,6 @@ class IDU(
     )
   )
 
-  res.snpc := io.in.bits.pc + 4.U
-  res.pcAddImm := io.in.bits.pc + res.imm
-  res.reg1AddImm := res.reg1 + res.imm
-
-  res.isECall := inst === "h73".U
-  res.isMRet  := inst === "h30200073".U
-
   val bypassMux = Module(new ByPassMux())
   bypassMux.io.rs1        := res.rs1
   bypassMux.io.rs2        := res.rs2
@@ -259,6 +252,26 @@ class IDU(
   res.reg2                := bypassMux.io.outData2
 
   val needStall = bypassMux.io.needStall
+
+  res.snpc := io.in.bits.pc + 4.U
+  res.pcAddImm := io.in.bits.pc + res.imm
+  res.reg1AddImm := res.reg1 + res.imm
+
+  res.isECall := inst === "h73".U
+  res.isMRet  := inst === "h30200073".U
+
+  // --- Branch ---
+  // blt/bge 10x
+  // bltu/bgeu 11x
+  //
+  // only when func3t[2] == 0 -> eq/ne
+  //
+  val func3t = inst(14, 12)
+  val isLessThanU = res.reg1 < res.reg2
+  val isLessThanS = (res.reg1.asSInt < res.reg2.asSInt)
+  val isLessThan  = Mux(func3t(1), isLessThanU, isLessThanS)
+  val branchCalc  = Mux(func3t(2), isLessThan, (res.reg1 === res.reg2))
+  res.takeIfBranch := Mux(func3t(0), ~branchCalc, branchCalc)
 
   io.in.ready  := (io.out.ready && !needStall) || io.flush
   io.out.valid := io.in.valid && !needStall && !io.flush

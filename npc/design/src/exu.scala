@@ -113,16 +113,7 @@ class EXU(implicit p:CPUParameters) extends Module {
 
   writeBackInfo.csr_ecallflag := is_ecall
 
-  // --- Branch ---
-  // blt/bge 10x
-  // bltu/bgeu 11x
-  //
-  // only when func3t[2] == 0 -> eq/ne
-  val isLessThanU = reg_v1 < reg_v2
-  val isLessThanS = (reg_v1.asSInt < reg_v2.asSInt)
-  val isLessThan  = Mux(func3t(1), isLessThanU, isLessThanS)
-  val branchCalc  = Mux(func3t(2), isLessThan, (reg_v1 === reg_v2))
-  val takeBranch  = Mux(func3t(0), ~branchCalc, branchCalc)
+  val takeBranch = dinst.info.takeIfBranch
 
   // --- Inst type decode ---
   val isTypLoad       = InstType.hasSame(dinst.info.typ, InstType.load)

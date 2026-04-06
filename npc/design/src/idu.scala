@@ -11,6 +11,7 @@ import regfile._
 import dpiwrap._
 
 import cpu.WriteBackInfo
+import common_def.Types.Ops.StringOps
 
 class InstInfoDecoder extends Module {
   val io = IO(new Bundle {
@@ -242,6 +243,11 @@ class IDU(
   )
 
   res.snpc := io.in.bits.pc + 4.U
+  res.pcAddImm := io.in.bits.pc + res.imm
+  res.reg1AddImm := res.reg1 + res.imm
+
+  res.isECall := inst === "h73".U
+  res.isMRet  := inst === "h30200073".U
 
   val bypassMux = Module(new ByPassMux())
   bypassMux.io.rs1        := res.rs1

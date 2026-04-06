@@ -43,10 +43,13 @@ class EXU(implicit p:CPUParameters) extends Module {
   io.in.ready  := io.out.ready
   io.out.valid := io.in.valid
 
-  val pcAddImm   = dinst.pc + dinst.info.imm
   val reg_v1     = dinst.info.reg1
   val reg_v2     = dinst.info.reg2
-  val reg1AddImm = reg_v1 + dinst.info.imm
+  // val reg1AddImm = reg_v1 + dinst.info.imm
+  // val pcAddImm   = dinst.pc + dinst.info.imm
+  val pcAddImm   = dinst.info.pcAddImm
+  val reg1AddImm = dinst.info.reg1AddImm
+
 
   alu_in.src1   := reg_v1
   alu_in.src2   := Mux(isFmtI, dinst.info.imm, reg_v2)
@@ -57,8 +60,8 @@ class EXU(implicit p:CPUParameters) extends Module {
   val aluOut = alu.io.out.bits
 
   // --- CSR ---
-  val is_mret  = dinst.code === "h30200073".U
-  val is_ecall = dinst.code === "h73".U
+  val is_mret  = dinst.info.isMRet
+  val is_ecall = dinst.info.isECall
 
   val csrren    = io.csr_rvec.en
   val csr_raddr = io.csr_rvec.addr

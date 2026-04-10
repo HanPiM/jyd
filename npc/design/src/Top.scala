@@ -231,7 +231,6 @@ class CPUCore(
   val dataMemBus = Module(new DataMemBusCombiner)
 
   lsu.io.mcycle64 := csrs.io.mcycle64
-  exu.io.lsuReady := lsu.io.in.ready
 
   val resetPCProvider = Module(new CPUTop_ResetPCProvider)
   val INIT_PC         = resetPCProvider.io.resetPC

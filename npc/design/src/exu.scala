@@ -80,20 +80,20 @@ class EXU(implicit p:CPUParameters) extends Module {
   val isCSRRW = (func3t === CSROp.csrrw) && isTypSys
   val isCSRRS = (func3t === CSROp.csrrs) && isTypSys
 
-  csrren := isCSRRS || (isCSRRW && (dinst.info.rd =/= 0.U)) || is_ecall || is_mret
+  csrren := isCSRRS || (isCSRRW && (dinst.info.rd =/= 0.U))
   csrwen := isCSRRW || (isCSRRS && (reg_v1 =/= 0.U))
 
   when(isTypSys) {
     when(is_ecall) {
       csr_waddr := CSRAddr.mepc
-      csr_raddr := CSRAddr.mtvec
       // ecall: set mepc to pc
       // !!!note:
       // although wen = false
       // is_ecall flag makes csr to write wdata to mepc
       csr_wdata := dinst.pc
+      csr_raddr := DontCare
     }.elsewhen(is_mret) {
-      csr_raddr := CSRAddr.mepc
+      csr_raddr := DontCare
       csr_waddr := DontCare
       csr_wdata := DontCare
     }.otherwise {
@@ -175,7 +175,7 @@ class EXU(implicit p:CPUParameters) extends Module {
       snpc
     )
   )
-  nxtPC    := Mux(isJmpCsr, csr_rdata, normalNxtPC)
+  nxtPC    := Mux(isJmpCsr, dinst.info.csrJmpTarget, normalNxtPC)
   io.nxtPC := nxtPC
   io.pc    := dinst.pc
 

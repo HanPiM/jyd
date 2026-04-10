@@ -182,6 +182,10 @@ class IDU(
   val io = IO(new Bundle {
     val in   = Flipped(Decoupled(new Inst))
     val rvec = GPRegReqIO.ReadVecTX(2)
+    val csrJmpTarget = Input(new Bundle {
+      val mepc  = Types.UWord
+      val mtvec = Types.UWord
+    })
 
     val flush = Input(Bool())
 
@@ -259,6 +263,11 @@ class IDU(
 
   res.isECall := inst === "h73".U
   res.isMRet  := inst === "h30200073".U
+  res.csrJmpTarget := Mux(
+    res.isECall,
+    io.csrJmpTarget.mtvec,
+    Mux(res.isMRet, io.csrJmpTarget.mepc, 0.U)
+  )
 
   // --- Branch ---
   // blt/bge 10x

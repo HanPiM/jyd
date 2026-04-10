@@ -108,6 +108,8 @@ object CSRAddr {
 class CSRIO extends Bundle {
   val is_ecall = Input(Bool())
   val mcycle64 = Output(UInt(64.W))
+  val mepc     = Output(UInt(32.W))
+  val mtvec    = Output(UInt(32.W))
   val read     = CSRegReqIO.RX.SingleRead
   val write    = CSRegReqIO.RX.Write
 }
@@ -152,6 +154,9 @@ class ControlStatusRegisterFile extends Module {
   )
   val widx  = MuxLookup(io.write.addr, 0.U)(walut)
   val ridx  = MuxLookup(io.read.addr, 0.U)(walut)
+
+  io.mepc  := waregs(1)
+  io.mtvec := waregs(3)
 
   when(io.read.en) {
     io.read.data := MuxLookup(io.read.addr, waregs(ridx))(

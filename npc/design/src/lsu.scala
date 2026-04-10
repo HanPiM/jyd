@@ -2,12 +2,7 @@ package cpu
 import chisel3._
 import chisel3.util._
 import common_def._
-
-import chisel3.util.circt.dpi._
-import simplebus._
-
-import dpiwrap._
-import dpiwrap.ClockedCallVoidDPIC
+import dpiwrap.{StageLogConst, StageLogger}
 
 class LSUInput(
   implicit p: CPUParameters)
@@ -55,7 +50,6 @@ class LSUIO(
     extends Bundle {
   val mcycle64 = Input(UInt(64.W))
   val memResp  = Flipped(Valid(Types.UWord))
-  val storeReq = Decoupled(new MemWriteReq)
 
   val in  = Flipped(Decoupled(new LSUInput))
   val out = Decoupled(new WriteBackInfo)
@@ -67,16 +61,15 @@ class LSU(
   val io = IO(new LSUIO)
 
   object State extends ChiselEnum {
-    val idle, waitReq, waitResp, waitOut = Value
+    val idle, waitResp, waitOut = Value
   }
   val state = RegInit(State.idle)
   val isIdle = state === State.idle
 
   val outWriteBackInfo = io.out.bits
 
-  val in       = io.in.bits
-  val memResp  = io.memResp
-  val storeReq = io.storeReq
+  val in      = io.in.bits
+  val memResp = io.memResp
   val respData = Reg(Types.UWord)
 
   val isLoadOp    = in.isLoad && io.in.valid
@@ -87,9 +80,7 @@ class LSU(
 
   val isMemOp = isMemLoad || isStore
   val fireLocalBypass = isIdle && io.in.valid && (!isMemOp) && io.out.ready
-  val reqActive       = io.in.valid && isStore && (state === State.idle || state === State.waitReq)
-  val fireStoreReq    = reqActive && storeReq.ready
-  val seesMemResp     = ((state === State.idle) && isMemLoad && io.in.valid || (state === State.waitResp)) && memResp.valid
+  val seesMemResp     = ((state === State.idle) && isMemOp && io.in.valid || (state === State.waitResp)) && memResp.valid
 
   when(seesMemResp) {
     respData := memResp.bits
@@ -98,77 +89,15 @@ class LSU(
   val activeReq      = io.in.bits
   val memAddr        = activeReq.destAddr
   val func3t         = activeReq.func3t
-  val storeData      = activeReq.storeData
   val memAddrOffset  = memAddr(1, 0)
   val memRdRawData   = Mux(seesMemResp, memResp.bits, respData)
-  val memOpIsWord    = func3t(1)
-  val memOpIsHalf    = (~func3t(1)) && func3t(0)
-  val memOpIsByte    = (~func3t(1)) && (~func3t(0))
   val activeIsCLINT  = memAddr(31, 27) === AddrSpace.CLINT._1(31, 27)
   val clintRdData    = Mux(memAddr(2), io.mcycle64(63, 32), io.mcycle64(31, 0))
 
-  val memWData = MuxLookup(memAddrOffset, 0.U(32.W))(
-    Seq(
-      0.U -> storeData,
-      1.U -> Cat(storeData(23, 0), 0.U(8.W)),
-      2.U -> Cat(storeData(15, 0), 0.U(16.W)),
-      3.U -> Cat(storeData(7, 0), 0.U(24.W))
-    )
-  )
-  val wByteMask = MuxLookup(memAddrOffset, 0.U(4.W))(
-    Seq(
-      0.U -> "b0001".U(4.W),
-      1.U -> "b0010".U(4.W),
-      2.U -> "b0100".U(4.W),
-      3.U -> "b1000".U(4.W)
-    )
-  )
-  val wByteMaskHalf = MuxLookup(memAddrOffset, 0.U(4.W))(
-    Seq(
-      0.U -> "b0011".U(4.W),
-      1.U -> "b0110".U(4.W),
-      2.U -> "b1100".U(4.W)
-    )
-  )
-  val memWMask = Mux1H(
-    Seq(
-      memOpIsByte -> wByteMask,
-      memOpIsHalf -> wByteMaskHalf,
-      memOpIsWord -> "b1111".U(4.W)
-    )
-  )
-
-  storeReq.valid := reqActive
-  storeReq.bits.addr := in.destAddr
-  storeReq.bits.size := in.func3t(1, 0)
-  storeReq.bits.wdata := MuxLookup(in.destAddr(1, 0), 0.U(32.W))(
-    Seq(
-      0.U -> in.storeData,
-      1.U -> Cat(in.storeData(23, 0), 0.U(8.W)),
-      2.U -> Cat(in.storeData(15, 0), 0.U(16.W)),
-      3.U -> Cat(in.storeData(7, 0), 0.U(24.W))
-    )
-  )
-  storeReq.bits.wmask := Mux1H(
-    Seq(
-      ((~in.func3t(1)) && (~in.func3t(0))) -> MuxLookup(in.destAddr(1, 0), 0.U(4.W))(
-        Seq(0.U -> "b0001".U, 1.U -> "b0010".U, 2.U -> "b0100".U, 3.U -> "b1000".U)
-      ),
-      ((~in.func3t(1)) && in.func3t(0)) -> MuxLookup(in.destAddr(1, 0), 0.U(4.W))(
-        Seq(0.U -> "b0011".U, 1.U -> "b0110".U, 2.U -> "b1100".U)
-      ),
-      in.func3t(1) -> "b1111".U(4.W)
-    )
-  )
-
   io.in.ready := Mux(
-    isMemLoad,
+    isMemOp,
     (seesMemResp || (state === State.waitOut)) && io.out.ready,
-    Mux(
-      isStore,
-      (((state === State.waitResp) && memResp.valid) || (state === State.waitOut)) && io.out.ready,
-      isIdle && io.out.ready
-    )
+    isIdle && io.out.ready
   )
 
   val lsuResult    = Mux(activeIsCLINT, clintRdData, memRdRawData)
@@ -187,12 +116,7 @@ class LSU(
   val nxtStateWhenWaitResp = Mux(memResp.valid, nxtStateWhenWaitOut, State.waitResp)
   state := MuxLookup(state, State.idle)(
     Seq(
-      State.idle     -> Mux(
-        io.in.valid && isStore,
-        Mux(storeReq.ready, State.waitResp, State.waitReq),
-        Mux(io.in.valid && isMemLoad, Mux(memResp.valid, nxtStateWhenWaitOut, State.waitResp), State.idle)
-      ),
-      State.waitReq  -> Mux(fireStoreReq, State.waitResp, State.waitReq),
+      State.idle     -> Mux(io.in.valid && isMemOp, Mux(memResp.valid, nxtStateWhenWaitOut, State.waitResp), State.idle),
       State.waitResp -> nxtStateWhenWaitResp,
       State.waitOut  -> nxtStateWhenWaitOut
     )
@@ -210,17 +134,6 @@ class LSU(
   outWriteBackInfo.lsuFunc3t     := activeReq.func3t
   outWriteBackInfo.lsuAddrOffset := activeReq.destAddr(1, 0)
   outWriteBackInfo.iid           := activeReq.exuWriteBack.iid
-
-  val isSRAMAddr = AddrSpace.inRng(in.destAddr, AddrSpace.SRAM)
-  when(storeReq.fire && isSRAMAddr) {
-    ClockedCallVoidDPIC("sram_upd", Some(Seq("addr", "data", "mask")))(
-      clock,
-      isSRAMAddr,
-      in.destAddr,
-      storeReq.bits.wdata,
-      storeReq.bits.wmask.pad(8)
-    )
-  }
 }
 
 class LSUInputForDifftest extends Bundle {

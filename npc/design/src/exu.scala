@@ -8,6 +8,7 @@ import regfile._
 import cpu.alu._
 import axi4._
 import dpiwrap._
+import dpiwrap.ClockedCallVoidDPIC
 
 class EXU(implicit p:CPUParameters) extends Module {
   val io = IO(new Bundle {
@@ -24,8 +25,8 @@ class EXU(implicit p:CPUParameters) extends Module {
 
     val fwd = Output(new WrBackForwardInfo)
 
-    val loadReq = Decoupled(new MemReadReq)
-    val out = Decoupled(new LSUInput)
+    val memReq = Decoupled(new MemReq)
+    val out    = Decoupled(new LSUInput)
   })
 
   val alu = Module(new ALU)
@@ -126,9 +127,8 @@ class EXU(implicit p:CPUParameters) extends Module {
   val isFenceI        = InstType.hasSame(dinst.info.typ, InstType.fencei)
   val isCLINTAddr     = reg1AddImm(31, 27) === AddrSpace.CLINT._1(31, 27)
   val isExtMemLoad    = isTypLoad && (!isCLINTAddr)
-  // val canIssueLoadReq = isExtMemLoad && io.in.valid && io.out.ready && io.loadReq.ready
-
-  val readReqFire = io.loadReq.valid && io.loadReq.ready
+  val isExtMemReq     = (isTypLoad && (!isCLINTAddr)) || isTypStore
+  val memReqFire      = io.memReq.valid && io.memReq.ready
 
   val isFmtB          = InstFmt.hasSame(dinst.info.fmt, InstFmt.branch)
   val takeBranch      = MuxLookup(func3t, false.B)(
@@ -171,12 +171,60 @@ class EXU(implicit p:CPUParameters) extends Module {
 
   val isMemOP = isTypLoad || isTypStore
   io.fwd := WrBackForwardInfo(io.in.valid, dinst, ~isMemOP, writeBackInfo.gpr.data)
-  io.loadReq.valid     := isExtMemLoad && io.in.valid && io.out.ready
-  io.loadReq.bits.addr := reg1AddImm
-  io.loadReq.bits.size := func3t(1, 0)
+  val memOpIsWord    = func3t(1)
+  val memOpIsHalf    = (~func3t(1)) && func3t(0)
+  val memOpIsByte    = (~func3t(1)) && (~func3t(0))
+  val wByteMask = MuxLookup(reg1AddImm(1, 0), 0.U(4.W))(
+    Seq(
+      0.U -> "b0001".U(4.W),
+      1.U -> "b0010".U(4.W),
+      2.U -> "b0100".U(4.W),
+      3.U -> "b1000".U(4.W)
+    )
+  )
+  val wByteMaskHalf = MuxLookup(reg1AddImm(1, 0), 0.U(4.W))(
+    Seq(
+      0.U -> "b0011".U(4.W),
+      1.U -> "b0110".U(4.W),
+      2.U -> "b1100".U(4.W)
+    )
+  )
+  val memWMask = Mux1H(
+    Seq(
+      memOpIsByte -> wByteMask,
+      memOpIsHalf -> wByteMaskHalf,
+      memOpIsWord -> "b1111".U(4.W)
+    )
+  )
+  val memWData = MuxLookup(reg1AddImm(1, 0), 0.U(32.W))(
+    Seq(
+      0.U -> reg_v2,
+      1.U -> Cat(reg_v2(23, 0), 0.U(8.W)),
+      2.U -> Cat(reg_v2(15, 0), 0.U(16.W)),
+      3.U -> Cat(reg_v2(7, 0), 0.U(24.W))
+    )
+  )
 
-  io.in.ready  := readReqFire || (io.out.ready && !isExtMemLoad)
-  io.out.valid := (io.in.valid && !isExtMemLoad) || readReqFire
+  io.memReq.valid      := isExtMemReq && io.in.valid && io.out.ready
+  io.memReq.bits.addr  := reg1AddImm
+  io.memReq.bits.size  := func3t(1, 0)
+  io.memReq.bits.wen   := isTypStore
+  io.memReq.bits.wdata := Mux(isTypStore, memWData, 0.U)
+  io.memReq.bits.wmask := Mux(isTypStore, memWMask, 0.U)
+
+  io.in.ready  := memReqFire || (io.out.ready && !isExtMemReq)
+  io.out.valid := (io.in.valid && !isExtMemReq) || memReqFire
+
+  val isSRAMAddr = AddrSpace.inRng(reg1AddImm, AddrSpace.SRAM)
+  when(memReqFire && io.memReq.bits.wen && isSRAMAddr) {
+    ClockedCallVoidDPIC("sram_upd", Some(Seq("addr", "data", "mask")))(
+      clock,
+      isSRAMAddr,
+      io.memReq.bits.addr,
+      io.memReq.bits.wdata,
+      io.memReq.bits.wmask.pad(8)
+    )
+  }
 
   writeBackInfo.iid := dinst.iid
 

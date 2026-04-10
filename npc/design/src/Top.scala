@@ -307,8 +307,7 @@ class CPUCore(
 
   io.irom <> ifu.io.mem
   io.dram <> dataMemBus.io.out
-  exu.io.loadReq <> dataMemBus.io.exuLoadReq
-  lsu.io.storeReq <> dataMemBus.io.lsuStoreReq
+  exu.io.memReq <> dataMemBus.io.exuMemReq
   lsu.io.memResp <> dataMemBus.io.lsuResp
 
   ifu.io.pc.bits  := pc

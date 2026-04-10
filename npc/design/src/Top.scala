@@ -228,8 +228,10 @@ class CPUCore(
   val exu = Module(new EXU)
   val lsu = Module(new LSU)
   val wbu = Module(new WBU)
+  val dataMemBus = Module(new DataMemBusCombiner)
 
   lsu.io.mcycle64 := csrs.io.mcycle64
+  exu.io.lsuReady := lsu.io.in.ready
 
   val resetPCProvider = Module(new CPUTop_ResetPCProvider)
   val INIT_PC         = resetPCProvider.io.resetPC
@@ -305,7 +307,10 @@ class CPUCore(
   )
 
   io.irom <> ifu.io.mem
-  io.dram <> lsu.io.mem
+  io.dram <> dataMemBus.io.out
+  exu.io.loadReq <> dataMemBus.io.exuLoadReq
+  lsu.io.storeReq <> dataMemBus.io.lsuStoreReq
+  lsu.io.memResp <> dataMemBus.io.lsuResp
 
   ifu.io.pc.bits  := pc
   ifu.io.pc.valid := true.B

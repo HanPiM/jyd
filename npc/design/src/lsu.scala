@@ -53,9 +53,9 @@ object ExtractFwdInfoFromLSU {
 class LSUIO(
   implicit p: CPUParameters)
     extends Bundle {
-  val mem = SimpleBusIO.Master
-
   val mcycle64 = Input(UInt(64.W))
+  val memResp  = Flipped(Valid(Types.UWord))
+  val storeReq = Decoupled(new MemWriteReq)
 
   val in  = Flipped(Decoupled(new LSUInput))
   val out = Decoupled(new WriteBackInfo)
@@ -75,11 +75,9 @@ class LSU(
   val outWriteBackInfo = io.out.bits
 
   val in       = io.in.bits
-  val memIO    = io.mem
+  val memResp  = io.memResp
+  val storeReq = io.storeReq
   val respData = Reg(Types.UWord)
-
-  memIO.dontCareReq()
-  dontTouch(io.mem)
 
   val isLoadOp    = in.isLoad && io.in.valid
   // only compare high 8 bit since clint addr is 0x0200_0048/4c, 0x02 is unique in whole addr space
@@ -89,11 +87,12 @@ class LSU(
 
   val isMemOp = isMemLoad || isStore
   val fireLocalBypass = isIdle && io.in.valid && (!isMemOp) && io.out.ready
-  val reqActive       = io.in.valid && isMemOp && (state === State.idle || state === State.waitReq)
-  val fireMemReq      = reqActive && memIO.req_ready
+  val reqActive       = io.in.valid && isStore && (state === State.idle || state === State.waitReq)
+  val fireStoreReq    = reqActive && storeReq.ready
+  val seesMemResp     = ((state === State.idle) && isMemLoad && io.in.valid || (state === State.waitResp)) && memResp.valid
 
-  when(state === State.waitResp && memIO.resp_valid) {
-    respData := memIO.rdata
+  when(seesMemResp) {
+    respData := memResp.bits
   }
 
   val activeReq      = io.in.bits
@@ -101,7 +100,7 @@ class LSU(
   val func3t         = activeReq.func3t
   val storeData      = activeReq.storeData
   val memAddrOffset  = memAddr(1, 0)
-  val memRdRawData   = Mux(state === State.waitResp && memIO.resp_valid, memIO.rdata, respData)
+  val memRdRawData   = Mux(seesMemResp, memResp.bits, respData)
   val memOpIsWord    = func3t(1)
   val memOpIsHalf    = (~func3t(1)) && func3t(0)
   val memOpIsByte    = (~func3t(1)) && (~func3t(0))
@@ -139,10 +138,10 @@ class LSU(
     )
   )
 
-  memIO.req_valid := reqActive
-  memIO.addr      := in.destAddr
-  memIO.size      := in.func3t(1, 0)
-  memIO.wdata     := MuxLookup(in.destAddr(1, 0), 0.U(32.W))(
+  storeReq.valid := reqActive
+  storeReq.bits.addr := in.destAddr
+  storeReq.bits.size := in.func3t(1, 0)
+  storeReq.bits.wdata := MuxLookup(in.destAddr(1, 0), 0.U(32.W))(
     Seq(
       0.U -> in.storeData,
       1.U -> Cat(in.storeData(23, 0), 0.U(8.W)),
@@ -150,7 +149,7 @@ class LSU(
       3.U -> Cat(in.storeData(7, 0), 0.U(24.W))
     )
   )
-  memIO.wmask     := Mux1H(
+  storeReq.bits.wmask := Mux1H(
     Seq(
       ((~in.func3t(1)) && (~in.func3t(0))) -> MuxLookup(in.destAddr(1, 0), 0.U(4.W))(
         Seq(0.U -> "b0001".U, 1.U -> "b0010".U, 2.U -> "b0100".U, 3.U -> "b1000".U)
@@ -161,17 +160,20 @@ class LSU(
       in.func3t(1) -> "b1111".U(4.W)
     )
   )
-  memIO.wen       := in.isStore
 
   io.in.ready := Mux(
-    isMemOp,
-    (((state === State.waitResp) && memIO.resp_valid) || (state === State.waitOut)) && io.out.ready,
-    isIdle && io.out.ready
+    isMemLoad,
+    (seesMemResp || (state === State.waitOut)) && io.out.ready,
+    Mux(
+      isStore,
+      (((state === State.waitResp) && memResp.valid) || (state === State.waitOut)) && io.out.ready,
+      isIdle && io.out.ready
+    )
   )
 
   val lsuResult    = Mux(activeIsCLINT, clintRdData, memRdRawData)
 
-  io.out.valid := fireLocalBypass || (state === State.waitResp && memIO.resp_valid) || (state === State.waitOut)
+  io.out.valid := fireLocalBypass || seesMemResp || (state === State.waitOut)
 
   StageLogger(
     clock,
@@ -182,11 +184,15 @@ class LSU(
   )
 
   val nxtStateWhenWaitOut  = Mux(io.out.ready, State.idle, State.waitOut)
-  val nxtStateWhenWaitResp = Mux(memIO.resp_valid, nxtStateWhenWaitOut, State.waitResp)
+  val nxtStateWhenWaitResp = Mux(memResp.valid, nxtStateWhenWaitOut, State.waitResp)
   state := MuxLookup(state, State.idle)(
     Seq(
-      State.idle     -> Mux(io.in.valid && isMemOp, Mux(memIO.req_ready, State.waitResp, State.waitReq), State.idle),
-      State.waitReq  -> Mux(fireMemReq, State.waitResp, State.waitReq),
+      State.idle     -> Mux(
+        io.in.valid && isStore,
+        Mux(storeReq.ready, State.waitResp, State.waitReq),
+        Mux(io.in.valid && isMemLoad, Mux(memResp.valid, nxtStateWhenWaitOut, State.waitResp), State.idle)
+      ),
+      State.waitReq  -> Mux(fireStoreReq, State.waitResp, State.waitReq),
       State.waitResp -> nxtStateWhenWaitResp,
       State.waitOut  -> nxtStateWhenWaitOut
     )
@@ -206,13 +212,13 @@ class LSU(
   outWriteBackInfo.iid           := activeReq.exuWriteBack.iid
 
   val isSRAMAddr = AddrSpace.inRng(in.destAddr, AddrSpace.SRAM)
-  when(memIO.req_valid && memIO.req_ready && memIO.wen && isSRAMAddr) {
+  when(storeReq.fire && isSRAMAddr) {
     ClockedCallVoidDPIC("sram_upd", Some(Seq("addr", "data", "mask")))(
       clock,
       isSRAMAddr,
       in.destAddr,
-      memIO.wdata,
-      memIO.wmask.pad(8)
+      storeReq.bits.wdata,
+      storeReq.bits.wmask.pad(8)
     )
   }
 }

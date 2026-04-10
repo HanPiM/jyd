@@ -23,7 +23,9 @@ class EXU(implicit p:CPUParameters) extends Module {
     val fencei = Output(Bool())
 
     val fwd = Output(new WrBackForwardInfo)
+    val lsuReady = Input(Bool())
 
+    val loadReq = Decoupled(new MemReadReq)
     val out = Decoupled(new LSUInput)
   })
 
@@ -123,6 +125,9 @@ class EXU(implicit p:CPUParameters) extends Module {
   val isTypArithmetic = InstType.hasSame(dinst.info.typ, InstType.arithmetic)
   val isTypLUI        = InstType.hasSame(dinst.info.typ, InstType.lui)
   val isFenceI        = InstType.hasSame(dinst.info.typ, InstType.fencei)
+  val isCLINTAddr     = reg1AddImm(31, 27) === AddrSpace.CLINT._1(31, 27)
+  val isExtMemLoad    = isTypLoad && (!isCLINTAddr)
+  val canIssueLoadReq = isExtMemLoad && io.in.valid && io.lsuReady && io.loadReq.ready
   val isFmtB          = InstFmt.hasSame(dinst.info.fmt, InstFmt.branch)
   val takeBranch      = MuxLookup(func3t, false.B)(
     Seq(
@@ -164,6 +169,12 @@ class EXU(implicit p:CPUParameters) extends Module {
 
   val isMemOP = isTypLoad || isTypStore
   io.fwd := WrBackForwardInfo(io.in.valid, dinst, ~isMemOP, writeBackInfo.gpr.data)
+  io.loadReq.valid     := isExtMemLoad && io.in.valid && io.lsuReady
+  io.loadReq.bits.addr := reg1AddImm
+  io.loadReq.bits.size := func3t(1, 0)
+
+  io.in.ready  := io.out.ready && (!isExtMemLoad || canIssueLoadReq)
+  io.out.valid := io.in.valid && (!isExtMemLoad || canIssueLoadReq)
 
   writeBackInfo.iid := dinst.iid
 

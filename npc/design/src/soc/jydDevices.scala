@@ -207,11 +207,11 @@ class JYDFPGADRAMBlackBox extends BlackBox {
 class JYDFPGACounterBlackBox extends BlackBox {
   override def desiredName: String = "counter"
   val io = IO(new Bundle {
-    val clk         = Input(Clock())
-    val rst         = Input(Bool())
-    val perip_wdata = Input(UInt(32.W))
-    val cnt_wen     = Input(Bool())
-    val perip_rdata = Output(UInt(32.W))
+    val cpu_clk        = Input(Clock())
+    val cnt_clk        = Input(Clock())
+    val rst            = Input(Bool())
+    val cnt_enable_cpu = Input(Bool())
+    val perip_rdata    = Output(UInt(32.W))
   })
 }
 
@@ -257,6 +257,7 @@ class SimpleBusFPGACounter extends Module {
     val bus       = SimpleBusIO.Slave
     val clk_50Mhz = Input(Clock())
     val rst       = Input(Bool())
+    val cntEnable = Input(Bool())
   })
   io.bus.dontCareResp()
   io.bus.req_ready := true.B
@@ -264,10 +265,10 @@ class SimpleBusFPGACounter extends Module {
   val counter = Module(new JYDFPGACounterBlackBox)
   val doReq   = io.bus.req_valid && io.bus.req_ready
 
-  counter.io.clk         := io.clk_50Mhz
-  counter.io.rst         := io.rst
-  counter.io.perip_wdata := io.bus.wdata
-  counter.io.cnt_wen     := doReq && io.bus.wen
+  counter.io.cpu_clk        := clock
+  counter.io.cnt_clk        := io.clk_50Mhz
+  counter.io.rst            := io.rst
+  counter.io.cnt_enable_cpu := io.cntEnable
 
   io.bus.resp_valid := RegNext(doReq, false.B)
   io.bus.rdata      := counter.io.perip_rdata
@@ -280,12 +281,13 @@ class JYDPeripheralBridge(
   hasUART: Boolean = true)
     extends Module {
   val io = IO(new Bundle {
-    val cpu  = SimpleBusIO.Slave
-    val dram = SimpleBusIO.Master
-    val led  = SimpleBusIO.Master
-    val seg  = SimpleBusIO.Master
-    val cnt  = SimpleBusIO.Master
-    val uart = SimpleBusIO.Master
+    val cpu       = SimpleBusIO.Slave
+    val dram      = SimpleBusIO.Master
+    val led       = SimpleBusIO.Master
+    val seg       = SimpleBusIO.Master
+    val cnt       = SimpleBusIO.Master
+    val uart      = SimpleBusIO.Master
+    val cntEnable = Output(Bool())
   })
 
   io.cpu.dontCareResp()
@@ -294,6 +296,10 @@ class JYDPeripheralBridge(
 
   val pendingSel  = RegInit(0.U(3.W))
   val waitingResp = RegInit(false.B)
+  val cntEnableReg = RegInit(false.B)
+
+  val cntStartCmd = "h80000000".U(32.W)
+  val cntStopCmd  = "hffffffff".U(32.W)
 
   val extraTargets = Seq(
     Option.when(hasLED)((1.U(3.W), io.led, AddrSpace.inRng(io.cpu.addr, AddrSpace.LED))),
@@ -324,6 +330,14 @@ class JYDPeripheralBridge(
     bus.wen       := io.cpu.wen
   }
 
+  when(!waitingResp && io.cpu.req_valid && io.cpu.req_ready && targetSel === 3.U && io.cpu.wen) {
+    when(io.cpu.wdata === cntStartCmd) {
+      cntEnableReg := true.B
+    }.elsewhen(io.cpu.wdata === cntStopCmd) {
+      cntEnableReg := false.B
+    }
+  }
+
   when(!waitingResp && io.cpu.req_valid && io.cpu.req_ready) {
     pendingSel  := targetSel
     waitingResp := true.B
@@ -338,6 +352,7 @@ class JYDPeripheralBridge(
 
   io.cpu.resp_valid := waitingResp && respValid
   io.cpu.rdata      := respData
+  io.cntEnable      := cntEnableReg
 
   when(waitingResp && respValid) {
     waitingResp := false.B
@@ -404,6 +419,7 @@ class JYDFPGATop(val resetPC: UInt = "h80000000".U) extends Module with HasJYDCP
 
   cnt.io.clk_50Mhz := clk_50Mhz
   cnt.io.rst       := reset.asBool
+  cnt.io.cntEnable := perip.io.cntEnable
 
   led := ledReg.io.value
   seg := segReg.io.value

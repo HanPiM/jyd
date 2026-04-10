@@ -269,18 +269,11 @@ class IDU(
     Mux(res.isMRet, io.csrJmpTarget.mepc, 0.U)
   )
 
-  // --- Branch ---
-  // blt/bge 10x
-  // bltu/bgeu 11x
-  //
-  // only when func3t[2] == 0 -> eq/ne
-  //
-  val func3t = inst(14, 12)
-  val isLessThanU = res.reg1 < res.reg2
-  val isLessThanS = (res.reg1.asSInt < res.reg2.asSInt)
-  val isLessThan  = Mux(func3t(1), isLessThanU, isLessThanS)
-  val branchCalc  = Mux(func3t(2), isLessThan, (res.reg1 === res.reg2))
-  res.takeIfBranch := Mux(func3t(0), ~branchCalc, branchCalc)
+  // Precompute branch comparisons on bypassed operands and let EXU
+  // combine them with func3 to decide the final branch direction.
+  res.isLessThan  := res.reg1.asSInt < res.reg2.asSInt
+  res.isLessThanU := res.reg1 < res.reg2
+  res.isEqual     := res.reg1 === res.reg2
 
   io.in.ready  := (io.out.ready && !needStall) || io.flush
   io.out.valid := io.in.valid && !needStall && !io.flush

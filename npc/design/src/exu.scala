@@ -113,8 +113,6 @@ class EXU(implicit p:CPUParameters) extends Module {
 
   writeBackInfo.csr_ecallflag := is_ecall
 
-  val takeBranch = dinst.info.takeIfBranch
-
   // --- Inst type decode ---
   val isTypLoad       = InstType.hasSame(dinst.info.typ, InstType.load)
   val isTypStore      = InstType.hasSame(dinst.info.typ, InstType.store)
@@ -126,6 +124,16 @@ class EXU(implicit p:CPUParameters) extends Module {
   val isTypLUI        = InstType.hasSame(dinst.info.typ, InstType.lui)
   val isFenceI        = InstType.hasSame(dinst.info.typ, InstType.fencei)
   val isFmtB          = InstFmt.hasSame(dinst.info.fmt, InstFmt.branch)
+  val takeBranch      = MuxLookup(func3t, false.B)(
+    Seq(
+      "b000".U -> dinst.info.isEqual,
+      "b001".U -> !dinst.info.isEqual,
+      "b100".U -> dinst.info.isLessThan,
+      "b101".U -> !dinst.info.isLessThan,
+      "b110".U -> dinst.info.isLessThanU,
+      "b111".U -> !dinst.info.isLessThanU
+    )
+  )
 
   // --- LSU input ---
   val lsuInfo = io.out.bits

@@ -52,6 +52,7 @@ void sdb_enable_entrace(sdb_debuger dbg, int flags){
  	 	_DBG.add_trace(make_disasm_trace_handler());
 		_DBG.add_trace(make_iringbuf_trace_handler());
 		_DBG.add_trace(make_etrace_handler());
+		_DBG.add_trace(make_self_loop_trace_handler());
 	}
 }
 

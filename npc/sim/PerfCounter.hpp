@@ -280,14 +280,17 @@ struct RAWStallPerfCounter : public PerfCounterBase {
 
 struct IDUFlushPerfCounter : public PerfCounterBase {
   SignalHandle hIsFlushIDU;
+  SignalHandle hRedirectNow;
   bool lastCycIsFlush = false;
+  bool lastCycRedirectNow = false;
 
   enum IDUFlushReason {
     BranchTaken,
     JALR,
     JAL,
     Exception,
-		Fence,
+    Fence,
+    PredRecover,
     Unknown,
     REASON_NUM
   };

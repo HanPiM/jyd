@@ -256,10 +256,12 @@ class EXU(implicit p:CPUParameters) extends Module {
   val dbgIsJALR   = WireDefault(isTypJALR)
   val dbgIsJAL    = WireDefault(isTypJAL)
   val dbgIsCSRJmp = WireDefault(isJmpCsr)
+  val dbgIsFenceI = WireDefault(isFenceI)
   dontTouch(dbgIsBranch)
   dontTouch(dbgIsJALR)
   dontTouch(dbgIsJAL)
   dontTouch(dbgIsCSRJmp)
+  dontTouch(dbgIsFenceI)
 }
 
 class EXUForDifftest(implicit p:CPUParameters) extends Module {

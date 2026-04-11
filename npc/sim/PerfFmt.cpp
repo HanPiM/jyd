@@ -106,8 +106,9 @@ void RAWStallPerfCounter::dumpStatistics(std::ostream &os) {
 }
 
 const char *IDUFlushPerfCounter::nameOfReason(int r) {
-  static const char *name_of_reason[] = {"BranchTaken", "JALR",  "JAL",
-                                         "Exception",   "Fence", "Unknown"};
+  static const char *name_of_reason[] = {"BranchTaken", "JALR",        "JAL",
+                                         "Exception",   "Fence",       "PredRecover",
+                                         "Unknown"};
   if (r < sizeof(name_of_reason) / sizeof(name_of_reason[0])) {
     return name_of_reason[r];
   } else {

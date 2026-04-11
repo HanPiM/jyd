@@ -93,6 +93,10 @@ IDUFlushPerfCounter::IDUFlushReason IDUFlushPerfCounter::getCurReason() const {
     reason = IDUFlushReason::JALR;
   else if (exu.dbgIsCSRJmp)
     reason = IDUFlushReason::Exception;
+  else if (exu.dbgIsFenceI)
+    reason = IDUFlushReason::Fence;
+  else if (exu.io_predWrong)
+    reason = IDUFlushReason::PredRecover;
   else {
     reason = IDUFlushReason::Unknown;
     spdlog::warn("Unknown flush reason at {}ps", sim_get_time());
@@ -101,10 +105,12 @@ IDUFlushPerfCounter::IDUFlushReason IDUFlushPerfCounter::getCurReason() const {
   return reason;
 }
 void IDUFlushPerfCounter::update() {
-  bool isFlushRaisingEdge = (!lastCycIsFlush && hIsFlushIDU.get());
+  bool isRedirectNowRaisingEdge =
+      (!lastCycRedirectNow && hRedirectNow.get());
   lastCycIsFlush = hIsFlushIDU.get();
+  lastCycRedirectNow = hRedirectNow.get();
 
-  if (isFlushRaisingEdge) {
+  if (isRedirectNowRaisingEdge) {
     lastFlushReason = getCurReason();
   }
 
@@ -113,7 +119,10 @@ void IDUFlushPerfCounter::update() {
     cycFlushOfReason[lastFlushReason]++;
   }
 }
-void IDUFlushPerfCounter::bind() { hIsFlushIDU = &GetCPU()->activeRedirectValid; }
+void IDUFlushPerfCounter::bind() {
+  hIsFlushIDU = &GetCPU()->activeRedirectValid;
+  hRedirectNow = &GetCPU()->redirectNow;
+}
 
 void BranchPredPerfCounter::bind() {
   hValid = &GetEXU()->io_in_valid;

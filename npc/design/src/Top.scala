@@ -215,10 +215,12 @@ class CPUCore(
   dontTouch(io)
   io := DontCare
 
-  val isBranchGuessWrong = Wire(Bool())
-
-  val isFlushIDUReg     = RegInit(false.B)
-  val needFlushPipeline = Wire(Bool())
+  val redirectValid      = Wire(Bool())
+  val redirectTarget     = Wire(Types.UWord)
+  val activeRedirectValid = Wire(Bool())
+  val activeRedirectTarget = Wire(Types.UWord)
+  val redirectPendingReg = RegInit(false.B)
+  val redirectTargetReg  = Reg(Types.UWord)
 
   val gprs = Module(new RegisterFile(READ_PORTS = 2))
   val csrs = Module(new ControlStatusRegisterFile())
@@ -258,48 +260,35 @@ class CPUCore(
 
   ifu.io.predictedNextPC := nxtPredictedPC
 
-  val isBranchGuessWrongReg = RegInit(false.B)
-  val isIFUAckCorrectTarget = Wire(Bool())
-  isBranchGuessWrong := isBranchGuessWrongReg || (exu.io.out.valid && exu.io.predWrong)
-  when(exu.io.out.valid) {
-    isBranchGuessWrongReg := exu.io.predWrong
-  }.elsewhen(isIFUAckCorrectTarget) {
-    isBranchGuessWrongReg := false.B
+  val isIFUAckRedirectTarget = Wire(Bool())
+  redirectValid  := exu.io.out.valid && exu.io.predWrong
+  redirectTarget := exu.io.nxtPC
+
+  when(redirectValid) {
+    redirectPendingReg := true.B
+    redirectTargetReg  := redirectTarget
+  }.elsewhen(isIFUAckRedirectTarget) {
+    redirectPendingReg := false.B
   }
 
-  dontTouch(isBranchGuessWrong)
-  val curCorrectJmpTarget = RegEnableReadNew(
-    exu.io.nxtPC,
-    exu.io.out.valid
-  )
+  activeRedirectValid  := redirectValid || redirectPendingReg
+  activeRedirectTarget := Mux(redirectValid, redirectTarget, redirectTargetReg)
 
   // NOTICE: for IFU
   // must wait until IFU accepts the jump target (pc fire) can not
   // just check the valid, sometimes IFU still fetching old wrong
   // target, if think it meets the correct target, then the wrong
   // target will be passed to IDU since that time isWrongPred is unset.
-  isIFUAckCorrectTarget := ifu.io.pc.fire && (ifu.io.pc.bits === curCorrectJmpTarget)
-
-  val isIDUMeetCorrectJmpTarget = Wire(Bool())
-  isIDUMeetCorrectJmpTarget := ifu.io.out.valid && (ifu.io.out.bits.pc === curCorrectJmpTarget)
-  dontTouch(isIFUAckCorrectTarget)
-  dontTouch(isIDUMeetCorrectJmpTarget)
-  dontTouch(curCorrectJmpTarget)
-
-  when(isBranchGuessWrong && (!isIFUAckCorrectTarget)) {
-    isFlushIDUReg := true.B
-  }.elsewhen(isIDUMeetCorrectJmpTarget) {
-    isFlushIDUReg := false.B
-  }
-
-  needFlushPipeline := isFlushIDUReg || isBranchGuessWrong
-  dontTouch(needFlushPipeline)
+  isIFUAckRedirectTarget := ifu.io.pc.fire && activeRedirectValid && (ifu.io.pc.bits === activeRedirectTarget)
+  dontTouch(isIFUAckRedirectTarget)
+  dontTouch(activeRedirectValid)
+  dontTouch(activeRedirectTarget)
 
   pc := Mux(
     ifu.io.pc.ready,
     // Sometimes although jump,
     // target is near current pc and IFU just meets it
-    Mux(isBranchGuessWrong && (!isIFUAckCorrectTarget), curCorrectJmpTarget, nxtPredictedPC),
+    Mux(activeRedirectValid && (!isIFUAckRedirectTarget), activeRedirectTarget, nxtPredictedPC),
     pc
   )
 
@@ -322,7 +311,7 @@ class CPUCore(
     exuDifftest.io.actual.nxtPC    := exu.io.nxtPC
     exuDifftest.io.actual.memAddr  := exu.io.out.bits.destAddr
     exuDifftest.io.actual.outValid := exu.io.out.valid
-    pipelineConnect(iduOut, exuDifftest.io.in, exuDifftest.io.out)
+    pipelineConnect(iduOut, exuDifftest.io.in, exuDifftest.io.out, kill = redirectValid)
 
     val lsuDifftest = Module(new LSUForDifftest)
     pipelineConnect(exuDifftest.io.out, lsuDifftest.io.in, lsuDifftest.io.out)
@@ -333,8 +322,8 @@ class CPUCore(
     pipelineConnect(lsuDifftest.io.out, wbuDifftest.io.in)
   }
 
-  pipelineConnect(ifu.io.out, idu.io.in, idu.io.out)
-  pipelineConnect(idu.io.out, exu.io.in, exu.io.out)
+  pipelineConnect(ifu.io.out, idu.io.in, idu.io.out, kill = activeRedirectValid)
+  pipelineConnect(idu.io.out, exu.io.in, exu.io.out, kill = redirectValid)
   pipelineConnect(exu.io.out, lsu.io.in, lsu.io.out)
 
   idu.io.rvec <> gprs.io.read
@@ -346,13 +335,13 @@ class CPUCore(
   idu.io.wrBackInfo.lsu := ExtractFwdInfoFromLSU(lsu.io.in)
   idu.io.wrBackInfo.wbu := ExtractFwdInfoFromWrBack(wbu.io.in)
 
-  idu.io.flush := needFlushPipeline
+  idu.io.flush := false.B
 
   StageLogger(
     clock,
     StageLogConst.Event.flush,
     StageLogConst.Stage.idu,
-    needFlushPipeline && idu.io.in.valid,
+    activeRedirectValid && idu.io.in.valid,
     idu.io.in.bits.iid
   )
 

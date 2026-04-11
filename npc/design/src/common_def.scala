@@ -201,20 +201,22 @@ object pipelineConnect {
   def apply[T <: Data, T2 <: Data](
     prevOut: DecoupledIO[T],
     thisIn:  DecoupledIO[T],
-    thisOut: DecoupledIO[T2] = EmptyDecoupledData()
+    thisOut: DecoupledIO[T2] = EmptyDecoupledData(),
+    kill:    Bool = false.B
   ) = {
+    val payloadReg = Reg(chiselTypeOf(thisIn.bits))
+    val validReg   = RegInit(false.B)
+    val allowIn    = !validReg || thisIn.ready
 
-    val thisInReady = thisIn.ready
-
-    val dataValid   = RegInit(false.B)
-    val readyToPrev = (!dataValid) || thisInReady
-
-    when(readyToPrev) {
-      dataValid := prevOut.valid
+    when(allowIn) {
+      payloadReg := prevOut.bits
+      validReg   := prevOut.valid && !kill
+    }.elsewhen(kill) {
+      validReg := false.B
     }
-    prevOut.ready := readyToPrev
 
-    thisIn.bits  := RegEnable(prevOut.bits, prevOut.fire)
-    thisIn.valid := dataValid
+    prevOut.ready := allowIn
+    thisIn.bits   := payloadReg
+    thisIn.valid  := validReg
   }
 }

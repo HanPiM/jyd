@@ -156,7 +156,7 @@ void initPerfCounters() {
   BranchPredPerfCounter branchPredCtr;
 
   pipeCtr.add(PipeStagePerfCounter().bind(
-                  &GetIFU()->io_pc_valid, &GetIFU()->io_pc_ready,
+                  &GetIFU()->io_mem_req_valid, &GetIFU()->io_mem_req_ready,
                   &GetIFU()->io_out_valid, &GetIFU()->io_out_ready),
               "IFU");
   pipeCtr.add(PipeStagePerfCounter().BIND_PIPE_STAGE_BASE(GetIDU()->io), "IDU");

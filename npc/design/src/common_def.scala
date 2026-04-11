@@ -110,9 +110,44 @@ class Inst extends Bundle {
   val predictedNextPC = Output(Types.UWord)
 }
 
+class FetchedInst extends Inst {
+  val imm = Output(Types.UWord)
+}
+
 class InstMetaInfo extends Bundle {
   val fmt = InstFmt()
   val typ = InstType()
+}
+
+object InstInfoDecoder {
+  def apply(opcode: UInt): InstMetaInfo = {
+    val opcu = opcode(6, 2)
+
+    val lut = Seq(
+      "b00000".U -> (InstFmt.imm, InstType.load),
+      "b00100".U -> (InstFmt.imm, InstType.arithmetic),
+      "b11001".U -> (InstFmt.imm, InstType.jalr),
+      "b11100".U -> (InstFmt.imm, InstType.system),
+      "b01100".U -> (InstFmt.reg, InstType.arithmetic),
+      "b01000".U -> (InstFmt.store, InstType.store),
+      "b01101".U -> (InstFmt.upper, InstType.lui),
+      "b00101".U -> (InstFmt.upper, InstType.auipc),
+      "b11011".U -> (InstFmt.jump, InstType.jal),
+      "b11000".U -> (InstFmt.branch, InstType.branch),
+      "b00011".U -> (InstFmt.imm, InstType.fencei)
+    ).map { case (key, (fmt, typ)) =>
+      key -> {
+        val info = Wire(new InstMetaInfo)
+        info.fmt := fmt
+        info.typ := typ
+        info
+      }
+    }
+
+    val dontcare = Wire(new InstMetaInfo)
+    dontcare := DontCare
+    MuxLookup(opcu, dontcare)(lut)
+  }
 }
 
 class DecodedInstInfo(implicit p : CPUParameters) extends InstMetaInfo with HasRs {

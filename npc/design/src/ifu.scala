@@ -10,7 +10,7 @@ class IFU extends Module {
     val pc              = Flipped(Decoupled(Types.UWord))
     val predictedNextPC = Input(Types.UWord)
     val mem             = SimpleBusIO.Master
-    val out             = Decoupled(new Inst)
+    val out             = Decoupled(new FetchedInst)
   })
 
   object State extends ChiselEnum {
@@ -84,7 +84,29 @@ class IFU extends Module {
   memIO.wmask     := 0.U
 
   val inst = RegEnableReadNew(memIO.rdata, memIO.resp_valid)
+  val decodedFmt = InstInfoDecoder(inst(6, 0)).fmt
+
+  val immI = Cat(Fill(21, inst(31)), inst(30, 20))
+  val immS = Cat(immI(31, 5), inst(11, 8), inst(7))
+  val immB = Cat(immI(31, 12), inst(7), immS(10, 1), 0.U(1.W))
+  val immU = Cat(inst(31, 12), 0.U(12.W))
+  val immJ = Cat(immI(31, 20), inst(19, 12), inst(20), inst(30, 21), 0.U(1.W))
+
+  val dontcareImm = Wire(Types.UWord)
+  dontcareImm := DontCare
+
+  val decodedImm = MuxLookup(decodedFmt, dontcareImm)(
+    Seq(
+      InstFmt.imm    -> immI,
+      InstFmt.jump   -> immJ,
+      InstFmt.store  -> immS,
+      InstFmt.branch -> immB,
+      InstFmt.upper  -> immU
+    )
+  )
+
   io.out.bits.code            := inst
+  io.out.bits.imm             := decodedImm
   io.out.bits.pc              := pcReg
   io.out.bits.predictedNextPC := predNxtPCReg
   io.out.bits.iid             := reqIIDReg
@@ -142,5 +164,6 @@ class IFU extends Module {
   io.pc.ready
 
   io.out.bits.code := Mux(memIO.rvalid, memIO.rdata, instReg)
+  io.out.bits.imm  := DontCare
   io.out.bits.pc   := Mux(io.pc.fire, io.pc.bits, pcReg)
  * */

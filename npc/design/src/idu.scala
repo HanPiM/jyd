@@ -190,7 +190,23 @@ class IDU(
   io.csrRead.en   := io.in.valid
   io.csrRead.addr := inst(31, 20)
 
-  res.imm := io.in.bits.imm
+  val immI = Cat(Fill(21, inst(31)), inst(30, 20))
+  val immS = Cat(immI(31, 5), inst(11, 8), inst(7))
+  val immB = Cat(immI(31, 12), inst(7), immS(10, 1), 0.U(1.W))
+  val immU = Cat(inst(31, 12), 0.U(12.W))
+  val immJ = Cat(immI(31, 20), inst(19, 12), inst(20), inst(30, 21), 0.U(1.W))
+
+  val dontcareImm = Wire(Types.UWord)
+  dontcareImm := DontCare
+  res.imm := MuxLookup(res.fmt, dontcareImm)(
+    Seq(
+      InstFmt.imm    -> immI,
+      InstFmt.jump   -> immJ,
+      InstFmt.store  -> immS,
+      InstFmt.branch -> immB,
+      InstFmt.upper  -> immU
+    )
+  )
 
   val bypassMux = Module(new ByPassMux())
   bypassMux.io.rs1        := res.rs1

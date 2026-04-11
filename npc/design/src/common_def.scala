@@ -110,9 +110,7 @@ class Inst extends Bundle {
   val predictedNextPC = Output(Types.UWord)
 }
 
-class FetchedInst extends Inst {
-  val imm = Output(Types.UWord)
-}
+class FetchedInst extends Inst
 
 class InstMetaInfo extends Bundle {
   val fmt = InstFmt()

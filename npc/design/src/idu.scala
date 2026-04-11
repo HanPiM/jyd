@@ -145,6 +145,7 @@ class IDU(
   val io = IO(new Bundle {
     val in   = Flipped(Decoupled(new FetchedInst))
     val rvec = GPRegReqIO.ReadVecTX(2)
+    val csrRead = CSRegReqIO.TX.SingleRead
     val csrJmpTarget = Input(new Bundle {
       val mepc  = Types.UWord
       val mtvec = Types.UWord
@@ -186,6 +187,8 @@ class IDU(
   // io.rvec.en      := true.B
   io.rvec.addr(0) := res.rs1
   io.rvec.addr(1) := res.rs2
+  io.csrRead.en   := io.in.valid
+  io.csrRead.addr := inst(31, 20)
 
   res.imm := io.in.bits.imm
 
@@ -197,6 +200,7 @@ class IDU(
   bypassMux.io.wrBackInfo := io.wrBackInfo
   res.reg1                := bypassMux.io.outData1
   res.reg2                := bypassMux.io.outData2
+  res.csrReadData         := io.csrRead.data
 
   val needStall = bypassMux.io.needStall
 

@@ -13,7 +13,6 @@ import dpiwrap.ClockedCallVoidDPIC
 class EXU(implicit p:CPUParameters) extends Module {
   val io = IO(new Bundle {
     val in        = Flipped(Decoupled(new DecodedInst))
-    val csr_rvec  = CSRegReqIO.TX.SingleRead
     val jmpHappen = Output(Bool())
     val isJAL     = Output(Bool())
 
@@ -65,9 +64,8 @@ class EXU(implicit p:CPUParameters) extends Module {
   val is_mret  = dinst.info.isMRet
   val is_ecall = dinst.info.isECall
 
-  val csrren    = io.csr_rvec.en
-  val csr_raddr = io.csr_rvec.addr
-  val csr_rdata = io.csr_rvec.data
+  val csr_raddr = dinst.code(31, 20)
+  val csr_rdata = dinst.info.csrReadData
 
   val writeBackInfo = io.out.bits.exuWriteBack
   val csrwen    = writeBackInfo.csr.en
@@ -82,7 +80,6 @@ class EXU(implicit p:CPUParameters) extends Module {
   val isCSRRW = (func3t === CSROp.csrrw) && isTypSys
   val isCSRRS = (func3t === CSROp.csrrs) && isTypSys
 
-  csrren := isCSRRS || (isCSRRW && (dinst.info.rd =/= 0.U))
   csrwen := isCSRRW || (isCSRRS && (reg_v1 =/= 0.U))
 
   when(isTypSys) {
@@ -93,13 +90,10 @@ class EXU(implicit p:CPUParameters) extends Module {
       // although wen = false
       // is_ecall flag makes csr to write wdata to mepc
       csr_wdata := dinst.pc
-      csr_raddr := DontCare
     }.elsewhen(is_mret) {
-      csr_raddr := DontCare
       csr_waddr := DontCare
       csr_wdata := DontCare
     }.otherwise {
-      csr_raddr := dinst.code(31, 20)
       csr_waddr := csr_raddr
       csr_wdata := Mux(
         isCSRRW,
@@ -108,7 +102,6 @@ class EXU(implicit p:CPUParameters) extends Module {
       )
     }
   }.otherwise {
-    csr_raddr := DontCare
     csr_waddr := DontCare
     csr_wdata := DontCare
   }

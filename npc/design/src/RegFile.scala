@@ -158,19 +158,15 @@ class ControlStatusRegisterFile extends Module {
   io.mepc  := waregs(1)
   io.mtvec := waregs(3)
 
-  when(io.read.en) {
-    io.read.data := MuxLookup(io.read.addr, waregs(ridx))(
-      Seq(
-        CSRAddr.mcycle    -> mcycle64(31, 0),
-        CSRAddr.mcycleh   -> mcycle64(63, 32),
-        CSRAddr.mvendorid -> mvendor_id,
-        CSRAddr.marchid   -> march_id
-      )
+  val csrReadData = MuxLookup(io.read.addr, waregs(ridx))(
+    Seq(
+      CSRAddr.mcycle    -> mcycle64(31, 0),
+      CSRAddr.mcycleh   -> mcycle64(63, 32),
+      CSRAddr.mvendorid -> mvendor_id,
+      CSRAddr.marchid   -> march_id
     )
-  }.otherwise {
-    // Chisel will optimize DontCare to remove check read_en logic
-    io.read.data := DontCare
-  }
+  )
+  io.read.data := csrReadData
 
   val en_wrtie = (io.write.en) || (io.is_ecall && (io.write.addr === CSRAddr.mepc))
 

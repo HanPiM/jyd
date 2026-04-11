@@ -338,9 +338,9 @@ class CPUCore(
   pipelineConnect(exu.io.out, lsu.io.in, lsu.io.out)
 
   idu.io.rvec <> gprs.io.read
+  idu.io.csrRead <> csrs.io.read
   idu.io.csrJmpTarget.mepc := csrs.io.mepc
   idu.io.csrJmpTarget.mtvec := csrs.io.mtvec
-  exu.io.csr_rvec <> csrs.io.read
 
   idu.io.wrBackInfo.exu := exu.io.fwd
   idu.io.wrBackInfo.lsu := ExtractFwdInfoFromLSU(lsu.io.in)

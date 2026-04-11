@@ -1,29 +1,16 @@
 package cpu
 import chisel3._
 import chisel3.util._
-import branchpredictor._
-import btb._
 import common_def._
-import dpiwrap._
 import simplebus._
+import dpiwrap._
 
 class IFU extends Module {
   val io = IO(new Bundle {
-    val startPC = Input(Types.UWord)
-    val redirect = Input(new Bundle {
-      val valid    = Bool()
-      val targetPC = Types.UWord
-    })
-    val btbUpdate = Input(new Bundle {
-      val en     = Bool()
-      val addr   = Types.UWord
-      val target = Types.UWord
-      val isJAL  = Bool()
-    })
-    val acceptedCorrectTarget = Output(Bool())
-    val outputCorrectTarget   = Output(Bool())
-    val mem                   = SimpleBusIO.Master
-    val out                   = Decoupled(new FetchedInst)
+    val pc              = Flipped(Decoupled(Types.UWord))
+    val predictedNextPC = Input(Types.UWord)
+    val mem             = SimpleBusIO.Master
+    val out             = Decoupled(new FetchedInst)
   })
 
   object State extends ChiselEnum {
@@ -34,82 +21,67 @@ class IFU extends Module {
   val memIO = io.mem
   memIO.dontCareReq()
 
-  val btb = if (config.Config.useBTBAndBP) {
-    Some(Module(new BranchTargetBuffer))
-  } else {
-    None
-  }
-  val bp  = if (config.Config.useBTBAndBP) {
-    Some(Module(new BranchPredictor))
-  } else {
-    None
-  }
-
-  btb.foreach { btbMod =>
-    btbMod.io.update.en     := io.btbUpdate.en
-    btbMod.io.update.addr   := io.btbUpdate.addr
-    btbMod.io.update.target := io.btbUpdate.target
-    btbMod.io.update.isJAL  := io.btbUpdate.isJAL
-  }
-
   val state = RegInit(State.idle)
 
-  val pcReg             = Reg(Types.UWord)
-  val predNxtPCReg      = Reg(Types.UWord)
-  val reqIIDReg         = Reg(UInt(Types.BitWidth.inst_id.W))
-  val nextPCReg         = RegInit(io.startPC)
-  val correctTargetReg  = RegInit(io.startPC)
-  val redirectPendingReg = RegInit(false.B)
-  val waitCorrectOutReg  = RegInit(false.B)
+  val pcReg          = Reg(Types.UWord)
+  val predNxtPCReg   = Reg(Types.UWord)
+  val reqIIDReg      = Reg(UInt(Types.BitWidth.inst_id.W))
+  val pendingPCReg   = Reg(Types.UWord)
+  val pendingPredReg = Reg(Types.UWord)
+  val pendingIIDReg  = Reg(UInt(Types.BitWidth.inst_id.W))
   dontTouch(pcReg)
 
   val instID = RegInit(0.U(Types.BitWidth.inst_id.W))
   dontTouch(instID)
 
-  val redirectActive    = redirectPendingReg || io.redirect.valid
-  val currentCorrectPC  = Mux(io.redirect.valid, io.redirect.targetPC, correctTargetReg)
-  val requestPC         = Mux(redirectActive, currentCorrectPC, nextPCReg)
-
-  btb.foreach { btbMod =>
-    btbMod.io.query.addr := requestPC
-  }
-  bp.foreach { bpMod =>
-    bpMod.io.pc            := requestPC
-    bpMod.io.historyHit    := btb.get.io.query.hit
-    bpMod.io.historyTarget := btb.get.io.query.target
-    bpMod.io.historyIsJAL  := btb.get.io.query.isJAL
-  }
-
-  val predictedNextPC = bp.map(_.io.predictTarget).getOrElse(requestPC + 4.U)
-
   val isWaitingRespMeetValid = (state === State.waitResp) && memIO.resp_valid
-  val consumeResp            = isWaitingRespMeetValid && io.out.ready
-  val canStartReq            = (state === State.idle) || consumeResp
-  val reqValid               = canStartReq || (state === State.waitReq)
-  val reqFire                = reqValid && memIO.req_ready
-  val nextIID                = instID + 1.U
+  val consumeResp           = isWaitingRespMeetValid && io.out.ready
+  val canAcceptInputReq     = (state === State.idle) || consumeResp
 
-  io.acceptedCorrectTarget := reqFire && redirectActive
+  io.pc.ready := canAcceptInputReq
 
-  when(reqFire) {
-    instID       := nextIID
-    pcReg        := requestPC
-    predNxtPCReg := predictedNextPC
+  val inputReqValid   = canAcceptInputReq && io.pc.valid
+  val inputReqFire    = inputReqValid && memIO.req_ready
+  val pendingReqValid = (state === State.waitReq)
+  val pendingReqFire  = pendingReqValid && memIO.req_ready
+  val acceptInputReq  = io.pc.fire
+  val nextIID         = instID + 1.U
+
+  when(acceptInputReq) {
+    instID := nextIID
+  }
+
+  StageLogger(
+    clock,
+    StageLogConst.Event.stage,
+    StageLogConst.Stage.ifu,
+    acceptInputReq,
+    nextIID,
+    io.pc.bits
+  )
+
+  when(inputReqFire) {
+    pcReg        := io.pc.bits
+    predNxtPCReg := io.predictedNextPC
     reqIIDReg    := nextIID
-    nextPCReg    := predictedNextPC
+  }.elsewhen(pendingReqFire) {
+    pcReg        := pendingPCReg
+    predNxtPCReg := pendingPredReg
+    reqIIDReg    := pendingIIDReg
   }
 
-  when(io.redirect.valid) {
-    correctTargetReg := io.redirect.targetPC
+  when(acceptInputReq && !inputReqFire) {
+    pendingPCReg   := io.pc.bits
+    pendingPredReg := io.predictedNextPC
+    pendingIIDReg  := nextIID
   }
 
-  when(io.redirect.valid) {
-    redirectPendingReg := true.B
-    waitCorrectOutReg  := true.B
-  }
-  when(io.acceptedCorrectTarget) {
-    redirectPendingReg := false.B
-  }
+  memIO.req_valid := inputReqValid || pendingReqValid
+  memIO.addr      := Mux(pendingReqValid, pendingPCReg, io.pc.bits)
+  memIO.size      := 2.U
+  memIO.wen       := false.B
+  memIO.wdata     := 0.U
+  memIO.wmask     := 0.U
 
   val inst = RegEnableReadNew(memIO.rdata, memIO.resp_valid)
 
@@ -119,33 +91,57 @@ class IFU extends Module {
   io.out.bits.iid             := reqIIDReg
   io.out.valid                := isWaitingRespMeetValid || (state === State.waitOut)
 
-  io.outputCorrectTarget := io.out.valid && waitCorrectOutReg && (io.out.bits.pc === correctTargetReg)
-  when(io.outputCorrectTarget) {
-    waitCorrectOutReg := false.B
-  }
-
-  StageLogger(
-    clock,
-    StageLogConst.Event.stage,
-    StageLogConst.Stage.ifu,
-    reqFire,
-    nextIID,
-    requestPC(31, 0)
+  val nxtStateWhenWaitOut = Mux(io.out.ready, State.idle, State.waitOut)
+  val nxtStateWhenConsumeResp = Mux(
+    io.pc.valid,
+    Mux(memIO.req_ready, State.waitResp, State.waitReq),
+    State.idle
+  )
+  val nxtStateWhenIdle = Mux(
+    io.pc.valid,
+    Mux(memIO.req_ready, State.waitResp, State.waitReq),
+    State.idle
   )
 
-  memIO.req_valid := reqValid
-  memIO.addr      := requestPC
-  memIO.size      := 2.U
-  memIO.wen       := false.B
-  memIO.wdata     := 0.U
-  memIO.wmask     := 0.U
+  dontTouch(nxtStateWhenIdle)
 
   state := MuxLookup(state, State.idle)(
     Seq(
-      State.idle     -> Mux(reqFire, State.waitResp, State.waitReq),
-      State.waitReq  -> Mux(reqFire, State.waitResp, State.waitReq),
-      State.waitResp -> Mux(memIO.resp_valid, Mux(io.out.ready, Mux(memIO.req_ready, State.waitResp, State.waitReq), State.waitOut), State.waitResp),
-      State.waitOut  -> Mux(io.out.ready, State.idle, State.waitOut)
+      State.idle     -> nxtStateWhenIdle,
+      State.waitReq  -> Mux(pendingReqFire, State.waitResp, State.waitReq),
+      State.waitResp -> Mux(memIO.resp_valid, Mux(io.out.ready, nxtStateWhenConsumeResp, State.waitOut), State.waitResp),
+      State.waitOut  -> nxtStateWhenWaitOut
     )
   )
 }
+
+/*
+
+
+  val state = RegInit(State.idle)
+  state         := MuxLookup(state, State.idle)(
+    Seq(
+      State.idle   -> Mux(io.pc.fire, State.waitAR, State.idle),
+      State.waitAR -> Mux(memIO.arready, Mux(memIO.rvalid,State.idle,State.waitR), State.waitAR),
+      State.waitR  -> Mux(memIO.rvalid, Mux(io.pc.fire, State.waitAR, State.idle), State.waitR)
+    )
+  )
+  val pcReg = Reg(Types.UWord)
+  when(io.pc.fire) {
+    pcReg := io.pc.bits
+  }
+  memIO.arvalid := (state === State.waitAR) || (state === State.idle && io.pc.fire)
+  memIO.araddr  := Mux(io.pc.fire, io.pc.bits, pcReg)
+
+  val instReg = Reg(Types.UWord)
+  when(memIO.rvalid) {
+    instReg := memIO.rdata
+  }
+  memIO.rready := (state === State.waitR) && io.out.ready
+
+  io.out.valid := (state === State.waitR && memIO.rvalid) || (state === State.idle && io.pc.fire && memIO.rvalid)
+  io.pc.ready
+
+  io.out.bits.code := Mux(memIO.rvalid, memIO.rdata, instReg)
+  io.out.bits.pc   := Mux(io.pc.fire, io.pc.bits, pcReg)
+ * */

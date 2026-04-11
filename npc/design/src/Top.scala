@@ -8,6 +8,8 @@ import chisel3.util._
 
 import axi4._
 import common_def._
+import btb._
+import branchpredictor._
 import config._
 import dpiwrap.DifftestLayer
 import dpiwrap._
@@ -213,6 +215,8 @@ class CPUCore(
   dontTouch(io)
   io := DontCare
 
+  val isBranchGuessWrong = Wire(Bool())
+
   val isFlushIDUReg     = RegInit(false.B)
   val needFlushPipeline = Wire(Bool())
 
@@ -228,28 +232,84 @@ class CPUCore(
 
   val resetPCProvider = Module(new CPUTop_ResetPCProvider)
   val INIT_PC         = resetPCProvider.io.resetPC
-  ifu.io.startPC := INIT_PC
-  ifu.io.redirect.valid := exu.io.out.valid && exu.io.predWrong
-  ifu.io.redirect.targetPC := exu.io.nxtPC
-  ifu.io.btbUpdate.en := exu.io.out.valid && exu.io.jmpHappen
-  ifu.io.btbUpdate.addr := exu.io.pc
-  ifu.io.btbUpdate.target := exu.io.nxtPC
-  ifu.io.btbUpdate.isJAL := exu.io.isJAL
 
-  val redirectNow = exu.io.out.valid && exu.io.predWrong
-  when(redirectNow) {
+  val pc             = RegInit(INIT_PC)
+  val nxtPredictedPC = Wire(Types.UWord)
+  dontTouch(nxtPredictedPC)
+
+  if (Config.useBTBAndBP) {
+    val btb = Module(new BranchTargetBuffer)
+    val bp  = Module(new BranchPredictor)
+    btb.io.query.addr   := pc
+    bp.io.pc            := pc
+    bp.io.historyHit    := btb.io.query.hit
+    bp.io.historyTarget := btb.io.query.target
+    bp.io.historyIsJAL  := btb.io.query.isJAL
+
+    btb.io.update.en     := exu.io.out.valid && exu.io.jmpHappen
+    btb.io.update.addr   := exu.io.pc
+    btb.io.update.target := exu.io.nxtPC
+    btb.io.update.isJAL  := exu.io.isJAL
+
+    nxtPredictedPC := bp.io.predictTarget
+  } else {
+    nxtPredictedPC := pc + 4.U
+  }
+
+  ifu.io.predictedNextPC := nxtPredictedPC
+
+  val isBranchGuessWrongReg = RegInit(false.B)
+  val isIFUAckCorrectTarget = Wire(Bool())
+  isBranchGuessWrong := isBranchGuessWrongReg || (exu.io.out.valid && exu.io.predWrong)
+  when(exu.io.out.valid) {
+    isBranchGuessWrongReg := exu.io.predWrong
+  }.elsewhen(isIFUAckCorrectTarget) {
+    isBranchGuessWrongReg := false.B
+  }
+
+  dontTouch(isBranchGuessWrong)
+  val curCorrectJmpTarget = RegEnableReadNew(
+    exu.io.nxtPC,
+    exu.io.out.valid
+  )
+
+  // NOTICE: for IFU
+  // must wait until IFU accepts the jump target (pc fire) can not
+  // just check the valid, sometimes IFU still fetching old wrong
+  // target, if think it meets the correct target, then the wrong
+  // target will be passed to IDU since that time isWrongPred is unset.
+  isIFUAckCorrectTarget := ifu.io.pc.fire && (ifu.io.pc.bits === curCorrectJmpTarget)
+
+  val isIDUMeetCorrectJmpTarget = Wire(Bool())
+  isIDUMeetCorrectJmpTarget := ifu.io.out.valid && (ifu.io.out.bits.pc === curCorrectJmpTarget)
+  dontTouch(isIFUAckCorrectTarget)
+  dontTouch(isIDUMeetCorrectJmpTarget)
+  dontTouch(curCorrectJmpTarget)
+
+  when(isBranchGuessWrong && (!isIFUAckCorrectTarget)) {
     isFlushIDUReg := true.B
-  }.elsewhen(ifu.io.outputCorrectTarget) {
+  }.elsewhen(isIDUMeetCorrectJmpTarget) {
     isFlushIDUReg := false.B
   }
 
-  needFlushPipeline := isFlushIDUReg || redirectNow
+  needFlushPipeline := isFlushIDUReg || isBranchGuessWrong
   dontTouch(needFlushPipeline)
+
+  pc := Mux(
+    ifu.io.pc.ready,
+    // Sometimes although jump,
+    // target is near current pc and IFU just meets it
+    Mux(isBranchGuessWrong && (!isIFUAckCorrectTarget), curCorrectJmpTarget, nxtPredictedPC),
+    pc
+  )
 
   io.irom <> ifu.io.mem
   io.dram <> dataMemBus.io.out
   exu.io.memReq <> dataMemBus.io.exuMemReq
   lsu.io.memResp <> dataMemBus.io.lsuResp
+
+  ifu.io.pc.bits  := pc
+  ifu.io.pc.valid := true.B
 
   layer.block(DifftestLayer) {
     val iduOut = Wire(Decoupled(new DecodedInst))

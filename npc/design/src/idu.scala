@@ -195,6 +195,7 @@ class IDU(
   val immB = Cat(immI(31, 12), inst(7), immS(10, 1), 0.U(1.W))
   val immU = Cat(inst(31, 12), 0.U(12.W))
   val immJ = Cat(immI(31, 20), inst(19, 12), inst(20), inst(30, 21), 0.U(1.W))
+  val addrImm = Mux(isTypStore, immS, immI)
 
   val dontcareImm = Wire(Types.UWord)
   dontcareImm := DontCare
@@ -222,7 +223,9 @@ class IDU(
 
   res.snpc := io.in.bits.pc + 4.U
   res.pcAddImm := io.in.bits.pc + res.imm
-  res.reg1AddImm := res.reg1 + res.imm
+  // Keep address generation off the generic fmt->imm path. reg1AddImm is
+  // only consumed by load/store/JALR style address calculations in EXU.
+  res.reg1AddImm := res.reg1 + addrImm
 
   res.isECall := inst === "h73".U
   res.isMRet  := inst === "h30200073".U

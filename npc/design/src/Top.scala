@@ -215,10 +215,10 @@ class CPUCore(
   dontTouch(io)
   io := DontCare
 
-  val redirectValid      = Wire(Bool())
-  val redirectTarget     = Wire(Types.UWord)
+  val redirectNow        = Wire(Bool())
+  val redirectNowTarget  = Wire(Types.UWord)
   val activeRedirectValid = Wire(Bool())
-  val activeRedirectTarget = Wire(Types.UWord)
+  val redirectPendingFire = Wire(Bool())
   val redirectPendingReg = RegInit(false.B)
   val redirectTargetReg  = Reg(Types.UWord)
 
@@ -260,35 +260,23 @@ class CPUCore(
 
   ifu.io.predictedNextPC := nxtPredictedPC
 
-  val isIFUAckRedirectTarget = Wire(Bool())
-  redirectValid  := exu.io.out.valid && exu.io.predWrong
-  redirectTarget := exu.io.nxtPC
+  redirectNow       := exu.io.out.valid && exu.io.predWrong
+  redirectNowTarget := exu.io.nxtPC
+  redirectPendingFire := ifu.io.pc.fire && redirectPendingReg
 
-  when(redirectValid) {
+  when(redirectNow) {
     redirectPendingReg := true.B
-    redirectTargetReg  := redirectTarget
-  }.elsewhen(isIFUAckRedirectTarget) {
+    redirectTargetReg  := redirectNowTarget
+  }.elsewhen(redirectPendingFire) {
     redirectPendingReg := false.B
   }
 
-  activeRedirectValid  := redirectValid || redirectPendingReg
-  activeRedirectTarget := Mux(redirectValid, redirectTarget, redirectTargetReg)
-
-  // NOTICE: for IFU
-  // must wait until IFU accepts the jump target (pc fire) can not
-  // just check the valid, sometimes IFU still fetching old wrong
-  // target, if think it meets the correct target, then the wrong
-  // target will be passed to IDU since that time isWrongPred is unset.
-  isIFUAckRedirectTarget := ifu.io.pc.fire && activeRedirectValid && (ifu.io.pc.bits === activeRedirectTarget)
-  dontTouch(isIFUAckRedirectTarget)
+  activeRedirectValid := redirectNow || redirectPendingReg
   dontTouch(activeRedirectValid)
-  dontTouch(activeRedirectTarget)
 
   pc := Mux(
     ifu.io.pc.ready,
-    // Sometimes although jump,
-    // target is near current pc and IFU just meets it
-    Mux(activeRedirectValid && (!isIFUAckRedirectTarget), activeRedirectTarget, nxtPredictedPC),
+    Mux(redirectNow, redirectNowTarget, Mux(redirectPendingFire, nxtPredictedPC, Mux(redirectPendingReg, redirectTargetReg, nxtPredictedPC))),
     pc
   )
 
@@ -297,7 +285,7 @@ class CPUCore(
   exu.io.memReq <> dataMemBus.io.exuMemReq
   lsu.io.memResp <> dataMemBus.io.lsuResp
 
-  ifu.io.pc.bits  := pc
+  ifu.io.pc.bits  := Mux(redirectPendingReg, redirectTargetReg, pc)
   ifu.io.pc.valid := true.B
 
   layer.block(DifftestLayer) {
@@ -311,7 +299,7 @@ class CPUCore(
     exuDifftest.io.actual.nxtPC    := exu.io.nxtPC
     exuDifftest.io.actual.memAddr  := exu.io.out.bits.destAddr
     exuDifftest.io.actual.outValid := exu.io.out.valid
-    pipelineConnect(iduOut, exuDifftest.io.in, exuDifftest.io.out, kill = redirectValid)
+    pipelineConnect(iduOut, exuDifftest.io.in, exuDifftest.io.out, kill = redirectNow)
 
     val lsuDifftest = Module(new LSUForDifftest)
     pipelineConnect(exuDifftest.io.out, lsuDifftest.io.in, lsuDifftest.io.out)
@@ -323,7 +311,7 @@ class CPUCore(
   }
 
   pipelineConnect(ifu.io.out, idu.io.in, idu.io.out, kill = activeRedirectValid)
-  pipelineConnect(idu.io.out, exu.io.in, exu.io.out, kill = redirectValid)
+  pipelineConnect(idu.io.out, exu.io.in, exu.io.out, kill = redirectNow)
   pipelineConnect(exu.io.out, lsu.io.in, lsu.io.out)
 
   idu.io.rvec <> gprs.io.read

@@ -48,7 +48,6 @@ object ExtractFwdInfoFromLSU {
 class LSUIO(
   implicit p: CPUParameters)
     extends Bundle {
-  val mcycle64 = Input(UInt(64.W))
   val memResp  = Flipped(Valid(Types.UWord))
 
   val in  = Flipped(Decoupled(new LSUInput))
@@ -72,11 +71,9 @@ class LSU(
   val memResp = io.memResp
   val respData = Reg(Types.UWord)
 
-  val isLoadOp    = in.isLoad && io.in.valid
-  // only compare high 8 bit since clint addr is 0x0200_0048/4c, 0x02 is unique in whole addr space
-  val isCLINTAddr = in.destAddr(31, 27) === AddrSpace.CLINT._1(31, 27)
-  val isMemLoad   = isLoadOp && (!isCLINTAddr)
-  val isStore     = in.isStore && io.in.valid
+  val isLoadOp = in.isLoad && io.in.valid
+  val isMemLoad = isLoadOp
+  val isStore = in.isStore && io.in.valid
 
   val isMemOp = isMemLoad || isStore
   val fireLocalBypass = isIdle && io.in.valid && (!isMemOp) && io.out.ready
@@ -87,20 +84,13 @@ class LSU(
   }
 
   val activeReq      = io.in.bits
-  val memAddr        = activeReq.destAddr
-  val func3t         = activeReq.func3t
-  val memAddrOffset  = memAddr(1, 0)
   val memRdRawData   = Mux(seesMemResp, memResp.bits, respData)
-  val activeIsCLINT  = memAddr(31, 27) === AddrSpace.CLINT._1(31, 27)
-  val clintRdData    = Mux(memAddr(2), io.mcycle64(63, 32), io.mcycle64(31, 0))
 
   io.in.ready := Mux(
     isMemOp,
     (seesMemResp || (state === State.waitOut)) && io.out.ready,
     isIdle && io.out.ready
   )
-
-  val lsuResult    = Mux(activeIsCLINT, clintRdData, memRdRawData)
 
   io.out.valid := fireLocalBypass || seesMemResp || (state === State.waitOut)
 
@@ -130,7 +120,7 @@ class LSU(
   outWriteBackInfo.gpr.en        := activeReq.exuWriteBack.gpr.en
   outWriteBackInfo.gpr.data      := activeReq.exuWriteBack.gpr.data
   outWriteBackInfo.isLoad        := activeReq.isLoad
-  outWriteBackInfo.lsuResult     := lsuResult
+  outWriteBackInfo.lsuResult     := memRdRawData
   outWriteBackInfo.lsuFunc3t     := activeReq.func3t
   outWriteBackInfo.lsuAddrOffset := activeReq.destAddr(1, 0)
   outWriteBackInfo.iid           := activeReq.exuWriteBack.iid

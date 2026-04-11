@@ -125,9 +125,7 @@ class EXU(implicit p:CPUParameters) extends Module {
   val isTypArithmetic = InstType.hasSame(dinst.info.typ, InstType.arithmetic)
   val isTypLUI        = InstType.hasSame(dinst.info.typ, InstType.lui)
   val isFenceI        = InstType.hasSame(dinst.info.typ, InstType.fencei)
-  val isCLINTAddr     = reg1AddImm(31, 27) === AddrSpace.CLINT._1(31, 27)
-  val isExtMemLoad    = isTypLoad && (!isCLINTAddr)
-  val isExtMemReq     = (isTypLoad && (!isCLINTAddr)) || isTypStore
+  val isExtMemReq     = isTypLoad || isTypStore
   val memReqFire      = io.memReq.valid && io.memReq.ready
 
   val isFmtB          = InstFmt.hasSame(dinst.info.fmt, InstFmt.branch)

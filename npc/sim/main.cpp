@@ -31,7 +31,7 @@ int main(int argc, char **argv) {
   spdlog::set_default_logger(logger);
   // spdlog::set_level(spdlog::level::debug); // will modify all registered
   // loggers
-  spdlog::set_pattern("[%H:%M:%S.%e][%^%-5l%$][%n] %v");
+  spdlog::set_pattern("[%H:%M:%S.%e][%^%l%$][%n] %v");
 
   if (is_soc()) {
     spdlog::info("Simulating SoC design");

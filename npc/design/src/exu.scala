@@ -155,6 +155,8 @@ class EXU(implicit p:CPUParameters) extends Module {
       isTypSys                -> csr_rdata
     )
   )
+
+  // Fill in LSU stage
   writeBackInfo.isLoad        := false.B
   writeBackInfo.lsuResult     := 0.U
   writeBackInfo.lsuFunc3t     := 0.U

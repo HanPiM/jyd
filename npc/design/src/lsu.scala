@@ -26,8 +26,8 @@ object ExtractFwdInfoFromLSU {
     val out = Wire(new WrBackForwardInfo)
     out.addr      := wrBack.gpr.addr
     out.enWr      := wrBack.gpr.en && info.valid
-    out.dataVaild := false.B
-    out.data      := DontCare
+    out.dataVaild := !info.bits.isLoad
+    out.data      := wrBack.gpr.data
     out
   }
 }

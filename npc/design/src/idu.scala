@@ -66,6 +66,34 @@ class WrBackInfoGroup(
   val wbu = new WrBackForwardInfo
 }
 
+object SingleByPassMux {
+  def conflict(rs: UInt, rd: UInt, en: Bool): Bool = (rs === rd) && (rd =/= 0.U) && en
+  def apply(
+    rs:      UInt,
+    regData: UInt,
+    wrBacks: Seq[WrBackForwardInfo]
+  ): (Bool, UInt) = {
+    val conflictVec  = wrBacks.map(wb => conflict(rs, wb.addr, wb.enWr))
+    val dataVec      = wrBacks.map(_.data)
+    val canBypassVec = wrBacks.map(_.dataVaild)
+
+    val needStallVec = conflictVec.zip(canBypassVec).map { case (conflict, canBypass) =>
+      conflict && !canBypass
+    }
+
+    val needStall  = needStallVec.reduce(_ || _)
+    val useBypass  = conflictVec
+      .zip(canBypassVec)
+      .map { case (conflict, canBypass) =>
+        conflict && canBypass
+      }
+      .reduce(_ || _)
+    val bypassData = PriorityMux(conflictVec, dataVec)
+
+    (needStall, Mux(useBypass, bypassData, regData))
+  }
+}
+
 class ByPassMux(
   implicit p: CPUParameters)
     extends Module {
@@ -81,6 +109,17 @@ class ByPassMux(
     val outData1 = Output(Types.UWord)
     val outData2 = Output(Types.UWord)
   })
+
+  val wrBacks = Seq(io.wrBackInfo.exu, io.wrBackInfo.lsu, io.wrBackInfo.wbu)
+
+  val (needStall1, outData1) = SingleByPassMux(io.rs1, io.regData1, wrBacks)
+  val (needStall2, outData2) = SingleByPassMux(io.rs2, io.regData2, wrBacks)
+
+  io.needStall := needStall1 || needStall2
+  io.outData1  := outData1
+  io.outData2  := outData2
+
+  val needStall = io.needStall
 
   def conflict(rs: UInt, rd: UInt, en: Bool): Bool = (rs === rd) && (rd =/= 0.U) && en
 
@@ -107,45 +146,45 @@ class ByPassMux(
   val isConflictWithWBU = WireDefault(isRs1ConflictWithWBU || isRs2ConflictWithWBU)
   dontTouch(isConflictWithLSU)
   dontTouch(isConflictWithWBU)
-
-  val isRdAfterWr = Wire(Bool())
-  isRdAfterWr := isConflictWithEXU || isConflictWithLSU || isConflictWithWBU
-  dontTouch(isRdAfterWr)
-
-  val exuWrBackDataVaild = io.wrBackInfo.exu.dataVaild
-
-  val canRs1Bypass =
-    Mux(isRs1ConflictEXU, exuWrBackDataVaild, isRs1ConflictWithWBU)
-  val canRs2Bypass =
-    Mux(isRs2ConflictEXU, exuWrBackDataVaild, isRs2ConflictWithWBU)
-
-  val needStallForRs1 = (isRs1ConflictEXU || isRs1ConflictWithWBU) && (!canRs1Bypass)
-  val needStallForRs2 = (isRs2ConflictEXU || isRs2ConflictWithWBU) && (!canRs2Bypass)
-
-  val needStall = needStallForRs1 || needStallForRs2 || isConflictWithLSU
-
-  val isStall = WireDefault(needStall)
+  //
+  // val isRdAfterWr = Wire(Bool())
+  // isRdAfterWr := isConflictWithEXU || isConflictWithLSU || isConflictWithWBU
+  // dontTouch(isRdAfterWr)
+  //
+  // val exuWrBackDataVaild = io.wrBackInfo.exu.dataVaild
+  //
+  // val canRs1Bypass =
+  //   Mux(isRs1ConflictEXU, exuWrBackDataVaild, isRs1ConflictWithWBU)
+  // val canRs2Bypass =
+  //   Mux(isRs2ConflictEXU, exuWrBackDataVaild, isRs2ConflictWithWBU)
+  //
+  // val needStallForRs1 = (isRs1ConflictEXU || isRs1ConflictWithWBU) && (!canRs1Bypass)
+  // val needStallForRs2 = (isRs2ConflictEXU || isRs2ConflictWithWBU) && (!canRs2Bypass)
+  //
+  // val needStall = needStallForRs1 || needStallForRs2 || isConflictWithLSU
+  //
+  val isStall           = WireDefault(needStall)
   dontTouch(isStall)
-
-  val r1UseBypass = canRs1Bypass
-  val r2UseBypass = canRs2Bypass
-
-  val r1BypassData = Mux(isRs1ConflictEXU, io.wrBackInfo.exu.data, io.wrBackInfo.wbu.data)
-  val r2BypassData = Mux(isRs2ConflictEXU, io.wrBackInfo.exu.data, io.wrBackInfo.wbu.data)
-
-  io.outData1 := Mux(r1UseBypass, r1BypassData, io.regData1)
-  io.outData2 := Mux(r2UseBypass, r2BypassData, io.regData2)
-
-  io.needStall := needStall
+  //
+  // val r1UseBypass = canRs1Bypass
+  // val r2UseBypass = canRs2Bypass
+  //
+  // val r1BypassData = Mux(isRs1ConflictEXU, io.wrBackInfo.exu.data, io.wrBackInfo.wbu.data)
+  // val r2BypassData = Mux(isRs2ConflictEXU, io.wrBackInfo.exu.data, io.wrBackInfo.wbu.data)
+  //
+  // io.outData1 := Mux(r1UseBypass, r1BypassData, io.regData1)
+  // io.outData2 := Mux(r2UseBypass, r2BypassData, io.regData2)
+  //
+  // io.needStall := needStall
 }
 
 class IDU(
   implicit p: CPUParameters)
     extends Module {
   val io = IO(new Bundle {
-    val in   = Flipped(Decoupled(new FetchedInst))
-    val rvec = GPRegReqIO.ReadVecTX(2)
-    val csrRead = CSRegReqIO.TX.SingleRead
+    val in           = Flipped(Decoupled(new FetchedInst))
+    val rvec         = GPRegReqIO.ReadVecTX(2)
+    val csrRead      = CSRegReqIO.TX.SingleRead
     val csrJmpTarget = Input(new Bundle {
       val mepc  = Types.UWord
       val mtvec = Types.UWord
@@ -190,16 +229,16 @@ class IDU(
   io.csrRead.en   := io.in.valid
   io.csrRead.addr := inst(31, 20)
 
-  val immI = Cat(Fill(21, inst(31)), inst(30, 20))
-  val immS = Cat(immI(31, 5), inst(11, 8), inst(7))
-  val immB = Cat(immI(31, 12), inst(7), immS(10, 1), 0.U(1.W))
-  val immU = Cat(inst(31, 12), 0.U(12.W))
-  val immJ = Cat(immI(31, 20), inst(19, 12), inst(20), inst(30, 21), 0.U(1.W))
+  val immI    = Cat(Fill(21, inst(31)), inst(30, 20))
+  val immS    = Cat(immI(31, 5), inst(11, 8), inst(7))
+  val immB    = Cat(immI(31, 12), inst(7), immS(10, 1), 0.U(1.W))
+  val immU    = Cat(inst(31, 12), 0.U(12.W))
+  val immJ    = Cat(immI(31, 20), inst(19, 12), inst(20), inst(30, 21), 0.U(1.W))
   val addrImm = Mux(isTypStore, immS, immI)
 
   val dontcareImm = Wire(Types.UWord)
   dontcareImm := DontCare
-  res.imm := MuxLookup(res.fmt, dontcareImm)(
+  res.imm     := MuxLookup(res.fmt, dontcareImm)(
     Seq(
       InstFmt.imm    -> immI,
       InstFmt.jump   -> immJ,
@@ -221,14 +260,14 @@ class IDU(
 
   val needStall = bypassMux.io.needStall
 
-  res.snpc := io.in.bits.pc + 4.U
-  res.pcAddImm := io.in.bits.pc + res.imm
+  res.snpc       := io.in.bits.pc + 4.U
+  res.pcAddImm   := io.in.bits.pc + res.imm
   // Keep address generation off the generic fmt->imm path. reg1AddImm is
   // only consumed by load/store/JALR style address calculations in EXU.
   res.reg1AddImm := res.reg1 + addrImm
 
-  res.isECall := inst === "h73".U
-  res.isMRet  := inst === "h30200073".U
+  res.isECall      := inst === "h73".U
+  res.isMRet       := inst === "h30200073".U
   res.csrJmpTarget := Mux(
     res.isECall,
     io.csrJmpTarget.mtvec,

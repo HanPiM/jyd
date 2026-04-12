@@ -199,8 +199,8 @@ class EXU(implicit p:CPUParameters) extends Module {
   io.memReq.bits.addr  := reg1AddImm
   io.memReq.bits.size  := func3t(1, 0)
   io.memReq.bits.wen   := isTypStore
-  io.memReq.bits.wdata := Mux(isTypStore, memWData, 0.U)
-  io.memReq.bits.wmask := Mux(isTypStore, memWMask, 0.U)
+  io.memReq.bits.wdata := memWData
+  io.memReq.bits.wmask := memWMask
 
   io.in.ready  := memReqFire || (io.out.ready && !isExtMemReq)
   io.out.valid := (io.in.valid && !isExtMemReq) || memReqFire

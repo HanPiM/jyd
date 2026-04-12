@@ -238,13 +238,14 @@ class SimpleBusFPGAMem(sizeInByte: Int, baseAddr: BigInt) extends Module {
   io.req_ready := true.B
 
   val mem = Module(new JYDFPGADRAMBlackBox)
-  val localWordAddr = (io.addr - baseAddr.U(32.W))(log2Ceil(sizeInByte) - 1, 2)
+  // val localWordAddr = (io.addr - baseAddr.U(32.W))(log2Ceil(sizeInByte) - 1, 2)
+  val localWordAddr = io.addr(log2Ceil(sizeInByte) - 1, 2)
   val doReq         = io.req_valid && io.req_ready
   val doWrite       = doReq && io.wen
 
   mem.io.clka  := clock
   mem.io.ena   := doReq
-  mem.io.wea   := Mux(doWrite, io.wmask, 0.U)
+  mem.io.wea   := io.wmask
   mem.io.addra := localWordAddr
   mem.io.dina  := io.wdata
 

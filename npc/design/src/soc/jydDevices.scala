@@ -8,7 +8,7 @@ import top.{CPUCoreAsBlackBox, PCProviderAsBlackBox}
 import testSoC.MaskedRdWrMem
 
 object AddrSpace {
-  val IROM = ("h80000000".U, "h80040000".U)
+  val IROM = ("h80000000".U, "h80080000".U)
   val DRAM = ("h80100000".U, "h80180000".U)
   val MMIO = ("h80200000".U, "h80200100".U)
 
@@ -32,7 +32,7 @@ object AddrSpace {
 }
 
 object JYDSoCConfig {
-  val iromSizeInByte    = 1024 * 256
+  val iromSizeInByte    = 1024 * 512
   val dramSizeInByte    = 1024 * 512
   val fpgaMemAddrWidth  = 18
   val fpgaMemDataWidth  = 32

@@ -1,6 +1,6 @@
 include $(JYD_AM_HOME)/scripts/isa/riscv.mk
 include $(JYD_AM_HOME)/scripts/platform/jyd.mk
-COMMON_CFLAGS += -march=rv32i_zicsr_zifencei -mabi=ilp32  # overwrite
+COMMON_CFLAGS += -march=rv32i_zicsr -mabi=ilp32  # overwrite
 LDFLAGS       += -melf32lriscv                    # overwrite
 
 AM_SRCS += riscv/npc/libgcc/div.S \

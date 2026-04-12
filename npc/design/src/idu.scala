@@ -208,6 +208,9 @@ class IDU(
   // alias
   val res  = io.out.bits.info
   val inst = io.in.bits.code
+  val isFenceI = inst === "h0000100f".U
+
+  assert(!(io.in.valid && isFenceI), "fence.i is not supported on riscv32-jyd")
 
   res.viewAsSupertype(new InstMetaInfo) := InstInfoDecoder(inst(6, 0))
 
@@ -217,10 +220,9 @@ class IDU(
 
   val isTypStore     = InstType.hasSame(res.typ, InstType.store)
   val isTypBranch    = InstType.hasSame(res.typ, InstType.branch)
-  val isTypFencei    = InstType.hasSame(res.typ, InstType.fencei)
   // for now, system inst, ecall and mret has rd == 0
   // TODO: handle rd != 0 case
-  val isNoWrBackType = isTypStore || isTypBranch || isTypFencei
+  val isNoWrBackType = isTypStore || isTypBranch
   res.rdWrEn := ~isNoWrBackType
 
   // io.rvec.en      := true.B

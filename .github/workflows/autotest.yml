@@ -298,7 +298,7 @@ jobs:
         run: |
           git clone --depth 1 https://github.com/NJU-ProjectN/riscv-arch-test-am
           make ARCH=riscv32-jyd -C riscv-arch-test-am run TEST_ISA=I ALL=add-01
-          make ARCH=riscv32-jyd -C riscv-arch-test-am run TEST_ISA="I Zifencei"
+          make ARCH=riscv32-jyd -C riscv-arch-test-am run TEST_ISA=I
 
   microbench:
     needs: setup

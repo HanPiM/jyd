@@ -20,8 +20,6 @@ class EXU(implicit p:CPUParameters) extends Module {
     val pc        = Output(Types.UWord)
     val nxtPC     = Output(Types.UWord)
 
-    val fencei = Output(Bool())
-
     val fwd = Output(new WrBackForwardInfo)
 
     val memReq = Decoupled(new MemReq)
@@ -117,7 +115,6 @@ class EXU(implicit p:CPUParameters) extends Module {
   val isTypBranch     = InstType.hasSame(dinst.info.typ, InstType.branch)
   val isTypArithmetic = InstType.hasSame(dinst.info.typ, InstType.arithmetic)
   val isTypLUI        = InstType.hasSame(dinst.info.typ, InstType.lui)
-  val isFenceI        = InstType.hasSame(dinst.info.typ, InstType.fencei)
   val isExtMemReq     = isTypLoad || isTypStore
   val memReqFire      = io.memReq.valid && io.memReq.ready
 
@@ -243,8 +240,7 @@ class EXU(implicit p:CPUParameters) extends Module {
 
   io.jmpHappen := willJmp
   io.isJAL     := isTypJAL
-  io.fencei    := isFenceI && io.in.valid
-  io.predWrong := (normalNxtPC =/= dinst.predictedNextPC) || isJmpCsr || isFenceI
+  io.predWrong := (normalNxtPC =/= dinst.predictedNextPC) || isJmpCsr
 
   StageLogger(
     clock,
@@ -258,12 +254,10 @@ class EXU(implicit p:CPUParameters) extends Module {
   val dbgIsJALR   = WireDefault(isTypJALR)
   val dbgIsJAL    = WireDefault(isTypJAL)
   val dbgIsCSRJmp = WireDefault(isJmpCsr)
-  val dbgIsFenceI = WireDefault(isFenceI)
   dontTouch(dbgIsBranch)
   dontTouch(dbgIsJALR)
   dontTouch(dbgIsJAL)
   dontTouch(dbgIsCSRJmp)
-  dontTouch(dbgIsFenceI)
 }
 
 class EXUForDifftest(implicit p:CPUParameters) extends Module {

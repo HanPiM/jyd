@@ -7,6 +7,7 @@
 struct btrace_pack_imp {
 	bool is_create = false;
 	FILE* fp = nullptr;
+	bool use_pclose = false;
 	uint32_t count = 0;
 	btrace_record_t cur = {0, 0, 0};
 };
@@ -22,6 +23,25 @@ struct btrace_pack_imp {
 	assert(fread(item, sizeof(*item), 1, fp) == 1);\
 } while(0)
 
+static btrace_pack_t btrace_pack_open_impl(FILE* fp, bool use_pclose) {
+	if (fp == nullptr) {
+		return nullptr;
+	}
+	btrace_pack_t pack = new btrace_pack_imp;
+	pack->fp = fp;
+	pack->use_pclose = use_pclose;
+	if (fread(&pack->count, sizeof(pack->count), 1, pack->fp) != 1) {
+		if (pack->use_pclose) {
+			pclose(pack->fp);
+		} else {
+			fclose(pack->fp);
+		}
+		delete pack;
+		return nullptr;
+	}
+	return pack;
+}
+
 btrace_pack_t btrace_pack_create(const char* path) {
 	btrace_pack_t pack = new btrace_pack_imp;
 	pack->fp = fopen(path, "wb");
@@ -32,11 +52,11 @@ btrace_pack_t btrace_pack_create(const char* path) {
 }
 
 btrace_pack_t btrace_pack_open(const char* path) {
-	btrace_pack_t pack = new btrace_pack_imp;
-	pack->fp = fopen(path, "rb");
-	assert(pack->fp);
-	AssertRd(pack->fp, &pack->count);
-	return pack;
+	return btrace_pack_open_impl(fopen(path, "rb"), false);
+}
+
+btrace_pack_t btrace_pack_open_fp(FILE* fp, int use_pclose) {
+	return btrace_pack_open_impl(fp, use_pclose != 0);
 }
 
 void btrace_pack_add(btrace_pack_t pack, const btrace_record_t* record) {
@@ -57,8 +77,11 @@ void btrace_pack_close(btrace_pack_t pack) {
 		fseek(pack->fp, 0, SEEK_SET);
 		AssertWr(pack->fp, &pack->count);
 	}
-	fclose(pack->fp);
+	if (pack->use_pclose) {
+		pclose(pack->fp);
+	} else {
+		fclose(pack->fp);
+	}
 	delete pack;
 }
-
 

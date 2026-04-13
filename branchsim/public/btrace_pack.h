@@ -1,6 +1,7 @@
 #ifndef __BTRACE_PACK_H__
 #define __BTRACE_PACK_H__
 
+#include <stdio.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -17,6 +18,7 @@ typedef struct btrace_pack_imp* btrace_pack_t;
 
 btrace_pack_t btrace_pack_create(const char* path);
 btrace_pack_t btrace_pack_open(const char* path);
+btrace_pack_t btrace_pack_open_fp(FILE* fp, int use_pclose);
 void btrace_pack_close(btrace_pack_t pack);
 void btrace_pack_add(btrace_pack_t pack, const btrace_record_t* record);
 // return 0 if no record, otherwise return 1 and fill record

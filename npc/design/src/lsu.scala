@@ -69,7 +69,6 @@ class LSU(
 
   val in      = io.in.bits
   val memResp = io.memResp
-  val respData = Reg(Types.UWord)
 
   val isLoadOp = in.isLoad && io.in.valid
   val isMemLoad = isLoadOp
@@ -79,12 +78,8 @@ class LSU(
   val fireLocalBypass = isIdle && io.in.valid && (!isMemOp) && io.out.ready
   val seesMemResp     = ((state === State.idle) && isMemOp && io.in.valid || (state === State.waitResp)) && memResp.valid
 
-  when(seesMemResp) {
-    respData := memResp.bits
-  }
-
   val activeReq      = io.in.bits
-  val memRdRawData   = Mux(seesMemResp, memResp.bits, respData)
+  val memRdRawData   = memResp.bits
 
   io.in.ready := Mux(
     isMemOp,

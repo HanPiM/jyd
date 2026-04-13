@@ -244,7 +244,7 @@ jobs:
     runs-on: ubuntu-24.04
     strategy:
       matrix:
-        sample: [src0, src1, src2]
+        sample: [new, src0, src1, src2]
     steps:
       - uses: actions/checkout@v5
         with:

@@ -93,8 +93,6 @@ IDUFlushPerfCounter::IDUFlushReason IDUFlushPerfCounter::getCurReason() const {
     reason = IDUFlushReason::JALR;
   else if (exu.dbgIsCSRJmp)
     reason = IDUFlushReason::Exception;
-  else if (exu.dbgIsFenceI)
-    reason = IDUFlushReason::Fence;
   else if (exu.io_predWrong)
     reason = IDUFlushReason::PredRecover;
   else {

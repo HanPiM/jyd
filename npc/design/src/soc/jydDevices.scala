@@ -245,7 +245,7 @@ class SimpleBusFPGAMem(sizeInByte: Int, baseAddr: BigInt) extends Module {
 
   mem.io.clka  := clock
   mem.io.ena   := doReq
-  mem.io.wea   := io.wmask
+  mem.io.wea   := io.wmask & Fill(4, io.wen)
   mem.io.addra := localWordAddr
   mem.io.dina  := io.wdata
 

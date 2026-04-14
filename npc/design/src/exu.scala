@@ -134,9 +134,6 @@ class EXU(implicit p:CPUParameters) extends Module {
   // val isLessThan = dinst.info.isLessThan
   // val isLessThanU = dinst.info.isLessThanU
 
-  alu.io.in.bits.isLessThan := isLessThan
-  alu.io.in.bits.isLessThanU := isLessThanU
-
   val takeBranch      = MuxLookup(func3t, false.B)(
     Seq(
       "b000".U ->  isEqual,

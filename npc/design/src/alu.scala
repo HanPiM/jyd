@@ -11,9 +11,6 @@ class ALUInput extends Bundle {
   val func7t = UInt(7.W)
   val src1   = Types.UWord
   val src2   = Types.UWord
-
-  val isLessThan = Bool()
-  val isLessThanU = Bool()
 }
 
 class ALU_foo extends Module {
@@ -57,13 +54,8 @@ class ALU extends Module {
 
   add_sub_res := Mux(isAdd, src1 + src2, src1 - src2)
 
-  val sltu_res = inbits.isLessThanU
-
-  val sign_src1 = src1(31)
-  val sign_src2 = src2(31)
-  val sign_res  = add_sub_res(31)
-
-  val slt_res = inbits.isLessThan
+  val sltu_res = src1 < src2
+  val slt_res = s_src1 < s_src2
 
   val rShiftResult = Wire(Types.UWord)
   val lShiftResult = Wire(Types.UWord)

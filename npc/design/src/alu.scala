@@ -11,6 +11,9 @@ class ALUInput extends Bundle {
   val func7t = UInt(7.W)
   val src1   = Types.UWord
   val src2   = Types.UWord
+
+  val isLessThan = Bool()
+  val isLessThanU = Bool()
 }
 
 class ALU_foo extends Module {
@@ -48,68 +51,25 @@ class ALU extends Module {
 
   val isOpAlt = inbits.func7t(5)
 
-  // when func3[1] == 1, less than need sub result
-  val isAdd = ((~isOpAlt) || inbits.is_imm) && (~inbits.func3t(1))
+  val isAdd = ((~isOpAlt) || inbits.is_imm) //&& (~inbits.func3t(1))
 
   val add_sub_res = Wire(Types.UWord)
 
-  // this optimize can make alu alone module area bigger
-  // but the whole module area smaller
-  // 23866 -> 23850
-  // ??? I don't understand ???
-  // val op2_inv = Mux(isAdd, src2, ~src2)
+  add_sub_res := Mux(isAdd, src1 + src2, src1 - src2)
 
-  val op2_inv = src2 ^ Fill(32, ~isAdd)
-
-  val cin = !isAdd
-  // add_sub_res := src1 + op2_inv + cin
-  // add_sub_res := Mux(isAdd, src1 + src2, src1 - src2)
-
-  val full_add_res = src1 +& op2_inv + cin
-  add_sub_res := full_add_res(31, 0)
-  val carry_out = full_add_res(32)
-
-  // By using carry out to determine slt/sltu
-  // Optimize 23504 -> 23445
-
-  // For unsigned less than a + (-b) sign bit is carry out
-  val sltu_res = !carry_out
+  val sltu_res = inbits.isLessThanU
 
   val sign_src1 = src1(31)
   val sign_src2 = src2(31)
   val sign_res  = add_sub_res(31)
 
-  // only meaningful when sub mode (~isAdd)
-  val overflow = (sign_src1 =/= sign_src2) && (sign_src1 =/= sign_res)
-
-  // when overflow:
-  //   result sign positive -> (a:-...) - (b: +...) overflow -> slt should be true
-  // when no overflow:
-  //   result sign negative -> less than -> slt should be true
-  val slt_res = sign_res ^ overflow
+  val slt_res = inbits.isLessThan
 
   val rShiftResult = Wire(Types.UWord)
   val lShiftResult = Wire(Types.UWord)
 
   rShiftResult := Mux(isOpAlt, (s_src1 >> shamt).asUInt, src1 >> shamt)
   lShiftResult := src1 << shamt
-
-  // Useless optimize area -200
-  // but freq low
-
-  // // Optimize make L/R shift use same shifter
-  // //
-  // // 23850 -> 23504
-  // val extedSrc1    = Wire(UInt(64.W))
-  // val isRightShift = inbits.func3t(2)
-  // val shiftedSrc1  = Mux(isRightShift, src1, Reverse(src1))
-  // extedSrc1    := Cat(Fill(32, shiftedSrc1(31) & isOpAlt), shiftedSrc1)
-  // rShiftResult := extedSrc1 >> shamt
-  //
-  // lShiftResult := Reverse(rShiftResult)
-
-  // val shiftResult = Mux(isRightShift, rShiftResult, Reverse(rShiftResult))
-
 
 
   val defaultRes = Wire(Types.UWord)

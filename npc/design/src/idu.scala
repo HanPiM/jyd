@@ -24,6 +24,19 @@ class WrBackForwardInfo(
 
 object WrBackForwardInfo {
   def apply(
+    WrBack: WrBackForwardInfo,
+    newData: UInt
+  )(
+    implicit p: CPUParameters
+  ): WrBackForwardInfo = {
+    val res = Wire(new WrBackForwardInfo)
+    res.addr      := WrBack.addr
+    res.enWr      := WrBack.enWr
+    res.dataVaild := WrBack.dataVaild
+    res.data      := newData
+    res
+  }
+  def apply(
     infoValid:  Bool,
     dinstInfo:  DecodedInst,
     dataVaild:  Bool,
@@ -268,6 +281,18 @@ class IDU(
   // only consumed by load/store/JALR style address calculations in EXU.
   res.reg1AddImm := res.reg1 + addrImm
 
+  // val (_,bypssReg1AddImm) = SingleByPassMux(
+  //   res.rs1,
+  //   io.rvec.data(0) + addrImm,
+  //   Seq(io.wrBackInfo.exu, io.wrBackInfo.lsu, io.wrBackInfo.wbu).map(
+  //     wb => WrBackForwardInfo(wb, wb.data + addrImm)
+  //   )
+  // )
+  //
+  // res.reg1AddImm := bypssReg1AddImm
+
+  // res.reg1AddImm := DontCare
+
   res.isECall      := inst === "h73".U
   res.isMRet       := inst === "h30200073".U
   res.csrJmpTarget := Mux(
@@ -278,9 +303,12 @@ class IDU(
 
   // Precompute branch comparisons on bypassed operands and let EXU
   // combine them with func3 to decide the final branch direction.
-  res.isLessThan  := res.reg1.asSInt < res.reg2.asSInt
-  res.isLessThanU := res.reg1 < res.reg2
-  res.isEqual     := res.reg1 === res.reg2
+  // res.isLessThan  := res.reg1.asSInt < res.reg2.asSInt
+  // res.isLessThanU := res.reg1 < res.reg2
+  // res.isEqual     := res.reg1 === res.reg2
+  res.isLessThan := DontCare
+  res.isLessThanU := DontCare
+  res.isEqual := DontCare
 
   io.in.ready  := (io.out.ready && !needStall) || io.flush
   io.out.valid := io.in.valid && !needStall && !io.flush

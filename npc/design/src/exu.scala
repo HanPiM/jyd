@@ -17,6 +17,10 @@ class EXU(implicit p:CPUParameters) extends Module {
     val isJAL     = Output(Bool())
 
     val predWrong = Output(Bool())
+
+    val branchTarget = Output(Types.UWord)
+    val branchBackward = Output(Bool())
+
     val pc        = Output(Types.UWord)
     val nxtPC     = Output(Types.UWord)
 
@@ -49,6 +53,8 @@ class EXU(implicit p:CPUParameters) extends Module {
   val pcAddImm   = dinst.info.pcAddImm
   val reg1AddImm = dinst.info.reg1AddImm
 
+  io.branchTarget := pcAddImm
+  io.branchBackward := dinst.info.imm(31)
 
   alu_in.src1   := reg_v1
   alu_in.src2   := Mux(isFmtI, dinst.info.imm, reg_v2)
@@ -119,14 +125,26 @@ class EXU(implicit p:CPUParameters) extends Module {
   val memReqFire      = io.memReq.valid && io.memReq.ready
 
   val isFmtB          = InstFmt.hasSame(dinst.info.fmt, InstFmt.branch)
+
+  val isEqual = reg_v1 === reg_v2
+  val isLessThan = reg_v1.asSInt < reg_v2.asSInt
+  val isLessThanU = reg_v1 < reg_v2
+
+  // val isEqual = dinst.info.isEqual
+  // val isLessThan = dinst.info.isLessThan
+  // val isLessThanU = dinst.info.isLessThanU
+
+  alu.io.in.bits.isLessThan := isLessThan
+  alu.io.in.bits.isLessThanU := isLessThanU
+
   val takeBranch      = MuxLookup(func3t, false.B)(
     Seq(
-      "b000".U -> dinst.info.isEqual,
-      "b001".U -> !dinst.info.isEqual,
-      "b100".U -> dinst.info.isLessThan,
-      "b101".U -> !dinst.info.isLessThan,
-      "b110".U -> dinst.info.isLessThanU,
-      "b111".U -> !dinst.info.isLessThanU
+      "b000".U ->  isEqual,
+      "b001".U -> !isEqual,
+      "b100".U ->  isLessThan,
+      "b101".U -> !isLessThan,
+      "b110".U ->  isLessThanU,
+      "b111".U -> !isLessThanU
     )
   )
 
@@ -240,7 +258,8 @@ class EXU(implicit p:CPUParameters) extends Module {
 
   io.jmpHappen := willJmp
   io.isJAL     := isTypJAL
-  io.predWrong := (normalNxtPC =/= dinst.predictedNextPC) || isJmpCsr
+  // io.predWrong := (normalNxtPC =/= dinst.pred.pc) || isJmpCsr
+  io.predWrong := isTypJALR || isJmpCsr || (isFmtB && (takeBranch ^ dinst.pred.take)) || (isTypJAL && (~dinst.pred.hit))
 
   StageLogger(
     clock,

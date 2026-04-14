@@ -21,6 +21,7 @@ object BTBParameters {
 class BTBEntry extends Bundle {
   val valid  = Bool()
   val isJAL  = Bool()
+  val isBackward = Bool()
   val tag    = UInt(BTBParameters.TAG_WIDTH.W)
   val target = Types.UWord
 }
@@ -32,12 +33,14 @@ class BranchTargetBuffer extends Module {
       val hit    = Output(Bool())
       val target = Output(Types.UWord)
       val isJAL  = Output(Bool())
+      val isBackward = Output(Bool())
     }
     val update = new Bundle {
       val en     = Input(Bool())
       val addr   = Input(Types.UWord)
       val isJAL  = Input(Bool())
       val target = Input(Types.UWord)
+      val isBackward = Input(Bool())
     }
   })
 
@@ -51,6 +54,7 @@ class BranchTargetBuffer extends Module {
   io.query.hit    := queryEntry.valid && (queryEntry.tag === queryTag)
   io.query.target := queryEntry.target
   io.query.isJAL  := queryEntry.isJAL
+  io.query.isBackward := queryEntry.isBackward
 
   // Update logic
   when(io.update.en) {
@@ -61,5 +65,6 @@ class BranchTargetBuffer extends Module {
     entries(updateIndex).tag    := updateTag
     entries(updateIndex).target := io.update.target
     entries(updateIndex).isJAL  := io.update.isJAL
+    entries(updateIndex).isBackward := io.update.isBackward
   }
 }

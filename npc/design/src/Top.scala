@@ -239,26 +239,26 @@ class CPUCore(
   val nxtPredictedPC = Wire(Types.UWord)
   dontTouch(nxtPredictedPC)
 
-  if (Config.useBTBAndBP) {
+  val pcFeedToIFU = Wire(Types.UWord)
+
     val btb = Module(new BranchTargetBuffer)
     val bp  = Module(new BranchPredictor)
     btb.io.query.addr   := pc
-    bp.io.pc            := pc
+    bp.io.pc            := pcFeedToIFU
     bp.io.historyHit    := btb.io.query.hit
     bp.io.historyTarget := btb.io.query.target
     bp.io.historyIsJAL  := btb.io.query.isJAL
+    bp.io.historyIsBackward := btb.io.query.isBackward
 
     btb.io.update.en     := exu.io.out.valid && exu.io.jmpHappen
     btb.io.update.addr   := exu.io.pc
-    btb.io.update.target := exu.io.nxtPC
+    btb.io.update.target := exu.io.branchTarget
     btb.io.update.isJAL  := exu.io.isJAL
+    btb.io.update.isBackward := exu.io.branchBackward
 
-    nxtPredictedPC := bp.io.predictTarget
-  } else {
-    nxtPredictedPC := pc + 4.U
-  }
+    nxtPredictedPC := bp.io.pred.pc
 
-  ifu.io.predictedNextPC := nxtPredictedPC
+  ifu.io.predNext := bp.io.pred
 
   redirectNow       := exu.io.out.valid && exu.io.predWrong
   redirectNowTarget := exu.io.nxtPC
@@ -279,13 +279,15 @@ class CPUCore(
     Mux(redirectNow, redirectNowTarget, Mux(redirectPendingFire, nxtPredictedPC, Mux(redirectPendingReg, redirectTargetReg, nxtPredictedPC))),
     pc
   )
+  pcFeedToIFU := Mux(redirectPendingReg, redirectTargetReg, pc)
 
   io.irom <> ifu.io.mem
   io.dram <> dataMemBus.io.out
   exu.io.memReq <> dataMemBus.io.exuMemReq
   lsu.io.memResp <> dataMemBus.io.lsuResp
 
-  ifu.io.pc.bits  := Mux(redirectPendingReg, redirectTargetReg, pc)
+
+  ifu.io.pc.bits  := pcFeedToIFU
   ifu.io.pc.valid := true.B
 
   layer.block(DifftestLayer) {

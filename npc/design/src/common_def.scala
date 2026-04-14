@@ -103,11 +103,17 @@ object InstType extends ChiselEnum {
   }
 }
 
+class PredBundle extends Bundle {
+  val pc = Types.UWord
+  val hit = Bool()
+  val take = Bool()
+}
+
 class Inst extends Bundle {
   val code            = Output(Types.UWord)
   val pc              = Output(Types.UWord)
   val iid             = Output(Types.InstID)
-  val predictedNextPC = Output(Types.UWord)
+  val pred = Output(new PredBundle)
 }
 
 class FetchedInst extends Inst

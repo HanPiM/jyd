@@ -8,7 +8,7 @@ import dpiwrap._
 class IFU extends Module {
   val io = IO(new Bundle {
     val pc              = Flipped(Decoupled(Types.UWord))
-    val predictedNextPC = Input(Types.UWord)
+    val predNext = Input(new PredBundle)
     val mem             = SimpleBusIO.Master
     val out             = Decoupled(new FetchedInst)
   })
@@ -24,10 +24,10 @@ class IFU extends Module {
   val state = RegInit(State.idle)
 
   val pcReg          = Reg(Types.UWord)
-  val predNxtPCReg   = Reg(Types.UWord)
+  val predNextReg   = Reg(new PredBundle)
   val reqIIDReg      = Reg(UInt(Types.BitWidth.inst_id.W))
   val pendingPCReg   = Reg(Types.UWord)
-  val pendingPredReg = Reg(Types.UWord)
+  val pendingPredReg = Reg(new PredBundle)
   val pendingIIDReg  = Reg(UInt(Types.BitWidth.inst_id.W))
   dontTouch(pcReg)
 
@@ -62,17 +62,17 @@ class IFU extends Module {
 
   when(inputReqFire) {
     pcReg        := io.pc.bits
-    predNxtPCReg := io.predictedNextPC
+    predNextReg := io.predNext
     reqIIDReg    := nextIID
   }.elsewhen(pendingReqFire) {
     pcReg        := pendingPCReg
-    predNxtPCReg := pendingPredReg
+    predNextReg := pendingPredReg
     reqIIDReg    := pendingIIDReg
   }
 
   when(acceptInputReq && !inputReqFire) {
     pendingPCReg   := io.pc.bits
-    pendingPredReg := io.predictedNextPC
+    pendingPredReg := io.predNext
     pendingIIDReg  := nextIID
   }
 
@@ -87,7 +87,8 @@ class IFU extends Module {
 
   io.out.bits.code            := inst
   io.out.bits.pc              := pcReg
-  io.out.bits.predictedNextPC := predNxtPCReg
+  io.out.bits.pred := predNextReg
+
   io.out.bits.iid             := reqIIDReg
   io.out.valid                := isWaitingRespMeetValid || (state === State.waitOut)
 

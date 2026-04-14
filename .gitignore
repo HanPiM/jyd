@@ -4,6 +4,7 @@
 
 # like .vscode .ccache
 \.*/
+\.codex
 
 !.github
 !.github/*

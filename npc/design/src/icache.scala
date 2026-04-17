@@ -270,30 +270,3 @@ class ICacheRegMem extends Module {
 
 }
 
-class ICacheWithDirectVisit extends Module {
-  val io = IO(new ICacheIO)
-
-  val cache = Module(new ICache)
-  cache.io.flush := io.flush
-
-  val directWire = Wire(AXI4IO.Slave)
-
-  val xbar = Module(
-    new AXI4LiteXBar(
-      Seq(
-        AddrSpace.SRAM           -> directWire,
-        AddrSpace.SOC_ExceptSRAM -> cache.io.cpu
-      )
-    )
-  )
-
-  xbar.io.in <> io.cpu
-  xbar.connect()
-
-  val memArbiter = Module(new EXUIFU_MemVisitArbiter)
-  memArbiter.io.ifu <> directWire
-  memArbiter.io.exu <> cache.io.mem
-
-  io.mem <> memArbiter.io.out
-
-}

@@ -14,13 +14,15 @@ class NPCDevices extends Module with TestSoCDevice {
   val io = IO(AXI4IO.Slave)
   io := DontCare
 
-  val uart = Module(new UARTUnit)
+  // val uart = Module(new UARTUnit)
   val mem  = Module(new AXI4MemUnit(1024 * 1024 * 128, Some("build/npcmem_init.hex")))
 
-  io <> AXI4XBar(
-    Seq(
-      AddrSpace.NPCMEM -> mem.io,
-      AddrSpace.SERIAL -> uart.io
-    )
-  )
+  io <> mem.io
+
+  // io <> AXI4XBar(
+  //   Seq(
+  //     AddrSpace.NPCMEM -> mem.io,
+  //     // AddrSpace.SERIAL -> uart.io
+  //   )
+  // )
 }

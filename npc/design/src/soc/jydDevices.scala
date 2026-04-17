@@ -18,7 +18,7 @@ object AddrSpace {
   val CNT = ("h80200050".U, "h80200054".U)
 
   object SelfExtSpace {
-    val UART = ("h10000000".U, "h10001000".U)
+    val UART = ("h80200200".U, "h80200300".U)
   }
 
   def needSkipDifftestGroup = Seq(

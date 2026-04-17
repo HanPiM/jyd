@@ -275,7 +275,7 @@ class IDU(
 
   val needStall = bypassMux.io.needStall
 
-  res.snpc       := io.in.bits.pc + 4.U
+  // res.snpc       := io.in.bits.pc + 4.U
   res.pcAddImm   := io.in.bits.pc + res.imm
   // Keep address generation off the generic fmt->imm path. reg1AddImm is
   // only consumed by load/store/JALR style address calculations in EXU.
@@ -295,10 +295,10 @@ class IDU(
 
   res.isECall      := inst === "h73".U
   res.isMRet       := inst === "h30200073".U
-  res.csrJmpTarget := Mux(
+  res.staticNextPCOrCSRTarget := Mux(
     res.isECall,
     io.csrJmpTarget.mtvec,
-    Mux(res.isMRet, io.csrJmpTarget.mepc, 0.U)
+    Mux(res.isMRet, io.csrJmpTarget.mepc, io.in.bits.pc + 4.U)
   )
 
   // Precompute branch comparisons on bypassed operands and let EXU

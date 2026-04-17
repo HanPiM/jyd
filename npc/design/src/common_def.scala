@@ -24,18 +24,8 @@ trait HasRs {
 }
 
 object AddrSpace {
-  val CLINT  = ("h02000000".U(32.W), "h0200ffff".U(32.W))
-  val SPI    = ("h10001000".U(32.W), "h10002000".U(32.W))
-  val SERIAL = ("h10000000".U(32.W), "h10001000".U(32.W))
-
-  val SRAM = ("h0f000000".U(32.W), "h10000000".U(32.W))
-
-  val VGA = ("h21000000".U(32.W), "h21200000".U(32.W))
-  val PS2 = ("h10011000".U(32.W), "h10011007".U(32.W))
-
-  val SOC_ExceptSRAM = ("h10000000".U(32.W), "hffffffff".U(32.W))
-
-  val SOC = ("h0f000000".U(32.W), "hffffffff".U(32.W))
+  val SERIAL = ("h80200200".U(32.W), "h80200300".U(32.W))
+  val CLINT  = ("h80200300".U(32.W), "h80200400".U(32.W))
 
   val NPCMEM = ("h80000000".U(32.W), "h8fffffff".U(32.W))
 
@@ -44,7 +34,8 @@ object AddrSpace {
   }
 
   def needSkipDifftestGroup = Seq(
-    SERIAL,SPI,CLINT,VGA,PS2
+    SERIAL,
+    CLINT
   )
 }
 
@@ -165,11 +156,10 @@ class DecodedInstInfo(implicit p : CPUParameters) extends InstMetaInfo with HasR
   val reg2 = Types.UWord
   val csrReadData = Types.UWord
 
-  val snpc = Types.UWord
+  val staticNextPCOrCSRTarget = Types.UWord
 
   val pcAddImm = Types.UWord
   val reg1AddImm = Types.UWord
-  val csrJmpTarget = Types.UWord
 
   val isECall = Bool()
   val isMRet  = Bool()

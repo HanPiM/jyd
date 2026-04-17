@@ -153,7 +153,7 @@ class EXU(implicit p:CPUParameters) extends Module {
   lsuInfo.func3t    := dinst.code(14, 12)
   lsuInfo.storeData := dinst.info.reg2
 
-  val snpc = dinst.info.snpc
+  val snpc = dinst.info.staticNextPCOrCSRTarget
 
   writeBackInfo.gpr.en   := dinst.info.rdWrEn
   writeBackInfo.gpr.addr := dinst.info.rd
@@ -220,17 +220,6 @@ class EXU(implicit p:CPUParameters) extends Module {
   io.in.ready  := memReqFire || (io.out.ready && !isExtMemReq)
   io.out.valid := (io.in.valid && !isExtMemReq) || memReqFire
 
-  val isSRAMAddr = AddrSpace.inRng(reg1AddImm, AddrSpace.SRAM)
-  when(memReqFire && io.memReq.bits.wen && isSRAMAddr) {
-    ClockedCallVoidDPIC("sram_upd", Some(Seq("addr", "data", "mask")))(
-      clock,
-      isSRAMAddr,
-      io.memReq.bits.addr,
-      io.memReq.bits.wdata,
-      io.memReq.bits.wmask.pad(8)
-    )
-  }
-
   writeBackInfo.iid := dinst.iid
 
   // --- Next PC ---
@@ -249,7 +238,7 @@ class EXU(implicit p:CPUParameters) extends Module {
       snpc
     )
   )
-  nxtPC    := Mux(isJmpCsr, dinst.info.csrJmpTarget, normalNxtPC)
+  nxtPC    := normalNxtPC
   io.nxtPC := nxtPC
   io.pc    := dinst.pc
 

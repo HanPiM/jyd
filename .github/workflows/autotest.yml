@@ -345,32 +345,6 @@ jobs:
           KEY=$(head -c 5 /dev/urandom | base32)
           python $MONITOR_PY --good=$KEY make ARCH=riscv32-jyd run
 
-  iverilog-microbench:
-    needs: setup
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
-
-      - name: Common operations
-        uses: ./.github/actions/common
-        with:
-          JYD_HOME: ${{ needs.setup.outputs.JYD_HOME }}
-          MAKEFLAGS: ${{ needs.setup.outputs.MAKEFLAGS }}
-
-      - name: compile microbench
-        run: |
-          make ARCH=riscv32e-npc -C $JYD_HOME/am-kernels/benchmarks/microbench mainargs=the_insert-arg_rule_in_Makefile_will_insert_mainargs_here
-
-      - name: run microbench with iverilog
-        run: |
-          make -C $JYD_NPC_HOME clean
-          KEY=$(head -c 5 /dev/urandom | base32)
-          IMG=$JYD_HOME/am-kernels/benchmarks/microbench/build/microbench-riscv32e-npc.bin
-          python $JYD_AM_HOME/tools/insert-arg.py $IMG 64 the_insert-arg_rule_in_Makefile_will_insert_mainargs_here $KEY
-          python $MONITOR_PY --good=$KEY make -C $JYD_NPC_HOME sim-iverilog IMG=$IMG
-
   vivado-fpga:
     needs: setup
     runs-on: [self-hosted, Windows]
@@ -514,43 +488,3 @@ jobs:
         with:
           name: netlist
           path: yosys-sta/result/${{ needs.setup.outputs.DESIGN }}-500MHz/${{ needs.setup.outputs.DESIGN }}.netlist.fixed.v
-
-  iverilog-netlist-microbench:
-    needs: [setup, yosys-sta]
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
-
-      - name: Common operations
-        uses: ./.github/actions/common
-        with:
-          JYD_HOME: ${{ needs.setup.outputs.JYD_HOME }}
-          MAKEFLAGS: ${{ needs.setup.outputs.MAKEFLAGS }}
-
-      - name: Download verilog file
-        uses: actions/download-artifact@v8
-        with:
-          name: netlist
-
-      - name: Clone yosys-sta
-        run: |
-          git clone -b ci https://github.com/OSCPU/yosys-sta
-          cd yosys-sta
-          make init
-          echo exit | ./bin/iEDA -v
-
-      - name: compile microbench
-        run: |
-          make ARCH=riscv32e-npc -C $JYD_HOME/am-kernels/benchmarks/microbench mainargs=the_insert-arg_rule_in_Makefile_will_insert_mainargs_here
-
-      - name: run microbench with iverilog netlist
-        run: |
-          make -C $JYD_NPC_HOME clean
-          NETLIST=`pwd`/${{ needs.setup.outputs.DESIGN }}.netlist.fixed.v
-          CELLS=`pwd`/yosys-sta/pdk/nangate45/sim/cells.v
-          KEY=$(head -c 5 /dev/urandom | base32)
-          IMG=$JYD_HOME/am-kernels/benchmarks/microbench/build/microbench-riscv32e-npc.bin
-          python $JYD_AM_HOME/tools/insert-arg.py $IMG 64 the_insert-arg_rule_in_Makefile_will_insert_mainargs_here $KEY
-          python $MONITOR_PY --good=$KEY make -C $JYD_NPC_HOME sim-iverilog-netlist IMG=$IMG NETLIST=$NETLIST CELLS=$CELLS

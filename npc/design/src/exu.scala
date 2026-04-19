@@ -57,7 +57,8 @@ class EXU(implicit p:CPUParameters) extends Module {
   io.branchBackward := dinst.info.imm(31)
 
   alu_in.src1   := reg_v1
-  alu_in.src2   := Mux(isFmtI, dinst.info.imm, reg_v2)
+  // alu_in.src2   := Mux(isFmtI, dinst.info.imm, reg_v2)
+  alu_in.src2 := reg_v2
   alu_in.is_imm := isFmtI
   alu_in.func3t := func3t
   alu_in.func7t := func7t

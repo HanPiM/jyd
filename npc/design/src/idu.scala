@@ -270,7 +270,9 @@ class IDU(
   bypassMux.io.regData2   := io.rvec.data(1)
   bypassMux.io.wrBackInfo := io.wrBackInfo
   res.reg1                := bypassMux.io.outData1
-  res.reg2                := bypassMux.io.outData2
+  // res.reg2                := bypassMux.io.outData2
+  val isFmtI = InstFmt.hasSame(res.fmt, InstFmt.imm)
+  res.reg2                := Mux(isFmtI,immI, bypassMux.io.outData2)
   res.csrReadData         := io.csrRead.data
 
   val needStall = bypassMux.io.needStall

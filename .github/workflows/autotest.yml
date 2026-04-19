@@ -305,6 +305,9 @@ jobs:
   microbench:
     needs: setup
     runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        scale: [test, train, ref]
     steps:
       - uses: actions/checkout@v5
         with:
@@ -318,8 +321,44 @@ jobs:
 
       - name: microbench
         run: |
-          KEY=$(head -c 5 /dev/urandom | base32)
-          python $MONITOR_PY --good="$KEY" make ARCH=riscv32-jyd -C $JYD_HOME/am-kernels/benchmarks/microbench run mainargs=$KEY
+          make ARCH=riscv32-jyd -C $JYD_HOME/am-kernels/benchmarks/microbench run mainargs=${{ matrix.scale }}
+
+
+  coremark:
+    needs: setup
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Common operations
+        uses: ./.github/actions/common
+        with:
+          JYD_HOME: ${{ needs.setup.outputs.JYD_HOME }}
+          MAKEFLAGS: ${{ needs.setup.outputs.MAKEFLAGS }}
+
+      - name: coremark
+        run: |
+          make ARCH=riscv32-jyd -C $JYD_HOME/am-kernels/benchmarks/coremark run
+
+  dhrystone:
+    needs: setup
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Common operations
+        uses: ./.github/actions/common
+        with:
+          JYD_HOME: ${{ needs.setup.outputs.JYD_HOME }}
+          MAKEFLAGS: ${{ needs.setup.outputs.MAKEFLAGS }}
+
+      - name: dhrystone
+        run: |
+          make ARCH=riscv32-jyd -C $JYD_HOME/am-kernels/benchmarks/dhrystone run
 
   rt-thread:
     needs: setup

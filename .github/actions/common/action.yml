@@ -97,7 +97,7 @@ runs:
         git config --global user.email "ci@ysyx.org"
         git config --global user.name "ysyx-ci"
         cd $JYD_HOME
-        git clone --depth 1 -b ci https://github.com/NJU-ProjectN/am-kernels
+        git clone --depth 1 -b master https://github.com/NJU-ProjectN/am-kernels
         cd am-kernels
         git am $JYD_HOME/patch/am-kernels/*
         cd $JYD_HOME

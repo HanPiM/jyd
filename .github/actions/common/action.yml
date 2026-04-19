@@ -107,3 +107,10 @@ runs:
         git am $JYD_HOME/patch/rt-thread-am/*
         cd $JYD_HOME
 
+        git clone --depth 1 https://github.com/NJU-ProjectN/riscv-tests-am
+
+        git clone --depth 1 https://github.com/NJU-ProjectN/riscv-arch-test-am
+        # skip jal-01 since IROM not enough to run it
+        rm ./riscv-arch-test-am/riscv-test-suite/rv32i_m/I/src/jal-01.S
+
+

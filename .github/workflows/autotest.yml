@@ -220,31 +220,18 @@ jobs:
           KEY=$(head -c 5 /dev/urandom | base32)
           python $MONITOR_PY --middle="Hello, AbstractMachine!" --good=$KEY make ARCH=riscv32-jyd -C $JYD_HOME/am-kernels/kernels/hello run mainargs=$KEY
 
-  cpu-tests:
-    needs: setup
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
-
-      - name: Common operations
-        uses: ./.github/actions/common
-        with:
-          JYD_HOME: ${{ needs.setup.outputs.JYD_HOME }}
-          MAKEFLAGS: ${{ needs.setup.outputs.MAKEFLAGS }}
-
-      - name: cpu-tests
-        run: |
-          make ARCH=riscv32-jyd -C $JYD_HOME/am-kernels/tests/cpu-tests run ALL=dummy
-          make ARCH=riscv32-jyd -C $JYD_HOME/am-kernels/tests/cpu-tests run
-
-  jyd-tests:
+  basic-tests:
     needs: setup
     runs-on: ubuntu-24.04
     strategy:
       matrix:
-        sample: [new, src0, src1, src2]
+        test-set:
+          - dir: am-kernels/tests/cpu-tests
+            args: ""
+          - dir: riscv-tests-am
+            args: "TEST_ISA=i"
+          - dir: riscv-arch-test-am
+            args: "TEST_ISA=I"
     steps:
       - uses: actions/checkout@v5
         with:
@@ -256,51 +243,9 @@ jobs:
           JYD_HOME: ${{ needs.setup.outputs.JYD_HOME }}
           MAKEFLAGS: ${{ needs.setup.outputs.MAKEFLAGS }}
 
-      - name: jyd-tests (${{ matrix.sample }})
+      - name: Run basic test (${{ matrix.test-set.dir }})
         run: |
-          make -C $JYD_HOME/jyd-tests run ${{ matrix.sample }}
-
-  riscv-tests:
-    needs: setup
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
-
-      - name: Common operations
-        uses: ./.github/actions/common
-        with:
-          JYD_HOME: ${{ needs.setup.outputs.JYD_HOME }}
-          MAKEFLAGS: ${{ needs.setup.outputs.MAKEFLAGS }}
-
-      - name: riscv-tests
-        run: |
-          git clone --depth 1 https://github.com/NJU-ProjectN/riscv-tests-am
-          make ARCH=riscv32-jyd -C riscv-tests-am run TEST_ISA=i ALL=auipc
-          make ARCH=riscv32-jyd -C riscv-tests-am run TEST_ISA=i
-
-  riscv-arch-test:
-    needs: setup
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
-
-      - name: Common operations
-        uses: ./.github/actions/common
-        with:
-          JYD_HOME: ${{ needs.setup.outputs.JYD_HOME }}
-          MAKEFLAGS: ${{ needs.setup.outputs.MAKEFLAGS }}
-
-      - name: riscv-arch-test
-        run: |
-          git clone --depth 1 https://github.com/NJU-ProjectN/riscv-arch-test-am
-          # skip jal-01 since IROM not enough to run it
-          rm ./riscv-arch-test-am/riscv-test-suite/rv32i_m/I/src/jal-01.S
-          make ARCH=riscv32-jyd -C riscv-arch-test-am run TEST_ISA=I ALL=add-01
-          make ARCH=riscv32-jyd -C riscv-arch-test-am run TEST_ISA=I
+          make ARCH=riscv32-jyd -C $JYD_HOME/${{ matrix.test-set.dir }} run ${{ matrix.test-set.args }}
 
   microbench:
     needs: setup
@@ -383,6 +328,27 @@ jobs:
           make ARCH=riscv32-jyd init
           KEY=$(head -c 5 /dev/urandom | base32)
           python $MONITOR_PY --good=$KEY make ARCH=riscv32-jyd run
+
+  jyd-tests:
+    needs: setup
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        sample: [new, src0, src1, src2]
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Common operations
+        uses: ./.github/actions/common
+        with:
+          JYD_HOME: ${{ needs.setup.outputs.JYD_HOME }}
+          MAKEFLAGS: ${{ needs.setup.outputs.MAKEFLAGS }}
+
+      - name: jyd-tests (${{ matrix.sample }})
+        run: |
+          make -C $JYD_HOME/jyd-tests run ${{ matrix.sample }}
 
   vivado-fpga:
     needs: setup

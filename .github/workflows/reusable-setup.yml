@@ -1,0 +1,192 @@
+name: Reusable Setup
+
+on:
+  workflow_call:
+    outputs:
+      JYD_HOME:
+        description: Repository root in the runner workspace
+        value: ${{ jobs.setup.outputs.JYD_HOME }}
+      VFILE:
+        description: Generated NPC Verilog file path
+        value: ${{ jobs.setup.outputs.VFILE }}
+      DESIGN:
+        description: Generated NPC design name
+        value: ${{ jobs.setup.outputs.DESIGN }}
+      MAKEFLAGS:
+        description: Common make flags for downstream jobs
+        value: ${{ jobs.setup.outputs.MAKEFLAGS }}
+
+permissions:
+  contents: read
+
+jobs:
+  setup:
+    runs-on: ubuntu-24.04
+    outputs:
+      JYD_HOME: ${{ steps.set-jyd-home.outputs.JYD_HOME }}
+      VFILE: ${{ steps.vfilename.outputs.VFILE }}
+      DESIGN: ${{ steps.vfilename.outputs.DESIGN }}
+      MAKEFLAGS: ${{ steps.set-env.outputs.MAKEFLAGS }}
+    steps:
+      - name: Set Git user and email
+        run: |
+          git config --global user.email "ci@ysyx.org"
+          git config --global user.name "ysyx-ci"
+
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Show current branch
+        run: |
+          git branch --show-current
+
+      - name: Set JYD_HOME
+        id: set-jyd-home
+        run: |
+          JYD_HOME=$(pwd)
+          echo "JYD_HOME=$JYD_HOME" >> $GITHUB_ENV
+          echo "JYD_HOME=$JYD_HOME" >> $GITHUB_OUTPUT
+
+      - name: Set environment variables
+        id: set-env
+        run: |
+          cd $JYD_HOME
+          JYD_NEMU_HOME="`pwd`/nemu"
+          JYD_AM_HOME="`pwd`/abstract-machine"
+          NAVY_HOME="`pwd`/navy-apps"
+          JYD_NPC_HOME="`pwd`/npc"
+          NVBOARD_HOME="`pwd`/nvboard"
+
+          echo "JYD_NEMU_HOME=$JYD_NEMU_HOME" >> $GITHUB_ENV
+          echo "JYD_AM_HOME=$JYD_AM_HOME" >> $GITHUB_ENV
+          echo "NAVY_HOME=$NAVY_HOME" >> $GITHUB_ENV
+          echo "JYD_NPC_HOME=$JYD_NPC_HOME" >> $GITHUB_ENV
+          echo "NVBOARD_HOME=$NVBOARD_HOME" >> $GITHUB_ENV
+
+          MAKEFLAGS="-j`nproc`"
+          echo "MAKEFLAGS=$MAKEFLAGS" >> $GITHUB_ENV
+          echo "MAKEFLAGS=$MAKEFLAGS" >> $GITHUB_OUTPUT
+
+      - name: Check the version of AM
+        run: |
+          if [[ ! -e $JYD_AM_HOME/tools/insert-arg.py ]] ; then
+            URL="https://github.com/NJU-ProjectN/abstract-machine/commit/c52a41181f8ea5d0e970008e51f58867a3ce65bb"
+            echo "$JYD_AM_HOME/tools/insert-arg.py does not exist. Abort."
+            echo "You may use AM with the version older than May, 2024."
+            echo "Please refer to $URL to apply the patch to AM. After that, the CI flow can insert mainargs to the binary by the python script."
+            false
+          fi
+
+          sed -i -e 's/MAINARGS_PLACEHOLDER = .*/MAINARGS_PLACEHOLDER = the_insert-arg_rule_in_Makefile_will_insert_mainargs_here/' $JYD_AM_HOME/scripts/platform/npc.mk
+
+      - name: Check patch size
+        run: |
+          SIZE=`du -sb $JYD_HOME/patch | grep -o '^[0-9]*'`
+          SIZE_LIMIT=1048576 # 1MB
+          if [[ $SIZE -gt $SIZE_LIMIT ]] ; then
+            echo "Patch size($SIZE) is larger than the limit($SIZE_LIMIT)."
+            false
+          fi
+
+      - name: Setup tools
+        run: |
+          mkdir -p ~/.local/bin
+          MILL_VERSION=0.11.13
+          if [[ -e $JYD_HOME/npc/.mill-version ]]; then
+            MILL_VERSION=`cat $JYD_HOME/npc/.mill-version`
+          fi
+          echo "Downloading mill with version $MILL_VERSION"
+          sh -c "curl -L https://github.com/com-lihaoyi/mill/releases/download/$MILL_VERSION/$MILL_VERSION > ~/.local/bin/mill && chmod +x ~/.local/bin/mill"
+
+      - name: Clone other repos
+        run: |
+          cd $JYD_HOME
+          git clone --depth 1 -b no-gui https://github.com/NJU-ProjectN/nvboard
+
+      - name: Clean up
+        run: |
+          make -C $JYD_NEMU_HOME clean
+          make -C $JYD_AM_HOME clean-all
+          make -C $JYD_NPC_HOME clean
+
+      - name: Cache generated NPC verilog
+        id: npc-verilog-cache
+        uses: actions/cache@v5
+        with:
+          path: |
+            npc/build/gened/verilog/
+            npc/build/verilog.done
+            npc/build/*.v
+            npc/build/*.sv
+          key: ${{ runner.os }}-npc-verilog-${{ hashFiles('npc/design/**', 'npc/scripts/**', 'npc/Makefile') }}
+
+      - name: Refresh cached NPC verilog timestamps
+        if: steps.npc-verilog-cache.outputs.cache-hit == 'true'
+        run: |
+          touch $JYD_NPC_HOME/build/verilog.done
+          for vfile in $JYD_NPC_HOME/build/*.v $JYD_NPC_HOME/build/*.sv; do
+            if [[ -e $vfile ]]; then
+              touch $vfile
+            fi
+          done
+
+      - name: Generate verilog for NPC
+        run: |
+          make -C $JYD_NPC_HOME verilog
+
+      - name: Check verilog file name
+        id: vfilename
+        run: |
+          VFILE=$(ls $JYD_NPC_HOME/build/*.sv $JYD_NPC_HOME/build/*.v 2>/dev/null | head -1)
+          if [[ -z $VFILE ]]; then
+            echo "No .sv or .v file found in $JYD_NPC_HOME/build/. Abort."
+            false
+          fi
+          echo "Find $VFILE"
+
+          DESIGN=$(basename $VFILE | sed 's/\.[^.]*$//')
+          echo "VFILE=$VFILE" >> $GITHUB_OUTPUT
+          echo "DESIGN=$DESIGN" >> $GITHUB_OUTPUT
+
+      - name: Check verilog clock edge
+        run: |
+          VFILE=${{ steps.vfilename.outputs.VFILE }}
+          if grep "negedge" $VFILE; then
+            echo "$VFILE contains negedge. Abort."
+            false
+          fi
+
+      - name: Upload verilog file
+        uses: actions/upload-artifact@v6
+        with:
+          name: verilog
+          path: ${{ steps.vfilename.outputs.VFILE }}
+
+      - name: Pack FPGA sources
+        run: |
+          make -C $JYD_NPC_HOME pack-fpga
+
+      - name: Upload packed FPGA zip
+        uses: actions/upload-artifact@v6
+        with:
+          name: packed-fpga
+          path: ${{ steps.set-jyd-home.outputs.JYD_HOME }}/npc/build/pack-fpga.zip
+
+      - name: Pack workbench
+        run: |
+          PARENT=$(dirname $JYD_HOME)
+          BASENAME=$(basename $JYD_HOME)
+          mkdir -p /tmp/artifact-upload
+          cd $PARENT
+          tar -czf /tmp/artifact-upload/ysyx-workbench.tar.gz \
+            --exclude="$BASENAME/.git" \
+            --exclude="$BASENAME/oss-cad-suite" \
+            $BASENAME
+
+      - name: Upload workbench
+        uses: actions/upload-artifact@v6
+        with:
+          name: workbench
+          path: /tmp/artifact-upload/
+          retention-days: 1

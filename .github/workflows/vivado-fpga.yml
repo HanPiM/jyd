@@ -1,0 +1,108 @@
+name: Vivado FPGA Workflow
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'npc/design/**'
+      - '.github/workflows/vivado-fpga.yml'
+      - '.github/workflows/reusable-setup.yml'
+  workflow_dispatch:
+    inputs:
+      comment:
+        description: '注释 (可为空)'
+        required: false
+        default: ''
+
+run-name: >-
+  ${{
+    github.event_name == 'push' && github.event.head_commit.message ||
+    github.event.inputs.comment != '' && github.event.inputs.comment ||
+    'Manual trigger'
+  }}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vivado-fpga-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  setup:
+    uses: ./.github/workflows/reusable-setup.yml
+    secrets: inherit
+
+  vivado-fpga:
+    needs: setup
+    runs-on: [self-hosted, Windows]
+    strategy:
+      matrix:
+        sample: [src0, src1, src2]
+    steps:
+      - name: Remove old packed FPGA zip
+        shell: pwsh
+        run: |
+          $packedZip = 'D:\jyd-vivado\pack-fpga.zip'
+          if (Test-Path $packedZip) {
+            Remove-Item -Path $packedZip -Force
+          }
+
+      - name: Download packed FPGA zip
+        uses: actions/download-artifact@v8
+        with:
+          name: packed-fpga
+          path: 'D:\jyd-vivado'
+
+      - name: Run Vivado workflow (${{ matrix.sample }})
+        shell: pwsh
+        run: |
+          Set-Location D:\jyd-vivado\
+
+          $targetPath = ".\proj\digital_twin.srcs\sources_1\imports\Public\my-pack-fpga"
+          $zipPath = ".\pack-fpga.zip"
+          $resultRoot = ".\result"
+
+          if (Test-Path $targetPath) {
+              Get-ChildItem -Path $targetPath -Recurse -Force | Remove-Item -Recurse -Force
+              Write-Host "Remove old srcs: $targetPath"
+          } else {
+              Write-Host "Old src $targetPath doesn't exists"
+          }
+
+          if (Test-Path $zipPath) {
+              Expand-Archive -Path $zipPath -DestinationPath $targetPath -Force
+              Write-Host "Unzip: $zipPath -> $targetPath"
+          } else {
+              Write-Host "$zipPath doesn't exist. Exiting."
+              exit 1
+          }
+
+          if (Test-Path $resultRoot) {
+              Remove-Item -Path $resultRoot -Recurse -Force
+              Write-Host "Removed directory and contents: $resultRoot"
+          }
+
+          # if (Test-Path $resultRoot) {
+          #     Get-ChildItem -Path $resultRoot -Recurse -Force | Remove-Item -Recurse -Force
+          #     Write-Host "Remove old result: $resultRoot"
+          # } else {
+          #     New-Item -ItemType Directory -Path $resultRoot -Force | Out-Null
+          #     Write-Host "Created result directory: $resultRoot"
+          # }
+
+          .\run-single.ps1 -CoeSourcePath ".\test-coes\${{ matrix.sample }}" -ResultPath ".\result"
+
+      - name: Upload Vivado result
+        id: upload-vivado-result
+        uses: actions/upload-artifact@v6
+        with:
+          name: vivado-result-${{ matrix.sample }}
+          path: 'D:\jyd-vivado\result'
+
+      - name: Add Vivado summary
+        shell: pwsh
+        run: |
+          @"
+          - `${{ matrix.sample }}`: [vivado-result-${{ matrix.sample }}](${{ steps.upload-vivado-result.outputs.artifact-url }})
+          "@ >> $env:GITHUB_STEP_SUMMARY

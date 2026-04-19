@@ -1,0 +1,112 @@
+name: Performance Tests Workflow
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'npc/design/**'
+      - '.github/workflows/perf-tests.yml'
+      - '.github/workflows/reusable-setup.yml'
+      - '.github/actions/common/action.yml'
+  workflow_dispatch:
+    inputs:
+      comment:
+        description: '注释 (可为空)'
+        required: false
+        default: ''
+
+run-name: >-
+  ${{
+    github.event_name == 'push' && github.event.head_commit.message ||
+    github.event.inputs.comment != '' && github.event.inputs.comment ||
+    'Manual trigger'
+  }}
+
+permissions:
+  contents: read
+
+env:
+  OSS_CAD_SUITE_RELEASE_TAG: 2025-11-24
+
+jobs:
+  setup:
+    uses: ./.github/workflows/reusable-setup.yml
+    secrets: inherit
+
+  microbench:
+    needs: setup
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        scale: [test, train, ref]
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Common operations
+        uses: ./.github/actions/common
+        with:
+          JYD_HOME: ${{ needs.setup.outputs.JYD_HOME }}
+          MAKEFLAGS: ${{ needs.setup.outputs.MAKEFLAGS }}
+
+      - name: microbench
+        run: |
+          make ARCH=riscv32-jyd -C $JYD_HOME/am-kernels/benchmarks/microbench run mainargs=${{ matrix.scale }}
+
+  coremark:
+    needs: setup
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Common operations
+        uses: ./.github/actions/common
+        with:
+          JYD_HOME: ${{ needs.setup.outputs.JYD_HOME }}
+          MAKEFLAGS: ${{ needs.setup.outputs.MAKEFLAGS }}
+
+      - name: coremark
+        run: |
+          make ARCH=riscv32-jyd -C $JYD_HOME/am-kernels/benchmarks/coremark run
+
+  dhrystone:
+    needs: setup
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Common operations
+        uses: ./.github/actions/common
+        with:
+          JYD_HOME: ${{ needs.setup.outputs.JYD_HOME }}
+          MAKEFLAGS: ${{ needs.setup.outputs.MAKEFLAGS }}
+
+      - name: dhrystone
+        run: |
+          make ARCH=riscv32-jyd -C $JYD_HOME/am-kernels/benchmarks/dhrystone run
+
+  jyd-tests:
+    needs: setup
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        sample: [new, src0, src1, src2]
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Common operations
+        uses: ./.github/actions/common
+        with:
+          JYD_HOME: ${{ needs.setup.outputs.JYD_HOME }}
+          MAKEFLAGS: ${{ needs.setup.outputs.MAKEFLAGS }}
+
+      - name: jyd-tests (${{ matrix.sample }})
+        run: |
+          make -C $JYD_HOME/jyd-tests run ${{ matrix.sample }}

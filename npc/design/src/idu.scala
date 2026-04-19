@@ -24,8 +24,8 @@ class WrBackForwardInfo(
 
 object WrBackForwardInfo {
   def apply(
-    WrBack: WrBackForwardInfo,
-    newData: UInt
+    WrBack:     WrBackForwardInfo,
+    newData:    UInt
   )(
     implicit p: CPUParameters
   ): WrBackForwardInfo = {
@@ -219,20 +219,27 @@ class IDU(
   io.out.bits.viewAsSupertype(new Inst) := io.in.bits.viewAsSupertype(new Inst)
 
   // alias
-  val res  = io.out.bits.info
-  val inst = io.in.bits.code
+  val res      = io.out.bits.info
+  val inst     = io.in.bits.code
   val isFenceI = inst === "h0000100f".U
 
   assert(!(io.in.valid && isFenceI), "fence.i is not supported on riscv32-jyd")
 
   res.viewAsSupertype(new InstMetaInfo) := InstInfoDecoder(inst(6, 0))
 
+  val isTypStore  = InstType.hasSame(res.typ, InstType.store)
+  val isTypBranch = InstType.hasSame(res.typ, InstType.branch)
+
+  val isFmtI = InstFmt.hasSame(res.fmt, InstFmt.imm)
+  val isFmtU = InstFmt.hasSame(res.fmt, InstFmt.upper)
+  val isFmtJ = InstFmt.hasSame(res.fmt, InstFmt.jump)
+
+  val noNeedRs2 = isFmtI || isFmtU || isFmtJ
+
   res.rd  := inst(11, 7)
   res.rs1 := inst(19, 15)
-  res.rs2 := inst(24, 20)
+  res.rs2 := Mux(noNeedRs2, 0.U, inst(24, 20))
 
-  val isTypStore     = InstType.hasSame(res.typ, InstType.store)
-  val isTypBranch    = InstType.hasSame(res.typ, InstType.branch)
   // for now, system inst, ecall and mret has rd == 0
   // TODO: handle rd != 0 case
   val isNoWrBackType = isTypStore || isTypBranch
@@ -263,6 +270,8 @@ class IDU(
     )
   )
 
+  val needBypassRs2 = ~isFmtI
+
   val bypassMux = Module(new ByPassMux())
   bypassMux.io.rs1        := res.rs1
   bypassMux.io.rs2        := res.rs2
@@ -271,8 +280,7 @@ class IDU(
   bypassMux.io.wrBackInfo := io.wrBackInfo
   res.reg1                := bypassMux.io.outData1
   // res.reg2                := bypassMux.io.outData2
-  val isFmtI = InstFmt.hasSame(res.fmt, InstFmt.imm)
-  res.reg2                := Mux(isFmtI,immI, bypassMux.io.outData2)
+  res.reg2                := Mux(isFmtI, immI, bypassMux.io.outData2) // For exu ALU src2
   res.csrReadData         := io.csrRead.data
 
   val needStall = bypassMux.io.needStall
@@ -295,8 +303,8 @@ class IDU(
 
   // res.reg1AddImm := DontCare
 
-  res.isECall      := inst === "h73".U
-  res.isMRet       := inst === "h30200073".U
+  res.isECall                 := inst === "h73".U
+  res.isMRet                  := inst === "h30200073".U
   res.staticNextPCOrCSRTarget := Mux(
     res.isECall,
     io.csrJmpTarget.mtvec,
@@ -308,9 +316,9 @@ class IDU(
   // res.isLessThan  := res.reg1.asSInt < res.reg2.asSInt
   // res.isLessThanU := res.reg1 < res.reg2
   // res.isEqual     := res.reg1 === res.reg2
-  res.isLessThan := DontCare
+  res.isLessThan  := DontCare
   res.isLessThanU := DontCare
-  res.isEqual := DontCare
+  res.isEqual     := DontCare
 
   io.in.ready  := (io.out.ready && !needStall) || io.flush
   io.out.valid := io.in.valid && !needStall && !io.flush

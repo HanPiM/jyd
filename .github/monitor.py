@@ -17,7 +17,7 @@ state_rtt = "empty"
             # input                  string for success
 rtt_input = [('help',                 'am_hello'),
              ('am_hello',             'Hello, AbstractMachine!'),
-             ('am_microbench',        'MicroBench PASS'),
+             ('am_microbench test',        'MicroBench PASS'),
              (f'echo "{args.good}"',  args.good)]
 
 buffer = bytearray()

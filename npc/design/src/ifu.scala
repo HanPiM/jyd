@@ -35,8 +35,9 @@ class IFU extends Module {
   dontTouch(instID)
 
   val isWaitingRespMeetValid = (state === State.waitResp) && memIO.resp_valid
-  val consumeResp           = isWaitingRespMeetValid && io.out.ready
-  val canAcceptInputReq     = (state === State.idle) || consumeResp
+  val consumeResp            = isWaitingRespMeetValid && io.out.ready
+  val consumeWaitOut         = (state === State.waitOut) && io.out.ready
+  val canAcceptInputReq      = (state === State.idle) || consumeResp || consumeWaitOut
 
   io.pc.ready := canAcceptInputReq
 
@@ -92,17 +93,13 @@ class IFU extends Module {
   io.out.bits.iid             := reqIIDReg
   io.out.valid                := isWaitingRespMeetValid || (state === State.waitOut)
 
-  val nxtStateWhenWaitOut = Mux(io.out.ready, State.idle, State.waitOut)
-  val nxtStateWhenConsumeResp = Mux(
+  val nxtStateWhenAcceptInput = Mux(
     io.pc.valid,
     Mux(memIO.req_ready, State.waitResp, State.waitReq),
     State.idle
   )
-  val nxtStateWhenIdle = Mux(
-    io.pc.valid,
-    Mux(memIO.req_ready, State.waitResp, State.waitReq),
-    State.idle
-  )
+  val nxtStateWhenWaitOut = Mux(io.out.ready, nxtStateWhenAcceptInput, State.waitOut)
+  val nxtStateWhenIdle    = nxtStateWhenAcceptInput
 
   dontTouch(nxtStateWhenIdle)
 
@@ -110,7 +107,7 @@ class IFU extends Module {
     Seq(
       State.idle     -> nxtStateWhenIdle,
       State.waitReq  -> Mux(pendingReqFire, State.waitResp, State.waitReq),
-      State.waitResp -> Mux(memIO.resp_valid, Mux(io.out.ready, nxtStateWhenConsumeResp, State.waitOut), State.waitResp),
+      State.waitResp -> Mux(memIO.resp_valid, Mux(io.out.ready, nxtStateWhenAcceptInput, State.waitOut), State.waitResp),
       State.waitOut  -> nxtStateWhenWaitOut
     )
   )

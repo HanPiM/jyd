@@ -338,8 +338,8 @@ class CPUCore(
     clock,
     StageLogConst.Event.flush,
     StageLogConst.Stage.idu,
-    activeRedirectValid && idu.io.out.valid,
-    idu.io.out.bits.iid
+    activeRedirectValid && idu.io.in.valid,
+    idu.io.in.bits.iid
   )
 
   val foo = Wire(Decoupled(Bool()))

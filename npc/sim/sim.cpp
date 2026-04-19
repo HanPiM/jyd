@@ -229,25 +229,19 @@ void sim_step_inst() {
       spdlog::warn("simulation has stepped {} cycles without pc change, maybe "
                    "lock happened",
                    cnt);
-      // printf("wanting to continue? (y/[n]) ");
-      // char c = getchar();
-      // if (c == 'y' || c == 'Y') {
-      //   cnt = 0;
-      //   while (getchar() != '\n') {
-      //   }
-      //   continue;
-      // } else {
       spdlog::info("sim exit due to possible deadloop");
       exit(1);
-      // }
     }
   }
   pc_changed = false;
   inst_count++;
-  if (inst_count % (1024 * 1024 * 8) == 0) {
-    spdlog::info("8M instructions executed (now {}M), pc = 0x{:08x}, cycle = "
+
+	constexpr size_t INST_CNT_LOG_UNIT = 1000000; // 1M
+	constexpr size_t INST_CNT_LOG_INTERVAL = 16 * INST_CNT_LOG_UNIT; // 16M
+  if (inst_count % INST_CNT_LOG_INTERVAL == 0) {
+    spdlog::info("16M instructions executed (now {}M), pc = 0x{:08x}, cycle = "
                  "{}, time = {}ps",
-                 inst_count / (1024 * 1024), cpu.pc, cycle_count, sim_time);
+                 inst_count / INST_CNT_LOG_UNIT, cpu.pc, cycle_count, sim_time);
   }
 }
 

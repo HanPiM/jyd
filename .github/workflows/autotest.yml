@@ -243,6 +243,11 @@ jobs:
           JYD_HOME: ${{ needs.setup.outputs.JYD_HOME }}
           MAKEFLAGS: ${{ needs.setup.outputs.MAKEFLAGS }}
 
+      - name: Make Binary
+        run: |
+          # make sim binary first to avoid parallel build issue
+          make ARCH=riscv32-jyd -C $JYD_HOME/npc
+
       - name: Run basic test (${{ matrix.test-set.dir }})
         run: |
           make ARCH=riscv32-jyd -C $JYD_HOME/${{ matrix.test-set.dir }} run ${{ matrix.test-set.args }}

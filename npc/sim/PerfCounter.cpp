@@ -195,21 +195,28 @@ void dumpPerfCountersStatistics(std::ostream &os) {
   os << "Statistics:\n";
   os << "cycle and instruction counts:\n";
   os << "  total cycle count: " << cycle_count << "\n";
-  os << "  total instruction count: " << inst_count << "\n";
+	os << fmt::format("  total instruction count: {} ({}M)\n", inst_count, inst_count / 1000000);
+
   if (cycle_count == 0) {
     spdlog::warn("cycle count is 0, cannot calc IPC");
   } else {
     double ipc = (double)inst_count / (double)cycle_count;
     os << fmt::format("  IPC: {:.4f}\n", ipc);
-    // fmt::println("  IPC: {:.4f}", ipc);
   }
   if (inst_count == 0) {
     spdlog::warn("no instruction executed, cannot calc CPI");
   } else {
     double cpi = (double)cycle_count / (double)inst_count;
-    // fmt::println("  CPI: {:.4f}", cpi);
     os << fmt::format("  CPI: {:.4f}\n", cpi);
   }
+
+	os << "excution time estimate:\n";
+	os << fmt::format("  {:>8} {:>10}\n", "Clk(Mhz)", "Time(s)");
+	double clk_freqs[] = {50e6, 100e6, 200e6, 250e6};
+	for (double freq : clk_freqs) {
+		double time_sec = (double)cycle_count / freq;
+		os << fmt::format("  {:>8.0f} {:>10.5f}\n", freq / 1e6, time_sec);
+	}
 
   for (auto &ctr : perf_counters) {
     std::visit([&](auto &c) { c.dumpStatistics(os); }, ctr);

@@ -325,14 +325,21 @@ class CPUCore(
   idu.io.wrBackInfo.lsu := ExtractFwdInfoFromLSU(lsu.io.in)
   idu.io.wrBackInfo.wbu := ExtractFwdInfoFromWrBack(wbu.io.in)
 
-  idu.io.flush := false.B
+  idu.io.pipelineFlush := activeRedirectValid
 
   StageLogger(
     clock,
     StageLogConst.Event.flush,
+    StageLogConst.Stage.ifu,
+    activeRedirectValid && ifu.io.out.valid,
+    ifu.io.out.bits.iid
+  )
+  StageLogger(
+    clock,
+    StageLogConst.Event.flush,
     StageLogConst.Stage.idu,
-    activeRedirectValid && idu.io.in.valid,
-    idu.io.in.bits.iid
+    activeRedirectValid && idu.io.out.valid,
+    idu.io.out.bits.iid
   )
 
   val foo = Wire(Decoupled(Bool()))

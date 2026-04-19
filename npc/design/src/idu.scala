@@ -203,7 +203,7 @@ class IDU(
       val mtvec = Types.UWord
     })
 
-    val flush = Input(Bool())
+    val pipelineFlush = Input(Bool())
 
     val wrBackInfo = Input(new WrBackInfoGroup)
 
@@ -320,14 +320,14 @@ class IDU(
   res.isLessThanU := DontCare
   res.isEqual     := DontCare
 
-  io.in.ready  := (io.out.ready && !needStall) || io.flush
-  io.out.valid := io.in.valid && !needStall && !io.flush
+  io.in.ready  := (io.out.ready && !needStall) //|| io.flush
+  io.out.valid := io.in.valid && !needStall //&& !io.flush
 
   StageLogger(
     clock,
     StageLogConst.Event.stage,
     StageLogConst.Stage.idu,
-    io.in.fire && !needStall && !io.flush,
+    io.in.fire && !needStall && !io.pipelineFlush,
     io.in.bits.iid
   )
 }

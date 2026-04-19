@@ -295,8 +295,8 @@ class JYDPeripheralBridge(
   io.cpu.req_ready := false.B
   Seq(io.dram, io.led, io.seg, io.cnt, io.uart).foreach(_.dontCareReq())
 
-  val pendingSel  = RegInit(0.U(3.W))
-  val waitingResp = RegInit(false.B)
+  val lastReqSel   = RegInit(0.U(3.W))
+  val lastReqValid = RegInit(false.B)
   val cntEnableReg = RegInit(false.B)
 
   val cntStartCmd = "h80000000".U(32.W)
@@ -319,11 +319,13 @@ class JYDPeripheralBridge(
   val selectedReady = MuxLookup(targetSel, io.dram.req_ready)(
     targets.map { case (sel, bus) => sel -> bus.req_ready }
   )
-  io.cpu.req_ready := !waitingResp && selectedReady
+  io.cpu.req_ready := selectedReady
+
+  val reqFire = io.cpu.req_valid && io.cpu.req_ready
 
   for ((sel, bus) <- targets) {
     val hit = targetSel === sel
-    bus.req_valid := !waitingResp && io.cpu.req_valid && hit
+    bus.req_valid := io.cpu.req_valid && hit
     bus.addr      := io.cpu.addr
     bus.size      := io.cpu.size
     bus.wdata     := io.cpu.wdata
@@ -331,7 +333,7 @@ class JYDPeripheralBridge(
     bus.wen       := io.cpu.wen
   }
 
-  when(!waitingResp && io.cpu.req_valid && io.cpu.req_ready && targetSel === 3.U && io.cpu.wen) {
+  when(reqFire && targetSel === 3.U && io.cpu.wen) {
     when(io.cpu.wdata === cntStartCmd) {
       cntEnableReg := true.B
     }.elsewhen(io.cpu.wdata === cntStopCmd) {
@@ -339,25 +341,21 @@ class JYDPeripheralBridge(
     }
   }
 
-  when(!waitingResp && io.cpu.req_valid && io.cpu.req_ready) {
-    pendingSel  := targetSel
-    waitingResp := true.B
+  when(reqFire) {
+    lastReqSel := targetSel
   }
+  lastReqValid := reqFire
 
-  val respValid = MuxLookup(pendingSel, io.dram.resp_valid)(
+  val respValid = MuxLookup(lastReqSel, io.dram.resp_valid)(
     targets.map { case (sel, bus) => sel -> bus.resp_valid }
   )
-  val respData  = MuxLookup(pendingSel, io.dram.rdata)(
+  val respData  = MuxLookup(lastReqSel, io.dram.rdata)(
     targets.map { case (sel, bus) => sel -> bus.rdata }
   )
 
-  io.cpu.resp_valid := waitingResp && respValid
+  io.cpu.resp_valid := lastReqValid && respValid
   io.cpu.rdata      := respData
   io.cntEnable      := cntEnableReg
-
-  when(waitingResp && respValid) {
-    waitingResp := false.B
-  }
 }
 
 trait HasJYDCPUAndResetPC { this: Module =>

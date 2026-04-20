@@ -13,8 +13,8 @@ namespace {
 
 constexpr const char *kCompressedTracePath = "../nemu/btrace_pack.bin.bz2";
 constexpr size_t kDefaultBTBSize = 16;
-constexpr size_t kDefaultCounterTableSize = 16;
 constexpr uint32_t kDefaultGHRBits = 10;
+constexpr uint32_t kDefaultLocalHistoryBits = 4;
 
 uint32_t sign_extend(uint32_t value, uint32_t bits) {
   const uint32_t sign_bit = 1u << (bits - 1);
@@ -161,40 +161,76 @@ private:
   uint32_t ghr_;
 };
 
-class TournamentPredictor {
+class LocalPredictor {
 public:
-  TournamentPredictor(size_t bimodal_size, size_t gshare_size,
-                      size_t chooser_size, uint32_t ghr_bits)
-      : bimodal_(bimodal_size), gshare_(gshare_size, ghr_bits),
-        chooser_(chooser_size, 2) {}
+  LocalPredictor(size_t lht_size, uint32_t history_bits, size_t pht_size)
+      : local_histories_(lht_size, 0), history_mask_(make_mask(history_bits)),
+        pht_(pht_size) {
+    assert(history_bits > 0 && "Local history bits must be positive");
+  }
 
   bool predict_taken(uint32_t pc) const {
-    const bool bimodal_taken = bimodal_.prefer_high(get_bimodal_index(pc));
+    return pht_.prefer_high(get_pht_index(pc));
+  }
+
+  void update(uint32_t pc, bool taken) {
+    pht_.update(get_pht_index(pc), taken);
+    auto &history = local_histories_[get_history_index(pc)];
+    history = ((history << 1) | static_cast<uint32_t>(taken)) & history_mask_;
+  }
+
+private:
+  static uint32_t make_mask(uint32_t bits) {
+    return bits >= 32 ? ~0u : ((1u << bits) - 1);
+  }
+
+  size_t get_history_index(uint32_t pc) const {
+    return (pc >> 2) % local_histories_.size();
+  }
+
+  size_t get_pht_index(uint32_t pc) const {
+    return local_histories_[get_history_index(pc)] % pht_.size();
+  }
+
+  std::vector<uint32_t> local_histories_;
+  uint32_t history_mask_;
+  CounterTable pht_;
+};
+
+class LocalGlobalTournamentPredictor {
+public:
+  LocalGlobalTournamentPredictor(size_t lht_size, uint32_t local_history_bits,
+                                 size_t local_pht_size, size_t gshare_size,
+                                 size_t chooser_size, uint32_t ghr_bits)
+      : local_(lht_size, local_history_bits, local_pht_size),
+        gshare_(gshare_size, ghr_bits), chooser_(chooser_size, 2) {}
+
+  bool predict_taken(uint32_t pc) const {
+    const bool local_taken = local_.predict_taken(pc);
     const bool gshare_taken = gshare_.predict_taken(pc);
     return chooser_.prefer_high(get_chooser_index(pc)) ? gshare_taken
-                                                        : bimodal_taken;
+                                                        : local_taken;
   }
 
   void update(uint32_t pc, bool taken) {
     const size_t chooser_index = get_chooser_index(pc);
-    const bool bimodal_taken = bimodal_.prefer_high(get_bimodal_index(pc));
+    const bool local_taken = local_.predict_taken(pc);
     const bool gshare_taken = gshare_.predict_taken(pc);
-    if (bimodal_taken != gshare_taken) {
+    if (local_taken != gshare_taken) {
       if (gshare_taken == taken) {
         chooser_.update(chooser_index, true);
-      } else if (bimodal_taken == taken) {
+      } else if (local_taken == taken) {
         chooser_.update(chooser_index, false);
       }
     }
-    bimodal_.update(get_bimodal_index(pc), taken);
+    local_.update(pc, taken);
     gshare_.update(pc, taken);
   }
 
 private:
-  size_t get_bimodal_index(uint32_t pc) const { return (pc >> 2) % bimodal_.size(); }
   size_t get_chooser_index(uint32_t pc) const { return (pc >> 2) % chooser_.size(); }
 
-  CounterTable bimodal_;
+  LocalPredictor local_;
   GSharePredictor gshare_;
   CounterTable chooser_;
 };
@@ -209,6 +245,8 @@ struct AlgoConfig {
   size_t counter_table_size;
   size_t chooser_size;
   uint32_t ghr_bits;
+  uint32_t local_history_bits = 0;
+  size_t local_history_table_size = 0;
   bool direct_branch_target = false;
   bool direct_jal_target = false;
   predict_t predict_taken;
@@ -340,16 +378,56 @@ AlgoConfig make_gshare_algo(size_t btb_size, size_t pht_size, uint32_t ghr_bits,
   };
 }
 
-AlgoConfig make_tournament_algo(size_t btb_size, size_t counter_table_size,
-                                size_t chooser_size, uint32_t ghr_bits) {
-  auto predictor = std::make_shared<TournamentPredictor>(
-      counter_table_size, counter_table_size, chooser_size, ghr_bits);
+AlgoConfig make_local_algo(size_t btb_size, size_t lht_size,
+                           uint32_t local_history_bits, size_t local_pht_size) {
+  auto predictor = std::make_shared<LocalPredictor>(lht_size, local_history_bits,
+                                                    local_pht_size);
   return {
-      .name = "tournament + direct branch target",
+      .name = "local + direct branch target",
       .btb_size = btb_size,
-      .counter_table_size = counter_table_size,
+      .counter_table_size = local_pht_size,
+      .chooser_size = 0,
+      .ghr_bits = 0,
+      .local_history_bits = local_history_bits,
+      .local_history_table_size = lht_size,
+      .direct_branch_target = true,
+      .direct_jal_target = true,
+      .predict_taken =
+          [predictor](const PredictContext &ctx) {
+            if (ctx.decoded.is_jal) {
+              return true;
+            }
+            if (ctx.decoded.is_conditional) {
+              return predictor->predict_taken(ctx.pc);
+            }
+            return ctx.entry.valid;
+          },
+      .update = [predictor](const PredictContext &ctx, bool taken, uint32_t nxt_pc,
+                            BTB &btb) {
+        if (ctx.decoded.is_conditional) {
+          predictor->update(ctx.pc, taken);
+        }
+        default_update(ctx, taken, nxt_pc, btb);
+      },
+  };
+}
+
+AlgoConfig make_local_gshare_tournament_algo(size_t btb_size, size_t lht_size,
+                                             uint32_t local_history_bits,
+                                             size_t local_pht_size,
+                                             size_t chooser_size,
+                                             uint32_t ghr_bits) {
+  auto predictor = std::make_shared<LocalGlobalTournamentPredictor>(
+      lht_size, local_history_bits, local_pht_size, local_pht_size, chooser_size,
+      ghr_bits);
+  return {
+      .name = "local+gshare tournament + direct branch target",
+      .btb_size = btb_size,
+      .counter_table_size = local_pht_size,
       .chooser_size = chooser_size,
       .ghr_bits = ghr_bits,
+      .local_history_bits = local_history_bits,
+      .local_history_table_size = lht_size,
       .direct_branch_target = true,
       .direct_jal_target = true,
       .predict_taken =
@@ -413,11 +491,18 @@ bool test_algo(const AlgoConfig &algo) {
 
 void print_algo_header(const AlgoConfig &algo) {
   std::printf("Testing %s algorithm: BTB size = %zu", algo.name, algo.btb_size);
-  if (algo.counter_table_size != 0 && algo.ghr_bits == 0) {
+  if (algo.counter_table_size != 0 && algo.ghr_bits == 0 &&
+      algo.local_history_table_size == 0) {
     std::printf(", BHT size = %zu", algo.counter_table_size);
   } else if (algo.counter_table_size != 0) {
-    std::printf(", PHT size = %zu, GHR bits = %u", algo.counter_table_size,
-                algo.ghr_bits);
+    std::printf(", PHT size = %zu", algo.counter_table_size);
+    if (algo.ghr_bits != 0) {
+      std::printf(", GHR bits = %u", algo.ghr_bits);
+    }
+  }
+  if (algo.local_history_table_size != 0) {
+    std::printf(", LHT size = %zu, local history bits = %u",
+                algo.local_history_table_size, algo.local_history_bits);
   }
   if (algo.chooser_size != 0) {
     std::printf(", chooser size = %zu", algo.chooser_size);
@@ -431,24 +516,26 @@ void print_algo_header(const AlgoConfig &algo) {
 } // namespace
 
 int main() {
-  const std::vector<AlgoConfig> algorithms = {
-      {
-          .name = "BTFN",
-          .btb_size = kDefaultBTBSize,
-          .counter_table_size = 0,
-          .chooser_size = 0,
-          .ghr_bits = 0,
-          .predict_taken = predict_btfn,
-          .update = default_update,
-      },
-      make_two_bit_algo(kDefaultBTBSize, kDefaultCounterTableSize),
-      make_gshare_algo(kDefaultBTBSize, kDefaultCounterTableSize, kDefaultGHRBits,
-                       false),
-      make_gshare_algo(kDefaultBTBSize, kDefaultCounterTableSize, kDefaultGHRBits,
-                       true),
-      make_tournament_algo(kDefaultBTBSize, kDefaultCounterTableSize,
-                           kDefaultCounterTableSize, kDefaultGHRBits),
-  };
+  std::vector<AlgoConfig> algorithms;
+  for (size_t table_size : {kDefaultBTBSize, static_cast<size_t>(32)}) {
+    algorithms.push_back({
+        .name = "BTFN",
+        .btb_size = table_size,
+        .counter_table_size = 0,
+        .chooser_size = 0,
+        .ghr_bits = 0,
+        .predict_taken = predict_btfn,
+        .update = default_update,
+    });
+    algorithms.push_back(make_two_bit_algo(table_size, table_size));
+    algorithms.push_back(
+        make_gshare_algo(table_size, table_size, kDefaultGHRBits, true));
+    algorithms.push_back(
+        make_local_algo(table_size, table_size, kDefaultLocalHistoryBits, table_size));
+    algorithms.push_back(make_local_gshare_tournament_algo(
+        table_size, table_size, kDefaultLocalHistoryBits, table_size, table_size,
+        kDefaultGHRBits));
+  }
 
   for (const auto &algo : algorithms) {
     print_algo_header(algo);

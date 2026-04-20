@@ -15,10 +15,13 @@ Treat `build/`, `out/`, generated Verilog, and cache directories as disposable o
 - `make -C npc verilog`: emit merged Verilog into `npc/build/`.
 - `make -C npc ARCH=riscv32e-npc`: build the Verilator sim binary.
 - `make -C npc verilog-lint`: lint generated RTL with Verilator. `-PINCONNECTEMPTY` warnings may appear and can be ignored.
+- `make -C npc pack-fpga`: refresh `npc/build/pack-fpga/` and `npc/build/pack-fpga.zip` for the digital twin FPGA project.
 - `make -C am-kernels/tests/cpu-tests run ARCH=riscv32-jyd ALL=add`: build and run a CPU test on the selected platform. Prefer `ARCH=riscv32-jyd` over `riscv32e-npc` when validating changes.
 - `make -C npc reformat` / `make -C npc checkformat`: apply or verify Scala formatting.
 - `make -C nemu menuconfig` then `make -C nemu`: configure and build NEMU.
 - `make -C abstract-machine ARCH=riscv32-jyd`: build an AM image for a target architecture.
+- `./npc/scripts/update_digital_twin_pack_fpga.sh`: copy the current `pack-fpga` contents into the Windows Vivado digital twin project import directory.
+- `./npc/scripts/run_digital_twin_synth.sh`: open the Windows Vivado project and run `synth_1`; this script injects a synth pre-hook that promotes `Designutils 20-1307` and `Constraints 18-513` to errors so unsupported XDC syntax or invalid false-path startpoints fail fast.
 
 ## Coding Style & Naming Conventions
 Follow existing local style instead of reformatting unrelated code. In `npc/`, Scala formatting is enforced by `scalafmt` (`npc/.scalafmt.conf`): 2-space indentation, 120-column limit, and import sorting. Scala/Chisel source files generally use `UpperCamelCase.scala` for modules (for example, `BranchPredictor.scala`) and lower-case filenames for some pipeline blocks already present (for example, `ifu.scala`); preserve the surrounding convention in each area.
@@ -35,6 +38,13 @@ For `npc`, pair CPU tests with `make -C npc verilog` and `make -C npc verilog-li
 If you modify CSR-related code, you must also run the `rt-thread` (`rtt`) test because it is needed to cover CSR paths. For `rt-thread`, use `make -C rt-thread-am/bsp/abstract-machine run ARCH=<target>`; because it does not exit on its own, treat reaching the `msh />` prompt as success and stop the run manually. `Exception ETRACE` lines during that run are expected tracing output for `ecall`/`mret`, not failures.
 
 If you modify `JYDDevices` or other JYD-specific code, you must run tests with `ARCH=riscv32-jyd` so the JYD-only paths are covered.
+
+For digital twin FPGA packaging or XDC changes, use this validation flow:
+- Run `make -C npc pack-fpga`.
+- Run `./npc/scripts/update_digital_twin_pack_fpga.sh` to refresh the imported files under the Vivado project.
+- Run `./npc/scripts/run_digital_twin_synth.sh` before looking at timing results.
+- If Vivado reports `Designutils 20-1307` for `jyd_cdc.xdc`, treat it as a hard constraint-parse failure and fix the XDC before doing further timing analysis.
+- If Vivado reports `Constraints 18-513` for `jyd_cdc.xdc`, treat it as a hard constraint-targeting failure; the XDC parsed, but the selected `-from` objects are not valid startpoints.
 
 Platform device differences matter here:
 - `riscv32e-npc` expects a CLINT mapping at `AddrSpace.CLINT` (`0x02000000` range); AM/RT-Thread timer code reads `0x02000048/0x0200004c`, so removing CLINT from the `npc` SoC will hang `rt-thread`.

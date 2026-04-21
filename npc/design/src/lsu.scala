@@ -59,12 +59,12 @@ class LSU(
     extends Module {
   val io = IO(new LSUIO)
 
-  object State extends ChiselEnum {
-    val idle, waitResp, waitOut = Value
-  }
-  val state = RegInit(State.idle)
-  val isIdle = state === State.idle
-
+  // object State extends ChiselEnum {
+  //   val idle, waitResp, waitOut = Value
+  // }
+  // val state = RegInit(State.idle)
+  // val isIdle = state === State.idle
+  //
   val outWriteBackInfo = io.out.bits
 
   val in      = io.in.bits
@@ -75,37 +75,34 @@ class LSU(
   val isStore = in.isStore && io.in.valid
 
   val isMemOp = isMemLoad || isStore
-  val fireLocalBypass = isIdle && io.in.valid && (!isMemOp) && io.out.ready
-  val seesMemResp     = ((state === State.idle) && isMemOp && io.in.valid || (state === State.waitResp)) && memResp.valid
-
+  // val fireLocalBypass = isIdle && io.in.valid && (!isMemOp) && io.out.ready
+  // val seesMemResp     = ((state === State.idle) && isMemOp && io.in.valid || (state === State.waitResp)) && memResp.valid
+  //
   val activeReq      = io.in.bits
   val memRdRawData   = memResp.bits
 
-  io.in.ready := Mux(
-    isMemOp,
-    (seesMemResp || (state === State.waitOut)) && io.out.ready,
-    isIdle && io.out.ready
-  )
+  io.in.ready := io.out.ready
+  io.out.valid := io.in.valid
 
-  io.out.valid := fireLocalBypass || seesMemResp || (state === State.waitOut)
-
-  StageLogger(
-    clock,
-    StageLogConst.Event.stage,
-    StageLogConst.Stage.lsu,
-    io.in.fire,
-    io.in.bits.exuWriteBack.iid
-  )
-
-  val nxtStateWhenWaitOut  = Mux(io.out.ready, State.idle, State.waitOut)
-  val nxtStateWhenWaitResp = Mux(memResp.valid, nxtStateWhenWaitOut, State.waitResp)
-  state := MuxLookup(state, State.idle)(
-    Seq(
-      State.idle     -> Mux(io.in.valid && isMemOp, Mux(memResp.valid, nxtStateWhenWaitOut, State.waitResp), State.idle),
-      State.waitResp -> nxtStateWhenWaitResp,
-      State.waitOut  -> nxtStateWhenWaitOut
-    )
-  )
+  //
+  // io.in.ready := Mux(
+  //   isMemOp,
+  //   (seesMemResp || (state === State.waitOut)) && io.out.ready,
+  //   isIdle && io.out.ready
+  // )
+  //
+  // io.out.valid := fireLocalBypass || seesMemResp || (state === State.waitOut)
+  //
+  //
+  // val nxtStateWhenWaitOut  = Mux(io.out.ready, State.idle, State.waitOut)
+  // val nxtStateWhenWaitResp = Mux(memResp.valid, nxtStateWhenWaitOut, State.waitResp)
+  // state := MuxLookup(state, State.idle)(
+  //   Seq(
+  //     State.idle     -> Mux(io.in.valid && isMemOp, Mux(memResp.valid, nxtStateWhenWaitOut, State.waitResp), State.idle),
+  //     State.waitResp -> nxtStateWhenWaitResp,
+  //     State.waitOut  -> nxtStateWhenWaitOut
+  //   )
+  // )
 
   outWriteBackInfo.csr.en        := activeReq.exuWriteBack.csr.en
   outWriteBackInfo.csr.addr      := activeReq.exuWriteBack.csr.addr
@@ -119,6 +116,14 @@ class LSU(
   outWriteBackInfo.lsuFunc3t     := activeReq.func3t
   outWriteBackInfo.lsuAddrOffset := activeReq.destAddr(1, 0)
   outWriteBackInfo.iid           := activeReq.exuWriteBack.iid
+
+  StageLogger(
+    clock,
+    StageLogConst.Event.stage,
+    StageLogConst.Stage.lsu,
+    io.in.fire,
+    io.in.bits.exuWriteBack.iid
+  )
 }
 
 class LSUInputForDifftest extends Bundle {

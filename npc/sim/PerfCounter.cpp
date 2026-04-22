@@ -62,25 +62,99 @@ void CachePerfCounter::dumpStatistics(std::ostream &os) {
 }
 
 void RAWStallPerfCounter::update() {
-  if (hIsIDUStall.get()) {
+  const bool isAnyConflict = hIsAnyConflict.get();
+  const bool isConflictEXU = hIsConflictEXU.get();
+  const bool isConflictLSU = hIsConflictLSU.get();
+  const bool isConflictWBU = hIsConflictWBU.get();
+  const bool isConflictOnlyEXU = hIsConflictOnlyEXU.get();
+  const bool isConflictOnlyLSU = hIsConflictOnlyLSU.get();
+  const bool isConflictOnlyWBU = hIsConflictOnlyWBU.get();
+
+  const bool isStallEXU = hIsStallEXU.get();
+  const bool isStallLSU = hIsStallLSU.get();
+  const bool isStallWBU = hIsStallWBU.get();
+  const bool isStallOnlyEXU = hIsStallOnlyEXU.get();
+  const bool isStallOnlyLSU = hIsStallOnlyLSU.get();
+  const bool isStallOnlyWBU = hIsStallOnlyWBU.get();
+  const bool isIDUStall = hIsIDUStall.get();
+
+  if (isAnyConflict) {
+    cycAnyConflict++;
+  }
+  if (isConflictEXU) {
+    cycAllConflictEXU++;
+  }
+  if (isConflictLSU) {
+    cycAllConflictLSU++;
+  }
+  if (isConflictWBU) {
+    cycAllConflictWBU++;
+  }
+  if (isConflictOnlyEXU) {
+    cycConflictOnlyEXU++;
+  }
+  if (isConflictOnlyLSU) {
+    cycConflictOnlyLSU++;
+  }
+  if (isConflictOnlyWBU) {
+    cycConflictOnlyWBU++;
+  }
+
+  if (isStallEXU) {
+    cycStallEXU++;
+  }
+  if (isStallLSU) {
+    cycStallLSU++;
+  }
+  if (isStallWBU) {
+    cycStallWBU++;
+  }
+  if (isStallOnlyEXU) {
+    cycStallOnlyEXU++;
+  }
+  if (isStallOnlyLSU) {
+    cycStallOnlyLSU++;
+  }
+  if (isStallOnlyWBU) {
+    cycStallOnlyWBU++;
+  }
+
+  if (isIDUStall) {
     cycIDUStall++;
 
-    if (hIsConflictEXU.get()) {
+    if (isConflictEXU) {
       cycConflictEXU++;
     }
-    if (hIsConflictLSU.get()) {
+    if (isConflictLSU) {
       cycConflictLSU++;
     }
-    if (hIsConflictWBU.get()) {
+    if (isConflictWBU) {
       cycConflictWBU++;
     }
   }
 }
 void RAWStallPerfCounter::bind() {
-  hIsConflictEXU = &GetIDU()->bypassMux->isConflictWithEXU;
-  hIsConflictLSU = &GetIDU()->bypassMux->isConflictWithLSU;
-  hIsConflictWBU = &GetIDU()->bypassMux->isConflictWithWBU;
-  hIsIDUStall = &GetIDU()->bypassMux->isStall;
+  hIsAnyConflict = &GetIDU()->perfCounterLayer->rawStallPerfTap->io_isAnyConflict;
+  hIsConflictEXU = &GetIDU()->perfCounterLayer->rawStallPerfTap->io_isConflictEXU;
+  hIsConflictLSU = &GetIDU()->perfCounterLayer->rawStallPerfTap->io_isConflictLSU;
+  hIsConflictWBU = &GetIDU()->perfCounterLayer->rawStallPerfTap->io_isConflictWBU;
+  hIsConflictOnlyEXU =
+      &GetIDU()->perfCounterLayer->rawStallPerfTap->io_isConflictOnlyEXU;
+  hIsConflictOnlyLSU =
+      &GetIDU()->perfCounterLayer->rawStallPerfTap->io_isConflictOnlyLSU;
+  hIsConflictOnlyWBU =
+      &GetIDU()->perfCounterLayer->rawStallPerfTap->io_isConflictOnlyWBU;
+
+  hIsStallEXU = &GetIDU()->perfCounterLayer->rawStallPerfTap->io_isNeedStallEXU;
+  hIsStallLSU = &GetIDU()->perfCounterLayer->rawStallPerfTap->io_isNeedStallLSU;
+  hIsStallWBU = &GetIDU()->perfCounterLayer->rawStallPerfTap->io_isNeedStallWBU;
+  hIsStallOnlyEXU =
+      &GetIDU()->perfCounterLayer->rawStallPerfTap->io_isNeedStallOnlyEXU;
+  hIsStallOnlyLSU =
+      &GetIDU()->perfCounterLayer->rawStallPerfTap->io_isNeedStallOnlyLSU;
+  hIsStallOnlyWBU =
+      &GetIDU()->perfCounterLayer->rawStallPerfTap->io_isNeedStallOnlyWBU;
+  hIsIDUStall = &GetIDU()->perfCounterLayer->rawStallPerfTap->io_isAnyStall;
 }
 IDUFlushPerfCounter::IDUFlushReason IDUFlushPerfCounter::getCurReason() const {
   auto &exu = *GetEXU();
@@ -250,8 +324,15 @@ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(PipePerfManager, stageCtrs)
 
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(CachePerfCounter, totalVisitCount, hitCount,
                                    totalHitAccessCycles, rdMemCtr)
-NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(RAWStallPerfCounter, cycConflictEXU,
-                                   cycConflictLSU, cycConflictWBU, cycIDUStall)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(RAWStallPerfCounter, cycAnyConflict,
+                                   cycAllConflictEXU, cycAllConflictLSU,
+                                   cycAllConflictWBU, cycConflictEXU,
+                                   cycConflictLSU, cycConflictWBU,
+                                   cycConflictOnlyEXU, cycConflictOnlyLSU,
+                                   cycConflictOnlyWBU, cycIDUStall,
+                                   cycStallEXU, cycStallLSU, cycStallWBU,
+                                   cycStallOnlyEXU, cycStallOnlyLSU,
+                                   cycStallOnlyWBU)
 
 void to_json(nlohmann::json &j, const IDUFlushPerfCounter &c) {
   j["ctrName"] = c.ctrName;

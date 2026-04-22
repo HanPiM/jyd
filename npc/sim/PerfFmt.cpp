@@ -80,29 +80,83 @@ void PipePerfManager::dumpStatistics(std::ostream &os) {
 }
 void RAWStallPerfCounter::dumpStatistics(std::ostream &os) {
   os << "RAW Stall Performance Counter Statistics:\n";
+  const size_t multiConflictCycles =
+      cycAnyConflict - cycConflictOnlyEXU - cycConflictOnlyLSU -
+      cycConflictOnlyWBU;
+  const size_t multiStallCycles =
+      cycIDUStall - cycStallOnlyEXU - cycStallOnlyLSU - cycStallOnlyWBU;
+  auto percentOfTotal = [](size_t cycles) {
+    return sim_get_cycle() == 0
+               ? NAN
+               : ((double)cycles / (double)sim_get_cycle()) * 100.0;
+  };
+  auto percentOfBase = [](size_t cycles, size_t base) {
+    return base == 0 ? NAN : ((double)cycles / (double)base) * 100.0;
+  };
+
   double stallPerc =
       sim_get_cycle() == 0
           ? NAN
           : ((double)cycIDUStall / (double)sim_get_cycle()) * 100.0;
+  const double conflictPerc = percentOfTotal(cycAnyConflict);
+  os << "total RAW conflict cycles: " << cycAnyConflict << " (" << conflictPerc
+     << " %)\n";
   os << "total RAW stall cycles: " << cycIDUStall << " (" << stallPerc
      << " %)\n";
-  Table t;
 
-  t.add_row({"Reason", "Stall Cycles", "Stall %\n(in tot)",
-             "Stall %\n(in all stalls)"});
-  auto addRow = [&](const char *reason, size_t cycles) {
-    double percTot = sim_get_cycle() == 0
-                         ? NAN
-                         : ((double)cycles / (double)sim_get_cycle()) * 100.0;
-    double percStall =
-        cycIDUStall == 0 ? NAN : ((double)cycles / (double)cycIDUStall) * 100.0;
-    t.add_row(RowStream{} << reason << cycles << percTot << percStall);
+  os << "Legacy conflict counts in stall cycles:\n";
+  Table legacyTable;
+  legacyTable.add_row({"Reason", "Cycles", "%\n(in tot)",
+                       "%\n(in all stalls)"});
+  auto addLegacyRow = [&](const char *reason, size_t cycles) {
+    legacyTable.add_row(RowStream{}
+                        << reason << cycles << percentOfTotal(cycles)
+                        << percentOfBase(cycles, cycIDUStall));
   };
-  addRow("EXU conflict", cycConflictEXU);
-  addRow("LSU conflict", cycConflictLSU);
-  addRow("WBU conflict", cycConflictWBU);
+  addLegacyRow("EXU conflict", cycConflictEXU);
+  addLegacyRow("LSU conflict", cycConflictLSU);
+  addLegacyRow("WBU conflict", cycConflictWBU);
+  _PrintTable(legacyTable, os);
 
-  _PrintTable(t, os);
+  os << "All conflict cycles. Per-source rows can overlap; only/multi-source "
+        "rows are exclusive:\n";
+  Table conflictTable;
+  conflictTable.add_row({"Reason", "Cycles", "%\n(in tot)",
+                         "%\n(in all conflicts)"});
+  auto addConflictRow = [&](const char *reason, size_t cycles) {
+    conflictTable.add_row(RowStream{}
+                          << reason << cycles << percentOfTotal(cycles)
+                          << percentOfBase(cycles, cycAnyConflict));
+  };
+  addConflictRow("Any conflict", cycAnyConflict);
+  addConflictRow("EXU conflict", cycAllConflictEXU);
+  addConflictRow("LSU conflict", cycAllConflictLSU);
+  addConflictRow("WBU conflict", cycAllConflictWBU);
+  addConflictRow("EXU only conflict", cycConflictOnlyEXU);
+  addConflictRow("LSU only conflict", cycConflictOnlyLSU);
+  addConflictRow("WBU only conflict", cycConflictOnlyWBU);
+  addConflictRow("Multi-source conflict", multiConflictCycles);
+  _PrintTable(conflictTable, os);
+
+  os << "Real stall cycles. Per-source rows can overlap; only/multi-source "
+        "rows are exclusive:\n";
+  Table stallTable;
+  stallTable.add_row({"Reason", "Cycles", "%\n(in tot)",
+                      "%\n(in all stalls)"});
+  auto addStallRow = [&](const char *reason, size_t cycles) {
+    stallTable.add_row(RowStream{}
+                       << reason << cycles << percentOfTotal(cycles)
+                       << percentOfBase(cycles, cycIDUStall));
+  };
+  addStallRow("Any stall", cycIDUStall);
+  addStallRow("EXU stall-source", cycStallEXU);
+  addStallRow("LSU stall-source", cycStallLSU);
+  addStallRow("WBU stall-source", cycStallWBU);
+  addStallRow("EXU only stall-source", cycStallOnlyEXU);
+  addStallRow("LSU only stall-source", cycStallOnlyLSU);
+  addStallRow("WBU only stall-source", cycStallOnlyWBU);
+  addStallRow("Multi-source stall", multiStallCycles);
+  _PrintTable(stallTable, os);
 }
 
 const char *IDUFlushPerfCounter::nameOfReason(int r) {

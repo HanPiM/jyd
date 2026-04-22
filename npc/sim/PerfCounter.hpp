@@ -260,15 +260,40 @@ public:
 };
 
 struct RAWStallPerfCounter : public PerfCounterBase {
+  SignalHandle hIsAnyConflict;
   SignalHandle hIsConflictEXU;
   SignalHandle hIsConflictLSU;
   SignalHandle hIsConflictWBU;
+  SignalHandle hIsConflictOnlyEXU;
+  SignalHandle hIsConflictOnlyLSU;
+  SignalHandle hIsConflictOnlyWBU;
+
+  SignalHandle hIsStallEXU;
+  SignalHandle hIsStallLSU;
+  SignalHandle hIsStallWBU;
+  SignalHandle hIsStallOnlyEXU;
+  SignalHandle hIsStallOnlyLSU;
+  SignalHandle hIsStallOnlyWBU;
   SignalHandle hIsIDUStall;
 
+  size_t cycAnyConflict = 0;
+  size_t cycAllConflictEXU = 0;
+  size_t cycAllConflictLSU = 0;
+  size_t cycAllConflictWBU = 0;
   size_t cycConflictEXU = 0;
   size_t cycConflictLSU = 0;
   size_t cycConflictWBU = 0;
+  size_t cycConflictOnlyEXU = 0;
+  size_t cycConflictOnlyLSU = 0;
+  size_t cycConflictOnlyWBU = 0;
+
   size_t cycIDUStall = 0;
+  size_t cycStallEXU = 0;
+  size_t cycStallLSU = 0;
+  size_t cycStallWBU = 0;
+  size_t cycStallOnlyEXU = 0;
+  size_t cycStallOnlyLSU = 0;
+  size_t cycStallOnlyWBU = 0;
 
   RAWStallPerfCounter() { ctrName = "RAWStallPerfCounter"; }
 

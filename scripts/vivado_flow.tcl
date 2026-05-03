@@ -67,6 +67,25 @@ proc collect_files_recursive {dir} {
   return $files
 }
 
+proc remove_missing_files_from_filesets {} {
+  foreach fileset_name [get_filesets] {
+    set fileset_files [get_files -quiet -of_objects $fileset_name]
+    set missing_files {}
+    foreach src $fileset_files {
+      if {![file exists $src]} {
+        lappend missing_files $src
+      }
+    }
+    if {[llength $missing_files] > 0} {
+      puts "Removing missing files from $fileset_name:"
+      foreach missing_file $missing_files {
+        puts "  $missing_file"
+      }
+      remove_files -quiet -fileset $fileset_name $missing_files
+    }
+  }
+}
+
 proc refresh_pack_fpga_sources {project_path} {
   set project_dir [file dirname $project_path]
   set pack_dir [file normalize [file join $project_dir digital_twin.srcs sources_1 imports pack-fpga]]
@@ -110,6 +129,7 @@ if {[catch {open_project $project_path} open_err]} {
   fail "open_project failed: $open_err"
 }
 
+remove_missing_files_from_filesets
 refresh_pack_fpga_sources $project_path
 set_ip_coe blk_mem_gen_irom $irom_coe
 set_ip_coe blk_mem_gen_dram $dram_coe

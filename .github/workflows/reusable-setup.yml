@@ -173,6 +173,19 @@ jobs:
           name: packed-fpga
           path: ${{ steps.set-jyd-home.outputs.JYD_HOME }}/npc/build/pack-fpga.zip
 
+      - name: Upload FPGA COE samples
+        uses: actions/upload-artifact@v6
+        with:
+          name: test-coes
+          path: |
+            ${{ steps.set-jyd-home.outputs.JYD_HOME }}/jyd-tests/2026/coe/src0/irom.coe
+            ${{ steps.set-jyd-home.outputs.JYD_HOME }}/jyd-tests/2026/coe/src0/dram.coe
+            ${{ steps.set-jyd-home.outputs.JYD_HOME }}/jyd-tests/2026/coe/src1/irom.coe
+            ${{ steps.set-jyd-home.outputs.JYD_HOME }}/jyd-tests/2026/coe/src1/dram.coe
+            ${{ steps.set-jyd-home.outputs.JYD_HOME }}/jyd-tests/2026/coe/src2/irom.coe
+            ${{ steps.set-jyd-home.outputs.JYD_HOME }}/jyd-tests/2026/coe/src2/dram.coe
+          retention-days: 1
+
       - name: Pack workbench
         run: |
           PARENT=$(dirname $JYD_HOME)

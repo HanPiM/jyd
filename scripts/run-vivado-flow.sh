@@ -11,6 +11,7 @@ Options:
   --mode <mode>           synth, impl, or bitstream (default: bitstream)
   --vivado <path>         Vivado executable (default: $VIVADO_BIN or vivado in PATH)
   --result-dir <path>     Result directory (default: <project-root>/result/<sample>)
+  --skip-project-update   Assume pack-fpga and COE imports are already applied
   -h, --help              Show this help
 EOF
 }
@@ -22,6 +23,7 @@ RESULT_DIR=""
 PACK_ZIP=""
 COE_DIR=""
 SAMPLE=""
+SKIP_PROJECT_UPDATE=0
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
@@ -53,6 +55,10 @@ while [ "$#" -gt 0 ]; do
       SAMPLE="$2"
       shift 2
       ;;
+    --skip-project-update)
+      SKIP_PROJECT_UPDATE=1
+      shift
+      ;;
     -h|--help)
       usage
       exit 0
@@ -71,16 +77,15 @@ if [[ "$MODE" != "synth" && "$MODE" != "impl" && "$MODE" != "bitstream" ]]; then
 fi
 
 if [ -z "$PACK_ZIP" ] || [ -z "$COE_DIR" ] || [ -z "$SAMPLE" ]; then
-  usage >&2
-  exit 1
+  if [ "$SKIP_PROJECT_UPDATE" -ne 1 ]; then
+    usage >&2
+    exit 1
+  fi
 fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$PROJECT_ROOT" && pwd)"
 PROJECT_FILE="$PROJECT_ROOT/digital_twin.xpr"
-PACK_DEST="$PROJECT_ROOT/digital_twin.srcs/sources_1/imports/pack-fpga"
-COE_SRC="$COE_DIR/$SAMPLE"
-COE_DEST="$PROJECT_ROOT/digital_twin.srcs/sources_1/imports/ci-coe/$SAMPLE"
 FLOW_TCL="$SCRIPT_DIR/vivado_flow.tcl"
 PRE_HOOK="$SCRIPT_DIR/vivado_pre_hook.tcl"
 
@@ -92,7 +97,7 @@ if [ -z "$VIVADO_BIN" ]; then
   VIVADO_BIN="$(command -v vivado || true)"
 fi
 
-for required in "$PROJECT_FILE" "$PACK_ZIP" "$COE_SRC/irom.coe" "$COE_SRC/dram.coe" "$FLOW_TCL" "$PRE_HOOK"; do
+for required in "$PROJECT_FILE" "$FLOW_TCL" "$PRE_HOOK"; do
   if [ ! -e "$required" ]; then
     echo "required path not found: $required" >&2
     exit 1
@@ -104,14 +109,16 @@ if [ -z "$VIVADO_BIN" ] || [ ! -x "$VIVADO_BIN" ]; then
   exit 1
 fi
 
-rm -rf "$PACK_DEST"
-mkdir -p "$PACK_DEST"
-unzip -q "$PACK_ZIP" -d "$PACK_DEST"
+mkdir -p "$RESULT_DIR"
 
-rm -rf "$COE_DEST"
-mkdir -p "$COE_DEST" "$RESULT_DIR"
-cp "$COE_SRC/irom.coe" "$COE_DEST/irom.coe"
-cp "$COE_SRC/dram.coe" "$COE_DEST/dram.coe"
+if [ "$SKIP_PROJECT_UPDATE" -ne 1 ]; then
+  "$SCRIPT_DIR/run-vivado-project-update.sh" \
+    --project-root "$PROJECT_ROOT" \
+    --pack-zip "$PACK_ZIP" \
+    --coe-dir "$COE_DIR" \
+    --sample "$SAMPLE" \
+    --vivado "$VIVADO_BIN"
+fi
 
 echo "Project root: $PROJECT_ROOT"
 echo "Mode: $MODE"
@@ -122,7 +129,7 @@ echo "Result dir: $RESULT_DIR"
 "$VIVADO_BIN" \
   -mode batch \
   -source "$FLOW_TCL" \
-  -tclargs "$MODE" "$PROJECT_FILE" "$PRE_HOOK" "$RESULT_DIR" "$COE_DEST/irom.coe" "$COE_DEST/dram.coe"
+  -tclargs "$MODE" "$PROJECT_FILE" "$PRE_HOOK" "$RESULT_DIR"
 
 for log_file in "$PROJECT_ROOT"/vivado.log "$PROJECT_ROOT"/vivado.jou; do
   if [ -f "$log_file" ]; then

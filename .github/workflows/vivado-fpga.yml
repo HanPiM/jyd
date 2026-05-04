@@ -78,4 +78,50 @@ jobs:
 
       - name: Add Vivado summary
         run: |
-          echo "- \`${{ matrix.sample }}\`: [vivado-result-${{ matrix.sample }}](${{ steps.upload-vivado-result.outputs.artifact-url }})" >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo "## Vivado result (${{ matrix.sample }})"
+            echo ""
+            echo "- Artifact: [vivado-result-${{ matrix.sample }}](${{ steps.upload-vivado-result.outputs.artifact-url }})"
+            echo ""
+            echo "### Timing"
+            echo ""
+            echo '```text'
+            python3 ./jyd-vivado-proj/scripts/extract-timing-summary.py ./vivado-result/${{ matrix.sample }}
+            echo '```'
+            echo ""
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Update FPGA burn submitter
+        run: |
+          python3 ~/jyd/burn.py update
+
+      - name: Prepare top.bit
+        run: |
+          set -euo pipefail
+          result_dir="./vivado-result/${{ matrix.sample }}"
+          top_bit="$result_dir/top.bit"
+          if [ ! -f "$top_bit" ]; then
+            mapfile -t bitfiles < <(find "$result_dir" -maxdepth 1 -type f -name '*.bit' | sort)
+            if [ "${#bitfiles[@]}" -ne 1 ]; then
+              echo "Expected exactly one .bit file in $result_dir, found ${#bitfiles[@]}" >&2
+              printf '%s\n' "${bitfiles[@]}" >&2
+              exit 1
+            fi
+            cp "${bitfiles[0]}" "$top_bit"
+          fi
+
+      - name: Run FPGA burn test
+        id: burn-test
+        run: |
+          set +e
+          python3 ~/jyd/burn.py ./vivado-result/${{ matrix.sample }}/top.bit > burn-result-${{ matrix.sample }}.json
+          status=$?
+          set -e
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Add FPGA burn summary
+        if: always()
+        run: |
+          python3 ./jyd-vivado-proj/scripts/format-burn-summary.py burn-result-${{ matrix.sample }}.json --sample '${{ matrix.sample }}' >> "$GITHUB_STEP_SUMMARY"
+          exit "${{ steps.burn-test.outputs.status || 1 }}"

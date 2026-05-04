@@ -1,9 +1,9 @@
 # "一生一芯"工程项目
 
-这是"一生一芯"的工程项目. 通过运行
-```bash
-bash init.sh subproject-name
-```
-进行初始化, 具体请参考[实验讲义][lecture note].
+这是"一生一芯"的工程项目
 
-[lecture note]: https://ysyx.oscc.cc/docs/
+## Vivado FPGA CI
+
+`.github/workflows/vivado-fpga.yml` only checks out
+`WangYiJie020/jyd-vivado-proj` in the Vivado job. Timing extraction and burn
+summary formatting scripts both live in that Vivado project checkout.

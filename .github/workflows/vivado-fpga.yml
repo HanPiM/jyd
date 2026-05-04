@@ -59,7 +59,15 @@ jobs:
           name: test-coes
           path: artifacts/test-coes
 
+      - name: Restore Vivado result cache
+        id: vivado-result-cache
+        uses: actions/cache/restore@v5
+        with:
+          path: vivado-result/${{ matrix.sample }}
+          key: ${{ runner.os }}-vivado-result-${{ matrix.sample }}-${{ hashFiles('jyd-vivado-proj/digital_twin.srcs/**', 'jyd-vivado-proj/digital_twin.tcl', 'jyd-vivado-proj/digital_twin.xpr') }}-${{ hashFiles('artifacts/packed-fpga/pack-fpga.zip') }}
+
       - name: Run Vivado workflow (${{ matrix.sample }})
+        if: steps.vivado-result-cache.outputs.cache-hit != 'true'
         run: |
           ./jyd-vivado-proj/scripts/run-vivado-flow.sh \
             --project-root ./jyd-vivado-proj \
@@ -68,6 +76,13 @@ jobs:
             --sample '${{ matrix.sample }}' \
             --mode bitstream \
             --result-dir ./vivado-result/${{ matrix.sample }}
+
+      - name: Save Vivado result cache
+        if: steps.vivado-result-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
+        with:
+          path: vivado-result/${{ matrix.sample }}
+          key: ${{ steps.vivado-result-cache.outputs.cache-primary-key }}
 
       - name: Upload Vivado result
         id: upload-vivado-result

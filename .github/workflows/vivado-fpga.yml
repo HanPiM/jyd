@@ -64,7 +64,7 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: vivado-result/${{ matrix.sample }}
-          key: ${{ runner.os }}-vivado-result-${{ matrix.sample }}-${{ hashFiles('jyd-vivado-proj/digital_twin.srcs/**', 'jyd-vivado-proj/digital_twin.tcl', 'jyd-vivado-proj/digital_twin.xpr') }}-${{ hashFiles('artifacts/packed-fpga/pack-fpga.zip') }}
+          key: ${{ runner.os }}-vivado-result-${{ matrix.sample }}-${{ hashFiles('jyd-vivado-proj/digital_twin.srcs/**', 'jyd-vivado-proj/digital_twin.tcl', 'jyd-vivado-proj/digital_twin.xpr') }}-${{ needs.setup.outputs.PACK_FPGA_HASH }}
 
       - name: Update Vivado project (${{ matrix.sample }})
         run: |

@@ -15,6 +15,9 @@ on:
       MAKEFLAGS:
         description: Common make flags for downstream jobs
         value: ${{ jobs.setup.outputs.MAKEFLAGS }}
+      PACK_FPGA_HASH:
+        description: Hash key for generated NPC Verilog / packed FPGA sources
+        value: ${{ jobs.setup.outputs.PACK_FPGA_HASH }}
 
 permissions:
   contents: read
@@ -27,6 +30,7 @@ jobs:
       VFILE: ${{ steps.vfilename.outputs.VFILE }}
       DESIGN: ${{ steps.vfilename.outputs.DESIGN }}
       MAKEFLAGS: ${{ steps.set-env.outputs.MAKEFLAGS }}
+      PACK_FPGA_HASH: ${{ steps.pack-fpga-hash.outputs.PACK_FPGA_HASH }}
     steps:
       - name: Set Git user and email
         run: |
@@ -110,6 +114,11 @@ jobs:
           make -C $JYD_AM_HOME clean-all
           make -C $JYD_NPC_HOME clean
 
+      - name: Compute packed FPGA source hash
+        id: pack-fpga-hash
+        run: |
+          echo "PACK_FPGA_HASH=${{ hashFiles('npc/design/**', 'npc/scripts/**', 'npc/Makefile') }}" >> "$GITHUB_OUTPUT"
+
       - name: Cache generated NPC verilog
         id: npc-verilog-cache
         uses: actions/cache@v5
@@ -119,7 +128,7 @@ jobs:
             npc/build/verilog.done
             npc/build/*.v
             npc/build/*.sv
-          key: ${{ runner.os }}-npc-verilog-${{ hashFiles('npc/design/**', 'npc/scripts/**', 'npc/Makefile') }}
+          key: ${{ runner.os }}-npc-verilog-${{ steps.pack-fpga-hash.outputs.PACK_FPGA_HASH }}
 
       - name: Refresh cached NPC verilog timestamps
         if: steps.npc-verilog-cache.outputs.cache-hit == 'true'

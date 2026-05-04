@@ -103,8 +103,21 @@ if {[catch {generate_target all $mem_ips} gen_err]} {
 }
 
 puts "Saving project"
-if {[catch {save_project} save_err]} {
-  fail "save_project failed: $save_err"
+set project_name [get_property NAME [current_project]]
+set project_dir [get_property DIRECTORY [current_project]]
+set save_errors {}
+if {[catch {save_project_as -force -name $project_name -dir $project_dir} save_err]} {
+  lappend save_errors $save_err
+  if {[catch {save_project_as -force $project_name $project_dir} save_err]} {
+    lappend save_errors $save_err
+    if {[catch {save_project} save_err]} {
+      lappend save_errors $save_err
+      puts "Project save skipped after update:"
+      foreach err $save_errors {
+        puts "  $err"
+      }
+    }
+  }
 }
 
 close_project

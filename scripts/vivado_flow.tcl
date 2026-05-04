@@ -58,6 +58,12 @@ if {[catch {open_project $project_path} open_err]} {
   fail "open_project failed: $open_err"
 }
 
+puts "Regenerating IP targets"
+set mem_ips [concat [get_ips blk_mem_gen_irom] [get_ips blk_mem_gen_dram]]
+if {[catch {generate_target all $mem_ips} gen_err]} {
+  fail "generate_target failed: $gen_err"
+}
+
 configure_run_pre_hooks synth_1 $pre_hook {SYNTH_DESIGN}
 configure_run_pre_hooks impl_1 $pre_hook {INIT_DESIGN OPT_DESIGN PLACE_DESIGN PHYS_OPT_DESIGN ROUTE_DESIGN POST_ROUTE_PHYS_OPT_DESIGN WRITE_BITSTREAM}
 

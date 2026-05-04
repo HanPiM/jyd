@@ -96,29 +96,6 @@ refresh_pack_fpga_sources $project_path
 set_ip_coe blk_mem_gen_irom $irom_coe
 set_ip_coe blk_mem_gen_dram $dram_coe
 
-puts "Regenerating IP targets"
-set mem_ips [concat [get_ips blk_mem_gen_irom] [get_ips blk_mem_gen_dram]]
-if {[catch {generate_target all $mem_ips} gen_err]} {
-  fail "generate_target failed: $gen_err"
-}
-
-puts "Saving project"
-set project_name [get_property NAME [current_project]]
-set project_dir [get_property DIRECTORY [current_project]]
-set save_errors {}
-if {[catch {save_project_as -force -name $project_name -dir $project_dir} save_err]} {
-  lappend save_errors $save_err
-  if {[catch {save_project_as -force $project_name $project_dir} save_err]} {
-    lappend save_errors $save_err
-    if {[catch {save_project} save_err]} {
-      lappend save_errors $save_err
-      puts "Project save skipped after update:"
-      foreach err $save_errors {
-        puts "  $err"
-      }
-    }
-  }
-}
-
+puts "Project update complete"
 close_project
 exit 0

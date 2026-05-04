@@ -59,6 +59,28 @@ jobs:
           name: test-coes
           path: artifacts/test-coes
 
+      - name: Update Vivado project (${{ matrix.sample }})
+        run: |
+          ./jyd-vivado-proj/scripts/run-vivado-project-update.sh \
+            --project-root ./jyd-vivado-proj \
+            --pack-zip ./artifacts/packed-fpga/pack-fpga.zip \
+            --coe-dir ./artifacts/test-coes \
+            --sample '${{ matrix.sample }}'
+
+      - name: Archive Vivado project
+        run: |
+          set -euo pipefail
+          mkdir -p vivado-project-artifacts
+          zip -qr "vivado-project-artifacts/proj-${{ matrix.sample }}.zip" jyd-vivado-proj -x 'jyd-vivado-proj/.git/*'
+
+      - name: Upload Vivado project
+        id: upload-vivado-project
+        uses: actions/upload-artifact@v6
+        with:
+          name: proj-${{ matrix.sample }}.zip
+          path: vivado-project-artifacts/proj-${{ matrix.sample }}.zip
+          retention-days: 90
+
       - name: Restore Vivado result cache
         id: vivado-result-cache
         uses: actions/cache/restore@v5
@@ -75,7 +97,8 @@ jobs:
             --coe-dir ./artifacts/test-coes \
             --sample '${{ matrix.sample }}' \
             --mode bitstream \
-            --result-dir ./vivado-result/${{ matrix.sample }}
+            --result-dir ./vivado-result/${{ matrix.sample }} \
+            --skip-project-update
 
       - name: Save Vivado result cache
         if: steps.vivado-result-cache.outputs.cache-hit != 'true'
@@ -97,6 +120,7 @@ jobs:
             echo "## Vivado result (${{ matrix.sample }})"
             echo ""
             echo "- Artifact: [vivado-result-${{ matrix.sample }}](${{ steps.upload-vivado-result.outputs.artifact-url }})"
+            echo "- Project: [proj-${{ matrix.sample }}.zip](${{ steps.upload-vivado-project.outputs.artifact-url }})"
             echo ""
             echo "### Timing"
             echo ""

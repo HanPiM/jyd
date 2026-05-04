@@ -92,10 +92,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"- SEG: `{seg}`")
     if led_text:
         print(f"- LED: `{led_text}`")
-    if result.get("workflow_url"):
-        print(f"- Workflow: {result['workflow_url']}")
-    if result.get("error"):
-        print(f"- Error: `{result['error']}`")
+    if "has_error" in result:
+        print(f"- Has error: `{bool(result['has_error'])}`")
 
     try:
         board = format_led_ascii(led)

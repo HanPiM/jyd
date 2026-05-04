@@ -6,7 +6,7 @@ Vivado digital twin project used by the `jyd` GitHub Actions FPGA flow.
 
 - `scripts/run-vivado-flow.sh`: runs synth, implementation, or bitstream generation and copies Vivado reports into the selected result directory.
 - `scripts/extract-timing-summary.py`: extracts the `Design Timing Summary` section from `top_timing_summary_routed.rpt` for GitHub Actions summaries.
-- `scripts/format-burn-summary.py`: formats the `jyd-submit-bits` JSON result for the caller's GitHub Actions summary, including LED hex and ASCII output.
+- `scripts/format-burn-summary.py`: formats the `jyd-submit-bits` JSON result for the caller's GitHub Actions summary, including LED hex, LED ASCII output, and the public `has_error` flag.
 
 Example:
 

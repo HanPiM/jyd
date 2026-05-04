@@ -1,3 +1,5 @@
+__pycache__/
+
 # Vivado generated workspace
 .Xil/
 *.cache/

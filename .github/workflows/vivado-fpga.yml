@@ -100,6 +100,21 @@ jobs:
             --result-dir ./vivado-result/${{ matrix.sample }} \
             --skip-project-update
 
+      - name: Prepare top.bit
+        run: |
+          set -euo pipefail
+          result_dir="./vivado-result/${{ matrix.sample }}"
+          top_bit="$result_dir/top.bit"
+          if [ ! -f "$top_bit" ]; then
+            mapfile -t bitfiles < <(find "$result_dir" -type f -name '*.bit' | sort)
+            if [ "${#bitfiles[@]}" -ne 1 ]; then
+              echo "Expected exactly one .bit file in $result_dir, found ${#bitfiles[@]}" >&2
+              find "$result_dir" -maxdepth 4 -type f | sort >&2
+              exit 1
+            fi
+            cp "${bitfiles[0]}" "$top_bit"
+          fi
+
       - name: Save Vivado result cache
         if: steps.vivado-result-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v5
@@ -133,21 +148,6 @@ jobs:
       - name: Update FPGA burn submitter
         run: |
           python3 ~/jyd/burn.py update
-
-      - name: Prepare top.bit
-        run: |
-          set -euo pipefail
-          result_dir="./vivado-result/${{ matrix.sample }}"
-          top_bit="$result_dir/top.bit"
-          if [ ! -f "$top_bit" ]; then
-            mapfile -t bitfiles < <(find "$result_dir" -maxdepth 1 -type f -name '*.bit' | sort)
-            if [ "${#bitfiles[@]}" -ne 1 ]; then
-              echo "Expected exactly one .bit file in $result_dir, found ${#bitfiles[@]}" >&2
-              printf '%s\n' "${bitfiles[@]}" >&2
-              exit 1
-            fi
-            cp "${bitfiles[0]}" "$top_bit"
-          fi
 
       - name: Run FPGA burn test
         id: burn-test

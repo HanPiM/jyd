@@ -59,10 +59,6 @@ ARCHIVE   = $(WORK_DIR)/build/$(NAME)-$(ARCH).a
 OBJS      = $(addprefix $(DST_DIR)/, $(addsuffix .o, $(basename $(SRCS))))
 LIBS     := $(sort $(LIBS) am klib) # lazy evaluation ("=") causes infinite recursions
 
-ifneq ($(ARCH),riscv32e-ysyxsoc)
-LIBS += kasan
-endif
-
 LINKAGE   = $(OBJS)  # library archives are added by LIB_TEMPLATE below
 
 ## 3. General Compilation Flags
@@ -130,10 +126,6 @@ CFLAGS	 += -ffreestanding
 
 ASFLAGS  += -MMD $(INCFLAGS)
 LDFLAGS  += -z noexecstack $(addprefix -T, $(LDSCRIPTS))
-
-## kasan
-
-include $(JYD_AM_HOME)/scripts/kasan.mk
 
 ## 4. Arch-Specific Configurations
 

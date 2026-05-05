@@ -18,13 +18,6 @@ typedef struct {
 
 // string.h
 
-#ifdef KASAN_ENABLED
-#include KASAN_MEM_H
-#else
-#define memset kmemset
-#define memcpy kmemcpy
-#endif
-
 void *kmemcpy(void *out, const void *in, size_t n);
 void  *kmemset    (void *s, int c, size_t n);
 void  *_no_asan_kmemzero(void *s,size_t n);
@@ -39,15 +32,11 @@ int    strcmp    (const char *s1, const char *s2);
 int    strncmp   (const char *s1, const char *s2, size_t n);
 
 // stdlib.h
-#ifdef KASAN_ENABLED
-void  *malloc    (unsigned long size);
-void   free      (void *ptr);
-#else
 void  *kmalloc   (size_t size);
 void   kfree     (void *ptr);
 #define malloc  kmalloc
 #define free    kfree
-#endif
+
 void   srand     (unsigned int seed);
 int    rand      (void);
 int    abs       (int x);

@@ -1,8 +1,6 @@
 #include <am.h>
 #include <nemu.h>
 
-#include <kasan_init.h>
-
 extern char _heap_start;
 extern char __heap_end;
 int main(const char *args);
@@ -21,7 +19,6 @@ void halt(int code) {
   while (1);
 }
 void _trm_init() { 
-	kasan_init();
   int ret = main(mainargs);
   halt(ret);
 }

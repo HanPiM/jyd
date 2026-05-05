@@ -1,7 +1,7 @@
 AM_SRCS := riscv/jyd/start.S \
            riscv/jyd/trm.c \
            riscv/npc/ioe.c \
-           riscv/npc/timer.c \
+           riscv/jyd/timer.c \
            riscv/npc/input.c \
            riscv/npc/cte.c \
            riscv/npc/trap.S 
@@ -41,7 +41,17 @@ image: image-dep
 	@# 注意：最后一行需要以分号结尾，手动或用 sed 修正最后一行
 	@sed -i '$$s/,/;/' $(IMG_DATA_COE)
 
+
+ifeq ($(VSIM_iverilog),1)
+  SIM_TARGET = sim-iverilog
+  ifeq ($(VSIM_netlist),1)
+    SIM_TARGET = sim-iverilog-netlist
+  endif
+else
+  SIM_TARGET = sim ARGS='-b'
+endif
+
 run: insert-arg
-	@$(MAKE) -C $(JYD_NPC_HOME) sim ARGS='-b' IMG=$(IMAGE).bin
+	@$(MAKE) -C $(JYD_NPC_HOME) $(SIM_TARGET) IMG=$(IMAGE).bin
 
 .PHONY: insert-arg

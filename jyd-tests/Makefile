@@ -3,10 +3,12 @@ YEAR ?= 2026
 
 COE_ROOT := $(ROOT_DIR)/$(YEAR)/coe
 BIN_ROOT := $(ROOT_DIR)/$(YEAR)/bin
+ALL_BIN_ROOT := $(ROOT_DIR)/$(YEAR)/all-bin
 PROC_COE := $(ROOT_DIR)/proc_coe.sh
+PROC_COE_DIR := $(ROOT_DIR)/proc_coe_dir.sh
 NPC_DIR := $(ROOT_DIR)/../npc
 
-KNOWN_TARGETS := run help list
+KNOWN_TARGETS := run all-bin help list
 TEST_GOALS := $(filter-out $(KNOWN_TARGETS),$(MAKECMDGOALS))
 TEST_NAME := $(firstword $(TEST_GOALS))
 
@@ -16,7 +18,7 @@ IMG_BIN := $(BIN_ROOT)/irom.bin
 DATA_BIN := $(BIN_ROOT)/irom.data.bin
 DISASM_TXT := $(BIN_ROOT)/$(TEST_NAME).txt
 
-.PHONY: run help list $(TEST_GOALS)
+.PHONY: run all-bin help list $(TEST_GOALS)
 
 run: $(IMG_BIN) $(DATA_BIN) $(DISASM_TXT)
 	@if [ -z "$(TEST_NAME)" ]; then \
@@ -41,11 +43,16 @@ $(DATA_BIN): $(DRAM_COE) $(PROC_COE)
 	@"$(PROC_COE)" -nodisasm "$(DRAM_COE)" "$(BIN_ROOT)"
 	@mv -f "$(BIN_ROOT)/dram.bin" "$(DATA_BIN)"
 
+all-bin: $(PROC_COE_DIR)
+	@mkdir -p "$(ALL_BIN_ROOT)"
+	@"$(PROC_COE_DIR)" "$(COE_ROOT)" "$(ALL_BIN_ROOT)"
+
 list:
 	@find "$(COE_ROOT)" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort
 
 help:
 	@echo "Usage: make run <sample> [YEAR=2026]"
+	@echo "       make all-bin [YEAR=2026]"
 	@echo "Example: make run src0"
 	@echo "Samples:"
 	@$(MAKE) -s list YEAR="$(YEAR)"

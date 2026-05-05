@@ -73,8 +73,8 @@
 \lstset{basicstyle=\ttfamily\small,breaklines=true,columns=fullflexible,frame=single}
 \newcommand{\coverfield}[2]{%
   {\zihao{4}%\heiti
-   \noindent\makebox[6em][l]{#1：}%
-   \underline{\makebox[\dimexpr\textwidth-6em\relax][l]{\strut #2}}\par}%
+   \noindent\makebox[6em][l]{\heiti#1：}%
+   \underline{\makebox[\dimexpr\textwidth-6em\relax][l]{\strut\heiti #2}}\par}%
 }
 \title{基于RISC-V指令集的CPU设计\\竞业达设计报告}
 \author{队伍编号：CICC1004252\\团队名称：和溢位}
@@ -1504,6 +1504,8 @@ DualSimpleBusToAXI4 memBridge (
 .2 .github/workflows/ \mydotfill 自动化回归流程.
 }
 \end{minipage}
+
+\newpage
 
 \subsection{参考资料}
 

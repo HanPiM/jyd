@@ -22,6 +22,9 @@ void *kmemcpy(void *out, const void *in, size_t n);
 void  *kmemset    (void *s, int c, size_t n);
 void  *_no_asan_kmemzero(void *s,size_t n);
 
+#define memset kmemset
+#define memcpy kmemcpy
+
 void  *memmove   (void *dst, const void *src, size_t n);
 int    memcmp    (const void *s1, const void *s2, size_t n);
 size_t strlen    (const char *s);

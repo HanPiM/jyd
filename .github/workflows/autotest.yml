@@ -83,6 +83,10 @@ jobs:
           # make sim binary first to avoid parallel build issue
           make ARCH=riscv32-jyd -C $JYD_HOME/npc
 
+      - name: Make precompile test set
+        run: |
+          make ARCH=riscv32-jyd -C $JYD_HOME/${{ matrix.test-set.dir }}
+
       - name: Run basic test (${{ matrix.test-set.dir }})
         run: |
           make ARCH=riscv32-jyd -C $JYD_HOME/${{ matrix.test-set.dir }} run ${{ matrix.test-set.args }}

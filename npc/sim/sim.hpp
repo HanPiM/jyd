@@ -60,6 +60,8 @@ struct sim_setting {
 
   bool trace_clock_cycle = false;
 
+  bool print_fullperf = false;
+
 #define TRACE_DPI_FLAG(name) trace_dpi_##name
 
 #define _GEN_DPI_FLAG(name) bool TRACE_DPI_FLAG(name) = false;

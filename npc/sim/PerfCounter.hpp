@@ -372,7 +372,7 @@ using PerfCounterVariant =
                  IDUFlushPerfCounter, BranchPredPerfCounter>;
 
 void initPerfCounters();
-void dumpPerfCountersStatistics(std::ostream &os);
+void dumpPerfCountersStatistics(std::ostream &os, bool printFullPerf);
 void updatePerfCounters();
 
 void dumpPerfCounterTo(std::ostream &os);

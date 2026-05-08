@@ -259,7 +259,7 @@ void updatePerfCounters() {
     std::visit([&](auto &c) { c.update(); }, ctr);
   }
 }
-void dumpPerfCountersStatistics(std::ostream &os) {
+void dumpPerfCountersStatistics(std::ostream &os, bool printFullPerf) {
   auto cycle_count = sim_get_cycle();
   auto inst_count = sim_get_inst_count();
 
@@ -282,6 +282,15 @@ void dumpPerfCountersStatistics(std::ostream &os) {
   } else {
     double cpi = (double)cycle_count / (double)inst_count;
     os << fmt::format("  CPI: {:.4f}\n", cpi);
+  }
+
+  if (!printFullPerf) {
+    for (auto &ctr : perf_counters) {
+      if (auto *branchPredCtr = std::get_if<BranchPredPerfCounter>(&ctr)) {
+        branchPredCtr->dumpStatistics(os);
+      }
+    }
+    return;
   }
 
 	os << "excution time estimate:\n";
@@ -380,7 +389,7 @@ void dumpPerfReportOnDir(const std::string &dir) {
     spdlog::error("cannot open perf counter report file {}", reportPath);
     return;
   }
-  dumpPerfCountersStatistics(reportFile);
+  dumpPerfCountersStatistics(reportFile, true);
   reportFile.close();
   spdlog::info("perf counter report dumped to {}", reportPath);
   std::string dataPath = dir + '/' + prefix + ".rawdata.json";

@@ -76,7 +76,7 @@ int main(int argc, char **argv) {
 
   if (mainloop_ret == 0) {
     spdlog::info("sim ended good, dumping statistics...");
-    dumpPerfCountersStatistics(std::cout);
+    dumpPerfCountersStatistics(std::cout, setting.print_fullperf);
     dumpPerfReportOnDir(perfOutDir);
   } else {
     spdlog::error("sim ended with bad status");

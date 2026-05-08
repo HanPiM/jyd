@@ -33,7 +33,15 @@ Run the narrowest relevant check before opening a PR. For CPU behavior changes, 
 
 After a change, start with `ALL=add` as the most basic smoke test, then decide whether broader coverage is needed. Common follow-up cases are `load-store` for memory access, `switch` and `if-else` for branch behavior, and `recursion` for function-call handling.
 
-For `npc`, pair CPU tests with `make -C npc verilog` and `make -C npc verilog-lint`, then use `make -C npc sim IMG=<image>` when runtime confirmation is needed. `make -C npc verilog-lint` may report `-PINCONNECTEMPTY` warnings; these can be ignored. The checked-in `npc` `test` target is not the maintained validation path.
+For `npc`, pair CPU tests with `make -C npc verilog` and `make -C npc verilog-lint`, then use `make -C npc sim IMG=<image>` when runtime confirmation is needed. `make -C npc verilog-lint` may report `-PINCONNECTEMPTY` warnings; these can be ignored even if Verilator exits nonzero because warnings are treated as fatal. The checked-in `npc` `test` target is not the maintained validation path.
+
+If you modify RISC-V M-extension/Zmmul multiply behavior in `npc` (for example ALU, EXU multi-cycle handshaking, forwarding, or decode paths for `mul`, `mulh`, `mulhu`, or `mulhsu`), run the directed architecture tests from the sibling test repo:
+- `make -C ../riscv-arch-test-am-jyd ARCH=riscv32-jyd run TEST_ISA=M ALL=mul-01`
+- `make -C ../riscv-arch-test-am-jyd ARCH=riscv32-jyd run TEST_ISA=M ALL=mulh-01`
+- `make -C ../riscv-arch-test-am-jyd ARCH=riscv32-jyd run TEST_ISA=M ALL=mulhu-01`
+- `make -C ../riscv-arch-test-am-jyd ARCH=riscv32-jyd run TEST_ISA=M ALL=mulhsu-01`
+
+For multi-cycle EXU units, also keep an eye on RAW forwarding/stall behavior: the producer should advertise the destination register while its data is not yet valid so IDU stalls dependent consumers, then mark the data valid once the EXU result can be forwarded.
 
 If you modify CSR-related code, you must also run the `rt-thread` (`rtt`) test because it is needed to cover CSR paths. For `rt-thread`, use `make -C rt-thread-am/bsp/abstract-machine run ARCH=<target>`; because it does not exit on its own, treat reaching the `msh />` prompt as success and stop the run manually. `Exception ETRACE` lines during that run are expected tracing output for `ecall`/`mret`, not failures.
 

@@ -13,7 +13,7 @@ define rd_filelist_indir
 $(addprefix $(1)/, $(shell cat $(1)/filelist.f))
 endef
 
-CHISEL_UNSYNTH_KEYWORDS = DPICLayer|DifftestLayer|StageLogLayer|PerfCounterLayer|verification
+CHISEL_UNSYNTH_KEYWORDS = DPICLayer|DifftestLayer|StageLogLayer|PerfCounterLayer|verification|mult_gen_0\.sv
 define rd_synth_filelist_indir
 $(addprefix $(1)/, $(shell grep -vE "$(CHISEL_UNSYNTH_KEYWORDS)" $(1)/filelist.f))
 endef

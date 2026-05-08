@@ -33,7 +33,6 @@ class EXU(implicit p:CPUParameters) extends Module {
   val alu = Module(new ALU)
 
   alu.io.out.ready := io.out.ready
-  alu.io.in.valid  := io.in.valid
 
   val alu_in = alu.io.in.bits
   val dinst  = io.in.bits
@@ -42,9 +41,16 @@ class EXU(implicit p:CPUParameters) extends Module {
 
   val isFmtI   = InstFmt.hasSame(dinst.info.fmt, InstFmt.imm)
   val isTypSys = InstType.hasSame(dinst.info.typ, InstType.system)
+  val isTypLoad       = InstType.hasSame(dinst.info.typ, InstType.load)
+  val isTypStore      = InstType.hasSame(dinst.info.typ, InstType.store)
+  val isTypAUIPC      = InstType.hasSame(dinst.info.typ, InstType.auipc)
+  val isTypJAL        = InstType.hasSame(dinst.info.typ, InstType.jal)
+  val isTypJALR       = InstType.hasSame(dinst.info.typ, InstType.jalr)
+  val isTypBranch     = InstType.hasSame(dinst.info.typ, InstType.branch)
+  val isTypArithmetic = InstType.hasSame(dinst.info.typ, InstType.arithmetic)
+  val isTypLUI        = InstType.hasSame(dinst.info.typ, InstType.lui)
 
-  io.in.ready  := io.out.ready
-  io.out.valid := io.in.valid
+  alu.io.in.valid := io.in.valid && isTypArithmetic
 
   val reg_v1     = dinst.info.reg1
   val reg_v2     = dinst.info.reg2
@@ -114,14 +120,6 @@ class EXU(implicit p:CPUParameters) extends Module {
   writeBackInfo.csr_ecallflag := is_ecall
 
   // --- Inst type decode ---
-  val isTypLoad       = InstType.hasSame(dinst.info.typ, InstType.load)
-  val isTypStore      = InstType.hasSame(dinst.info.typ, InstType.store)
-  val isTypAUIPC      = InstType.hasSame(dinst.info.typ, InstType.auipc)
-  val isTypJAL        = InstType.hasSame(dinst.info.typ, InstType.jal)
-  val isTypJALR       = InstType.hasSame(dinst.info.typ, InstType.jalr)
-  val isTypBranch     = InstType.hasSame(dinst.info.typ, InstType.branch)
-  val isTypArithmetic = InstType.hasSame(dinst.info.typ, InstType.arithmetic)
-  val isTypLUI        = InstType.hasSame(dinst.info.typ, InstType.lui)
   val isExtMemReq     = isTypLoad || isTypStore
   val memReqFire      = io.memReq.valid && io.memReq.ready
 
@@ -176,7 +174,8 @@ class EXU(implicit p:CPUParameters) extends Module {
   writeBackInfo.lsuAddrOffset := 0.U
 
   val isMemOP = isTypLoad || isTypStore
-  io.fwd := WrBackForwardInfo(io.in.valid, dinst, ~isMemOP, writeBackInfo.gpr.data)
+  val exuResultValid = !isTypArithmetic || alu.io.out.valid
+  io.fwd := WrBackForwardInfo(io.in.valid, dinst, !isMemOP && exuResultValid, writeBackInfo.gpr.data)
   val memOpIsWord    = func3t(1)
   val memOpIsHalf    = (~func3t(1)) && func3t(0)
   val memOpIsByte    = (~func3t(1)) && (~func3t(0))
@@ -218,8 +217,12 @@ class EXU(implicit p:CPUParameters) extends Module {
   io.memReq.bits.wdata := memWData
   io.memReq.bits.wmask := memWMask
 
-  io.in.ready  := memReqFire || (io.out.ready && !isExtMemReq)
-  io.out.valid := (io.in.valid && !isExtMemReq) || memReqFire
+  io.in.ready := memReqFire || (
+    io.out.ready && !isExtMemReq && (!isTypArithmetic || alu.io.out.valid)
+  )
+  io.out.valid := memReqFire || (
+    io.in.valid && !isExtMemReq && (!isTypArithmetic || alu.io.out.valid)
+  )
 
   writeBackInfo.iid := dinst.iid
 

@@ -79,42 +79,49 @@ class EXU(implicit p:CPUParameters) extends Module {
   val csr_rdata = dinst.info.csrReadData
 
   val writeBackInfo = io.out.bits.exuWriteBack
-  val csrwen    = writeBackInfo.csr.en
-  val csr_waddr = writeBackInfo.csr.addr
-  val csr_wdata = writeBackInfo.csr.data
+
+  val csrWrEnable = writeBackInfo.csr.en
+  val csrWrAddr   = writeBackInfo.csr.addr
+  val csrWrData   = writeBackInfo.csr.data
 
   object CSROp {
-    val csrrw = 1.U
-    val csrrs = 2.U
+    val RW = 1.U
+    val RS = 2.U
+    val RC = 3.U
   }
 
-  val isCSRRW = (func3t === CSROp.csrrw) && isTypSys
-  val isCSRRS = (func3t === CSROp.csrrs) && isTypSys
+  val csrUIMM = dinst.code(19, 15).pad(32)
 
-  csrwen := isCSRRW || (isCSRRS && (reg_v1 =/= 0.U))
+  // val isCSRRW = (func3t === CSROp.RW) && isTypSys
+  // val isCSRRS = (func3t === CSROp.RS) && isTypSys
+
+  csrWrEnable := isTypSys && func3t(1, 0) =/= 0.U
 
   when(isTypSys) {
+
+    val isRW = func3t(1, 0) === CSROp.RW
+    val isRS = func3t(1, 0) === CSROp.RS
+    val isRC = func3t(1, 0) === CSROp.RC
+
+    val csrOpMask = Mux(func3t(2), csrUIMM, reg_v1)
+
     when(is_ecall) {
-      csr_waddr := CSRAddr.mepc
+      csrWrAddr := CSRAddr.mepc
       // ecall: set mepc to pc
       // !!!note:
       // although wen = false
       // is_ecall flag makes csr to write wdata to mepc
-      csr_wdata := dinst.pc
-    }.elsewhen(is_mret) {
-      csr_waddr := DontCare
-      csr_wdata := DontCare
+      csrWrData := dinst.pc
     }.otherwise {
-      csr_waddr := csr_raddr
-      csr_wdata := Mux(
-        isCSRRW,
-        reg_v1,
-        (csr_rdata | reg_v1)
+      csrWrAddr := csr_raddr
+      csrWrData := Mux(
+        isRC, csr_rdata & (~csrOpMask),
+        Mux(isRS, csr_rdata | csrOpMask, csrOpMask)
       )
     }
   }.otherwise {
-    csr_waddr := DontCare
-    csr_wdata := DontCare
+    csrWrAddr := DontCare
+    csrWrData := DontCare
   }
 
   writeBackInfo.csr_ecallflag := is_ecall
@@ -175,7 +182,9 @@ class EXU(implicit p:CPUParameters) extends Module {
 
   val isMemOP = isTypLoad || isTypStore
   val exuResultValid = !isTypArithmetic || alu.io.out.valid
-  io.fwd := WrBackForwardInfo(io.in.valid, dinst, !isMemOP && exuResultValid, writeBackInfo.gpr.data)
+  io.fwd := WrBackForwardInfo(io.in.valid, dinst, !isMemOP && exuResultValid, writeBackInfo.gpr.data,
+    csrWrEnable)
+
   val memOpIsWord    = func3t(1)
   val memOpIsHalf    = (~func3t(1)) && func3t(0)
   val memOpIsByte    = (~func3t(1)) && (~func3t(0))

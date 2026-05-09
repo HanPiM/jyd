@@ -21,6 +21,8 @@ class WrBackForwardInfo(
   val enWr      = Bool()
   val dataVaild = Bool()
   val data      = Types.UWord
+
+  val enWrCSR = Bool()
 }
 
 object WrBackForwardInfo {
@@ -35,13 +37,16 @@ object WrBackForwardInfo {
     res.enWr      := WrBack.enWr
     res.dataVaild := WrBack.dataVaild
     res.data      := newData
+    res.enWrCSR   := WrBack.enWrCSR
     res
   }
   def apply(
     infoValid:  Bool,
     dinstInfo:  DecodedInst,
     dataVaild:  Bool,
-    data:       UInt
+    data:       UInt,
+
+    csrWrEn:    Bool
   )(
     implicit p: CPUParameters
   ): WrBackForwardInfo = {
@@ -50,16 +55,18 @@ object WrBackForwardInfo {
     res.enWr      := dinstInfo.info.rdWrEn && infoValid
     res.dataVaild := dataVaild
     res.data      := data
+    res.enWrCSR   := csrWrEn && infoValid
     res
   }
   def apply(
     dinst:      DecoupledIO[DecodedInst],
     dataVaild:  Bool,
-    data:       UInt
+    data:       UInt,
+    csrWrEn:    Bool
   )(
     implicit p: CPUParameters
   ): WrBackForwardInfo = {
-    apply(dinst.valid, dinst.bits, dataVaild, data)
+    apply(dinst.valid, dinst.bits, dataVaild, data, csrWrEn)
   }
   def apply(
     dinst:      DecoupledIO[DecodedInst]
@@ -68,7 +75,7 @@ object WrBackForwardInfo {
   ): WrBackForwardInfo = {
     val foo = Wire(Types.UWord)
     foo := DontCare
-    apply(dinst, false.B, foo)
+    apply(dinst, false.B, foo, false.B)
   }
 }
 
@@ -108,6 +115,12 @@ object SingleByPassMux {
   }
 }
 
+object CSRByPassNeedStall {
+  def apply(wrBacks: Seq[WrBackForwardInfo]): Bool = {
+    wrBacks.map(_.enWrCSR).reduce(_ || _)
+  }
+}
+
 class ByPassMux(
   implicit p: CPUParameters)
     extends Module {
@@ -129,7 +142,9 @@ class ByPassMux(
   val (needStall1, outData1) = SingleByPassMux(io.rs1, io.regData1, wrBacks)
   val (needStall2, outData2) = SingleByPassMux(io.rs2, io.regData2, wrBacks)
 
-  io.needStall := needStall1 || needStall2
+  val needStallCSR = CSRByPassNeedStall(wrBacks)
+
+  io.needStall := needStall1 || needStall2 || needStallCSR
   io.outData1  := outData1
   io.outData2  := outData2
 }

@@ -52,6 +52,9 @@ object ExtractFwdInfoFromWrBack {
     out.enWr      := wrBack.gpr.en && info.valid
     out.dataVaild := info.valid
     out.data      := gprData
+
+    out.enWrCSR := wrBack.csr.en && info.valid
+
     out
   }
 }

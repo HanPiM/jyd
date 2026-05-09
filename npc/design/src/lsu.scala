@@ -28,6 +28,9 @@ object ExtractFwdInfoFromLSU {
     out.enWr      := wrBack.gpr.en && info.valid
     out.dataVaild := !info.bits.isLoad
     out.data      := wrBack.gpr.data
+
+    out.enWrCSR := wrBack.csr.en && info.valid
+
     out
   }
 }

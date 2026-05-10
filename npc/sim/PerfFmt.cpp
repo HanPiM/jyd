@@ -214,15 +214,15 @@ void BranchPredPerfCounter::dumpStatistics(std::ostream &os) {
       std::accumulate(totMispredictOfType, totMispredictOfType + JmpTypeNum, 0);
 
   size_t totAccuracy = totBranchCount - totMispredictCount;
-  os << "total branch count: " << totBranchCount << "\n";
-  os << "total mispredict count: " << totMispredictCount << "\n";
-  os << "total accuracy count: " << totAccuracy << "\n";
+  os << "  total branch count: " << totBranchCount << "\n";
+  os << "  total mispredict count: " << totMispredictCount << "\n";
+  os << "  total accuracy count: " << totAccuracy << "\n";
   double accuracyPerc =
       totBranchCount == 0
           ? NAN
           : ((double)totAccuracy / (double)totBranchCount) * 100.0;
-  os << "accuracy: " << accuracyPerc << " %\n";
-  os << "mispredict rate: " << (100.0 - accuracyPerc) << " %\n";
+  os << "  accuracy: " << accuracyPerc << " %\n";
+  os << "  mispredict rate: " << (100.0 - accuracyPerc) << " %\n";
 
   Table t;
   t.add_row({"Type", "Total\nCount", "Mispredict\nCount", "Accuracy\n%",

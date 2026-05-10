@@ -52,7 +52,7 @@ jobs:
 
       - name: microbench
         run: |
-          make ARCH=riscv32-jyd -C $JYD_HOME/am-kernels/benchmarks/microbench run mainargs=${{ matrix.scale }}
+          make ARCH=riscv32-jyd -C $JYD_HOME/am-kernels/benchmarks/microbench run mainargs=${{ matrix.scale }} VSIM_print_fullperf=1
 
   coremark:
     needs: setup
@@ -70,7 +70,7 @@ jobs:
 
       - name: coremark
         run: |
-          make ARCH=riscv32-jyd -C $JYD_HOME/am-kernels/benchmarks/coremark run
+          make ARCH=riscv32-jyd -C $JYD_HOME/am-kernels/benchmarks/coremark run VSIM_print_fullperf=1
 
   dhrystone:
     needs: setup
@@ -88,7 +88,7 @@ jobs:
 
       - name: dhrystone
         run: |
-          make ARCH=riscv32-jyd -C $JYD_HOME/am-kernels/benchmarks/dhrystone run
+          make ARCH=riscv32-jyd -C $JYD_HOME/am-kernels/benchmarks/dhrystone run VSIM_print_fullperf=1
 
   jyd-tests:
     needs: setup
@@ -109,4 +109,4 @@ jobs:
 
       - name: jyd-tests (${{ matrix.sample }})
         run: |
-          make -C $JYD_HOME/jyd-tests run ${{ matrix.sample }}
+          make -C $JYD_HOME/jyd-tests run ${{ matrix.sample }} VSIM_print_fullperf=1

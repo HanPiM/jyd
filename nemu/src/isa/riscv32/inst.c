@@ -56,7 +56,8 @@ uint64_t g_nbranches;
 static int decode_exec(Decode *s) {
   s->dnpc = s->snpc;
 
-  word_t csr_imm = BITS(s->isa.inst, 31, 20); // no sext
+  word_t csr_addr = BITS(s->isa.inst, 31, 20); // no sext
+	word_t csr_uimm = BITS(s->isa.inst, 19, 15); // no sext
 
   word_t inst = s->isa.inst;
 
@@ -64,9 +65,15 @@ static int decode_exec(Decode *s) {
   word_t rs1 = (inst & INSN_FIELD_RS1) >> 15;
 
 #define IS_INST(name) (((inst & MASK_##name) == MATCH_##name) && (!matched))
+#define _NOCHK_IS_INST(name) ((inst & MASK_##name) == MATCH_##name)
+
+  bool local_system_inst =
+      _NOCHK_IS_INST(CSRRW) || _NOCHK_IS_INST(CSRRS) ||
+      _NOCHK_IS_INST(EBREAK) || _NOCHK_IS_INST(ECALL) ||
+      _NOCHK_IS_INST(MRET) || inst == 0x100f;
 
   word_t tmp = s->pc;
-  bool matched = (execute_instruction(inst, &tmp, cpu.gpr) == 0);
+  bool matched = !local_system_inst && (execute_instruction(inst, &tmp, cpu.gpr) == 0);
   if (matched)
     s->dnpc = tmp;
 
@@ -77,8 +84,6 @@ static int decode_exec(Decode *s) {
 #define MATCH_BRANCH 0b1100011
 #define MASK_BRANCH 0b1111111
 
-#define _NOCHK_IS_INST(name) ((inst & MASK_##name) == MATCH_##name)
-
   if (_NOCHK_IS_INST(BRANCH) || _NOCHK_IS_INST(JALR) || _NOCHK_IS_INST(JAL)) {
     g_nbranches++;
     if (g_btrace_pack) {
@@ -88,20 +93,50 @@ static int decode_exec(Decode *s) {
   }
 
   if (IS_INST(CSRRW)) {
-    if (rd != 0) {
-      R(rd) = _csr_read(csr_imm);
-    }
     word_t src1 = R(rs1);
-    _csr_write(csr_imm, src1);
+    if (rd != 0) {
+      R(rd) = _csr_read(csr_addr);
+    }
+    _csr_write(csr_addr, src1);
     matched = true;
   }
   if (IS_INST(CSRRS)) {
-    word_t old = _csr_read(csr_imm);
-    R(rd) = old;
+    word_t old = _csr_read(csr_addr);
     word_t src1 = R(rs1);
-    _csr_write(csr_imm, old | src1);
+    R(rd) = old;
+    _csr_write(csr_addr, old | src1);
     matched = true;
   }
+	if (IS_INST(CSRRC)) {
+		word_t old = _csr_read(csr_addr);
+		word_t src1 = R(rs1);
+		R(rd) = old;
+		_csr_write(csr_addr, old & ~src1);
+		matched = true;
+	}
+
+	if(IS_INST(CSRRWI)) {
+		word_t src1 = csr_uimm;
+		if (rd != 0) {
+			R(rd) = _csr_read(csr_addr);
+		}
+		_csr_write(csr_addr, src1);
+		matched = true;
+	}
+	if(IS_INST(CSRRSI)) {
+		word_t old = _csr_read(csr_addr);
+		word_t src1 = csr_uimm;
+		R(rd) = old;
+		_csr_write(csr_addr, old | src1);
+		matched = true;
+	}
+	if(IS_INST(CSRRCI)) {
+		word_t old = _csr_read(csr_addr);
+		word_t src1 = csr_uimm;
+		R(rd) = old;
+		_csr_write(csr_addr, old & ~src1);
+		matched = true;
+	}
 
   if (IS_INST(EBREAK)) {
     NEMUTRAP(s->pc, R(10)); // R(10) is $a0
@@ -134,6 +169,7 @@ extern word_t g_csr_MTVEC;
 word_t _handle_csr_rw(word_t csr, word_t src1, bool is_write) {
   static word_t g_csr_MCAUSE = 0, g_csr_MEPC = 0, g_csr_MVENDORID = 0x79737978,
                 g_csr_MARCHID = 25100261, g_csr_MSTATUS = 0x1800;
+	static word_t g_csr_MSCRATCH = 0;
 
   // printf("csr " #csr_name " %s : old=%08X
   // new=%08X\n",is_write?"write":"read",
@@ -153,6 +189,7 @@ word_t _handle_csr_rw(word_t csr, word_t src1, bool is_write) {
     _CASE(MTVEC);
     _CASE(MVENDORID);
     _CASE(MARCHID);
+		_CASE(MSCRATCH);
   default:
     panic("unsupported csr read/write: 0x%03X", csr);
   }

@@ -32,6 +32,12 @@ class MultiplierInput extends Bundle {
   val func3t = UInt(3.W)
 }
 
+class DividerInput extends Bundle {
+  val src1   = Types.UWord
+  val src2   = Types.UWord
+  val func3t = UInt(3.W)
+}
+
 class mult_gen_0 extends BlackBox with HasBlackBoxInline {
   val io = IO(new Bundle {
     val CLK  = Input(Clock())
@@ -66,6 +72,62 @@ class mult_gen_0 extends BlackBox with HasBlackBoxInline {
       |  end
       |
       |  assign P = pipe[5];
+      |endmodule
+      |""".stripMargin
+  )
+}
+
+class div_gen_uradix2 extends BlackBox with HasBlackBoxInline {
+  val io = IO(new Bundle {
+    val aclk                   = Input(Clock())
+    val s_axis_divisor_tvalid  = Input(Bool())
+    val s_axis_divisor_tdata   = Input(UInt(32.W))
+    val s_axis_dividend_tvalid = Input(Bool())
+    val s_axis_dividend_tdata  = Input(UInt(32.W))
+    val m_axis_dout_tvalid     = Output(Bool())
+    val m_axis_dout_tdata      = Output(UInt(64.W))
+  })
+
+  setInline(
+    "div_gen_uradix2.sv",
+    """module div_gen_uradix2(
+      |  input         aclk,
+      |  input         s_axis_divisor_tvalid,
+      |  input  [31:0] s_axis_divisor_tdata,
+      |  input         s_axis_dividend_tvalid,
+      |  input  [31:0] s_axis_dividend_tdata,
+      |  output        m_axis_dout_tvalid,
+      |  output [63:0] m_axis_dout_tdata
+      |);
+      |  reg        valid_pipe [0:33];
+      |  reg [63:0] data_pipe  [0:33];
+      |  integer i;
+      |  wire fire = s_axis_divisor_tvalid && s_axis_dividend_tvalid;
+      |
+      |  initial begin
+      |    for (i = 0; i < 34; i = i + 1) begin
+      |      valid_pipe[i] = 1'b0;
+      |      data_pipe[i] = 64'd0;
+      |    end
+      |  end
+      |
+      |  always @(posedge aclk) begin
+      |    valid_pipe[0] <= fire;
+      |    if (fire && (s_axis_divisor_tdata != 32'd0))
+      |      data_pipe[0] <= {
+      |        s_axis_dividend_tdata % s_axis_divisor_tdata,
+      |        s_axis_dividend_tdata / s_axis_divisor_tdata
+      |      };
+      |    else
+      |      data_pipe[0] <= 64'd0;
+      |    for (i = 1; i < 34; i = i + 1) begin
+      |      valid_pipe[i] <= valid_pipe[i - 1];
+      |      data_pipe[i] <= data_pipe[i - 1];
+      |    end
+      |  end
+      |
+      |  assign m_axis_dout_tvalid = valid_pipe[33];
+      |  assign m_axis_dout_tdata = data_pipe[33];
       |endmodule
       |""".stripMargin
   )
@@ -124,6 +186,88 @@ class Multiplier extends Module {
         }.otherwise {
           resultReg := result
           state := State.done
+        }
+      }
+    }
+    is(State.done) {
+      when(io.out.fire) {
+        state := State.idle
+      }
+    }
+  }
+}
+
+class Divider extends Module {
+  val io = IO(new Bundle {
+    val in  = Flipped(Decoupled(new DividerInput))
+    val out = Decoupled(Types.UWord)
+  })
+
+  object State extends ChiselEnum {
+    val idle, busy, done = Value
+  }
+  val state = RegInit(State.idle)
+
+  val func3tReg      = Reg(UInt(3.W))
+  val quotientNegReg = Reg(Bool())
+  val remainderNegReg = Reg(Bool())
+  val specialReg     = Reg(Bool())
+  val specialResultReg = Reg(Types.UWord)
+  val resultReg      = Reg(Types.UWord)
+  val divider        = Module(new div_gen_uradix2)
+
+  val inputFunc3t = io.in.bits.func3t
+  val inputIsRem = inputFunc3t(1)
+  val inputIsSigned = !inputFunc3t(0)
+  val inputDividendNeg = inputIsSigned && io.in.bits.src1(31)
+  val inputDivisorNeg = inputIsSigned && io.in.bits.src2(31)
+  val inputDividendAbs = Mux(inputDividendNeg, (~io.in.bits.src1).asUInt + 1.U, io.in.bits.src1)
+  val inputDivisorAbs = Mux(inputDivisorNeg, (~io.in.bits.src2).asUInt + 1.U, io.in.bits.src2)
+  val inputDivideByZero = io.in.bits.src2 === 0.U
+  val inputSignedOverflow = inputIsSigned && (io.in.bits.src1 === "h80000000".U) && (io.in.bits.src2 === "hffffffff".U)
+  val inputSpecial = inputDivideByZero || inputSignedOverflow
+  val inputDivideByZeroResult = Mux(inputIsRem, io.in.bits.src1, "hffffffff".U)
+  val inputOverflowResult = Mux(inputIsRem, 0.U, "h80000000".U)
+  val inputSpecialResult = Mux(inputDivideByZero, inputDivideByZeroResult, inputOverflowResult)
+
+  val ipFire = io.in.fire && !inputSpecial
+
+  divider.io.aclk                   := clock
+  divider.io.s_axis_divisor_tvalid  := ipFire
+  divider.io.s_axis_divisor_tdata   := Mux(inputDivisorAbs === 0.U, 1.U, inputDivisorAbs)
+  divider.io.s_axis_dividend_tvalid := ipFire
+  divider.io.s_axis_dividend_tdata  := inputDividendAbs
+
+  val ipResult = divider.io.m_axis_dout_tdata
+  val ipQuotient = ipResult(31, 0)
+  val ipRemainder = ipResult(63, 32)
+  val quotient = Mux(quotientNegReg, (~ipQuotient).asUInt + 1.U, ipQuotient)
+  val remainder = Mux(remainderNegReg, (~ipRemainder).asUInt + 1.U, ipRemainder)
+  val result = Mux(func3tReg(1), remainder, quotient)
+  val resultValid = divider.io.m_axis_dout_tvalid
+
+  io.in.ready  := state === State.idle
+  io.out.valid := (state === State.done) || ((state === State.busy) && (specialReg || resultValid))
+  io.out.bits  := Mux(state === State.done, resultReg, Mux(specialReg, specialResultReg, result))
+
+  switch(state) {
+    is(State.idle) {
+      when(io.in.fire) {
+        func3tReg       := io.in.bits.func3t
+        quotientNegReg  := inputDividendNeg ^ inputDivisorNeg
+        remainderNegReg := inputDividendNeg
+        specialReg      := inputSpecial
+        specialResultReg := inputSpecialResult
+        state           := State.busy
+      }
+    }
+    is(State.busy) {
+      when(specialReg || resultValid) {
+        when(io.out.ready) {
+          state := State.idle
+        }.otherwise {
+          resultReg := Mux(specialReg, specialResultReg, result)
+          state     := State.done
         }
       }
     }
@@ -206,18 +350,21 @@ class ALU extends Module {
 
   val aluResult = MuxLookup(inbits.func3t, defaultRes)(
     Seq(
-      0.U -> add_sub_res,        // 000: add/sub/addi
+      0.U -> add_sub_res,  // 000: add/sub/addi
       1.U -> lShiftResult, // 001: sll/slli
-      2.U -> slt_res,            // 010: slt/slti
-      3.U -> sltu_res,           // 011: sltu/sltiu
-      4.U -> logic_xor,          // 100: xor/xori
-      5.U -> rShiftResult,          // 101: srl/srli/sra/srai
-      6.U -> logic_or,           // 110: or/ori
-      7.U -> logic_and           // 111: and/andi
+      2.U -> slt_res,      // 010: slt/slti
+      3.U -> sltu_res,     // 011: sltu/sltiu
+      4.U -> logic_xor,    // 100: xor/xori
+      5.U -> rShiftResult, // 101: srl/srli/sra/srai
+      6.U -> logic_or,     // 110: or/ori
+      7.U -> logic_and     // 111: and/andi
     )
   )
 
-  val isMulOp = !inbits.is_imm && (inbits.func7t === "b0000001".U) && (inbits.func3t <= 3.U)
+  val isMExt = !inbits.is_imm && inbits.func7t(0)
+
+  val isMulOp = isMExt && ~inbits.func3t(2)
+  val isDivOp = isMExt && inbits.func3t(2)
 
   val multiplier = Module(new Multiplier)
   multiplier.io.in.valid       := io.in.valid && isMulOp
@@ -226,7 +373,33 @@ class ALU extends Module {
   multiplier.io.in.bits.func3t := func3t
   multiplier.io.out.ready      := io.out.ready
 
-  io.in.ready  := Mux(isMulOp, multiplier.io.in.ready, io.out.ready)
-  io.out.valid := Mux(isMulOp, multiplier.io.out.valid, io.in.valid)
-  io.out.bits  := Mux(isMulOp, multiplier.io.out.bits, aluResult)
+  val divider = Module(new Divider)
+  divider.io.in.valid       := io.in.valid && isDivOp
+  divider.io.in.bits.src1   := src1
+  divider.io.in.bits.src2   := src2
+  divider.io.in.bits.func3t := func3t
+  divider.io.out.ready      := io.out.ready
+
+  io.in.ready := Mux1H(
+    Seq(
+      isMulOp -> multiplier.io.in.ready,
+      isDivOp -> divider.io.in.ready,
+      !isMExt -> io.out.ready
+    )
+  )
+
+  io.out.valid := Mux1H(
+    Seq(
+      isMulOp -> multiplier.io.out.valid,
+      isDivOp -> divider.io.out.valid,
+      !isMExt -> io.in.valid
+    )
+  )
+  io.out.bits := Mux1H(
+    Seq(
+      isMulOp -> multiplier.io.out.bits,
+      isDivOp -> divider.io.out.bits,
+      !isMExt -> aluResult
+    )
+  )
 }

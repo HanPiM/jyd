@@ -39,6 +39,7 @@ jobs:
     runs-on: [self-hosted, Linux]
     strategy:
       matrix:
+        fail-fast: false
         sample: [src0, src1, src2]
     steps:
       - name: Checkout Vivado project

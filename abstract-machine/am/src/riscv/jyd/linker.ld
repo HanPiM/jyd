@@ -44,7 +44,7 @@ SECTIONS {
 	CNT_REG  = PERIPHERAL_BASE + 0x50;
 
 	_my_ext_serial_port = PERIPHERAL_BASE + 0x200;
-	_my_ext_clint = PERIPHERAL_BASE + 0x300;
+	/* _my_ext_clint = PERIPHERAL_BASE + 0x300; */
 
 	_stack_top = ORIGIN(DRAM) + LENGTH(DRAM);
   _stack_pointer  = _stack_top;

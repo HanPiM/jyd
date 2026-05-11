@@ -32,14 +32,17 @@ image: image-dep
 	@echo + Convert .data section "->" $(IMG_DATA_COE)
 	@echo "memory_initialization_radix=16;" > $(IMG_DATA_COE)
 	@echo "memory_initialization_vector=" >> $(IMG_DATA_COE)
-
 	@# 处理二进制数据：
 	@# -v: 显示所有数据（不压缩重复行）
 	@# -e: 定义输出格式，每4个字节转为8位16进制，加逗号和换行
 	@hexdump -v -e '1/4 "%08X" ",\n"' $(IMAGE_REL).data.bin >> $(IMG_DATA_COE)
-
 	@# 注意：最后一行需要以分号结尾，手动或用 sed 修正最后一行
 	@sed -i '$$s/,/;/' $(IMG_DATA_COE)
+	@echo + Convert .text section "->" $(IMAGE_REL).text.coe
+	@echo "memory_initialization_radix=16;" > $(IMAGE_REL).text.coe
+	@echo "memory_initialization_vector=" >> $(IMAGE_REL).text.coe
+	@hexdump -v -e '1/4 "%08X" ",\n"' $(IMAGE_REL).bin >> $(IMAGE_REL).text.coe
+	@sed -i '$$s/,/;/' $(IMAGE_REL).text.coe
 
 
 ifeq ($(VSIM_iverilog),1)

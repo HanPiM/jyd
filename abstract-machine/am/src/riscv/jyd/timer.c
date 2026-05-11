@@ -1,21 +1,20 @@
 #include <am.h>
+#include <stdint.h>
 
-extern char _my_ext_clint;
-#define RTC_ADDR ((uintptr_t)(&_my_ext_clint))
+extern uint32_t CNT_REG[]; // ms timer
 
-static uint64_t _am_start_time;
-static uint64_t get_us_time() {
-  uint64_t lo = *(volatile uint32_t *)(RTC_ADDR);
-  uint64_t hi = *(volatile uint32_t *)(RTC_ADDR + 4);
-  uint64_t res = (hi << 32) | lo;
-  return res;
+static uint32_t _am_start_time_ms;
+
+static inline uint32_t get_ms_time() {
+	return CNT_REG[0];
 }
 
-void __am_timer_init() { _am_start_time = get_us_time(); }
+void __am_timer_init() { 
+	_am_start_time_ms = get_ms_time();
+}
 
 void __am_timer_uptime(AM_TIMER_UPTIME_T *uptime) {
-  uptime->us = (get_us_time() - _am_start_time)*4;
-	// adjust to make npc timer closer to real time
+  uptime->us = (get_ms_time() - _am_start_time_ms) * 1000;
 }
 
 void __am_timer_rtc(AM_TIMER_RTC_T *rtc) {

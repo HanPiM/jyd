@@ -330,23 +330,7 @@ class ALU extends Module {
 
   val logic_and = src1 & src2
   val logic_xor = src1 ^ src2
-  // Optimize or to use and/xor result
-  // 23445 -> 23282
-  val logic_or  = logic_and | logic_xor
-
-  // val func3t2HighResult = Mux(
-  //   func3t(0),
-  //   Mux(func3t(1), rShiftResult, sltu_res),
-  //   Mux(func3t(1), logic_or, logic_xor)
-  // )
-  //
-  // val func3t2LowResult = Mux(
-  //   func3t(1),
-  //   Mux(func3t(0), sltu_res, slt_res),
-  //   Mux(func3t(0), Reverse(rShiftResult), add_sub_res)
-  // )
-  //
-  // io.out.bits := Mux(func3t(2), func3t2HighResult, func3t2LowResult)
+  val logic_or  = src1 | src2
 
   val aluResult = MuxLookup(inbits.func3t, defaultRes)(
     Seq(

@@ -250,7 +250,7 @@ class IDU(
   res.pcAddImm   := io.in.bits.pc + res.imm
   // Keep address generation off the generic fmt->imm path. reg1AddImm is
   // only consumed by load/store/JALR style address calculations in EXU.
-  res.reg1AddImm := res.reg1 + addrImm
+  res.reg1AddImm := "h80".U(8.W) ## (res.reg1(23,0) + addrImm(23,0))
 
   res.isECall                 := inst === "h73".U
   res.isMRet                  := inst === "h30200073".U

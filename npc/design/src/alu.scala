@@ -115,8 +115,8 @@ class div_gen_uradix2 extends BlackBox with HasBlackBoxInline {
       |    valid_pipe[0] <= fire;
       |    if (fire && (s_axis_divisor_tdata != 32'd0))
       |      data_pipe[0] <= {
-      |        s_axis_dividend_tdata % s_axis_divisor_tdata,
-      |        s_axis_dividend_tdata / s_axis_divisor_tdata
+      |        s_axis_dividend_tdata / s_axis_divisor_tdata,
+      |        s_axis_dividend_tdata % s_axis_divisor_tdata
       |      };
       |    else
       |      data_pipe[0] <= 64'd0;
@@ -239,8 +239,8 @@ class Divider extends Module {
   divider.io.s_axis_dividend_tdata  := inputDividendAbs
 
   val ipResult = divider.io.m_axis_dout_tdata
-  val ipQuotient = ipResult(31, 0)
-  val ipRemainder = ipResult(63, 32)
+  val ipQuotient = ipResult(63, 32)
+  val ipRemainder = ipResult(31, 0)
   val quotient = Mux(quotientNegReg, (~ipQuotient).asUInt + 1.U, ipQuotient)
   val remainder = Mux(remainderNegReg, (~ipRemainder).asUInt + 1.U, ipRemainder)
   val result = Mux(func3tReg(1), remainder, quotient)

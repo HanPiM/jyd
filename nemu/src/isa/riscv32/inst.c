@@ -169,7 +169,7 @@ extern word_t g_csr_MTVEC;
 word_t _handle_csr_rw(word_t csr, word_t src1, bool is_write) {
   static word_t g_csr_MCAUSE = 0, g_csr_MEPC = 0, g_csr_MVENDORID = 0x79737978,
                 g_csr_MARCHID = 25100261, g_csr_MSTATUS = 0x1800;
-	static word_t g_csr_MSCRATCH = 0;
+	static word_t g_csr_MSCRATCH = 0x1800;
 
   // printf("csr " #csr_name " %s : old=%08X
   // new=%08X\n",is_write?"write":"read",

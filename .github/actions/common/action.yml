@@ -74,7 +74,7 @@ runs:
         echo "MAKEFLAGS=$MAKEFLAGS" >> $GITHUB_ENV
 
         OSS_CAD_SUITE_BIN_PATH=`pwd`/oss-cad-suite/bin
-        echo "PATH=$PATH:$OSS_CAD_SUITE_BIN_PATH" >> $GITHUB_ENV
+        echo "$OSS_CAD_SUITE_BIN_PATH" >> $GITHUB_PATH
 
       # TODO: 优化 apt 安装速度，缓存 /usr/bin 较为麻烦
       # 考虑安装到 workspace 目录下缓存，或者使用 docker 镜像等
@@ -175,5 +175,4 @@ runs:
         git clone --depth 1 https://github.com/NJU-ProjectN/riscv-tests-am
 
         git clone --depth 1 https://github.com/WangYiJie020/riscv-arch-test-am-jyd
-
 

@@ -63,10 +63,13 @@ jobs:
         test-set:
           - dir: am-kernels/tests/cpu-tests
             args: ""
+            precompile: true
           - dir: riscv-tests-am
             args: "TEST_ISA=I"
+            precompile: true
           - dir: riscv-arch-test-am-jyd
             args: "TEST_ISA=I M Zicsr"
+            precompile: false
     steps:
       - uses: actions/checkout@v5
         with:
@@ -84,6 +87,7 @@ jobs:
           make ARCH=riscv32-jyd -C $JYD_HOME/npc
 
       - name: Make precompile test set
+        if: matrix.test-set.precompile
         run: |
           make ARCH=riscv32-jyd -C $JYD_HOME/${{ matrix.test-set.dir }}
 

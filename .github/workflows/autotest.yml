@@ -68,7 +68,7 @@ jobs:
             args: "TEST_ISA=I"
             precompile: true
           - dir: riscv-arch-test-am-jyd
-            args: "TEST_ISA=I M Zicsr"
+            args: 'TEST_ISA="I M Zicsr"'
             precompile: false
     steps:
       - uses: actions/checkout@v5

@@ -13,7 +13,6 @@ CFLAGS    += -DARCH_IS_NEMU
 
 LDSCRIPTS += $(JYD_AM_HOME)/scripts/linker.ld
 LDFLAGS   += --defsym=_pmem_start=0x80000000 --defsym=_entry_offset=0x0
-LDFLAGS   += --gc-sections -e _start
 NEMUFLAGS += -l $(shell dirname $(IMAGE).elf)/nemu-log.txt -b # set -b to use batch mode 
 
 MAINARGS_MAX_LEN = 64

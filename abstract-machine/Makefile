@@ -127,6 +127,10 @@ CFLAGS	 += -ffreestanding
 ASFLAGS  += -MMD $(INCFLAGS)
 LDFLAGS  += -z noexecstack $(addprefix -T, $(LDSCRIPTS))
 
+LD_ENTRY_POINT ?= _start
+
+LDFLAGS   += --gc-sections -e $(LD_ENTRY_POINT)
+
 ## 4. Arch-Specific Configurations
 
 ### Paste in arch-specific configurations (e.g., from `scripts/x86_64-qemu.mk`)

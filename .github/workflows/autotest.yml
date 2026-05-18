@@ -64,9 +64,9 @@ jobs:
           - dir: am-kernels/tests/cpu-tests
             args: ""
           - dir: riscv-tests-am
-            args: "TEST_ISA=i"
-          - dir: riscv-arch-test-am
             args: "TEST_ISA=I"
+          - dir: riscv-arch-test-am-jyd
+            args: "TEST_ISA=I M Zicsr"
     steps:
       - uses: actions/checkout@v5
         with:

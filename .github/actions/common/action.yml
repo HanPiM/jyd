@@ -83,8 +83,73 @@ runs:
       if: inputs.install-toolchain == 'true'
       run: |
         sudo apt update
-        sudo apt install -y g++-riscv64-linux-gnu llvm llvm-dev
+        sudo apt install -y g++-riscv64-linux-gnu llvm llvm-dev ruby ruby-bundler pipx
         sudo sed -i -e '8d' /usr/riscv64-linux-gnu/include/gnu/stubs.h
+
+    - name: Cache Sail RISC-V model
+      id: sail-riscv-cache
+      if: inputs.install-toolchain == 'true'
+      uses: actions/cache@v5
+      with:
+        path: sail-riscv-0.11
+        key: ${{ runner.os }}-sail-riscv-0.11
+
+    - name: Install Sail RISC-V model
+      shell: bash
+      if: inputs.install-toolchain == 'true'
+      run: |
+        SAIL_DIR="$GITHUB_WORKSPACE/sail-riscv-0.11"
+        if [[ "${{ steps.sail-riscv-cache.outputs.cache-hit }}" != "true" ]]; then
+          mkdir -p "$SAIL_DIR"
+          curl -L "https://github.com/riscv/sail-riscv/releases/download/0.11/sail-riscv-Linux-x86_64.tar.gz" -o /tmp/sail-riscv-0.11.tar.gz
+          tar xzf /tmp/sail-riscv-0.11.tar.gz --directory="$SAIL_DIR" --strip-components=1
+        fi
+        echo "$SAIL_DIR/bin" >> $GITHUB_PATH
+
+    - name: Cache riscv32 GNU toolchain
+      id: riscv32-toolchain-cache
+      if: inputs.install-toolchain == 'true'
+      uses: actions/cache@v5
+      with:
+        path: riscv32-toolchain
+        key: ${{ runner.os }}-riscv32-glibc-toolchain-2026.05.06
+
+    - name: Install riscv32 GNU toolchain
+      shell: bash
+      if: inputs.install-toolchain == 'true'
+      run: |
+        TOOLCHAIN_DIR="$GITHUB_WORKSPACE/riscv32-toolchain"
+        if [[ "${{ steps.riscv32-toolchain-cache.outputs.cache-hit }}" != "true" ]]; then
+          mkdir -p "$TOOLCHAIN_DIR"
+          curl -L "https://github.com/riscv-collab/riscv-gnu-toolchain/releases/download/2026.05.06/riscv32-glibc-ubuntu-24.04-gcc.tar.xz" -o /tmp/riscv32-glibc-ubuntu-24.04-gcc.tar.xz
+          tar xf /tmp/riscv32-glibc-ubuntu-24.04-gcc.tar.xz --directory="$TOOLCHAIN_DIR" --strip-components=1
+        fi
+        TOOLCHAIN_BIN=$(find "$TOOLCHAIN_DIR" -type f -name riscv32-unknown-linux-gnu-gcc -printf '%h\n' -quit)
+        if [[ -z "$TOOLCHAIN_BIN" ]]; then
+          echo "Unable to locate riscv32-unknown-linux-gnu-gcc under $TOOLCHAIN_DIR" >&2
+          exit 1
+        fi
+        echo "$TOOLCHAIN_BIN" >> $GITHUB_PATH
+
+    - name: Install ACT4 Python tooling
+      shell: bash
+      if: inputs.install-toolchain == 'true'
+      run: |
+        pipx install --force "uv==0.11.6"
+        echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+    - name: Check riscv-arch-test dependencies
+      shell: bash
+      if: inputs.install-toolchain == 'true'
+      run: |
+        export PATH="$HOME/.local/bin:$GITHUB_WORKSPACE/sail-riscv-0.11/bin:$PATH"
+        TOOLCHAIN_BIN=$(find "$GITHUB_WORKSPACE/riscv32-toolchain" -type f -name riscv32-unknown-linux-gnu-gcc -printf '%h\n' -quit)
+        export PATH="$TOOLCHAIN_BIN:$PATH"
+        sail_riscv_sim --version
+        riscv32-unknown-linux-gnu-gcc --version
+        riscv32-unknown-linux-gnu-objdump --version
+        uv --version
+        bundle --version
 
     - name: Install dependency for NVBoard
       shell: bash
@@ -109,8 +174,6 @@ runs:
 
         git clone --depth 1 https://github.com/NJU-ProjectN/riscv-tests-am
 
-        git clone --depth 1 https://github.com/NJU-ProjectN/riscv-arch-test-am
-        # skip jal-01 since IROM not enough to run it
-        rm ./riscv-arch-test-am/riscv-test-suite/rv32i_m/I/src/jal-01.S
+        git clone --depth 1 https://github.com/WangYiJie020/riscv-arch-test-am-jyd
 
 

@@ -129,6 +129,10 @@ runs:
           echo "Unable to locate riscv32-unknown-linux-gnu-gcc under $TOOLCHAIN_DIR" >&2
           exit 1
         fi
+        RISCV32_STUBS_H="$TOOLCHAIN_DIR/sysroot/usr/include/gnu/stubs.h"
+        if [[ -f "$RISCV32_STUBS_H" ]]; then
+          sed -i '/stubs-ilp32.h/d' "$RISCV32_STUBS_H"
+        fi
         echo "$TOOLCHAIN_BIN" >> $GITHUB_PATH
 
     - name: Install ACT4 Python tooling
@@ -145,6 +149,7 @@ runs:
         export PATH="$HOME/.local/bin:$GITHUB_WORKSPACE/sail-riscv-0.11/bin:$PATH"
         TOOLCHAIN_BIN=$(find "$GITHUB_WORKSPACE/riscv32-toolchain" -type f -name riscv32-unknown-linux-gnu-gcc -printf '%h\n' -quit)
         export PATH="$TOOLCHAIN_BIN:$PATH"
+        ! grep -q 'stubs-ilp32.h' "$GITHUB_WORKSPACE/riscv32-toolchain/sysroot/usr/include/gnu/stubs.h"
         sail_riscv_sim --version
         riscv32-unknown-linux-gnu-gcc --version
         riscv32-unknown-linux-gnu-objdump --version
@@ -175,4 +180,3 @@ runs:
         git clone --depth 1 https://github.com/NJU-ProjectN/riscv-tests-am
 
         git clone --depth 1 https://github.com/WangYiJie020/riscv-arch-test-am-jyd
-

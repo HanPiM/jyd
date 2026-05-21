@@ -274,12 +274,16 @@ class CPUCore(
   activeRedirectValid := redirectNow || redirectPendingReg
   dontTouch(activeRedirectValid)
 
-  pc := Mux(
-    ifu.io.pc.ready,
-    Mux(redirectNow, redirectNowTarget, Mux(redirectPendingFire, nxtPredictedPC, Mux(redirectPendingReg, redirectTargetReg, nxtPredictedPC))),
-    pc
-  )
-  pcFeedToIFU := Mux(redirectPendingReg, redirectTargetReg, pc)
+  // pc := Mux(
+  //   ifu.io.pc.ready,
+  //   // Mux(redirectNow, redirectNowTarget, Mux(redirectPendingFire, nxtPredictedPC, Mux(redirectPendingReg, redirectTargetReg, nxtPredictedPC))),
+  //   Mux(redirectNow, redirectNowTarget, nxtPredictedPC),
+  //   Mux(redirectNow, redirectNowTarget, pc)
+  // )
+
+  pc := Mux(redirectNow, redirectNowTarget, Mux(ifu.io.pc.ready, nxtPredictedPC, pc))
+
+  pcFeedToIFU := pc//Mux(redirectPendingReg, redirectTargetReg, pc)
 
   io.irom <> ifu.io.mem
   io.dram <> dataMemBus.io.out

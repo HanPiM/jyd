@@ -25,6 +25,7 @@ class EXU(implicit p:CPUParameters) extends Module {
     val nxtPC     = Output(Types.UWord)
 
     val fwd = Output(new WrBackForwardInfo)
+    val wbuFwdData = Input(Types.UWord)
 
     val memReq = Decoupled(new MemReq)
     val out    = Decoupled(new LSUInput)
@@ -52,8 +53,10 @@ class EXU(implicit p:CPUParameters) extends Module {
 
   alu.io.in.valid := io.in.valid && isTypArithmetic
 
-  val reg_v1     = dinst.info.reg1
-  val reg_v2     = dinst.info.reg2
+  // Load-use one-cycle bypass: when IDU allowed an arithmetic consumer to
+  // enter EXU one cycle early, use the load result now available from WBU.
+  val reg_v1     = Mux(dinst.info.bypassWbuToExuRs1, io.wbuFwdData, dinst.info.reg1)
+  val reg_v2     = Mux(dinst.info.bypassWbuToExuRs2, io.wbuFwdData, dinst.info.reg2)
   // val reg1AddImm = reg_v1 + dinst.info.imm
   // val pcAddImm   = dinst.pc + dinst.info.imm
   val pcAddImm   = dinst.info.pcAddImm

@@ -156,6 +156,11 @@ class DecodedInstInfo(implicit p : CPUParameters) extends InstMetaInfo with HasR
   val reg2 = Types.UWord
   val csrReadData = Types.UWord
 
+  // Load-use one-cycle bypass: IDU marks operands that should be replaced
+  // by the following cycle's WBU forward data when the instruction reaches EXU.
+  val bypassWbuToExuRs1 = Bool()
+  val bypassWbuToExuRs2 = Bool()
+
   val staticNextPCOrCSRTarget = Types.UWord
 
   val pcAddImm = Types.UWord

@@ -185,6 +185,7 @@ class IDU(
 
   val isTypStore  = InstType.hasSame(res.typ, InstType.store)
   val isTypBranch = InstType.hasSame(res.typ, InstType.branch)
+  val isTypArithmetic = InstType.hasSame(res.typ, InstType.arithmetic)
 
   val isFmtI = InstFmt.hasSame(res.fmt, InstFmt.imm)
   val isFmtU = InstFmt.hasSame(res.fmt, InstFmt.upper)
@@ -237,7 +238,35 @@ class IDU(
   res.reg2                := Mux(isFmtI, immI, bypassMux.io.outData2) // For exu ALU src2
   res.csrReadData         := io.csrRead.data
 
-  val needStall = bypassMux.io.needStall
+  private def needStallFrom(rs: UInt, wrBack: WrBackForwardInfo): Bool =
+    SingleByPassMux.conflict(rs, wrBack.addr, wrBack.enWr) && !wrBack.dataVaild
+
+  val needStallExuRs1 = needStallFrom(res.rs1, io.wrBackInfo.exu)
+  val needStallExuRs2 = needStallFrom(res.rs2, io.wrBackInfo.exu)
+  val needStallLsuRs1 = needStallFrom(res.rs1, io.wrBackInfo.lsu)
+  val needStallLsuRs2 = needStallFrom(res.rs2, io.wrBackInfo.lsu)
+  val needStallWbuRs1 = needStallFrom(res.rs1, io.wrBackInfo.wbu)
+  val needStallWbuRs2 = needStallFrom(res.rs2, io.wrBackInfo.wbu)
+  val needStallCSR = CSRByPassNeedStall(Seq(io.wrBackInfo.exu, io.wrBackInfo.lsu, io.wrBackInfo.wbu))
+
+  // Only ordinary arithmetic consumers can take the load-use one-cycle bypass.
+  // Address generation, branch compare, JALR target, and CSR hazards stay conservative.
+  val isMExtensionArithmetic = !isFmtI && inst(31, 25) === "b0000001".U
+  val isOrdinaryArithmetic = isTypArithmetic && !isMExtensionArithmetic
+  val usesRs1AsExuOperand = isOrdinaryArithmetic
+  // I-type arithmetic uses the immediate in EXU src2, so only R-type arithmetic can bypass rs2.
+  val usesRs2AsExuOperand = isOrdinaryArithmetic && !isFmtI
+  val allowLoadUseOneCycleBypassRs1 = usesRs1AsExuOperand && !needStallCSR
+  val allowLoadUseOneCycleBypassRs2 = usesRs2AsExuOperand && !needStallCSR
+  res.bypassWbuToExuRs1 := allowLoadUseOneCycleBypassRs1 && needStallLsuRs1
+  res.bypassWbuToExuRs2 := allowLoadUseOneCycleBypassRs2 && needStallLsuRs2
+
+  val needStall =
+    needStallExuRs1 || needStallExuRs2 ||
+    needStallWbuRs1 || needStallWbuRs2 ||
+    (needStallLsuRs1 && !res.bypassWbuToExuRs1) ||
+    (needStallLsuRs2 && !res.bypassWbuToExuRs2) ||
+    needStallCSR
 
   layer.block(PerfCounterLayer) {
     val rawStallPerfTap = Module(new RAWStallPerfTap())

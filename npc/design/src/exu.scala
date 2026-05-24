@@ -15,6 +15,7 @@ class EXU(implicit p:CPUParameters) extends Module {
     val in        = Flipped(Decoupled(new DecodedInst))
     val jmpHappen = Output(Bool())
     val isJAL     = Output(Bool())
+    val btbUpdateEn = Output(Bool())
 
     val predWrong = Output(Bool())
 
@@ -263,8 +264,10 @@ class EXU(implicit p:CPUParameters) extends Module {
 
   io.jmpHappen := willJmp
   io.isJAL     := isTypJAL
+  io.btbUpdateEn := isTypBranch || isTypJAL || isTypJALR
   // io.predWrong := (normalNxtPC =/= dinst.pred.pc) || isJmpCsr
-  io.predWrong := isTypJALR || isJmpCsr || (isFmtB && (takeBranch ^ dinst.pred.take)) || (isTypJAL && (~dinst.pred.hit))
+  // io.predWrong := isTypJALR || isJmpCsr || (isFmtB && (takeBranch ^ dinst.pred.take)) || (isTypJAL && (~dinst.pred.hit))
+  io.predWrong := (isFmtB && (takeBranch ^ dinst.pred.take)) || io.in.bits.info.notBranchPredWrong
 
   StageLogger(
     clock,

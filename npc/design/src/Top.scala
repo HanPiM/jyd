@@ -250,7 +250,7 @@ class CPUCore(
     bp.io.historyIsJAL  := btb.io.query.isJAL
     bp.io.historyIsBackward := btb.io.query.isBackward
 
-    btb.io.update.en     := exu.io.out.valid && exu.io.jmpHappen
+    btb.io.update.en     := exu.io.out.valid && exu.io.btbUpdateEn
     btb.io.update.addr   := exu.io.pc
     btb.io.update.target := exu.io.branchTarget
     btb.io.update.isJAL  := exu.io.isJAL

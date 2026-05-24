@@ -188,6 +188,7 @@ class IDU(
   val isTypStore  = InstType.hasSame(res.typ, InstType.store)
   val isTypBranch = InstType.hasSame(res.typ, InstType.branch)
   val isTypJALR   = InstType.hasSame(res.typ, InstType.jalr)
+  val isTypJAL   = InstType.hasSame(res.typ, InstType.jal)
 
   val isFmtI = InstFmt.hasSame(res.fmt, InstFmt.imm)
   val isFmtU = InstFmt.hasSame(res.fmt, InstFmt.upper)
@@ -280,6 +281,10 @@ class IDU(
     io.csrJmpTarget.mtvec,
     Mux(res.isMRet, io.csrJmpTarget.mepc, io.in.bits.pc + 4.U)
   )
+
+  val isJmpCSR = res.isECall || res.isMRet
+
+  res.notBranchPredWrong := isTypJALR || isJmpCSR || (isTypJAL && ~io.in.bits.pred.hit)
 
   io.in.ready  := (io.out.ready && !needStall)
   io.out.valid := io.in.valid && !needStall

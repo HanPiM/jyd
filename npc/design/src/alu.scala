@@ -204,17 +204,19 @@ class Divider extends Module {
   })
 
   object State extends ChiselEnum {
-    val idle, busy, done = Value
+    val idle, launch, busy, done = Value
   }
   val state = RegInit(State.idle)
 
-  val func3tReg      = Reg(UInt(3.W))
-  val quotientNegReg = Reg(Bool())
-  val remainderNegReg = Reg(Bool())
-  val specialReg     = Reg(Bool())
+  val func3tReg        = Reg(UInt(3.W))
+  val quotientNegReg   = Reg(Bool())
+  val remainderNegReg  = Reg(Bool())
+  val specialReg       = Reg(Bool())
   val specialResultReg = Reg(Types.UWord)
-  val resultReg      = Reg(Types.UWord)
-  val divider        = Module(new div_gen_uradix2)
+  val dividendAbsReg   = Reg(Types.UWord)
+  val divisorAbsReg    = Reg(Types.UWord)
+  val resultReg        = Reg(Types.UWord)
+  val divider          = Module(new div_gen_uradix2)
 
   val inputFunc3t = io.in.bits.func3t
   val inputIsRem = inputFunc3t(1)
@@ -230,13 +232,13 @@ class Divider extends Module {
   val inputOverflowResult = Mux(inputIsRem, 0.U, "h80000000".U)
   val inputSpecialResult = Mux(inputDivideByZero, inputDivideByZeroResult, inputOverflowResult)
 
-  val ipFire = io.in.fire && !inputSpecial
+  val ipFire = state === State.launch && !specialReg
 
   divider.io.aclk                   := clock
   divider.io.s_axis_divisor_tvalid  := ipFire
-  divider.io.s_axis_divisor_tdata   := Mux(inputDivisorAbs === 0.U, 1.U, inputDivisorAbs)
+  divider.io.s_axis_divisor_tdata   := divisorAbsReg
   divider.io.s_axis_dividend_tvalid := ipFire
-  divider.io.s_axis_dividend_tdata  := inputDividendAbs
+  divider.io.s_axis_dividend_tdata  := dividendAbsReg
 
   val ipResult = divider.io.m_axis_dout_tdata
   val ipQuotient = ipResult(63, 32)
@@ -247,26 +249,41 @@ class Divider extends Module {
   val resultValid = divider.io.m_axis_dout_tvalid
 
   io.in.ready  := state === State.idle
-  io.out.valid := (state === State.done) || ((state === State.busy) && (specialReg || resultValid))
-  io.out.bits  := Mux(state === State.done, resultReg, Mux(specialReg, specialResultReg, result))
+  io.out.valid := (state === State.done) || ((state === State.launch) && specialReg) ||
+    ((state === State.busy) && resultValid)
+  io.out.bits := Mux(state === State.done, resultReg, Mux(specialReg, specialResultReg, result))
 
   switch(state) {
     is(State.idle) {
       when(io.in.fire) {
-        func3tReg       := io.in.bits.func3t
-        quotientNegReg  := inputDividendNeg ^ inputDivisorNeg
-        remainderNegReg := inputDividendNeg
-        specialReg      := inputSpecial
+        func3tReg        := io.in.bits.func3t
+        quotientNegReg   := inputDividendNeg ^ inputDivisorNeg
+        remainderNegReg  := inputDividendNeg
+        specialReg       := inputSpecial
         specialResultReg := inputSpecialResult
-        state           := State.busy
+        dividendAbsReg   := inputDividendAbs
+        divisorAbsReg    := Mux(inputDivisorAbs === 0.U, 1.U, inputDivisorAbs)
+        state            := State.launch
       }
     }
-    is(State.busy) {
-      when(specialReg || resultValid) {
+    is(State.launch) {
+      when(specialReg) {
         when(io.out.ready) {
           state := State.idle
         }.otherwise {
-          resultReg := Mux(specialReg, specialResultReg, result)
+          resultReg := specialResultReg
+          state     := State.done
+        }
+      }.otherwise {
+        state := State.busy
+      }
+    }
+    is(State.busy) {
+      when(resultValid) {
+        when(io.out.ready) {
+          state := State.idle
+        }.otherwise {
+          resultReg := result
           state     := State.done
         }
       }

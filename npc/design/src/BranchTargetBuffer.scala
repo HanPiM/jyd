@@ -8,13 +8,15 @@ import common_def._
 object BTBParameters {
   val ENTRY_NUM   = 16
   val INDEX_WIDTH = log2Ceil(ENTRY_NUM)
-  val TAG_WIDTH   = Types.BitWidth.word - INDEX_WIDTH - 2 // 2 for word-alignment
+  // 2 for word-alignment
+  // 8 for Hi 8 bit "80" since all instructions are in "80xxxxxx"
+  val TAG_WIDTH   = Types.BitWidth.word - INDEX_WIDTH - 2 - 8
 
   def extractTag(addr: UInt):   UInt = {
-    addr(31, 32 - TAG_WIDTH)
+    addr(23, 24 - TAG_WIDTH)
   }
   def extractIndex(addr: UInt): UInt = {
-    addr(32 - TAG_WIDTH - 1, 2)
+    addr(24 - TAG_WIDTH - 1, 2)
   }
 }
 

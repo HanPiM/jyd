@@ -183,8 +183,10 @@ class IDU(
 
   res.viewAsSupertype(new InstMetaInfo) := InstInfoDecoder(inst(6, 0))
 
+  val isTypLoad   = InstType.hasSame(res.typ, InstType.load)
   val isTypStore  = InstType.hasSame(res.typ, InstType.store)
   val isTypBranch = InstType.hasSame(res.typ, InstType.branch)
+  val isTypJALR   = InstType.hasSame(res.typ, InstType.jalr)
 
   val isFmtI = InstFmt.hasSame(res.fmt, InstFmt.imm)
   val isFmtU = InstFmt.hasSame(res.fmt, InstFmt.upper)
@@ -237,7 +239,11 @@ class IDU(
   res.reg2                := Mux(isFmtI, immI, bypassMux.io.outData2) // For exu ALU src2
   res.csrReadData         := io.csrRead.data
 
-  val needStall = bypassMux.io.needStall
+  val needReg1AddImm = isTypLoad || isTypStore || isTypJALR
+  val needStallReg1AddImmFromEXU =
+    needReg1AddImm && SingleByPassMux.conflict(res.rs1, io.wrBackInfo.exu.addr, io.wrBackInfo.exu.enWr)
+
+  val needStall = bypassMux.io.needStall || needStallReg1AddImmFromEXU
 
   layer.block(PerfCounterLayer) {
     val rawStallPerfTap = Module(new RAWStallPerfTap())
@@ -248,9 +254,18 @@ class IDU(
 
   // res.snpc       := io.in.bits.pc + 4.U
   res.pcAddImm   := io.in.bits.pc + res.imm
-  // Keep address generation off the generic fmt->imm path. reg1AddImm is
-  // only consumed by load/store/JALR style address calculations in EXU.
-  res.reg1AddImm := "h80".U(8.W) ## (res.reg1(23,0) + addrImm(23,0))
+  // Keep address generation independent from the generic rs1 bypass path.
+  def addAddrImm(base: UInt): UInt = "h80".U(8.W) ## (base(23, 0) + addrImm(23, 0))
+
+  val lsuReg1AddImmBypass =
+    SingleByPassMux.conflict(res.rs1, io.wrBackInfo.lsu.addr, io.wrBackInfo.lsu.enWr) && io.wrBackInfo.lsu.dataVaild
+  val wbuReg1AddImmBypass =
+    SingleByPassMux.conflict(res.rs1, io.wrBackInfo.wbu.addr, io.wrBackInfo.wbu.enWr) && io.wrBackInfo.wbu.dataVaild
+  res.reg1AddImm := Mux(
+    lsuReg1AddImmBypass,
+    addAddrImm(io.wrBackInfo.lsu.data),
+    Mux(wbuReg1AddImmBypass, addAddrImm(io.wrBackInfo.wbu.data), addAddrImm(io.rvec.data(0)))
+  )
 
   res.isECall                 := inst === "h73".U
   res.isMRet                  := inst === "h30200073".U

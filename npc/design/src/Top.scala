@@ -325,9 +325,11 @@ class CPUCore(
   idu.io.csrJmpTarget.mepc := csrs.io.mepc
   idu.io.csrJmpTarget.mtvec := csrs.io.mtvec
 
+  val lsuFwdInfo = ExtractFwdInfoFromLSU(lsu.io.in)
   idu.io.wrBackInfo.exu := exu.io.fwd
-  idu.io.wrBackInfo.lsu := ExtractFwdInfoFromLSU(lsu.io.in)
+  idu.io.wrBackInfo.lsu := lsuFwdInfo
   idu.io.wrBackInfo.wbu := ExtractFwdInfoFromWrBack(wbu.io.in, wbu.io.memResp)
+  exu.io.lsuFwd         := lsuFwdInfo
 
   idu.io.pipelineFlush := activeRedirectValid
 

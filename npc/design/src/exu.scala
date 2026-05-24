@@ -25,6 +25,7 @@ class EXU(implicit p:CPUParameters) extends Module {
     val nxtPC     = Output(Types.UWord)
 
     val fwd = Output(new WrBackForwardInfo)
+    val lsuFwd = Input(new WrBackForwardInfo)
 
     val memReq = Decoupled(new MemReq)
     val out    = Decoupled(new LSUInput)
@@ -52,8 +53,8 @@ class EXU(implicit p:CPUParameters) extends Module {
 
   alu.io.in.valid := io.in.valid && isTypArithmetic
 
-  val reg_v1     = dinst.info.reg1
-  val reg_v2     = dinst.info.reg2
+  val reg_v1     = Mux(dinst.info.rs1ConflictEXU, io.lsuFwd.data, dinst.info.reg1)
+  val reg_v2     = Mux(dinst.info.rs2ConflictEXU, io.lsuFwd.data, dinst.info.reg2)
   // val reg1AddImm = reg_v1 + dinst.info.imm
   // val pcAddImm   = dinst.pc + dinst.info.imm
   val pcAddImm   = dinst.info.pcAddImm
@@ -157,7 +158,7 @@ class EXU(implicit p:CPUParameters) extends Module {
   lsuInfo.isLoad    := isTypLoad
   lsuInfo.isStore   := isTypStore
   lsuInfo.func3t    := dinst.code(14, 12)
-  lsuInfo.storeData := dinst.info.reg2
+  lsuInfo.storeData := reg_v2
 
   val snpc = dinst.info.staticNextPCOrCSRTarget
 

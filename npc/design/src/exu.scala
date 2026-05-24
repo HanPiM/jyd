@@ -26,7 +26,6 @@ class EXU(implicit p:CPUParameters) extends Module {
     val nxtPC     = Output(Types.UWord)
 
     val fwd = Output(new WrBackForwardInfo)
-    val lsuFwd = Input(new WrBackForwardInfo)
 
     val memReq = Decoupled(new MemReq)
     val out    = Decoupled(new LSUInput)
@@ -54,9 +53,8 @@ class EXU(implicit p:CPUParameters) extends Module {
 
   alu.io.in.valid := io.in.valid && isTypArithmetic
 
-  val reg_v1     = Mux(dinst.info.rs1ConflictEXU, io.lsuFwd.data, dinst.info.reg1)
-  val reg_v2     = Mux(dinst.info.rs2ConflictEXU, io.lsuFwd.data, dinst.info.reg2)
-  // val reg1AddImm = reg_v1 + dinst.info.imm
+  val reg_v1     = dinst.info.reg1
+  val reg_v2     = dinst.info.reg2
   // val pcAddImm   = dinst.pc + dinst.info.imm
   val pcAddImm   = dinst.info.pcAddImm
   val reg1AddImm = dinst.info.reg1AddImm
@@ -215,6 +213,30 @@ class EXU(implicit p:CPUParameters) extends Module {
       memOpIsWord -> "b1111".U(4.W)
     )
   )
+
+  // val isLW = memOpIsWord
+  //
+  // // lw : always
+  // // lh : when offset==0, is lo half
+  // // lb : when offset==0, is b[0]
+  // val memWMaskB0 = (reg1AddImm(1, 0) === 0.U) | isLW
+  // // lh : when offset==0
+  // // lb : when offset==1
+  // //
+  // // offset can be 0 or 1
+  // val memWMaskB1 = (~reg1AddImm(1)) | isLW
+  //
+  // // lh : when offset==2, is hi half
+  // // lb : when offset==2
+  // val memWMaskB2 = (reg1AddImm(1, 0) === 2.U) | isLW
+  //
+  // // lh : when offset==2
+  // // lb : when offset==3
+  // // offset can be 2 or 3
+  // val memWMaskB3 = reg1AddImm(1) | isLW
+  //
+  // val memWMask = Cat(memWMaskB3, memWMaskB2, memWMaskB1, memWMaskB0)
+
   val memWData = MuxLookup(reg1AddImm(1, 0), 0.U(32.W))(
     Seq(
       0.U -> reg_v2,

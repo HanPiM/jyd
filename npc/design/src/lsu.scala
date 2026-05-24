@@ -51,8 +51,6 @@ object ExtractFwdInfoFromLSU {
 class LSUIO(
   implicit p: CPUParameters)
     extends Bundle {
-  val memResp  = Flipped(Valid(Types.UWord))
-
   val in  = Flipped(Decoupled(new LSUInput))
   val out = Decoupled(new WriteBackInfo)
 }
@@ -71,7 +69,6 @@ class LSU(
   val outWriteBackInfo = io.out.bits
 
   val in      = io.in.bits
-  val memResp = io.memResp
 
   val isLoadOp = in.isLoad && io.in.valid
   val isMemLoad = isLoadOp
@@ -82,7 +79,6 @@ class LSU(
   // val seesMemResp     = ((state === State.idle) && isMemOp && io.in.valid || (state === State.waitResp)) && memResp.valid
   //
   val activeReq      = io.in.bits
-  val memRdRawData   = memResp.bits
 
   io.in.ready := io.out.ready
   io.out.valid := io.in.valid
@@ -115,7 +111,8 @@ class LSU(
   outWriteBackInfo.gpr.en        := activeReq.exuWriteBack.gpr.en
   outWriteBackInfo.gpr.data      := activeReq.exuWriteBack.gpr.data
   outWriteBackInfo.isLoad        := activeReq.isLoad
-  outWriteBackInfo.lsuResult     := memRdRawData
+  outWriteBackInfo.isMemOp       := isMemOp
+  outWriteBackInfo.lsuResult     := activeReq.exuWriteBack.lsuResult
   outWriteBackInfo.lsuFunc3t     := activeReq.func3t
   outWriteBackInfo.lsuAddrOffset := activeReq.destAddr(1, 0)
   outWriteBackInfo.iid           := activeReq.exuWriteBack.iid

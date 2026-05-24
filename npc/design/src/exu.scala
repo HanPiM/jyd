@@ -176,6 +176,7 @@ class EXU(implicit p:CPUParameters) extends Module {
 
   // Fill in LSU stage
   writeBackInfo.isLoad        := false.B
+  writeBackInfo.isMemOp       := false.B
   writeBackInfo.lsuResult     := 0.U
   writeBackInfo.lsuFunc3t     := 0.U
   writeBackInfo.lsuAddrOffset := 0.U
@@ -196,13 +197,15 @@ class EXU(implicit p:CPUParameters) extends Module {
       3.U -> "b1000".U(4.W)
     )
   )
-  val wByteMaskHalf = MuxLookup(reg1AddImm(1, 0), 0.U(4.W))(
-    Seq(
-      0.U -> "b0011".U(4.W),
-      1.U -> "b0110".U(4.W),
-      2.U -> "b1100".U(4.W)
-    )
-  )
+  // half word must be aligned to 2 bytes, so only two cases
+  val wByteMaskHalf = Mux(reg1AddImm(1), "b1100".U(4.W), "b0011".U(4.W))
+  // val wByteMaskHalf = MuxLookup(reg1AddImm(1, 0), 0.U(4.W))(
+  //   Seq(
+  //     0.U -> "b0011".U(4.W),
+  //     1.U -> "b0110".U(4.W),
+  //     2.U -> "b1100".U(4.W)
+  //   )
+  // )
   val memWMask = Mux1H(
     Seq(
       memOpIsByte -> wByteMask,
@@ -213,7 +216,9 @@ class EXU(implicit p:CPUParameters) extends Module {
   val memWData = MuxLookup(reg1AddImm(1, 0), 0.U(32.W))(
     Seq(
       0.U -> reg_v2,
-      1.U -> Cat(reg_v2(23, 0), 0.U(8.W)),
+      // only byte align case can store to odd byte
+      // so only need to shift lo 8 bits
+      1.U -> 0.U(16.W) ## reg_v2(7, 0) ## 0.U(8.W), 
       2.U -> Cat(reg_v2(15, 0), 0.U(16.W)),
       3.U -> Cat(reg_v2(7, 0), 0.U(24.W))
     )

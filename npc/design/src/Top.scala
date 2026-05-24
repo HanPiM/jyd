@@ -288,7 +288,7 @@ class CPUCore(
   io.irom <> ifu.io.mem
   io.dram <> dataMemBus.io.out
   exu.io.memReq <> dataMemBus.io.exuMemReq
-  lsu.io.memResp <> dataMemBus.io.lsuResp
+  wbu.io.memResp <> dataMemBus.io.memResp
 
 
   ifu.io.pc.bits  := pcFeedToIFU
@@ -327,7 +327,7 @@ class CPUCore(
 
   idu.io.wrBackInfo.exu := exu.io.fwd
   idu.io.wrBackInfo.lsu := ExtractFwdInfoFromLSU(lsu.io.in)
-  idu.io.wrBackInfo.wbu := ExtractFwdInfoFromWrBack(wbu.io.in)
+  idu.io.wrBackInfo.wbu := ExtractFwdInfoFromWrBack(wbu.io.in, wbu.io.memResp)
 
   idu.io.pipelineFlush := activeRedirectValid
 

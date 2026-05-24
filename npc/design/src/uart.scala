@@ -79,8 +79,12 @@ class SimpleBusUART extends Module {
   uartTryGetCh.io.clock  := clock
   uartTryGetCh.io.enable := doRead
 
-  io.resp_valid := RegNext(doReq, false.B)
-  io.rdata      := Mux(RegNext(doRead, false.B), uartTryGetCh.io.chData, 0.U(32.W))
+  val respValidReg = RegNext(RegNext(doReq, false.B), false.B)
+  val readRespPipe0 = RegNext(doRead, false.B)
+  val readRespReg  = RegNext(readRespPipe0, false.B)
+  val respDataReg  = RegEnable(uartTryGetCh.io.chData, readRespPipe0)
+  io.resp_valid := respValidReg
+  io.rdata      := Mux(readRespReg, respDataReg, 0.U(32.W))
 }
 
 class UARTUnit extends Module {

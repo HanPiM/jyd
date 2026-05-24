@@ -17,7 +17,7 @@ class MemReq extends Bundle {
 class DataMemBusCombiner extends Module {
   val io = IO(new Bundle {
     val exuMemReq = Flipped(Decoupled(new MemReq))
-    val lsuResp   = Valid(Types.UWord)
+    val memResp   = Valid(Types.UWord)
     val out       = SimpleBusIO.Master
   })
 
@@ -32,6 +32,6 @@ class DataMemBusCombiner extends Module {
 
   io.exuMemReq.ready := io.out.req_ready
 
-  io.lsuResp.valid := io.out.resp_valid
-  io.lsuResp.bits  := io.out.rdata
+  io.memResp.valid := io.out.resp_valid
+  io.memResp.bits  := io.out.rdata
 }

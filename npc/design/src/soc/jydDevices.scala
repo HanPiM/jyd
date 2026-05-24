@@ -63,8 +63,9 @@ class SimpleBusMem(sizeInByte: Int, baseAddr: BigInt, readOnly: Boolean = false)
   mem.io.mask   := io.wmask.asBools
   mem.io.dataIn := io.wdata.asTypeOf(mem.dataType)
 
-  val respValidReg = RegNext(doReq, false.B)
-  val respDataReg  = RegEnable(mem.io.dataOut.asUInt, doRead)
+  val respValidReg  = RegNext(RegNext(doReq, false.B), false.B)
+  val respDataPipe0 = RegEnable(mem.io.dataOut.asUInt, doRead)
+  val respDataReg   = RegNext(respDataPipe0)
   io.resp_valid := respValidReg
   io.rdata      := respDataReg
 }
@@ -136,8 +137,10 @@ class SimpleBusOneWordRWDevice(updFuncName: Option[String] = None) extends Modul
     dpiwrap.ClockedCallVoidDPIC(name)(clock, doWrite, io.bus.wdata)
   }
 
-  io.bus.resp_valid := RegNext(doReq, false.B)
-  io.bus.rdata      := dataReg
+  val respDataPipe0 = RegEnable(dataReg, doReq)
+  val respDataReg   = RegNext(respDataPipe0)
+  io.bus.resp_valid := RegNext(RegNext(doReq, false.B), false.B)
+  io.bus.rdata      := respDataReg
   io.value          := dataReg
 }
 
@@ -178,8 +181,11 @@ class SimpleBusTimer extends Module {
     }
   }
 
-  io.resp_valid := RegNext(doReq, false.B)
-  io.rdata      := timerMs
+  val respValidReg  = RegNext(RegNext(doReq, false.B), false.B)
+  val respDataPipe0 = RegEnable(timerMs, doReq)
+  val respDataReg   = RegNext(respDataPipe0)
+  io.resp_valid := respValidReg
+  io.rdata      := respDataReg
 }
 
 class JYDFPGAIROMBlackBox extends BlackBox {
@@ -249,7 +255,7 @@ class SimpleBusFPGAMem(sizeInByte: Int, baseAddr: BigInt) extends Module {
   mem.io.addra := localWordAddr
   mem.io.dina  := io.wdata
 
-  io.resp_valid := RegNext(doReq, false.B)
+  io.resp_valid := RegNext(RegNext(doReq, false.B), false.B)
   io.rdata      := mem.io.douta
 }
 
@@ -271,8 +277,11 @@ class SimpleBusFPGACounter extends Module {
   counter.io.rst            := io.rst
   counter.io.cnt_enable_cpu := io.cntEnable
 
-  io.bus.resp_valid := RegNext(doReq, false.B)
-  io.bus.rdata      := counter.io.perip_rdata
+  val respValidReg  = RegNext(RegNext(doReq, false.B), false.B)
+  val respDataPipe0 = RegEnable(counter.io.perip_rdata, doReq)
+  val respDataReg   = RegNext(respDataPipe0)
+  io.bus.resp_valid := respValidReg
+  io.bus.rdata      := respDataReg
 }
 
 class JYDPeripheralBridge(
@@ -295,8 +304,10 @@ class JYDPeripheralBridge(
   io.cpu.req_ready := false.B
   Seq(io.dram, io.led, io.seg, io.cnt, io.uart).foreach(_.dontCareReq())
 
-  val lastReqSel   = RegInit(0.U(3.W))
-  val lastReqValid = RegInit(false.B)
+  val respSelPipe0   = RegInit(0.U(3.W))
+  val respSelPipe1   = RegInit(0.U(3.W))
+  val respValidPipe0 = RegInit(false.B)
+  val respValidPipe1 = RegInit(false.B)
   val cntEnableReg = RegInit(false.B)
 
   val cntStartCmd = "h80000000".U(32.W)
@@ -341,19 +352,19 @@ class JYDPeripheralBridge(
     }
   }
 
-  when(reqFire) {
-    lastReqSel := targetSel
-  }
-  lastReqValid := reqFire
+  respSelPipe0   := targetSel
+  respSelPipe1   := respSelPipe0
+  respValidPipe0 := reqFire
+  respValidPipe1 := respValidPipe0
 
-  val respValid = MuxLookup(lastReqSel, io.dram.resp_valid)(
+  val respValid = MuxLookup(respSelPipe1, io.dram.resp_valid)(
     targets.map { case (sel, bus) => sel -> bus.resp_valid }
   )
-  val respData  = MuxLookup(lastReqSel, io.dram.rdata)(
+  val respData  = MuxLookup(respSelPipe1, io.dram.rdata)(
     targets.map { case (sel, bus) => sel -> bus.rdata }
   )
 
-  io.cpu.resp_valid := lastReqValid && respValid
+  io.cpu.resp_valid := respValidPipe1 && respValid
   io.cpu.rdata      := respData
   io.cntEnable      := cntEnableReg
 }

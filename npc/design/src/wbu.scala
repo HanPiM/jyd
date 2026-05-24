@@ -1,7 +1,7 @@
 package cpu
 
 import chisel3._
-import chisel3.util.{Cat, Decoupled, DecoupledIO, Enum, Fill, MuxLookup}
+import chisel3.util.{Cat, Decoupled, DecoupledIO, Enum, Fill, MuxLookup, Valid}
 
 import chisel3.experimental.dataview._
 
@@ -14,8 +14,9 @@ import chisel3.util.circt.dpi._
 
 class WriteBackInfo(implicit p:CPUParameters) extends Bundle {
   val gpr = GPRegReqIO.WriteTX
-  val isLoad       = Bool()
-  val lsuResult    = Types.UWord
+  val isLoad        = Bool()
+  val isMemOp       = Bool()
+  val lsuResult     = Types.UWord
   val lsuFunc3t    = UInt(3.W)
   val lsuAddrOffset = UInt(2.W)
 
@@ -31,26 +32,55 @@ class WriteBackInfo(implicit p:CPUParameters) extends Bundle {
   val iid = Types.InstID
 }
 
-object ExtractFwdInfoFromWrBack {
-  def apply(info: DecoupledIO[WriteBackInfo])(implicit p:CPUParameters): WrBackForwardInfo = {
-    val wrBack = info.bits
-    val respLoadDataRaw = MuxLookup(wrBack.lsuAddrOffset, 0.U(32.W))(
+object ExtLoadData {
+  def apply(rawData: UInt, addrOffset: UInt, func3t: UInt): UInt = {
+    // val respLoadDataRaw = MuxLookup(addrOffset, 0.U(32.W))(
+    //   Seq(
+    //     0.U -> rawData,
+    //     1.U -> rawData(15, 8).pad(32),
+    //     2.U -> rawData(31, 16).pad(32),
+    //     3.U -> rawData(31, 24).pad(32)
+    //   )
+    // )
+    
+    val respHalfWord = Mux(addrOffset(1), rawData(31, 16), rawData(15, 0))
+    val respByte = MuxLookup(addrOffset, 0.U(8.W))(
       Seq(
-        0.U -> wrBack.lsuResult,
-        1.U -> wrBack.lsuResult(31, 8).pad(32),
-        2.U -> wrBack.lsuResult(31, 16).pad(32),
-        3.U -> wrBack.lsuResult(31, 24).pad(32)
+        0.U -> rawData(7, 0),
+        1.U -> rawData(15, 8),
+        2.U -> rawData(23, 16),
+        3.U -> rawData(31, 24)
       )
     )
-    val respLoadByte = Cat(Fill(24, respLoadDataRaw(7) && (~wrBack.lsuFunc3t(2))), respLoadDataRaw(7, 0))
-    val respLoadHalf = Cat(Fill(16, respLoadDataRaw(15) && (~wrBack.lsuFunc3t(2))), respLoadDataRaw(15, 0))
-    val loadResult   = Mux(wrBack.lsuFunc3t(1), respLoadDataRaw, Mux(wrBack.lsuFunc3t(0), respLoadHalf, respLoadByte))
+
+    val respExtedByte = Cat(Fill(24, respByte(7) && (~func3t(2))), respByte)
+    val respExtedHalf = Cat(Fill(16, respHalfWord(15) && (~func3t(2))), respHalfWord)
+    Mux(func3t(1), rawData, Mux(func3t(0), respExtedHalf, respExtedByte))
+  }
+}
+
+object ExtractFwdInfoFromWrBack {
+  def apply(info: DecoupledIO[WriteBackInfo], memResp: Valid[UInt])(implicit p:CPUParameters): WrBackForwardInfo = {
+    val wrBack = info.bits
+    // val respLoadDataRaw = MuxLookup(wrBack.lsuAddrOffset, 0.U(32.W))(
+    //   Seq(
+    //     0.U -> memResp.bits,
+    //     1.U -> memResp.bits(31, 8).pad(32),
+    //     2.U -> memResp.bits(31, 16).pad(32),
+    //     3.U -> memResp.bits(31, 24).pad(32)
+    //   )
+    // )
+    // val respLoadByte = Cat(Fill(24, respLoadDataRaw(7) && (~wrBack.lsuFunc3t(2))), respLoadDataRaw(7, 0))
+    // val respLoadHalf = Cat(Fill(16, respLoadDataRaw(15) && (~wrBack.lsuFunc3t(2))), respLoadDataRaw(15, 0))
+    // val loadResult   = Mux(wrBack.lsuFunc3t(1), respLoadDataRaw, Mux(wrBack.lsuFunc3t(0), respLoadHalf, respLoadByte))
+
+    val loadResult = ExtLoadData(memResp.bits, wrBack.lsuAddrOffset, wrBack.lsuFunc3t)
     val gprData      = Mux(wrBack.isLoad, loadResult, wrBack.gpr.data)
 
     val out = Wire(new WrBackForwardInfo)
     out.addr      := wrBack.gpr.addr
     out.enWr      := wrBack.gpr.en && info.valid
-    out.dataVaild := info.valid
+    out.dataVaild := info.valid && (!wrBack.isLoad || memResp.valid)
     out.data      := gprData
 
     out.enWrCSR := wrBack.csr.en && info.valid
@@ -62,6 +92,7 @@ object ExtractFwdInfoFromWrBack {
 class WBU(implicit p:CPUParameters) extends Module {
   val io = IO(new Bundle {
     val in       = Flipped(Decoupled(new WriteBackInfo))
+    val memResp  = Flipped(Valid(Types.UWord))
     val gpr      = GPRegReqIO.WriteTX
     val csr      = CSRegReqIO.TX.Write
     val is_ecall = Output(Bool())
@@ -70,19 +101,26 @@ class WBU(implicit p:CPUParameters) extends Module {
 
   val wbinfo = io.in.bits
   val valid  = io.in.valid
-  val respLoadDataRaw = MuxLookup(wbinfo.lsuAddrOffset, 0.U(32.W))(
-    Seq(
-      0.U -> wbinfo.lsuResult,
-      1.U -> wbinfo.lsuResult(31, 8).pad(32),
-      2.U -> wbinfo.lsuResult(31, 16).pad(32),
-      3.U -> wbinfo.lsuResult(31, 24).pad(32)
-    )
-  )
-  val respLoadByte = Cat(Fill(24, respLoadDataRaw(7) && (~wbinfo.lsuFunc3t(2))), respLoadDataRaw(7, 0))
-  val respLoadHalf = Cat(Fill(16, respLoadDataRaw(15) && (~wbinfo.lsuFunc3t(2))), respLoadDataRaw(15, 0))
-  val loadResult   = Mux(wbinfo.lsuFunc3t(1), respLoadDataRaw, Mux(wbinfo.lsuFunc3t(0), respLoadHalf, respLoadByte))
+  // val respLoadDataRaw = MuxLookup(wbinfo.lsuAddrOffset, 0.U(32.W))(
+  //   Seq(
+  //     0.U -> io.memResp.bits,
+  //     1.U -> io.memResp.bits(31, 8).pad(32),
+  //     2.U -> io.memResp.bits(31, 16).pad(32),
+  //     3.U -> io.memResp.bits(31, 24).pad(32)
+  //   )
+  // )
+  // val respLoadByte = Cat(Fill(24, respLoadDataRaw(7) && (~wbinfo.lsuFunc3t(2))), respLoadDataRaw(7, 0))
+  // val respLoadHalf = Cat(Fill(16, respLoadDataRaw(15) && (~wbinfo.lsuFunc3t(2))), respLoadDataRaw(15, 0))
+  // val loadResult   = Mux(wbinfo.lsuFunc3t(1), respLoadDataRaw, Mux(wbinfo.lsuFunc3t(0), respLoadHalf, respLoadByte))
+  //
+
+  val loadResult = ExtLoadData(io.memResp.bits, wbinfo.lsuAddrOffset, wbinfo.lsuFunc3t)
 
   io.in.ready := true.B
+
+  when(valid && wbinfo.isMemOp) {
+    assert(io.memResp.valid, "WBU memory response must be valid for memory operations")
+  }
 
   io.gpr.en   := wbinfo.gpr.en && valid
   io.gpr.addr := wbinfo.gpr.addr

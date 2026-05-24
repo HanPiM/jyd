@@ -20,24 +20,12 @@ object BTBParameters {
   }
 }
 
-class BTBTarget extends Bundle {
-  val bits = UInt(22.W) // 32 - 2 (word-alignment) - 8 (Hi 8 bit "80")
-  def get = Cat("h80".U(8.W), bits, 0.U(2.W))
-}
-object BTBTarget {
-  def apply(addr: UInt): BTBTarget = {
-    val target = Wire(new BTBTarget)
-    target.bits := addr(23, 2)
-    target
-  }
-}
-
 class BTBEntry extends Bundle {
   val valid  = Bool()
   val isJAL  = Bool()
   val isBackward = Bool()
   val tag    = UInt(BTBParameters.TAG_WIDTH.W)
-  val target = new BTBTarget()
+  val target = Types.UWord
 }
 
 class BranchTargetBuffer extends Module {
@@ -66,7 +54,7 @@ class BranchTargetBuffer extends Module {
   val queryEntry = entries(queryIndex)
 
   io.query.hit    := queryEntry.valid && (queryEntry.tag === queryTag)
-  io.query.target := queryEntry.target.get
+  io.query.target := queryEntry.target
   io.query.isJAL  := queryEntry.isJAL
   io.query.isBackward := queryEntry.isBackward
 
@@ -77,7 +65,7 @@ class BranchTargetBuffer extends Module {
 
     entries(updateIndex).valid  := true.B
     entries(updateIndex).tag    := updateTag
-    entries(updateIndex).target := BTBTarget(io.update.target)
+    entries(updateIndex).target := io.update.target
     entries(updateIndex).isJAL  := io.update.isJAL
     entries(updateIndex).isBackward := io.update.isBackward
   }

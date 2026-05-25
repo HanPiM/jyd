@@ -18,6 +18,19 @@ object InlinePrintf {
   }
 }
 
+object TrimmedPC {
+  val Hi10b = "h80".U(8.W) ## 0.U(2.W)
+  val Lo2b = 0.U(2.W)
+
+  def expand(addr: UInt): UInt = {
+    require(addr.getWidth == 20)
+    Hi10b ## addr ## Lo2b
+  }
+  def trim(addr: UInt): UInt = {
+    addr(21, 2)
+  }
+}
+
 trait HasRs {
   val rs1: UInt
   val rs2: UInt

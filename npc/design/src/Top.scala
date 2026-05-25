@@ -260,7 +260,7 @@ class CPUCore(
 
   ifu.io.predNext := bp.io.pred
 
-  redirectNow         := exu.io.out.valid && exu.io.predWrong
+  redirectNow         := exu.io.in.valid && exu.io.predWrong
   redirectNowTarget   := exu.io.nxtPC
   redirectPendingFire := ifu.io.pc.fire && redirectPendingReg
 

@@ -271,6 +271,7 @@ class IDU(
 
   res.isECall                 := inst === "h73".U
   res.isMRet                  := inst === "h30200073".U
+
   res.staticNextPCOrCSRTarget := Mux(
     res.isECall,
     io.csrJmpTarget.mtvec,

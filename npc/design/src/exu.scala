@@ -74,6 +74,22 @@ object GenMemWMask {
   }
 }
 
+object GenMemWData {
+  def apply(offset: UInt, data: UInt): UInt = {
+    val memWData = MuxLookup(offset(1, 0), 0.U(32.W))(
+      Seq(
+        0.U -> data,
+        // only byte align case can store to odd byte
+        // so only need to shift lo 8 bits
+        1.U -> 0.U(16.W) ## data(7, 0) ## 0.U(8.W),
+        2.U -> Cat(data(15, 0), 0.U(16.W)),
+        3.U -> Cat(data(7, 0), 0.U(24.W))
+      )
+    )
+    memWData
+  }
+}
+
 class EXU(
   implicit p: CPUParameters)
     extends Module {
@@ -263,16 +279,7 @@ class EXU(
     }
   }
 
-  val memWData = MuxLookup(reg1AddImm(1, 0), 0.U(32.W))(
-    Seq(
-      0.U -> reg_v2,
-      // only byte align case can store to odd byte
-      // so only need to shift lo 8 bits
-      1.U -> 0.U(16.W) ## reg_v2(7, 0) ## 0.U(8.W),
-      2.U -> Cat(reg_v2(15, 0), 0.U(16.W)),
-      3.U -> Cat(reg_v2(7, 0), 0.U(24.W))
-    )
-  )
+  val memWData = GenMemWData(reg1AddImm(1, 0), reg_v2)
 
   io.memReq.valid      := needMemReq && io.in.valid && io.out.ready
   io.memReq.bits.addr  := reg1AddImm

@@ -137,11 +137,11 @@ class DualSimpleBusToAXI4 extends Module {
 
   state := MuxLookup(state, State.idle)(
     Seq(
-      State.idle -> Mux(hasReq, Mux(selWEn, State.sendAWW, State.sendAR), State.idle),
-      State.sendAR -> Mux(io.out.arready, State.waitR, State.sendAR),
-      State.waitR -> Mux(io.out.rvalid, State.idle, State.waitR),
+      State.idle    -> Mux(hasReq, Mux(selWEn, State.sendAWW, State.sendAR), State.idle),
+      State.sendAR  -> Mux(io.out.arready, State.waitR, State.sendAR),
+      State.waitR   -> Mux(io.out.rvalid, State.idle, State.waitR),
       State.sendAWW -> Mux((awSent || io.out.awready) && (wSent || io.out.wready), State.waitB, State.sendAWW),
-      State.waitB -> Mux(io.out.bvalid, State.idle, State.waitB)
+      State.waitB   -> Mux(io.out.bvalid, State.idle, State.waitB)
     )
   )
 
@@ -215,21 +215,21 @@ class CPUCore(
   dontTouch(io)
   io := DontCare
 
-  val redirectNow        = Wire(Bool())
-  val redirectNowTarget  = Wire(Types.UWord)
+  val redirectNow         = Wire(Bool())
+  val redirectNowTarget   = Wire(Types.UWord)
   val activeRedirectValid = Wire(Bool())
   val redirectPendingFire = Wire(Bool())
-  val redirectPendingReg = RegInit(false.B)
-  val redirectTargetReg  = Reg(Types.UWord)
+  val redirectPendingReg  = RegInit(false.B)
+  val redirectTargetReg   = Reg(Types.UWord)
 
   val gprs = Module(new RegisterFile(READ_PORTS = 2))
   val csrs = Module(new ControlStatusRegisterFile())
 
-  val ifu = Module(new IFU)
-  val idu = Module(new IDU)
-  val exu = Module(new EXU)
-  val lsu = Module(new LSU)
-  val wbu = Module(new WBU)
+  val ifu        = Module(new IFU)
+  val idu        = Module(new IDU)
+  val exu        = Module(new EXU)
+  val lsu        = Module(new LSU)
+  val wbu        = Module(new WBU)
   val dataMemBus = Module(new DataMemBusCombiner)
 
   val resetPCProvider = Module(new CPUTop_ResetPCProvider)
@@ -241,27 +241,27 @@ class CPUCore(
 
   val pcFeedToIFU = Wire(Types.UWord)
 
-    val btb = Module(new BranchTargetBuffer)
-    val bp  = Module(new BranchPredictor)
-    btb.io.query.addr   := pc
-    bp.io.pc            := pcFeedToIFU
-    bp.io.historyHit    := btb.io.query.hit
-    bp.io.historyTarget := btb.io.query.target
-    bp.io.historyIsJAL  := btb.io.query.isJAL
-    bp.io.historyIsBackward := btb.io.query.isBackward
+  val btb = Module(new BranchTargetBuffer)
+  val bp  = Module(new BranchPredictor)
+  btb.io.query.addr       := pc
+  bp.io.pc                := pcFeedToIFU
+  bp.io.historyHit        := btb.io.query.hit
+  bp.io.historyTarget     := btb.io.query.target
+  bp.io.historyIsJAL      := btb.io.query.isJAL
+  bp.io.historyIsBackward := btb.io.query.isBackward
 
-    btb.io.update.en     := RegNext(exu.io.out.valid && exu.io.btbUpdateEn)
-    btb.io.update.addr   := RegNext(exu.io.pc)
-    btb.io.update.target := RegNext(exu.io.branchTarget)
-    btb.io.update.isJAL  := RegNext(exu.io.isJAL)
-    btb.io.update.isBackward := RegNext(exu.io.branchBackward)
+  btb.io.update.en         := RegNext(exu.io.out.valid && exu.io.btbUpdateEn)
+  btb.io.update.addr       := RegNext(exu.io.pc)
+  btb.io.update.target     := RegNext(exu.io.branchTarget)
+  btb.io.update.isJAL      := RegNext(exu.io.isJAL)
+  btb.io.update.isBackward := RegNext(exu.io.branchBackward)
 
-    nxtPredictedPC := bp.io.pred.pc
+  nxtPredictedPC := bp.io.pred.pc
 
   ifu.io.predNext := bp.io.pred
 
-  redirectNow       := exu.io.out.valid && exu.io.predWrong
-  redirectNowTarget := exu.io.nxtPC
+  redirectNow         := exu.io.out.valid && exu.io.predWrong
+  redirectNowTarget   := exu.io.nxtPC
   redirectPendingFire := ifu.io.pc.fire && redirectPendingReg
 
   when(redirectNow) {
@@ -283,13 +283,12 @@ class CPUCore(
 
   pc := Mux(redirectNow, redirectNowTarget, Mux(ifu.io.pc.ready, nxtPredictedPC, pc))
 
-  pcFeedToIFU := pc//Mux(redirectPendingReg, redirectTargetReg, pc)
+  pcFeedToIFU := pc // Mux(redirectPendingReg, redirectTargetReg, pc)
 
   io.irom <> ifu.io.mem
   io.dram <> dataMemBus.io.out
   exu.io.memReq <> dataMemBus.io.exuMemReq
   wbu.io.memResp <> dataMemBus.io.memResp
-
 
   ifu.io.pc.bits  := pcFeedToIFU
   ifu.io.pc.valid := true.B
@@ -322,7 +321,7 @@ class CPUCore(
 
   idu.io.rvec <> gprs.io.read
   idu.io.csrRead <> csrs.io.read
-  idu.io.csrJmpTarget.mepc := csrs.io.mepc
+  idu.io.csrJmpTarget.mepc  := csrs.io.mepc
   idu.io.csrJmpTarget.mtvec := csrs.io.mtvec
 
   val lsuFwdInfo = ExtractFwdInfoFromLSU(lsu.io.in)

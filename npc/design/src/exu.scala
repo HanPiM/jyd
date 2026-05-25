@@ -304,13 +304,13 @@ class EXU(
   val normalNxtPC = Wire(Types.UWord)
   val nxtPC       = Wire(Types.UWord)
 
-  normalNxtPC := "h80".U(8.W) ## Mux(
+  normalNxtPC := "h80".U(8.W) ## 0.U(2.W) ## Mux(
     isTypJALR,
-    (reg1AddImm(23, 2)),// ## 0.U(1.W)),
+    (reg1AddImm(21, 2)),// ## 0.U(1.W)),
     Mux(
       isTypJAL || (isFmtB && takeBranch),
-      pcAddImm(23,2),
-      snpc(23,2)
+      pcAddImm(21,2),
+      snpc(21,2)
     )
   ) ## 0.U(2.W)
   nxtPC       := normalNxtPC

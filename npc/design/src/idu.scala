@@ -257,7 +257,11 @@ class IDU(
   // res.snpc       := io.in.bits.pc + 4.U
   res.pcAddImm   := io.in.bits.pc + res.imm
   // Keep address generation independent from the generic rs1 bypass path.
-  def addAddrImm(base: UInt): UInt = "h80".U(8.W) ## (base(23, 0) + addrImm(23, 0))
+  //
+  // 80[012]
+  // for [012] only lo 2 bits are used, so
+  // hi 8+2b: {8'b80, 2'b0}
+  def addAddrImm(base: UInt): UInt = "h80".U(8.W) ## 0.U(2.W) ## (base(21, 0) + addrImm(21, 0))
 
   val lsuReg1AddImmBypass =
     SingleByPassMux.conflict(res.rs1, io.wrBackInfo.lsu.addr, io.wrBackInfo.lsu.enWr) && io.wrBackInfo.lsu.dataVaild

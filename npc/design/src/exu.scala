@@ -268,7 +268,7 @@ class EXU(
   val exuResultValid = !isTypArithmetic || alu.io.out.valid
   io.fwd := WrBackForwardInfo(io.in.valid, dinst, !isMemOP && exuResultValid, writeBackInfo.gpr.data, csrWrEnable)
 
-  val memWMask = GenMemWMaskTrivialRef(reg1AddImm(1, 0), func3t)
+  val memWMask = GenMemWMask(reg1AddImm(1, 0), func3t)
 
   when(io.memReq.valid) {
     val memWMaskCorrect = GenMemWMaskTrivialRef(reg1AddImm(1, 0), func3t)

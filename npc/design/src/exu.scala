@@ -10,6 +10,70 @@ import axi4._
 import dpiwrap._
 import dpiwrap.ClockedCallVoidDPIC
 
+object GenMemWMaskTrivialRef {
+  def apply(offset: UInt, func3t: UInt): UInt = {
+    val memOpIsWord     = func3t(1)
+    val memOpIsHalf     = (~func3t(1)) && func3t(0)
+    val memOpIsByte     = (~func3t(1)) && (~func3t(0))
+    val wByteMask       = MuxLookup(offset(1, 0), 0.U(4.W))(
+      Seq(
+        0.U -> "b0001".U(4.W),
+        1.U -> "b0010".U(4.W),
+        2.U -> "b0100".U(4.W),
+        3.U -> "b1000".U(4.W)
+      )
+    )
+    // half word must be aligned to 2 bytes, so only two cases
+    val wByteMaskHalf   = Mux(offset(1), "b1100".U(4.W), "b0011".U(4.W))
+    // val wByteMaskHalf = MuxLookup(reg1AddImm(1, 0), 0.U(4.W))(
+    //   Seq(
+    //     0.U -> "b0011".U(4.W),
+    //     1.U -> "b0110".U(4.W),
+    //     2.U -> "b1100".U(4.W)
+    //   )
+    // )
+    val memWMaskCorrect = Mux1H(
+      Seq(
+        memOpIsByte -> wByteMask,
+        memOpIsHalf -> wByteMaskHalf,
+        memOpIsWord -> "b1111".U(4.W)
+      )
+    )
+    memWMaskCorrect
+  }
+}
+
+object GenMemWMask {
+  def apply(offset: UInt, func3t: UInt): UInt = {
+    val memOpIsWord = func3t(1)
+    val memOpIsHalf = (~func3t(1)) && func3t(0)
+    val memOpIsByte = (~func3t(1)) && (~func3t(0))
+
+    val isLW = memOpIsWord
+
+    // lw : always
+    // lh : when offset==0, is lo half
+    // lb : when offset==0, is b[0]
+    val memWMaskB0 = (offset(1, 0) === 0.U) | isLW
+    // lh : when offset==0
+    // lb : when offset==1
+    //
+    // offset can be 0 or 1
+    val memWMaskB1 = (~offset(1) && Mux(memOpIsByte, offset(0), ~offset(0))) | isLW
+
+    // lh : when offset==2, is hi half
+    // lb : when offset==2
+    val memWMaskB2 = (offset(1, 0) === 2.U) | isLW
+
+    // lh : when offset==2
+    // lb : when offset==3
+    // offset can be 2 or 3
+    val memWMaskB3 = (offset(1) && Mux(memOpIsByte, offset(0), ~offset(0))) | isLW
+
+    Cat(memWMaskB3, memWMaskB2, memWMaskB1, memWMaskB0)
+  }
+}
+
 class EXU(
   implicit p: CPUParameters)
     extends Module {
@@ -130,7 +194,7 @@ class EXU(
   writeBackInfo.csr_ecallflag := is_ecall
 
   // --- Inst type decode ---
-  val isExtMemReq = isTypLoad || isTypStore
+  val needMemReq = isTypLoad || isTypStore
   val memReqFire  = io.memReq.valid && io.memReq.ready
 
   val isFmtB = InstFmt.hasSame(dinst.info.fmt, InstFmt.branch)
@@ -188,59 +252,10 @@ class EXU(
   val exuResultValid = !isTypArithmetic || alu.io.out.valid
   io.fwd := WrBackForwardInfo(io.in.valid, dinst, !isMemOP && exuResultValid, writeBackInfo.gpr.data, csrWrEnable)
 
-  val memOpIsWord     = func3t(1)
-  val memOpIsHalf     = (~func3t(1)) && func3t(0)
-  val memOpIsByte     = (~func3t(1)) && (~func3t(0))
-  val wByteMask       = MuxLookup(reg1AddImm(1, 0), 0.U(4.W))(
-    Seq(
-      0.U -> "b0001".U(4.W),
-      1.U -> "b0010".U(4.W),
-      2.U -> "b0100".U(4.W),
-      3.U -> "b1000".U(4.W)
-    )
-  )
-  // half word must be aligned to 2 bytes, so only two cases
-  val wByteMaskHalf   = Mux(reg1AddImm(1), "b1100".U(4.W), "b0011".U(4.W))
-  // val wByteMaskHalf = MuxLookup(reg1AddImm(1, 0), 0.U(4.W))(
-  //   Seq(
-  //     0.U -> "b0011".U(4.W),
-  //     1.U -> "b0110".U(4.W),
-  //     2.U -> "b1100".U(4.W)
-  //   )
-  // )
-  val memWMaskCorrect = Mux1H(
-    Seq(
-      memOpIsByte -> wByteMask,
-      memOpIsHalf -> wByteMaskHalf,
-      memOpIsWord -> "b1111".U(4.W)
-    )
-  )
+  val memWMask = GenMemWMask(reg1AddImm(1, 0), func3t)
 
-  val isLW = memOpIsWord
-
-  // lw : always
-  // lh : when offset==0, is lo half
-  // lb : when offset==0, is b[0]
-  val memWMaskB0 = (reg1AddImm(1, 0) === 0.U) | isLW
-  // lh : when offset==0
-  // lb : when offset==1
-  //
-  // offset can be 0 or 1
-  val memWMaskB1 = (~reg1AddImm(1) && Mux(memOpIsByte, reg1AddImm(0), ~reg1AddImm(0))) | isLW
-
-  // lh : when offset==2, is hi half
-  // lb : when offset==2
-  val memWMaskB2 = (reg1AddImm(1, 0) === 2.U) | isLW
-
-  // lh : when offset==2
-  // lb : when offset==3
-  // offset can be 2 or 3
-  val memWMaskB3 = (reg1AddImm(1) && Mux(memOpIsByte, reg1AddImm(0), ~reg1AddImm(0))) | isLW
-
-  val memWMask = Cat(memWMaskB3, memWMaskB2, memWMaskB1, memWMaskB0)
-
-  // assert(memWMask === memWMaskCorrect, "memWMask generation error")
   when(io.memReq.valid) {
+    val memWMaskCorrect = GenMemWMaskTrivialRef(reg1AddImm(1, 0), func3t)
     when(memWMask =/= memWMaskCorrect) {
       printf(p"reg1AddImm: ${reg1AddImm}, func3t: ${func3t}\n")
       printf(p"memWMask: ${memWMask}, correct: ${memWMaskCorrect}\n")
@@ -259,7 +274,7 @@ class EXU(
     )
   )
 
-  io.memReq.valid      := isExtMemReq && io.in.valid && io.out.ready
+  io.memReq.valid      := needMemReq && io.in.valid && io.out.ready
   io.memReq.bits.addr  := reg1AddImm
   io.memReq.bits.size  := func3t(1, 0)
   io.memReq.bits.wen   := isTypStore
@@ -267,10 +282,10 @@ class EXU(
   io.memReq.bits.wmask := memWMask
 
   io.in.ready  := memReqFire || (
-    io.out.ready && !isExtMemReq && (!isTypArithmetic || alu.io.out.valid)
+    io.out.ready && !needMemReq && (!isTypArithmetic || alu.io.out.valid)
   )
   io.out.valid := memReqFire || (
-    io.in.valid && !isExtMemReq && (!isTypArithmetic || alu.io.out.valid)
+    io.in.valid && !needMemReq && (!isTypArithmetic || alu.io.out.valid)
   )
 
   writeBackInfo.iid := dinst.iid

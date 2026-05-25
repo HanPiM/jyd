@@ -10,20 +10,22 @@ import axi4._
 import dpiwrap._
 import dpiwrap.ClockedCallVoidDPIC
 
-class EXU(implicit p:CPUParameters) extends Module {
+class EXU(
+  implicit p: CPUParameters)
+    extends Module {
   val io = IO(new Bundle {
-    val in        = Flipped(Decoupled(new DecodedInst))
-    val jmpHappen = Output(Bool())
-    val isJAL     = Output(Bool())
+    val in          = Flipped(Decoupled(new DecodedInst))
+    val jmpHappen   = Output(Bool())
+    val isJAL       = Output(Bool())
     val btbUpdateEn = Output(Bool())
 
     val predWrong = Output(Bool())
 
-    val branchTarget = Output(Types.UWord)
+    val branchTarget   = Output(Types.UWord)
     val branchBackward = Output(Bool())
 
-    val pc        = Output(Types.UWord)
-    val nxtPC     = Output(Types.UWord)
+    val pc    = Output(Types.UWord)
+    val nxtPC = Output(Types.UWord)
 
     val fwd = Output(new WrBackForwardInfo)
 
@@ -40,8 +42,8 @@ class EXU(implicit p:CPUParameters) extends Module {
   val func3t = dinst.code(14, 12)
   val func7t = dinst.code(31, 25)
 
-  val isFmtI   = InstFmt.hasSame(dinst.info.fmt, InstFmt.imm)
-  val isTypSys = InstType.hasSame(dinst.info.typ, InstType.system)
+  val isFmtI          = InstFmt.hasSame(dinst.info.fmt, InstFmt.imm)
+  val isTypSys        = InstType.hasSame(dinst.info.typ, InstType.system)
   val isTypLoad       = InstType.hasSame(dinst.info.typ, InstType.load)
   val isTypStore      = InstType.hasSame(dinst.info.typ, InstType.store)
   val isTypAUIPC      = InstType.hasSame(dinst.info.typ, InstType.auipc)
@@ -59,12 +61,12 @@ class EXU(implicit p:CPUParameters) extends Module {
   val pcAddImm   = dinst.info.pcAddImm
   val reg1AddImm = dinst.info.reg1AddImm
 
-  io.branchTarget := pcAddImm
+  io.branchTarget   := pcAddImm
   io.branchBackward := dinst.info.imm(31)
 
   alu_in.src1   := reg_v1
   // alu_in.src2   := Mux(isFmtI, dinst.info.imm, reg_v2)
-  alu_in.src2 := reg_v2
+  alu_in.src2   := reg_v2
   alu_in.is_imm := isFmtI
   alu_in.func3t := func3t
   alu_in.func7t := func7t
@@ -115,7 +117,8 @@ class EXU(implicit p:CPUParameters) extends Module {
     }.otherwise {
       csrWrAddr := csr_raddr
       csrWrData := Mux(
-        isRC, csr_rdata & (~csrOpMask),
+        isRC,
+        csr_rdata & (~csrOpMask),
         Mux(isRS, csr_rdata | csrOpMask, csrOpMask)
       )
     }
@@ -127,26 +130,26 @@ class EXU(implicit p:CPUParameters) extends Module {
   writeBackInfo.csr_ecallflag := is_ecall
 
   // --- Inst type decode ---
-  val isExtMemReq     = isTypLoad || isTypStore
-  val memReqFire      = io.memReq.valid && io.memReq.ready
+  val isExtMemReq = isTypLoad || isTypStore
+  val memReqFire  = io.memReq.valid && io.memReq.ready
 
-  val isFmtB          = InstFmt.hasSame(dinst.info.fmt, InstFmt.branch)
+  val isFmtB = InstFmt.hasSame(dinst.info.fmt, InstFmt.branch)
 
-  val isEqual = reg_v1 === reg_v2
-  val isLessThan = reg_v1.asSInt < reg_v2.asSInt
+  val isEqual     = reg_v1 === reg_v2
+  val isLessThan  = reg_v1.asSInt < reg_v2.asSInt
   val isLessThanU = reg_v1 < reg_v2
 
   // val isEqual = dinst.info.isEqual
   // val isLessThan = dinst.info.isLessThan
   // val isLessThanU = dinst.info.isLessThanU
 
-  val takeBranch      = MuxLookup(func3t, false.B)(
+  val takeBranch = MuxLookup(func3t, false.B)(
     Seq(
-      "b000".U ->  isEqual,
+      "b000".U -> isEqual,
       "b001".U -> !isEqual,
-      "b100".U ->  isLessThan,
+      "b100".U -> isLessThan,
       "b101".U -> !isLessThan,
-      "b110".U ->  isLessThanU,
+      "b110".U -> isLessThanU,
       "b111".U -> !isLessThanU
     )
   )
@@ -181,15 +184,14 @@ class EXU(implicit p:CPUParameters) extends Module {
   writeBackInfo.lsuFunc3t     := 0.U
   writeBackInfo.lsuAddrOffset := 0.U
 
-  val isMemOP = isTypLoad || isTypStore
+  val isMemOP        = isTypLoad || isTypStore
   val exuResultValid = !isTypArithmetic || alu.io.out.valid
-  io.fwd := WrBackForwardInfo(io.in.valid, dinst, !isMemOP && exuResultValid, writeBackInfo.gpr.data,
-    csrWrEnable)
+  io.fwd := WrBackForwardInfo(io.in.valid, dinst, !isMemOP && exuResultValid, writeBackInfo.gpr.data, csrWrEnable)
 
-  val memOpIsWord    = func3t(1)
-  val memOpIsHalf    = (~func3t(1)) && func3t(0)
-  val memOpIsByte    = (~func3t(1)) && (~func3t(0))
-  val wByteMask = MuxLookup(reg1AddImm(1, 0), 0.U(4.W))(
+  val memOpIsWord     = func3t(1)
+  val memOpIsHalf     = (~func3t(1)) && func3t(0)
+  val memOpIsByte     = (~func3t(1)) && (~func3t(0))
+  val wByteMask       = MuxLookup(reg1AddImm(1, 0), 0.U(4.W))(
     Seq(
       0.U -> "b0001".U(4.W),
       1.U -> "b0010".U(4.W),
@@ -198,7 +200,7 @@ class EXU(implicit p:CPUParameters) extends Module {
     )
   )
   // half word must be aligned to 2 bytes, so only two cases
-  val wByteMaskHalf = Mux(reg1AddImm(1), "b1100".U(4.W), "b0011".U(4.W))
+  val wByteMaskHalf   = Mux(reg1AddImm(1), "b1100".U(4.W), "b0011".U(4.W))
   // val wByteMaskHalf = MuxLookup(reg1AddImm(1, 0), 0.U(4.W))(
   //   Seq(
   //     0.U -> "b0011".U(4.W),
@@ -224,7 +226,7 @@ class EXU(implicit p:CPUParameters) extends Module {
   // lb : when offset==1
   //
   // offset can be 0 or 1
-  val memWMaskB1 = (~reg1AddImm(1) && Mux(memOpIsByte,reg1AddImm(0),~reg1AddImm(0))) | isLW
+  val memWMaskB1 = (~reg1AddImm(1) && Mux(memOpIsByte, reg1AddImm(0), ~reg1AddImm(0))) | isLW
 
   // lh : when offset==2, is hi half
   // lb : when offset==2
@@ -233,24 +235,25 @@ class EXU(implicit p:CPUParameters) extends Module {
   // lh : when offset==2
   // lb : when offset==3
   // offset can be 2 or 3
-  val memWMaskB3 = (reg1AddImm(1) && Mux(memOpIsByte,reg1AddImm(0),~reg1AddImm(0))) | isLW
+  val memWMaskB3 = (reg1AddImm(1) && Mux(memOpIsByte, reg1AddImm(0), ~reg1AddImm(0))) | isLW
 
   val memWMask = Cat(memWMaskB3, memWMaskB2, memWMaskB1, memWMaskB0)
 
   // assert(memWMask === memWMaskCorrect, "memWMask generation error")
-  when(io.memReq.valid){
-  when(memWMask =/= memWMaskCorrect) {
-    printf(p"reg1AddImm: ${reg1AddImm}, func3t: ${func3t}\n")
-    printf(p"memWMask: ${memWMask}, correct: ${memWMaskCorrect}\n")
-    stop()
-  }}
+  when(io.memReq.valid) {
+    when(memWMask =/= memWMaskCorrect) {
+      printf(p"reg1AddImm: ${reg1AddImm}, func3t: ${func3t}\n")
+      printf(p"memWMask: ${memWMask}, correct: ${memWMaskCorrect}\n")
+      stop()
+    }
+  }
 
   val memWData = MuxLookup(reg1AddImm(1, 0), 0.U(32.W))(
     Seq(
       0.U -> reg_v2,
       // only byte align case can store to odd byte
       // so only need to shift lo 8 bits
-      1.U -> 0.U(16.W) ## reg_v2(7, 0) ## 0.U(8.W), 
+      1.U -> 0.U(16.W) ## reg_v2(7, 0) ## 0.U(8.W),
       2.U -> Cat(reg_v2(15, 0), 0.U(16.W)),
       3.U -> Cat(reg_v2(7, 0), 0.U(24.W))
     )
@@ -263,7 +266,7 @@ class EXU(implicit p:CPUParameters) extends Module {
   io.memReq.bits.wdata := memWData
   io.memReq.bits.wmask := memWMask
 
-  io.in.ready := memReqFire || (
+  io.in.ready  := memReqFire || (
     io.out.ready && !isExtMemReq && (!isTypArithmetic || alu.io.out.valid)
   )
   io.out.valid := memReqFire || (
@@ -288,16 +291,16 @@ class EXU(implicit p:CPUParameters) extends Module {
       snpc
     )
   )
-  nxtPC    := normalNxtPC
-  io.nxtPC := nxtPC
-  io.pc    := dinst.pc
+  nxtPC       := normalNxtPC
+  io.nxtPC    := nxtPC
+  io.pc       := dinst.pc
 
-  io.jmpHappen := willJmp
-  io.isJAL     := isTypJAL
+  io.jmpHappen   := willJmp
+  io.isJAL       := isTypJAL
   io.btbUpdateEn := isTypBranch || isTypJAL || isTypJALR
   // io.predWrong := (normalNxtPC =/= dinst.pred.pc) || isJmpCsr
   // io.predWrong := isTypJALR || isJmpCsr || (isFmtB && (takeBranch ^ dinst.pred.take)) || (isTypJAL && (~dinst.pred.hit))
-  io.predWrong := (isFmtB && (takeBranch ^ dinst.pred.take)) || io.in.bits.info.notBranchPredWrong
+  io.predWrong   := (isFmtB && (takeBranch ^ dinst.pred.take)) || io.in.bits.info.notBranchPredWrong
 
   StageLogger(
     clock,
@@ -317,7 +320,9 @@ class EXU(implicit p:CPUParameters) extends Module {
   dontTouch(dbgIsCSRJmp)
 }
 
-class EXUForDifftest(implicit p:CPUParameters) extends Module {
+class EXUForDifftest(
+  implicit p: CPUParameters)
+    extends Module {
   val io = IO(new Bundle {
     val in     = Flipped(Decoupled(new DecodedInst))
     val actual = new Bundle {

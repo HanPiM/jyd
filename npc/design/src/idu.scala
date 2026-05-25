@@ -45,7 +45,6 @@ object WrBackForwardInfo {
     dinstInfo:  DecodedInst,
     dataVaild:  Bool,
     data:       UInt,
-
     csrWrEn:    Bool
   )(
     implicit p: CPUParameters
@@ -137,7 +136,7 @@ class ByPassMux(
     val outData2 = Output(Types.UWord)
   })
 
-  val wrBacks = Seq(io.wrBackInfo.exu, io.wrBackInfo.lsu, io.wrBackInfo.wbu)
+  val wrBacks    = Seq(io.wrBackInfo.exu, io.wrBackInfo.lsu, io.wrBackInfo.wbu)
   val csrWrBacks = Seq(io.wrBackInfo.exu, io.wrBackInfo.lsu, io.wrBackInfo.wbu)
 
   val (needStall1, outData1) = SingleByPassMux(io.rs1, io.regData1, wrBacks)
@@ -188,7 +187,7 @@ class IDU(
   val isTypStore  = InstType.hasSame(res.typ, InstType.store)
   val isTypBranch = InstType.hasSame(res.typ, InstType.branch)
   val isTypJALR   = InstType.hasSame(res.typ, InstType.jalr)
-  val isTypJAL   = InstType.hasSame(res.typ, InstType.jal)
+  val isTypJAL    = InstType.hasSame(res.typ, InstType.jal)
 
   val isFmtI = InstFmt.hasSame(res.fmt, InstFmt.imm)
   val isFmtU = InstFmt.hasSame(res.fmt, InstFmt.upper)
@@ -241,7 +240,7 @@ class IDU(
   res.reg2                := Mux(isFmtI, immI, bypassMux.io.outData2) // For exu ALU src2
   res.csrReadData         := io.csrRead.data
 
-  val needReg1AddImm = isTypLoad || isTypStore || isTypJALR
+  val needReg1AddImm             = isTypLoad || isTypStore || isTypJALR
   val needStallReg1AddImmFromEXU =
     needReg1AddImm && SingleByPassMux.conflict(res.rs1, io.wrBackInfo.exu.addr, io.wrBackInfo.exu.enWr)
 
@@ -255,7 +254,7 @@ class IDU(
   }
 
   // res.snpc       := io.in.bits.pc + 4.U
-  res.pcAddImm   := io.in.bits.pc + res.imm
+  res.pcAddImm := io.in.bits.pc + res.imm
   // Keep address generation independent from the generic rs1 bypass path.
   //
   // 80[012]
@@ -273,8 +272,8 @@ class IDU(
     Mux(wbuReg1AddImmBypass, addAddrImm(io.wrBackInfo.wbu.data), addAddrImm(io.rvec.data(0)))
   )
 
-  res.isECall                 := inst === "h73".U
-  res.isMRet                  := inst === "h30200073".U
+  res.isECall := inst === "h73".U
+  res.isMRet  := inst === "h30200073".U
 
   res.staticNextPCOrCSRTarget := Mux(
     res.isECall,

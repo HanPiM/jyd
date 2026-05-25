@@ -19,8 +19,8 @@ object InlinePrintf {
 }
 
 object TrimmedPC {
-  val Hi10b = "h80".U(8.W) ## 0.U(2.W)
-  val Lo2b = 0.U(2.W)
+  def Hi10b = "h80".U(8.W) ## 0.U(2.W)
+  def Lo2b = 0.U(2.W)
 
   def expand(addr: UInt): UInt = {
     require(addr.getWidth == 20)
@@ -28,6 +28,13 @@ object TrimmedPC {
   }
   def trim(addr: UInt): UInt = {
     addr(21, 2)
+  }
+
+  // for future more zip
+  def addTrimed(a: UInt, b: UInt): UInt = {
+    require(a.getWidth == 20)
+    require(b.getWidth == 20)
+    a + b
   }
 }
 

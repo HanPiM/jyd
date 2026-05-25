@@ -206,7 +206,7 @@ class EXU(implicit p:CPUParameters) extends Module {
   //     2.U -> "b1100".U(4.W)
   //   )
   // )
-  val memWMask = Mux1H(
+  val memWMaskCorrect = Mux1H(
     Seq(
       memOpIsByte -> wByteMask,
       memOpIsHalf -> wByteMaskHalf,
@@ -214,28 +214,36 @@ class EXU(implicit p:CPUParameters) extends Module {
     )
   )
 
-  // val isLW = memOpIsWord
+  val isLW = memOpIsWord
+
+  // lw : always
+  // lh : when offset==0, is lo half
+  // lb : when offset==0, is b[0]
+  val memWMaskB0 = (reg1AddImm(1, 0) === 0.U) | isLW
+  // lh : when offset==0
+  // lb : when offset==1
   //
-  // // lw : always
-  // // lh : when offset==0, is lo half
-  // // lb : when offset==0, is b[0]
-  // val memWMaskB0 = (reg1AddImm(1, 0) === 0.U) | isLW
-  // // lh : when offset==0
-  // // lb : when offset==1
-  // //
-  // // offset can be 0 or 1
-  // val memWMaskB1 = (~reg1AddImm(1)) | isLW
-  //
-  // // lh : when offset==2, is hi half
-  // // lb : when offset==2
-  // val memWMaskB2 = (reg1AddImm(1, 0) === 2.U) | isLW
-  //
-  // // lh : when offset==2
-  // // lb : when offset==3
-  // // offset can be 2 or 3
-  // val memWMaskB3 = reg1AddImm(1) | isLW
-  //
-  // val memWMask = Cat(memWMaskB3, memWMaskB2, memWMaskB1, memWMaskB0)
+  // offset can be 0 or 1
+  val memWMaskB1 = (~reg1AddImm(1) && Mux(memOpIsByte,reg1AddImm(0),~reg1AddImm(0))) | isLW
+
+  // lh : when offset==2, is hi half
+  // lb : when offset==2
+  val memWMaskB2 = (reg1AddImm(1, 0) === 2.U) | isLW
+
+  // lh : when offset==2
+  // lb : when offset==3
+  // offset can be 2 or 3
+  val memWMaskB3 = (reg1AddImm(1) && Mux(memOpIsByte,reg1AddImm(0),~reg1AddImm(0))) | isLW
+
+  val memWMask = Cat(memWMaskB3, memWMaskB2, memWMaskB1, memWMaskB0)
+
+  // assert(memWMask === memWMaskCorrect, "memWMask generation error")
+  when(io.memReq.valid){
+  when(memWMask =/= memWMaskCorrect) {
+    printf(p"reg1AddImm: ${reg1AddImm}, func3t: ${func3t}\n")
+    printf(p"memWMask: ${memWMask}, correct: ${memWMaskCorrect}\n")
+    stop()
+  }}
 
   val memWData = MuxLookup(reg1AddImm(1, 0), 0.U(32.W))(
     Seq(

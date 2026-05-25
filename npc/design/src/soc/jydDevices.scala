@@ -18,7 +18,7 @@ object AddrSpace {
   val CNT = ("h80200050".U, "h80200054".U)
 
   object SelfExtSpace {
-    val UART = ("h80200200".U, "h80200300".U)
+    val UART = ("h802000a0".U, "h802000af".U)
   }
 
   def needSkipDifftestGroup = Seq(
@@ -27,7 +27,18 @@ object AddrSpace {
   )
 
   def inRng(addr: UInt, rng: (UInt, UInt)): Bool = {
-    (addr >= rng._1) && (addr < rng._2)
+    // 0x [8  0]  [0/1/2]   x ...
+    //    ^31-24  ^23-20
+
+    val keyBits = addr(21, 20)
+    val rngKeyBits = rng._1(21, 20)
+    val mmioHit = addr(7,4) === rng._1(7,4)
+
+    val isMMIO = keyBits(1)
+
+    (isMMIO && mmioHit) | (~isMMIO && keyBits(0) === rngKeyBits(0))
+
+    // (addr >= rng._1) && (addr < rng._2)
   }
 }
 

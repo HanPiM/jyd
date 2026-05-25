@@ -252,7 +252,7 @@ class EXU(
   val exuResultValid = !isTypArithmetic || alu.io.out.valid
   io.fwd := WrBackForwardInfo(io.in.valid, dinst, !isMemOP && exuResultValid, writeBackInfo.gpr.data, csrWrEnable)
 
-  val memWMask = GenMemWMask(reg1AddImm(1, 0), func3t)
+  val memWMask = GenMemWMaskTrivialRef(reg1AddImm(1, 0), func3t)
 
   when(io.memReq.valid) {
     val memWMaskCorrect = GenMemWMaskTrivialRef(reg1AddImm(1, 0), func3t)
@@ -297,15 +297,15 @@ class EXU(
   val normalNxtPC = Wire(Types.UWord)
   val nxtPC       = Wire(Types.UWord)
 
-  normalNxtPC := Mux(
+  normalNxtPC := "h80".U(8.W) ## Mux(
     isTypJALR,
-    (reg1AddImm(31, 1) ## 0.U(1.W)),
+    (reg1AddImm(23, 2)),// ## 0.U(1.W)),
     Mux(
       isTypJAL || (isFmtB && takeBranch),
-      pcAddImm,
-      snpc
+      pcAddImm(23,2),
+      snpc(23,2)
     )
-  )
+  ) ## 0.U(2.W)
   nxtPC       := normalNxtPC
   io.nxtPC    := nxtPC
   io.pc       := dinst.pc

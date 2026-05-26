@@ -260,13 +260,13 @@ class IDU(
   // 80[012]
   // for [012] only lo 2 bits are used, so
   // hi 8+2b: {8'b80, 2'b0}
-  def addAddrImm(base: UInt): UInt = "h80".U(8.W) ## (base(23, 0) + addrImm(23, 0))
+  def addAddrImm(base: UInt): UInt = base(21, 0) + addrImm(21, 0)
 
   val lsuReg1AddImmBypass =
     SingleByPassMux.conflict(res.rs1, io.wrBackInfo.lsu.addr, io.wrBackInfo.lsu.enWr) && io.wrBackInfo.lsu.dataVaild
   val wbuReg1AddImmBypass =
     SingleByPassMux.conflict(res.rs1, io.wrBackInfo.wbu.addr, io.wrBackInfo.wbu.enWr) && io.wrBackInfo.wbu.dataVaild
-  res.reg1AddImm :=  Mux(
+  res.reg1AddImm := "h80".U(8.W) ## 0.U(2.W) ## Mux(
     lsuReg1AddImmBypass,
     addAddrImm(io.wrBackInfo.lsu.data),
     Mux(wbuReg1AddImmBypass, addAddrImm(io.wrBackInfo.wbu.data), addAddrImm(io.rvec.data(0)))

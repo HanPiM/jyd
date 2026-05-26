@@ -250,11 +250,10 @@ class EXU(
   writeBackInfo.gpr.data := Mux1H(
     Seq(
       isTypArithmetic         -> aluOut,
-      // isTypLUI                -> dinst.info.imm,
-      // isTypAUIPC              -> pcAddImm,
-      // (isTypJALR || isTypJAL) -> snpc,
-      isTypSys                -> csr_rdata,
-      (~(isTypArithmetic | isTypSys)) -> dinst.info.preMuxWrData
+      isTypLUI                -> dinst.info.imm,
+      isTypAUIPC              -> pcAddImm,
+      (isTypJALR || isTypJAL) -> snpc,
+      isTypSys                -> csr_rdata
     )
   )
 

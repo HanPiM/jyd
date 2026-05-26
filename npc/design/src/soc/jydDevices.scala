@@ -261,8 +261,12 @@ class SimpleBusFPGAMem(sizeInByte: Int, baseAddr: BigInt) extends Module {
   val doWrite       = doReq && io.wen
 
   mem.io.clka  := clock
-  mem.io.ena   := doReq
-  mem.io.wea   := io.wmask & Fill(4, io.wen)
+  // BRAM Output register was controlled by ena!!!
+  // NEED keep ena high during output register update
+  mem.io.ena   := true.B 
+  // since keep ena always high, we need to make write happen
+  // only when request is valid
+  mem.io.wea   := io.wmask & Fill(4, io.wen & io.req_valid)
   mem.io.addra := localWordAddr
   mem.io.dina  := io.wdata
 

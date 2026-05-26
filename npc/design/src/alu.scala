@@ -208,16 +208,13 @@ class Divider extends Module {
   }
   val state = RegInit(State.idle)
 
-  val func3tReg       = Reg(UInt(3.W))
-  val quotientNegReg  = Reg(Bool())
+  val func3tReg      = Reg(UInt(3.W))
+  val quotientNegReg = Reg(Bool())
   val remainderNegReg = Reg(Bool())
-  val specialReg      = Reg(Bool())
+  val specialReg     = Reg(Bool())
   val specialResultReg = Reg(Types.UWord)
-  val dividendAbsReg  = Reg(Types.UWord)
-  val divisorAbsReg   = Reg(Types.UWord)
-  val ipValidReg      = RegInit(false.B)
-  val resultReg       = Reg(Types.UWord)
-  val divider         = Module(new div_gen_uradix2)
+  val resultReg      = Reg(Types.UWord)
+  val divider        = Module(new div_gen_uradix2)
 
   val inputFunc3t = io.in.bits.func3t
   val inputIsRem = inputFunc3t(1)
@@ -233,11 +230,13 @@ class Divider extends Module {
   val inputOverflowResult = Mux(inputIsRem, 0.U, "h80000000".U)
   val inputSpecialResult = Mux(inputDivideByZero, inputDivideByZeroResult, inputOverflowResult)
 
+  val ipFire = io.in.fire && !inputSpecial
+
   divider.io.aclk                   := clock
-  divider.io.s_axis_divisor_tvalid  := ipValidReg
-  divider.io.s_axis_divisor_tdata   := divisorAbsReg
-  divider.io.s_axis_dividend_tvalid := ipValidReg
-  divider.io.s_axis_dividend_tdata  := dividendAbsReg
+  divider.io.s_axis_divisor_tvalid  := ipFire
+  divider.io.s_axis_divisor_tdata   := Mux(inputDivisorAbs === 0.U, 1.U, inputDivisorAbs)
+  divider.io.s_axis_dividend_tvalid := ipFire
+  divider.io.s_axis_dividend_tdata  := inputDividendAbs
 
   val ipResult = divider.io.m_axis_dout_tdata
   val ipQuotient = ipResult(63, 32)
@@ -251,20 +250,15 @@ class Divider extends Module {
   io.out.valid := (state === State.done) || ((state === State.busy) && (specialReg || resultValid))
   io.out.bits  := Mux(state === State.done, resultReg, Mux(specialReg, specialResultReg, result))
 
-  ipValidReg := false.B
-
   switch(state) {
     is(State.idle) {
       when(io.in.fire) {
-        func3tReg        := io.in.bits.func3t
-        quotientNegReg   := inputDividendNeg ^ inputDivisorNeg
-        remainderNegReg  := inputDividendNeg
-        specialReg       := inputSpecial
+        func3tReg       := io.in.bits.func3t
+        quotientNegReg  := inputDividendNeg ^ inputDivisorNeg
+        remainderNegReg := inputDividendNeg
+        specialReg      := inputSpecial
         specialResultReg := inputSpecialResult
-        dividendAbsReg   := inputDividendAbs
-        divisorAbsReg    := Mux(inputDivisorAbs === 0.U, 1.U, inputDivisorAbs)
-        ipValidReg       := !inputSpecial
-        state            := State.busy
+        state           := State.busy
       }
     }
     is(State.busy) {

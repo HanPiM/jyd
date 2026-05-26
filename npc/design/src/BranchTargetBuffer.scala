@@ -10,19 +10,20 @@ object BTBParameters {
   val INDEX_WIDTH = log2Ceil(ENTRY_NUM)
   // 2 for word-alignment
   // 8 for Hi 8 bit "80" since all instructions are in "80xxxxxx"
-  val TAG_WIDTH   = Types.BitWidth.word - INDEX_WIDTH - 2 - 8
+  // 2b for [012] hi 2 bit zero
+  val TAG_WIDTH   = Types.BitWidth.word - INDEX_WIDTH - 2 - 10
 
   def extractTag(addr: UInt):   UInt = {
-    addr(23, 24 - TAG_WIDTH)
+    addr(21, 22 - TAG_WIDTH)
   }
   def extractIndex(addr: UInt): UInt = {
-    addr(24 - TAG_WIDTH - 1, 2)
+    addr(22 - TAG_WIDTH - 1, 2)
   }
 }
 
 class BTBTarget extends Bundle {
-  val bits = UInt(22.W) // 32 - 2 (word-alignment) - 8 (Hi 8 bit "80")
-  def get = Cat("h80".U(8.W), bits, 0.U(2.W))
+  val bits = UInt(20.W) // 32 - 2 (word-alignment) - 10
+  def get = Cat("h80".U(8.W), 0.U(2.W), bits, 0.U(2.W))
 }
 object BTBTarget {
   def apply(addr: UInt): BTBTarget = {

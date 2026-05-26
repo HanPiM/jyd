@@ -275,12 +275,10 @@ class IDU(
   res.isECall := inst === "h73".U
   res.isMRet  := inst === "h30200073".U
 
-  res.staticNextPCOrCSRTarget := TrimmedPC.expand(
-    Mux(
-      res.isECall,
-      TrimmedPC.trim(io.csrJmpTarget.mtvec),
-      Mux(res.isMRet, TrimmedPC.trim(io.csrJmpTarget.mepc), TrimmedPC.trim(io.in.bits.pc) + TrimmedPC.trim(4.U))
-    )
+  res.staticNextPCOrCSRTarget := Mux(
+    res.isECall,
+    io.csrJmpTarget.mtvec,
+    Mux(res.isMRet, io.csrJmpTarget.mepc, io.in.bits.pc + 4.U)
   )
 
   val isJmpCSR = res.isECall || res.isMRet

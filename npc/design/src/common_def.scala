@@ -185,6 +185,8 @@ class DecodedInstInfo(implicit p : CPUParameters) extends InstMetaInfo with HasR
   val isMRet  = Bool()
 
   val notBranchPredWrong = Bool()
+
+  val preMuxWrData = Types.UWord
 }
 
 class DecodedInst(implicit p : CPUParameters) extends Inst {

@@ -188,6 +188,8 @@ class IDU(
   val isTypBranch = InstType.hasSame(res.typ, InstType.branch)
   val isTypJALR   = InstType.hasSame(res.typ, InstType.jalr)
   val isTypJAL    = InstType.hasSame(res.typ, InstType.jal)
+  val isTypLUI    = InstType.hasSame(res.typ, InstType.lui)
+  val isTypAUIPC  = InstType.hasSame(res.typ, InstType.auipc)
 
   val isFmtI = InstFmt.hasSame(res.fmt, InstFmt.imm)
   val isFmtU = InstFmt.hasSame(res.fmt, InstFmt.upper)
@@ -275,15 +277,19 @@ class IDU(
   res.isECall := inst === "h73".U
   res.isMRet  := inst === "h30200073".U
 
+  val snpc = io.in.bits.pc + 4.U
+
   res.staticNextPCOrCSRTarget := Mux(
     res.isECall,
     io.csrJmpTarget.mtvec,
-    Mux(res.isMRet, io.csrJmpTarget.mepc, io.in.bits.pc + 4.U)
+    Mux(res.isMRet, io.csrJmpTarget.mepc, snpc)
   )
 
   val isJmpCSR = res.isECall || res.isMRet
 
   res.notBranchPredWrong := isTypJALR || isJmpCSR || (isTypJAL && ~io.in.bits.pred.hit)
+
+  res.preMuxWrData := Mux(isTypJALR | isTypJAL, snpc, Mux(isTypAUIPC, res.pcAddImm, res.imm))
 
   io.in.ready  := (io.out.ready && !needStall)
   io.out.valid := io.in.valid && !needStall

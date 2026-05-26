@@ -139,8 +139,7 @@ class EXU(
   val reg_v2     = dinst.info.reg2
   // val pcAddImm   = dinst.pc + dinst.info.imm
   val pcAddImm   = dinst.info.pcAddImm
-  // val reg1AddImm = dinst.info.reg1AddImm
-  val reg1AddImm = "h80".U(8.W) ## 0.U(2.W) ## (reg_v1(21, 0) + dinst.info.imm(21, 0))
+  val reg1AddImm = dinst.info.reg1AddImm
 
   io.branchTarget   := pcAddImm
   io.branchBackward := dinst.info.imm(31)

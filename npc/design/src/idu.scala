@@ -136,7 +136,7 @@ class ByPassMux(
     val outData2 = Output(Types.UWord)
   })
 
-  val wrBacks    = Seq(io.wrBackInfo.exu, io.wrBackInfo.lsu, io.wrBackInfo.wbu)
+  val wrBacks    = Seq(io.wrBackInfo.lsu, io.wrBackInfo.wbu)
   val csrWrBacks = Seq(io.wrBackInfo.exu, io.wrBackInfo.lsu, io.wrBackInfo.wbu)
 
   val (needStall1, outData1) = SingleByPassMux(io.rs1, io.regData1, wrBacks)
@@ -228,8 +228,6 @@ class IDU(
     )
   )
 
-  val needBypassRs2 = ~isFmtI
-
   val bypassMux = Module(new ByPassMux())
   bypassMux.io.rs1        := res.rs1
   bypassMux.io.rs2        := res.rs2
@@ -238,13 +236,17 @@ class IDU(
   bypassMux.io.wrBackInfo := io.wrBackInfo
   res.reg1                := bypassMux.io.outData1
   res.reg2                := Mux(isFmtI, immI, bypassMux.io.outData2) // For exu ALU src2
+  res.reg1ConflictWithEXU := SingleByPassMux.conflict(res.rs1, io.wrBackInfo.exu.addr, io.wrBackInfo.exu.enWr)
+  res.reg2ConflictWithEXU := SingleByPassMux.conflict(res.rs2, io.wrBackInfo.exu.addr, io.wrBackInfo.exu.enWr)
   res.csrReadData         := io.csrRead.data
 
   val needReg1AddImm             = isTypLoad || isTypStore || isTypJALR
   val needStallReg1AddImmFromEXU =
     needReg1AddImm && SingleByPassMux.conflict(res.rs1, io.wrBackInfo.exu.addr, io.wrBackInfo.exu.enWr)
+  val needStallRegFromEXU =
+    (res.reg1ConflictWithEXU || res.reg2ConflictWithEXU) && !io.wrBackInfo.exu.dataVaild
 
-  val needStall = bypassMux.io.needStall || needStallReg1AddImmFromEXU
+  val needStall = bypassMux.io.needStall || needStallRegFromEXU || needStallReg1AddImmFromEXU
 
   layer.block(PerfCounterLayer) {
     val rawStallPerfTap = Module(new RAWStallPerfTap())

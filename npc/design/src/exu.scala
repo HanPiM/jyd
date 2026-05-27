@@ -225,14 +225,14 @@ class EXU(
   // val isLessThan = dinst.info.isLessThan
   // val isLessThanU = dinst.info.isLessThanU
 
-  val takeBranch = MuxLookup(func3t, false.B)(
+  val takeBranch = Mux1H(
     Seq(
-      "b000".U -> isEqual,
-      "b001".U -> !isEqual,
-      "b100".U -> isLessThan,
-      "b101".U -> !isLessThan,
-      "b110".U -> isLessThanU,
-      "b111".U -> !isLessThanU
+      dinst.info.is_beq  -> isEqual,
+      dinst.info.is_bne  -> !isEqual,
+      dinst.info.is_blt  -> isLessThan,
+      dinst.info.is_bge  -> !isLessThan,
+      dinst.info.is_bltu -> isLessThanU,
+      dinst.info.is_bgeu -> !isLessThanU
     )
   )
 

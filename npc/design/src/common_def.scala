@@ -186,6 +186,13 @@ class DecodedInstInfo(implicit p : CPUParameters) extends InstMetaInfo with HasR
   val isECall = Bool()
   val isMRet  = Bool()
 
+  val is_beq  = Bool()
+  val is_bne  = Bool()
+  val is_blt  = Bool()
+  val is_bge  = Bool()
+  val is_bltu = Bool()
+  val is_bgeu = Bool()
+
   val notBranchPredWrong = Bool()
 }
 

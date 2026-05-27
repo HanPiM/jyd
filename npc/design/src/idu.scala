@@ -281,6 +281,13 @@ class IDU(
   res.isECall := inst === "h73".U
   res.isMRet  := inst === "h30200073".U
 
+  res.is_beq  := isTypBranch && inst(14, 12) === "b000".U
+  res.is_bne  := isTypBranch && inst(14, 12) === "b001".U
+  res.is_blt  := isTypBranch && inst(14, 12) === "b100".U
+  res.is_bge  := isTypBranch && inst(14, 12) === "b101".U
+  res.is_bltu := isTypBranch && inst(14, 12) === "b110".U
+  res.is_bgeu := isTypBranch && inst(14, 12) === "b111".U
+
   res.staticNextPCOrCSRTarget := Mux(
     res.isECall,
     io.csrJmpTarget.mtvec,

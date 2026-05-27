@@ -242,7 +242,7 @@ class SimpleBusFPGAROM(sizeInByte: Int, baseAddr: BigInt) extends Module {
   val doRead        = io.req_valid && io.req_ready && !io.wen
 
   mem.io.clka  := clock
-  mem.io.ena   := doRead
+  mem.io.ena   := true.B
   mem.io.addra := localWordAddr
 
   io.resp_valid := RegNext(doRead, false.B)

@@ -323,9 +323,6 @@ class EXU(
   // io.predWrong := (normalNxtPC =/= dinst.pred.pc) || isJmpCsr
   // io.predWrong := isTypJALR || isJmpCsr || (isFmtB && (takeBranch ^ dinst.pred.take)) || (isTypJAL && (~dinst.pred.hit))
   io.predWrong   := (isFmtB && (takeBranch ^ dinst.pred.take)) || io.in.bits.info.notBranchPredWrong
-  dontTouch(io.predWrong)
-  lsuInfo.predWrong := io.predWrong
-  lsuInfo.nxtPC     := nxtPC
 
   StageLogger(
     clock,

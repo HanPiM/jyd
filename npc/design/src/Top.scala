@@ -260,8 +260,8 @@ class CPUCore(
 
   ifu.io.predNext := bp.io.pred
 
-  redirectNow         := lsu.io.in.valid && lsu.io.in.bits.predWrong
-  redirectNowTarget   := lsu.io.in.bits.nxtPC
+  redirectNow         := exu.io.in.valid && exu.io.predWrong
+  redirectNowTarget   := exu.io.nxtPC
   redirectPendingFire := ifu.io.pc.fire && redirectPendingReg
 
   when(redirectNow) {
@@ -286,9 +286,7 @@ class CPUCore(
 
   io.irom <> ifu.io.mem
   io.dram <> dataMemBus.io.out
-  dataMemBus.io.exuMemReq.bits  := exu.io.memReq.bits
-  dataMemBus.io.exuMemReq.valid := exu.io.memReq.valid && !redirectNow
-  exu.io.memReq.ready           := dataMemBus.io.exuMemReq.ready && !redirectNow
+  exu.io.memReq <> dataMemBus.io.exuMemReq
   wbu.io.memResp <> dataMemBus.io.memResp
 
   ifu.io.pc.bits  := pcFeedToIFU
@@ -308,7 +306,7 @@ class CPUCore(
     pipelineConnect(iduOut, exuDifftest.io.in, exuDifftest.io.out, kill = redirectNow)
 
     val lsuDifftest = Module(new LSUForDifftest)
-    pipelineConnect(exuDifftest.io.out, lsuDifftest.io.in, lsuDifftest.io.out, kill = redirectNow)
+    pipelineConnect(exuDifftest.io.out, lsuDifftest.io.in, lsuDifftest.io.out)
     lsuDifftest.io.actualLSU.inReady  := lsu.io.in.ready
     lsuDifftest.io.actualLSU.outValid := lsu.io.out.valid
 
@@ -318,7 +316,7 @@ class CPUCore(
 
   pipelineConnect(ifu.io.out, idu.io.in, idu.io.out, kill = activeRedirectValid)
   pipelineConnect(idu.io.out, exu.io.in, exu.io.out, kill = redirectNow)
-  pipelineConnect(exu.io.out, lsu.io.in, lsu.io.out, kill = redirectNow)
+  pipelineConnect(exu.io.out, lsu.io.in, lsu.io.out)
 
   idu.io.rvec <> gprs.io.read
   idu.io.csrRead <> csrs.io.read
@@ -326,14 +324,7 @@ class CPUCore(
   idu.io.csrJmpTarget.mtvec := csrs.io.mtvec
 
   val lsuFwdInfo = ExtractFwdInfoFromLSU(lsu.io.in)
-  val exuFwdInfo = Wire(new WrBackForwardInfo)
-  exuFwdInfo := exu.io.fwd
-  when(redirectNow) {
-    exuFwdInfo.enWr      := false.B
-    exuFwdInfo.dataVaild := false.B
-    exuFwdInfo.enWrCSR   := false.B
-  }
-  idu.io.wrBackInfo.exu := exuFwdInfo
+  idu.io.wrBackInfo.exu := exu.io.fwd
   idu.io.wrBackInfo.lsu := lsuFwdInfo
   idu.io.wrBackInfo.wbu := ExtractFwdInfoFromWrBack(wbu.io.in, wbu.io.memResp)
 

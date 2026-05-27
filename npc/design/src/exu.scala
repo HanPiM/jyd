@@ -247,15 +247,17 @@ class EXU(
   writeBackInfo.gpr.en   := dinst.info.rdWrEn
   writeBackInfo.gpr.addr := dinst.info.rd
 
-  writeBackInfo.gpr.data := Mux1H(
-    Seq(
-      isTypArithmetic         -> aluOut,
-      isTypLUI                -> dinst.info.imm,
-      isTypAUIPC              -> pcAddImm,
-      (isTypJALR || isTypJAL) -> snpc,
-      isTypSys                -> csr_rdata
-    )
-  )
+  // writeBackInfo.gpr.data := Mux1H(
+  //   Seq(
+  //     isTypArithmetic         -> aluOut,
+  //     isTypLUI                -> dinst.info.imm,
+  //     isTypAUIPC              -> pcAddImm,
+  //     (isTypJALR || isTypJAL) -> snpc,
+  //     isTypSys                -> csr_rdata
+  //   )
+  // )
+
+  writeBackInfo.gpr.data := Mux(isTypArithmetic, aluOut, dinst.info.preMuxWrBackData)
 
   // Fill in LSU stage
   writeBackInfo.isLoad        := false.B

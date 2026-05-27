@@ -189,6 +189,9 @@ class IDU(
   val isTypBranch = InstType.hasSame(res.typ, InstType.branch)
   val isTypJALR   = InstType.hasSame(res.typ, InstType.jalr)
   val isTypJAL    = InstType.hasSame(res.typ, InstType.jal)
+  val isTypLUI    = InstType.hasSame(res.typ, InstType.lui)
+  val isTypAUIPC  = InstType.hasSame(res.typ, InstType.auipc)
+  val isTypSys    = InstType.hasSame(res.typ, InstType.system)
 
   val isFmtI = InstFmt.hasSame(res.fmt, InstFmt.imm)
   val isFmtU = InstFmt.hasSame(res.fmt, InstFmt.upper)
@@ -293,10 +296,21 @@ class IDU(
   res.is_bltu := isTypBranch && inst(14, 12) === "b110".U
   res.is_bgeu := isTypBranch && inst(14, 12) === "b111".U
 
+  val snpc = io.in.bits.pc + 4.U
+
   res.staticNextPCOrCSRTarget := Mux(
     res.isECall,
     io.csrJmpTarget.mtvec,
-    Mux(res.isMRet, io.csrJmpTarget.mepc, io.in.bits.pc + 4.U)
+    Mux(res.isMRet, io.csrJmpTarget.mepc, snpc)
+  )
+
+  res.preMuxWrBackData := Mux1H(
+    Seq(
+      isTypLUI               -> immU,
+      isTypAUIPC             -> res.pcAddImm,
+      (isTypJALR | isTypJAL) -> snpc,
+      isTypSys               -> res.csrReadData
+    )
   )
 
   val isJmpCSR = res.isECall || res.isMRet

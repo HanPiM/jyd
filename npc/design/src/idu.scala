@@ -163,7 +163,8 @@ class IDU(
 
     val pipelineFlush = Input(Bool())
 
-    val wrBackInfo = Input(new WrBackInfoGroup)
+    val wrBackInfo           = Input(new WrBackInfoGroup)
+    val reg1AddImmWbuRawInfo = Input(new WrBackForwardInfo)
 
     val out = Decoupled(new DecodedInst)
   })
@@ -244,7 +245,9 @@ class IDU(
   val needStallReg1AddImmFromEXU =
     needReg1AddImm && SingleByPassMux.conflict(res.rs1, io.wrBackInfo.exu.addr, io.wrBackInfo.exu.enWr)
   val needStallReg1AddImmFromWBU =
-    needReg1AddImm && SingleByPassMux.conflict(res.rs1, io.wrBackInfo.wbu.addr, io.wrBackInfo.wbu.enWr)
+    needReg1AddImm &&
+      SingleByPassMux.conflict(res.rs1, io.reg1AddImmWbuRawInfo.addr, io.reg1AddImmWbuRawInfo.enWr) &&
+      !io.reg1AddImmWbuRawInfo.dataVaild
   // val needStallReg1AddImmFromEXU = false.B
 
   val needStall = bypassMux.io.needStall || needStallReg1AddImmFromEXU || needStallReg1AddImmFromWBU
@@ -271,10 +274,13 @@ class IDU(
 
   val lsuReg1AddImmBypass =
     SingleByPassMux.conflict(res.rs1, io.wrBackInfo.lsu.addr, io.wrBackInfo.lsu.enWr) && io.wrBackInfo.lsu.dataVaild
+  val wbuReg1AddImmBypass =
+    SingleByPassMux.conflict(res.rs1, io.reg1AddImmWbuRawInfo.addr, io.reg1AddImmWbuRawInfo.enWr) &&
+      io.reg1AddImmWbuRawInfo.dataVaild
   res.reg1AddImm := "h80".U(8.W) ## 0.U(2.W) ## reg1AddImmRegion ## 0.U(2.W) ## Mux(
     lsuReg1AddImmBypass,
     addAddrImm(io.wrBackInfo.lsu.data),
-    addAddrImm(io.rvec.data(0))
+    Mux(wbuReg1AddImmBypass, addAddrImm(io.reg1AddImmWbuRawInfo.data), addAddrImm(io.rvec.data(0)))
   )
 
   res.isECall := inst === "h73".U

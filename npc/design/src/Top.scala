@@ -324,9 +324,16 @@ class CPUCore(
   idu.io.csrJmpTarget.mtvec := csrs.io.mtvec
 
   val lsuFwdInfo = ExtractFwdInfoFromLSU(lsu.io.in)
+  val wbuRawFwdInfo = Wire(new WrBackForwardInfo)
+  wbuRawFwdInfo.addr      := wbu.io.in.bits.gpr.addr
+  wbuRawFwdInfo.enWr      := wbu.io.in.bits.gpr.en && wbu.io.in.valid
+  wbuRawFwdInfo.dataVaild := wbu.io.in.valid && !wbu.io.in.bits.isLoad
+  wbuRawFwdInfo.data      := wbu.io.in.bits.gpr.data
+  wbuRawFwdInfo.enWrCSR   := false.B
   idu.io.wrBackInfo.exu := exu.io.fwd
   idu.io.wrBackInfo.lsu := lsuFwdInfo
   idu.io.wrBackInfo.wbu := ExtractFwdInfoFromWrBack(wbu.io.in, wbu.io.memResp)
+  idu.io.reg1AddImmWbuRawInfo := wbuRawFwdInfo
 
   idu.io.pipelineFlush := activeRedirectValid
 

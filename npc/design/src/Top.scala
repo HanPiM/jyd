@@ -326,7 +326,6 @@ class CPUCore(
   idu.io.csrJmpTarget.mtvec := csrs.io.mtvec
 
   val lsuFwdInfo = ExtractFwdInfoFromLSU(lsu.io.in)
-  exu.io.lsuFwd := lsuFwdInfo
   val exuFwdInfo = Wire(new WrBackForwardInfo)
   exuFwdInfo := exu.io.fwd
   when(redirectNow) {

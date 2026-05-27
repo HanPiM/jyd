@@ -174,8 +174,6 @@ class DecodedInstInfo(implicit p : CPUParameters) extends InstMetaInfo with HasR
 
   val reg1 = Types.UWord
   val reg2 = Types.UWord
-  val reg1ConflictWithEXU = Bool()
-  val reg2ConflictWithEXU = Bool()
   val csrReadData = Types.UWord
 
   val staticNextPCOrCSRTarget = Types.UWord

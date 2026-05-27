@@ -108,7 +108,6 @@ class EXU(
     val nxtPC = Output(Types.UWord)
 
     val fwd = Output(new WrBackForwardInfo)
-    val lsuFwd = Input(new WrBackForwardInfo)
 
     val memReq = Decoupled(new MemReq)
     val out    = Decoupled(new LSUInput)
@@ -136,8 +135,8 @@ class EXU(
 
   alu.io.in.valid := io.in.valid && isTypArithmetic
 
-  val reg_v1     = Mux(dinst.info.reg1ConflictWithEXU, io.lsuFwd.data, dinst.info.reg1)
-  val reg_v2     = Mux(dinst.info.reg2ConflictWithEXU, io.lsuFwd.data, dinst.info.reg2)
+  val reg_v1     = dinst.info.reg1
+  val reg_v2     = dinst.info.reg2
   // val pcAddImm   = dinst.pc + dinst.info.imm
   val pcAddImm   = dinst.info.pcAddImm
   val reg1AddImm = dinst.info.reg1AddImm

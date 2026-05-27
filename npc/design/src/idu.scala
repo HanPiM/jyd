@@ -241,9 +241,9 @@ class IDU(
   res.csrReadData         := io.csrRead.data
 
   val needReg1AddImm             = isTypLoad || isTypStore || isTypJALR
-  // val needStallReg1AddImmFromEXU =
-  //   needReg1AddImm && SingleByPassMux.conflict(res.rs1, io.wrBackInfo.exu.addr, io.wrBackInfo.exu.enWr)
-  val needStallReg1AddImmFromEXU = false.B
+  val needStallReg1AddImmFromEXU =
+    needReg1AddImm && SingleByPassMux.conflict(res.rs1, io.wrBackInfo.exu.addr, io.wrBackInfo.exu.enWr)
+  // val needStallReg1AddImmFromEXU = false.B
 
   val needStall = bypassMux.io.needStall || needStallReg1AddImmFromEXU
 
@@ -261,19 +261,21 @@ class IDU(
   // 80[012]
   // for [012] only lo 2 bits are used, so
   // hi 8+2b: {8'b80, 2'b0}
-  def addAddrImm(base: UInt): UInt = base(21, 0) + addrImm(21, 0)
+  //
+  def addAddrImm(base: UInt): UInt = base(17, 0) + addrImm(17, 0)
 
-  res.reg1AddImm := DontCare
+  // res.reg1AddImm := DontCare
+  val reg1AddImmRegion = res.reg1(21, 20) + res.reg1(19)
 
-  // val lsuReg1AddImmBypass =
-  //   SingleByPassMux.conflict(res.rs1, io.wrBackInfo.lsu.addr, io.wrBackInfo.lsu.enWr) && io.wrBackInfo.lsu.dataVaild
-  // val wbuReg1AddImmBypass =
-  //   SingleByPassMux.conflict(res.rs1, io.wrBackInfo.wbu.addr, io.wrBackInfo.wbu.enWr) && io.wrBackInfo.wbu.dataVaild
-  // res.reg1AddImm := "h80".U(8.W) ## 0.U(2.W) ## Mux(
-  //   lsuReg1AddImmBypass,
-  //   addAddrImm(io.wrBackInfo.lsu.data),
-  //   Mux(wbuReg1AddImmBypass, addAddrImm(io.wrBackInfo.wbu.data), addAddrImm(io.rvec.data(0)))
-  // )
+  val lsuReg1AddImmBypass =
+    SingleByPassMux.conflict(res.rs1, io.wrBackInfo.lsu.addr, io.wrBackInfo.lsu.enWr) && io.wrBackInfo.lsu.dataVaild
+  val wbuReg1AddImmBypass =
+    SingleByPassMux.conflict(res.rs1, io.wrBackInfo.wbu.addr, io.wrBackInfo.wbu.enWr) && io.wrBackInfo.wbu.dataVaild
+  res.reg1AddImm := "h80".U(8.W) ## 0.U(2.W) ## reg1AddImmRegion ## 0.U(2.W) ## Mux(
+    lsuReg1AddImmBypass,
+    addAddrImm(io.wrBackInfo.lsu.data),
+    Mux(wbuReg1AddImmBypass, addAddrImm(io.wrBackInfo.wbu.data), addAddrImm(io.rvec.data(0)))
+  )
 
   res.isECall := inst === "h73".U
   res.isMRet  := inst === "h30200073".U

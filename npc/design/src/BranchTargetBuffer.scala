@@ -29,7 +29,7 @@ object BTBParameters {
     Cat(addr(20), addr(17, 2 + INDEX_WIDTH))
   }
   def extractIndex(addr: UInt): UInt = {
-    addr(2 + INDEX_WIDTH, 2)
+    addr(2 + INDEX_WIDTH - 1, 2)
   }
 }
 

@@ -243,9 +243,11 @@ class IDU(
   val needReg1AddImm             = isTypLoad || isTypStore || isTypJALR
   val needStallReg1AddImmFromEXU =
     needReg1AddImm && SingleByPassMux.conflict(res.rs1, io.wrBackInfo.exu.addr, io.wrBackInfo.exu.enWr)
+  val needStallReg1AddImmFromWBU =
+    needReg1AddImm && SingleByPassMux.conflict(res.rs1, io.wrBackInfo.wbu.addr, io.wrBackInfo.wbu.enWr)
   // val needStallReg1AddImmFromEXU = false.B
 
-  val needStall = bypassMux.io.needStall || needStallReg1AddImmFromEXU
+  val needStall = bypassMux.io.needStall || needStallReg1AddImmFromEXU || needStallReg1AddImmFromWBU
 
   layer.block(PerfCounterLayer) {
     val rawStallPerfTap = Module(new RAWStallPerfTap())
@@ -269,12 +271,10 @@ class IDU(
 
   val lsuReg1AddImmBypass =
     SingleByPassMux.conflict(res.rs1, io.wrBackInfo.lsu.addr, io.wrBackInfo.lsu.enWr) && io.wrBackInfo.lsu.dataVaild
-  val wbuReg1AddImmBypass =
-    SingleByPassMux.conflict(res.rs1, io.wrBackInfo.wbu.addr, io.wrBackInfo.wbu.enWr) && io.wrBackInfo.wbu.dataVaild
   res.reg1AddImm := "h80".U(8.W) ## 0.U(2.W) ## reg1AddImmRegion ## 0.U(2.W) ## Mux(
     lsuReg1AddImmBypass,
     addAddrImm(io.wrBackInfo.lsu.data),
-    Mux(wbuReg1AddImmBypass, addAddrImm(io.wrBackInfo.wbu.data), addAddrImm(io.rvec.data(0)))
+    addAddrImm(io.rvec.data(0))
   )
 
   res.isECall := inst === "h73".U

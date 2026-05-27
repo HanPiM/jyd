@@ -12,6 +12,8 @@ class LSUInput(
   val destAddr     = Types.UWord
   val storeData    = Types.UWord
   val func3t       = UInt(3.W)
+  val predWrong    = Bool()
+  val nxtPC        = Types.UWord
   val exuWriteBack = new WriteBackInfo
 }
 

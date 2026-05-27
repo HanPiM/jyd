@@ -169,6 +169,8 @@ IDUFlushPerfCounter::IDUFlushReason IDUFlushPerfCounter::getCurReason() const {
     reason = IDUFlushReason::Exception;
   else if (exu.io_predWrong)
     reason = IDUFlushReason::PredRecover;
+  else if (GetCPU()->redirectNow)
+    reason = IDUFlushReason::PredRecover;
   else {
     reason = IDUFlushReason::Unknown;
     spdlog::warn("Unknown flush reason at {}ps", sim_get_time());

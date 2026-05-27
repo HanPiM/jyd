@@ -139,12 +139,16 @@ class ByPassMux(
   val wrBacks    = Seq(io.wrBackInfo.exu, io.wrBackInfo.lsu, io.wrBackInfo.wbu)
   val csrWrBacks = Seq(io.wrBackInfo.exu, io.wrBackInfo.lsu, io.wrBackInfo.wbu)
 
-  val (needStall1, outData1) = SingleByPassMux(io.rs1, io.regData1, wrBacks)
-  val (needStall2, outData2) = SingleByPassMux(io.rs2, io.regData2, wrBacks)
+  val (needStall1, outData1) = SingleByPassMux(io.rs1, io.regData1, wrBacks.tail)
+  val (needStall2, outData2) = SingleByPassMux(io.rs2, io.regData2, wrBacks.tail)
+
+  val exuConflict1 = SingleByPassMux.conflict(io.rs1, io.wrBackInfo.exu.addr, io.wrBackInfo.exu.enWr)
+  val exuConflict2 = SingleByPassMux.conflict(io.rs2, io.wrBackInfo.exu.addr, io.wrBackInfo.exu.enWr)
+  val needStallEXU = (exuConflict1 || exuConflict2) && !io.wrBackInfo.exu.dataVaild
 
   val needStallCSR = CSRByPassNeedStall(csrWrBacks)
 
-  io.needStall := needStall1 || needStall2 || needStallCSR
+  io.needStall := needStall1 || needStall2 || needStallEXU || needStallCSR
   io.outData1  := outData1
   io.outData2  := outData2
 }
@@ -238,6 +242,8 @@ class IDU(
   bypassMux.io.wrBackInfo := io.wrBackInfo
   res.reg1                := bypassMux.io.outData1
   res.reg2                := Mux(isFmtI, immI, bypassMux.io.outData2) // For exu ALU src2
+  res.reg1ConflictEXU     := SingleByPassMux.conflict(res.rs1, io.wrBackInfo.exu.addr, io.wrBackInfo.exu.enWr)
+  res.reg2ConflictEXU     := SingleByPassMux.conflict(res.rs2, io.wrBackInfo.exu.addr, io.wrBackInfo.exu.enWr)
   res.csrReadData         := io.csrRead.data
 
   val needReg1AddImm             = isTypLoad || isTypStore || isTypJALR

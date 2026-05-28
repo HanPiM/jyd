@@ -289,6 +289,7 @@ class IDU(
   res.isECall := inst === "h73".U
   res.isMRet  := inst === "h30200073".U
 
+  val func3t = inst(14, 12)
   res.is_beq  := isTypBranch && inst(14, 12) === "b000".U
   res.is_bne  := isTypBranch && inst(14, 12) === "b001".U
   res.is_blt  := isTypBranch && inst(14, 12) === "b100".U
@@ -316,6 +317,8 @@ class IDU(
   val isJmpCSR = res.isECall || res.isMRet
 
   res.notBranchPredWrong := isTypJALR || isJmpCSR || (isTypJAL && ~io.in.bits.pred.hit)
+
+  res.memWMask := GenMemWMask(addrImm, func3t)
 
   io.in.ready  := (io.out.ready && !needStall)
   io.out.valid := io.in.valid && !needStall

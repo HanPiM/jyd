@@ -8,7 +8,7 @@ import common_def._
 object BTBParameters {
   val ENTRY_NUM   = 16
   val INDEX_WIDTH = log2Ceil(ENTRY_NUM)
-  val TAG_WIDTH   = 17 - INDEX_WIDTH
+  val TAG_WIDTH   = 15 - INDEX_WIDTH
 
   // 2 for word-alignment
   // 8 for Hi 8 bit "80" since all instructions are in "80xxxxxx"
@@ -24,9 +24,24 @@ object BTBParameters {
   //   { 1'b IROM/DRAM, 16'b valid bram addr }
   //
   // Tag only 17bit - INDEX_WIDTH
+  //
+
+  // New optmization
+  // Inst Mem region is 0x8000_0000 - 0x8000_ffff
+  //
+  // only 64KB, 16bit addr, trim 2b since word-aligned, so only 14bit needed
+  //
+  // 32bit address ->
+  //   {16'h8000, 14'b valid addr, 2'b00}
+  //
+  // 14bit Target : 14'b valid addr
+  // Tag only 14bit - INDEX_WIDTH
+  //
+  // TODO: for contest use 14bit
+  // NOW, for test large program, need 128KB, so 15bit
 
   def extractTag(addr: UInt):   UInt = {
-    Cat(addr(20), addr(17, 2 + INDEX_WIDTH))
+    addr(16, 2 + INDEX_WIDTH)
   }
   def extractIndex(addr: UInt): UInt = {
     addr(2 + INDEX_WIDTH - 1, 2)
@@ -34,13 +49,13 @@ object BTBParameters {
 }
 
 class BTBTarget extends Bundle {
-  val bits = UInt(17.W)
-  def get = Cat("h80".U(8.W), 0.U(3.W), bits(16), 0.U(2.W), bits(15, 0), 0.U(2.W))
+  val bits = UInt(15.W)
+  def get = Cat("h800".U(12.W),0.U(3.W), bits, 0.U(2.W))
 }
 object BTBTarget {
   def apply(addr: UInt): BTBTarget = {
     val target = Wire(new BTBTarget)
-    target.bits := Cat(addr(20), addr(17, 2))
+    target.bits := addr(16, 2)
     target
   }
 }

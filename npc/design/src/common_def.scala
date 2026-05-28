@@ -22,15 +22,15 @@ object TrimmedPC {
   def Hi10b = "h80".U(8.W) ## 0.U(2.W)
   def Lo2b = 0.U(2.W)
 
-  // {8'h80, 2'b00, 2'b region, 2'b00, 16'b valid bram addr, 2'b00}
+  // {12'h800, 3'b000, 15'b valid addr, 2'b00}
 
   def expand(addr: UInt): UInt = {
-    require(addr.getWidth == 18)
-    Hi10b ## addr(17,16) ## 0.U(2.W) ## addr(15,0) ## Lo2b
+    require(addr.getWidth == 15)
+    "h800".U(12.W) ## 0.U(3.W) ## addr ## 0.U(2.W)
   }
   def trim(addr: UInt): UInt = {
     // require(addr.getWidth == 32)
-    addr(21,20) ## addr(17,2)
+    addr(16,2)
   }
 }
 

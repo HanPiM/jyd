@@ -211,7 +211,7 @@ class EXU(
 
   // --- Inst type decode ---
   val needMemReq = isTypLoad || isTypStore
-  val memReqFire  = io.memReq.valid && io.memReq.ready
+  val memReqFire = io.memReq.valid && io.memReq.ready
 
   val isFmtB = InstFmt.hasSame(dinst.info.fmt, InstFmt.branch)
 
@@ -306,15 +306,17 @@ class EXU(
   val normalNxtPC = Wire(Types.UWord)
   val nxtPC       = Wire(Types.UWord)
 
-  normalNxtPC := "h80".U(8.W) ## 0.U(2.W) ## Mux(
-    isTypJALR,
-    (reg1AddImm(21, 2)),// ## 0.U(1.W)),
+  normalNxtPC := TrimmedPC.expand(
     Mux(
-      isTypJAL || (isFmtB && takeBranch),
-      pcAddImm(21,2),
-      snpc(21,2)
+      isTypJALR,
+      TrimmedPC.trim(reg1AddImm),
+      Mux(
+        isTypJAL || (isFmtB && takeBranch),
+        TrimmedPC.trim(pcAddImm),
+        TrimmedPC.trim(snpc)
+      )
     )
-  ) ## 0.U(2.W)
+  )
   nxtPC       := normalNxtPC
   io.nxtPC    := nxtPC
   io.pc       := dinst.pc

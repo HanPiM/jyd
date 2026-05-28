@@ -298,11 +298,11 @@ class IDU(
 
   val snpc = io.in.bits.pc + 4.U
 
-  res.staticNextPCOrCSRTarget := Mux(
+  res.staticNextPCOrCSRTarget := TrimmedPC.expand(Mux(
     res.isECall,
-    io.csrJmpTarget.mtvec,
-    Mux(res.isMRet, io.csrJmpTarget.mepc, snpc)
-  )
+    TrimmedPC.trim(io.csrJmpTarget.mtvec),
+    Mux(res.isMRet, TrimmedPC.trim(io.csrJmpTarget.mepc), TrimmedPC.trim(snpc))
+  ))
 
   res.preMuxWrBackData := Mux1H(
     Seq(

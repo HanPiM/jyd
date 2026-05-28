@@ -134,8 +134,8 @@ class ControlStatusRegisterFile extends Module {
   val mcycle64 = Cat(mcycleHi, mcycleLo)
   io.mcycle64 := mcycle64
 
-  // val mvendor_id = "h79737978".U(32.W) // ysyx
-  // val march_id   = "d25100261".U(32.W)
+  val mvendor_id = "h79737978".U(32.W) // ysyx
+  val march_id   = "d25100261".U(32.W)
 
   // Writable CSRs
   // 0: mstatus
@@ -162,8 +162,8 @@ class ControlStatusRegisterFile extends Module {
     Seq(
       CSRAddr.mcycle    -> mcycle64(31, 0),
       CSRAddr.mcycleh   -> mcycle64(63, 32),
-      // CSRAddr.mvendorid -> mvendor_id,
-      // CSRAddr.marchid   -> march_id
+      CSRAddr.mvendorid -> mvendor_id,
+      CSRAddr.marchid   -> march_id
     )
   )
   io.read.data := csrReadData

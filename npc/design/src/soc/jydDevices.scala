@@ -238,7 +238,7 @@ class SimpleBusFPGAROM(sizeInByte: Int, baseAddr: BigInt) extends Module {
   io.req_ready := true.B
 
   val mem = Module(new JYDFPGAIROMBlackBox)
-  val localWordAddr = (io.addr - baseAddr.U(32.W))(log2Ceil(sizeInByte) - 1, 2)
+  val localWordAddr = io.addr(log2Ceil(sizeInByte) - 1, 2)
   val doRead        = io.req_valid && io.req_ready && !io.wen
 
   mem.io.clka  := clock

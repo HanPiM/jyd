@@ -65,13 +65,13 @@
     <Option Name="WTVcsLaunchSim" Val="0"/>
     <Option Name="WTRivieraLaunchSim" Val="0"/>
     <Option Name="WTActivehdlLaunchSim" Val="0"/>
-    <Option Name="WTXSimExportSim" Val="92"/>
-    <Option Name="WTModelSimExportSim" Val="92"/>
-    <Option Name="WTQuestaExportSim" Val="92"/>
+    <Option Name="WTXSimExportSim" Val="102"/>
+    <Option Name="WTModelSimExportSim" Val="102"/>
+    <Option Name="WTQuestaExportSim" Val="102"/>
     <Option Name="WTIesExportSim" Val="0"/>
     <Option Name="WTVcsExportSim" Val="53"/>
-    <Option Name="WTRivieraExportSim" Val="92"/>
-    <Option Name="WTActivehdlExportSim" Val="78"/>
+    <Option Name="WTRivieraExportSim" Val="102"/>
+    <Option Name="WTActivehdlExportSim" Val="88"/>
     <Option Name="GenerateIPUpgradeLog" Val="TRUE"/>
     <Option Name="XSimRadix" Val="hex"/>
     <Option Name="XSimTimeUnit" Val="ns"/>
@@ -102,6 +102,15 @@
         <FileInfo>
           <Attr Name="ImportPath" Val="$PPRDIR/../../../../jyd/digital_twin/digital_twin.srcs/sources_1/ip/blk_mem_gen_irom/blk_mem_gen_irom.xci"/>
           <Attr Name="ImportTime" Val="1775458724"/>
+          <Attr Name="UsedIn" Val="synthesis"/>
+          <Attr Name="UsedIn" Val="implementation"/>
+          <Attr Name="UsedIn" Val="simulation"/>
+        </FileInfo>
+      </File>
+      <File Path="$PSRCDIR/sources_1/ip/mypll/mypll.xci">
+        <FileInfo>
+          <Attr Name="ImportPath" Val="$PPRDIR/../../../../jyd/digital_twin/digital_twin.srcs/sources_1/ip/mypll/mypll.xci"/>
+          <Attr Name="ImportTime" Val="1775400622"/>
           <Attr Name="UsedIn" Val="synthesis"/>
           <Attr Name="UsedIn" Val="implementation"/>
           <Attr Name="UsedIn" Val="simulation"/>
@@ -551,21 +560,6 @@
         <Option Name="UseBlackboxStub" Val="1"/>
       </Config>
     </FileSet>
-    <FileSet Name="mypll" Type="BlockSrcs" RelSrcDir="$PSRCDIR/mypll" RelGenDir="$PGENDIR/mypll">
-      <File Path="$PSRCDIR/sources_1/ip/mypll/mypll.xci">
-        <FileInfo>
-          <Attr Name="ImportPath" Val="$PPRDIR/../../../../jyd/digital_twin/digital_twin.srcs/sources_1/ip/mypll/mypll.xci"/>
-          <Attr Name="ImportTime" Val="1775400622"/>
-          <Attr Name="UsedIn" Val="synthesis"/>
-          <Attr Name="UsedIn" Val="implementation"/>
-          <Attr Name="UsedIn" Val="simulation"/>
-        </FileInfo>
-      </File>
-      <Config>
-        <Option Name="TopModule" Val="mypll"/>
-        <Option Name="UseBlackboxStub" Val="1"/>
-      </Config>
-    </FileSet>
   </FileSets>
   <Simulators>
     <Simulator Name="XSim">
@@ -618,22 +612,10 @@
       <Report Name="ROUTE_DESIGN.REPORT_METHODOLOGY" Enabled="1"/>
       <RQSFiles/>
     </Run>
-    <Run Id="mypll_synth_1" Type="Ft3:Synth" SrcSet="mypll" Part="xc7k325tffg900-2" ConstrsSet="mypll" Description="Vivado Synthesis Defaults" AutoIncrementalCheckpoint="false" WriteIncrSynthDcp="false" Dir="$PRUNDIR/mypll_synth_1" IncludeInArchive="true" IsChild="false" AutoIncrementalDir="$PSRCDIR/utils_1/imports/mypll_synth_1" AutoRQSDir="$PSRCDIR/utils_1/imports/mypll_synth_1" ParallelReportGen="true">
+    <Run Id="impl_1" Type="Ft2:EntireDesign" Part="xc7k325tffg900-2" ConstrsSet="constrs_1" Description="Best predicted directive for place_design." AutoIncrementalCheckpoint="false" WriteIncrSynthDcp="false" State="current" Dir="$PRUNDIR/impl_1" SynthRun="synth_1" IncludeInArchive="true" IsChild="false" GenFullBitstream="true" AutoIncrementalDir="$PSRCDIR/utils_1/imports/impl_1" LaunchOptions="-jobs 11 " AutoRQSDir="$PSRCDIR/utils_1/imports/impl_1" ParallelReportGen="true">
       <Strategy Version="1" Minor="2">
-        <StratHandle Name="Vivado Synthesis Defaults" Flow="Vivado Synthesis 2024">
-          <Desc>Vivado Synthesis Defaults</Desc>
-        </StratHandle>
-        <Step Id="synth_design"/>
-      </Strategy>
-      <GeneratedRun Dir="$PRUNDIR" File="gen_run.xml"/>
-      <ReportStrategy Name="Vivado Synthesis Default Reports" Flow="Vivado Synthesis 2024"/>
-      <Report Name="ROUTE_DESIGN.REPORT_METHODOLOGY" Enabled="1"/>
-      <RQSFiles/>
-    </Run>
-    <Run Id="impl_1" Type="Ft2:EntireDesign" Part="xc7k325tffg900-2" ConstrsSet="constrs_1" Description="Similar to Peformance_Explore, but enables the physical optimization step (phys_opt_design) with the Explore directive after routing." AutoIncrementalCheckpoint="false" WriteIncrSynthDcp="false" State="current" Dir="$PRUNDIR/impl_1" SynthRun="synth_1" IncludeInArchive="true" IsChild="false" GenFullBitstream="true" AutoIncrementalDir="$PSRCDIR/utils_1/imports/impl_1" LaunchOptions="-jobs 11 " AutoRQSDir="$PSRCDIR/utils_1/imports/impl_1" ParallelReportGen="true">
-      <Strategy Version="1" Minor="2">
-        <StratHandle Name="Performance_ExplorePostRoutePhysOpt" Flow="Vivado Implementation 2024">
-          <Desc>Similar to Peformance_Explore, but enables the physical optimization step (phys_opt_design) with the Explore directive after routing.</Desc>
+        <StratHandle Name="Performance_Auto_1" Flow="Vivado Implementation 2024">
+          <Desc>Best predicted directive for place_design.</Desc>
         </StratHandle>
         <Step Id="init_design"/>
         <Step Id="opt_design">
@@ -641,19 +623,16 @@
         </Step>
         <Step Id="power_opt_design"/>
         <Step Id="place_design">
-          <Option Id="Directive">0</Option>
+          <Option Id="Directive">20</Option>
         </Step>
         <Step Id="post_place_power_opt_design"/>
         <Step Id="phys_opt_design">
-          <Option Id="Directive">0</Option>
+          <Option Id="Directive">2</Option>
         </Step>
         <Step Id="route_design">
-          <Option Id="Directive">0</Option>
-          <Option Id="MoreOptsStr"><![CDATA[-tns_cleanup]]></Option>
+          <Option Id="Directive">1</Option>
         </Step>
-        <Step Id="post_route_phys_opt_design" EnableStepBool="1">
-          <Option Id="Directive">0</Option>
-        </Step>
+        <Step Id="post_route_phys_opt_design"/>
         <Step Id="write_bitstream"/>
       </Strategy>
       <GeneratedRun Dir="$PRUNDIR" File="gen_run.xml"/>
@@ -681,25 +660,6 @@
     <Run Id="div_gen_uradix2_impl_1" Type="Ft2:EntireDesign" Part="xc7k325tffg900-2" ConstrsSet="div_gen_uradix2" Description="Default settings for Implementation." AutoIncrementalCheckpoint="false" WriteIncrSynthDcp="false" SynthRun="div_gen_uradix2_synth_1" IncludeInArchive="false" IsChild="false" GenFullBitstream="true" AutoIncrementalDir="$PSRCDIR/utils_1/imports/div_gen_uradix2_impl_1" AutoRQSDir="$PSRCDIR/utils_1/imports/div_gen_uradix2_impl_1" ParallelReportGen="true">
       <Strategy Version="1" Minor="2">
         <StratHandle Name="Vivado Implementation Defaults" Flow="Vivado Implementation 2024"/>
-        <Step Id="init_design"/>
-        <Step Id="opt_design"/>
-        <Step Id="power_opt_design"/>
-        <Step Id="place_design"/>
-        <Step Id="post_place_power_opt_design"/>
-        <Step Id="phys_opt_design"/>
-        <Step Id="route_design"/>
-        <Step Id="post_route_phys_opt_design"/>
-        <Step Id="write_bitstream"/>
-      </Strategy>
-      <ReportStrategy Name="Vivado Implementation Default Reports" Flow="Vivado Implementation 2024"/>
-      <Report Name="ROUTE_DESIGN.REPORT_METHODOLOGY" Enabled="1"/>
-      <RQSFiles/>
-    </Run>
-    <Run Id="mypll_impl_1" Type="Ft2:EntireDesign" Part="xc7k325tffg900-2" ConstrsSet="mypll" Description="Default settings for Implementation." AutoIncrementalCheckpoint="false" WriteIncrSynthDcp="false" SynthRun="mypll_synth_1" IncludeInArchive="false" IsChild="false" GenFullBitstream="true" AutoIncrementalDir="$PSRCDIR/utils_1/imports/mypll_impl_1" AutoRQSDir="$PSRCDIR/utils_1/imports/mypll_impl_1" ParallelReportGen="true">
-      <Strategy Version="1" Minor="2">
-        <StratHandle Name="Vivado Implementation Defaults" Flow="Vivado Implementation 2024">
-          <Desc>Default settings for Implementation.</Desc>
-        </StratHandle>
         <Step Id="init_design"/>
         <Step Id="opt_design"/>
         <Step Id="power_opt_design"/>

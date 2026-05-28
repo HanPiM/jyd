@@ -74,7 +74,7 @@ object GenMemWMask {
   }
 }
 
-object GenMemWDataTrivialRef {
+object GenMemWData {
   def apply(offset: UInt, data: UInt): UInt = {
     val memWData = MuxLookup(offset(1, 0), 0.U(32.W))(
       Seq(
@@ -87,27 +87,6 @@ object GenMemWDataTrivialRef {
       )
     )
     memWData
-  }
-}
-object GenMemWData {
-  def apply(offset: UInt, data: UInt): UInt = {
-    // offset 0 -> data[7:0]
-    // offset 1,2,3 -> dont use, can be any value
-    val memWDataB0 = data(7, 0)
-    // offset 0 -> data[15:8]
-    // offset 1 -> data[7:0]
-    // offset 2,3 -> any
-    val memWDataB1 = Mux(offset(0), data(7, 0), data(15, 8))
-    // offset 0 -> data[23:16]
-    // offset 1 -> any
-    // offset 2 -> data[7:0]
-    // offset 3 -> any
-    val memWDataB2 = Mux(offset(1), data(7, 0), data(23, 16))
-    // offset 0 -> data[31:24]
-    // offset 1,2 -> any
-    // offset 3 -> data[7:0]
-    val memWDataB3 = Mux(offset(1) && offset(0), data(7, 0), data(31, 24))
-    Cat(memWDataB3, memWDataB2, memWDataB1, memWDataB0)
   }
 }
 

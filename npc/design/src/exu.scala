@@ -63,7 +63,7 @@ object GenMemWMask {
 
     // lh : when offset==2, is hi half
     // lb : when offset==2
-    val memWMaskB2 = (offset(1, 0) === 2.U) | isLW
+    val memWMaskB2 = (offset(1, 0) === 2.U)
 
     // lh : when offset==2
     // lb : when offset==3

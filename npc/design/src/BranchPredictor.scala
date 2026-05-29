@@ -33,7 +33,7 @@ class BranchPredictor extends Module {
 
   io.pred.hit := io.historyHit
 
-  io.pred.pc := "h80".U(8.W) ## 0.U(2.W) ## Mux(take, io.historyTarget(21,2), io.pc(21,2) + 1.U) ## 0.U(2.W)
+  io.pred.pc := "h800".U(12.W) ## 0.U(3.W) ## Mux(take, io.historyTarget(16,2), io.pc(16,2) + 1.U) ## 0.U(2.W)
 
   io.pred.take := take
 }

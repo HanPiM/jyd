@@ -54,12 +54,12 @@ object GenMemWMask {
     // lw : always
     // lh : when offset==0, is lo half
     // lb : when offset==0, is b[0]
-    val memWMaskB0 = (offset(1, 0) === 0.U) | isLW
+    val memWMaskB0 = (offset(1, 0) === 0.U)
     // lh : when offset==0
     // lb : when offset==1
     //
     // offset can be 0 or 1
-    val memWMaskB1 = (~offset(1) && Mux(memOpIsByte, offset(0), ~offset(0))) | isLW
+    val memWMaskB1 = (~offset(1) && Mux(memOpIsByte, offset(0), ~offset(0)))
 
     // lh : when offset==2, is hi half
     // lb : when offset==2
@@ -68,9 +68,9 @@ object GenMemWMask {
     // lh : when offset==2
     // lb : when offset==3
     // offset can be 2 or 3
-    val memWMaskB3 = (offset(1) && Mux(memOpIsByte, offset(0), ~offset(0))) | isLW
+    val memWMaskB3 = (offset(1) && Mux(memOpIsByte, offset(0), ~offset(0)))
 
-    Cat(memWMaskB3, memWMaskB2, memWMaskB1, memWMaskB0)
+    Cat(memWMaskB3, memWMaskB2, memWMaskB1, memWMaskB0) | Fill(4, isLW)
   }
 }
 

@@ -190,8 +190,6 @@ class DecodedInstInfo(implicit p : CPUParameters) extends InstMetaInfo with HasR
   val notBranchPredWrong = Bool()
 
   val preMuxWrBackData = Types.UWord
-
-  val memWMask = UInt(4.W)
 }
 
 class DecodedInst(implicit p : CPUParameters) extends Inst {

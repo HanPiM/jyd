@@ -29,6 +29,9 @@ concurrency:
   group: vivado-fpga-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  VIVADO_PROJECT_REF: 8dd0b077549547104a024d3e9cc49a85b685465a
+
 jobs:
   setup:
     uses: ./.github/workflows/reusable-setup.yml
@@ -46,6 +49,7 @@ jobs:
         uses: actions/checkout@v5
         with:
           repository: WangYiJie020/jyd-vivado-proj
+          ref: ${{ env.VIVADO_PROJECT_REF }}
           path: jyd-vivado-proj
 
       - name: Download packed FPGA zip

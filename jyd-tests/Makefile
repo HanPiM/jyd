@@ -14,8 +14,8 @@ TEST_NAME := $(firstword $(TEST_GOALS))
 
 IROM_COE := $(COE_ROOT)/$(TEST_NAME)/irom.coe
 DRAM_COE := $(COE_ROOT)/$(TEST_NAME)/dram.coe
-IMG_BIN := $(BIN_ROOT)/irom.bin
-DATA_BIN := $(BIN_ROOT)/irom.data.bin
+IMG_BIN := $(BIN_ROOT)/$(TEST_NAME).bin
+DATA_BIN := $(BIN_ROOT)/$(TEST_NAME).data.bin
 DISASM_TXT := $(BIN_ROOT)/$(TEST_NAME).txt
 
 .PHONY: run all-bin help list $(TEST_GOALS)
@@ -34,6 +34,8 @@ run: $(IMG_BIN) $(DATA_BIN) $(DISASM_TXT)
 $(IMG_BIN): $(IROM_COE) $(PROC_COE)
 	@mkdir -p "$(BIN_ROOT)"
 	@"$(PROC_COE)" "$(IROM_COE)" "$(BIN_ROOT)"
+	@mv -f "$(BIN_ROOT)/irom.bin" "$(IMG_BIN)"
+	@mv -f "$(BIN_ROOT)/irom.txt" "$(DISASM_TXT)"
 
 $(DISASM_TXT): $(IMG_BIN)
 	@:

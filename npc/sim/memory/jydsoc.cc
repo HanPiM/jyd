@@ -103,7 +103,8 @@ static constexpr std::string_view fg_red = "\33[1;31m", fg_green = "\33[1;32m",
 
 static uint32_t last_led = 0, last_segs = 0;
 
-static constexpr uint32_t good_trap_led = 0b00000001001000100001110000001000;
+static constexpr uint32_t good_trap_led_1 = 0b00000001001000100001110000001000;
+static constexpr uint32_t good_trap_led_2 = 0b00000111100010110111001100100011;
 
 bool jyd_is_good_trap() {
   // seg high should be 37 meaning all 37 basic inst test passed
@@ -116,9 +117,11 @@ bool jyd_is_good_trap() {
                   seg_high);
     return false;
   }
-  if (last_led != good_trap_led) {
-    spdlog::error("LED state is 0b{:032b}, expected 0b{:032b}, not a good trap",
-                  last_led, good_trap_led);
+
+	bool is_good_trap_led = (last_led == good_trap_led_1) || (last_led == good_trap_led_2);
+  if (!is_good_trap_led) {
+    spdlog::error("LED state is 0b{:032b}(0x{:08x}), expected 0x{:08x} or 0x{:08x}, not a good trap",
+                  last_led, last_led, good_trap_led_1, good_trap_led_2);
     return false;
   }
   return true;
@@ -129,10 +132,10 @@ static void print_board() {
   auto segs = last_segs;
   uint8_t led_row[4];
 
-  uint32_t test_passed_led = good_trap_led;
+	bool is_good_trap_led = (led == good_trap_led_1) || (led == good_trap_led_2);
   uint32_t test_failed_led = 0b00100100000110000001100000100100;
 
-  auto led_color = (led == test_passed_led)   ? fg_green
+  auto led_color = is_good_trap_led   ? fg_green
                    : (led == test_failed_led) ? fg_red
                                               : fg_yellow;
 

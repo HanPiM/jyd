@@ -186,13 +186,7 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: test-coes
-          path: |
-            ${{ steps.set-jyd-home.outputs.JYD_HOME }}/jyd-tests/2026/coe/src0/irom.coe
-            ${{ steps.set-jyd-home.outputs.JYD_HOME }}/jyd-tests/2026/coe/src0/dram.coe
-            ${{ steps.set-jyd-home.outputs.JYD_HOME }}/jyd-tests/2026/coe/src1/irom.coe
-            ${{ steps.set-jyd-home.outputs.JYD_HOME }}/jyd-tests/2026/coe/src1/dram.coe
-            ${{ steps.set-jyd-home.outputs.JYD_HOME }}/jyd-tests/2026/coe/src2/irom.coe
-            ${{ steps.set-jyd-home.outputs.JYD_HOME }}/jyd-tests/2026/coe/src2/dram.coe
+          path: ${{ steps.set-jyd-home.outputs.JYD_HOME }}/jyd-tests/2026/coe/**
           retention-days: 1
 
       - name: Pack workbench

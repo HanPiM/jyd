@@ -1,7 +1,7 @@
 From 245f638ad5aa22fffdcb352575afff92ff233328 Mon Sep 17 00:00:00 2001
 From: Wang Yi Jie <miwyj@mail.scut.edu.cn>
 Date: Tue, 24 Mar 2026 13:42:50 +0800
-Subject: [PATCH 8/8] rename AM_HOME to JYD_AM_HOME in bsp/abstract-machine
+Subject: [PATCH 8/9] rename AM_HOME to JYD_AM_HOME in bsp/abstract-machine
 
 Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
 ---

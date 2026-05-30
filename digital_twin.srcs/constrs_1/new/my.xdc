@@ -22,3 +22,13 @@ set_false_path \
 set_false_path \
 -from [get_cells -hier *cnt_enable_cpu*] \
 -to   [get_cells -hier {student_top_inst/mytop/cnt/counter/cnt_enable_cnt_d1_reg}]
+
+# 50MHz counter -> 275MHz CPU: routed design may replicate cnt_ms_bin source flops
+set_false_path \
+-from [get_cells -hier -regexp {.*student_top_inst/mytop/cnt/counter/cnt_ms_bin_reg\[[0-9]+\](_replica)?$}] \
+-to   [get_cells -hier -regexp {.*student_top_inst/mytop/cnt/counter/cnt_gray_cpu_d1_reg\[[0-9]+\]$}]
+
+# 275MHz CPU -> 50MHz counter: implementation source register for cnt_enable_cpu
+set_false_path \
+-from [get_cells -hier -regexp {.*student_top_inst/mytop/perip/cntEnableReg_reg$}] \
+-to   [get_cells -hier -regexp {.*student_top_inst/mytop/cnt/counter/cnt_enable_cnt_d1_reg$}]

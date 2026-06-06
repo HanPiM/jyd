@@ -19,6 +19,7 @@ struct mem_region_traits {
       : _Base(base), _End(end), name(name) {
     assert(end > base && "end should be greater than base");
   }
+  virtual ~mem_region_traits() = default;
 
   constexpr bool contains(uint32_t addr) const {
     return addr >= _Base && addr < _End;

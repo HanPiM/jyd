@@ -193,7 +193,7 @@ extern "C" void uart_try_getch(int *out_0) {
 extern "C" void gpr_upd(char regno, int data) {
   if (regno == 0)
     return;
-  cpu.gpr[regno] = data;
+  cpu.gpr[(int)regno] = data;
 }
 
 bool pc_changed = false;

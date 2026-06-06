@@ -15,6 +15,7 @@ static void _Get(int &field, const char *env_p) {
 		field = atoi(env_p);
 	}
 }
+[[maybe_unused]]
 static void _Get(std::string &field, const char *env_p) {
   if (env_p != nullptr) {
     field = std::string(env_p);

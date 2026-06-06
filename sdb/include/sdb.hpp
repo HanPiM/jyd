@@ -146,6 +146,7 @@ namespace sdb {
 	public:
 		std::string name;
 		trace_handler(std::string n="unnamed"):name(n){}
+		virtual ~trace_handler() = default;
 
 		std::string get_log(){return _pop_str(_logbuf);}
 		std::string get_dump(){

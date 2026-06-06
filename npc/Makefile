@@ -110,6 +110,7 @@ VERILATOR_CONTROL_FILE = verilator.vlt
 INCFLAGS = $(addprefix -I, $(INC_PATH))
 CXXFLAGS += $(INCFLAGS) -DTOP_NAME=V$(TOP_NAME) -DENABLE_VPI=$(ENABLE_VPI)
 CXXFLAGS += $(SAN_FLAGS) -std=c++20 -g # -fno-inline
+CXXFLAGS += -Wno-unknown-warning-option
 
 # when use perf tool, frame pointer is needed
 # CXXFLAGS += -fno-omit-frame-pointer

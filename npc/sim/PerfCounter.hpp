@@ -33,6 +33,7 @@ struct SignalHandle {
 
 class PerfCounterBase {
 public:
+  virtual ~PerfCounterBase() = default;
   std::string ctrName;
   virtual void dumpStatistics(std::ostream &) = 0;
 };

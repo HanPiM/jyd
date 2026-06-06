@@ -10,3 +10,9 @@ gcld1 https://github.com/gabime/spdlog.git
 gcld1 https://github.com/RinHizakura/mini-gdbstub.git
 gcld1 https://github.com/p-ranav/tabulate.git
 gcld1 https://github.com/nlohmann/json.git
+
+cd riscv-unified-db
+git fetch --depth=1 origin d91b7d4ca6bfeaf1afab3af521a266dc5b92e4c7 
+git checkout d91b7d4ca6bfeaf1afab3af521a266dc5b92e4c7
+cd ..
+

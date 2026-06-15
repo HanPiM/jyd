@@ -7,6 +7,7 @@ from pathlib import Path
 
 
 REPORT_NAME = "top_timing_summary_routed.rpt"
+DEFAULT_REPORT_PATH = Path("digital_twin.runs") / "impl_1" / REPORT_NAME
 TITLE_MARKER = "| Design Timing Summary"
 
 
@@ -50,7 +51,12 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Extract the Design Timing Summary section from a routed Vivado timing report."
     )
-    parser.add_argument("path", help=f"Result directory or {REPORT_NAME} path.")
+    parser.add_argument(
+        "path",
+        nargs="?",
+        default=str(DEFAULT_REPORT_PATH),
+        help=f"Result directory or {REPORT_NAME} path. Defaults to {DEFAULT_REPORT_PATH}.",
+    )
     args = parser.parse_args(argv)
 
     report_path = resolve_report_path(Path(args.path))

@@ -9,6 +9,7 @@ from pathlib import Path
 
 
 REPORT_NAME = "top_timing_summary_routed.rpt"
+DEFAULT_REPORT_PATH = Path("digital_twin.runs") / "impl_1" / REPORT_NAME
 SLACK_RE = re.compile(r"^Slack(?: \((?P<status>[^)]+)\))?\s*:\s*(?P<value>-?\d+(?:\.\d+)?)ns\b")
 FIELD_RE = re.compile(r"^\s{2}(?P<name>[A-Za-z][A-Za-z ]+):\s+(?P<value>.+?)\s*$")
 FROM_CLOCK_RE = re.compile(r"^From Clock:\s+(?P<clock>.+?)\s*$")
@@ -151,7 +152,12 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Extract the worst setup/WNS timing violations from a routed Vivado timing report."
     )
-    parser.add_argument("path", help=f"Result directory or {REPORT_NAME} path.")
+    parser.add_argument(
+        "path",
+        nargs="?",
+        default=str(DEFAULT_REPORT_PATH),
+        help=f"Result directory or {REPORT_NAME} path. Defaults to {DEFAULT_REPORT_PATH}.",
+    )
     parser.add_argument("-n", "--limit", type=positive_int, default=10, help="Number of worst violations to print.")
     parser.add_argument("--full", action="store_true", help="Print the full timing path blocks.")
     args = parser.parse_args(argv)

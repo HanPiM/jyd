@@ -15,9 +15,9 @@ INC_PATH += $(abspath tools/capstone/repo/include)
 
 INCLUDES = $(foreach dir,$(INC_PATH),-I$(dir))
 
-CC ?= clang
-CXX ?= clang++
-AR ?= ar
+CC = clang
+CXX = clang++
+AR = ar
 
 COMMON_FLAGS = -fPIC -MMD -MP -Wall -Wextra -O3 -g $(INCLUDES) 
 CFLAGS = $(COMMON_FLAGS)

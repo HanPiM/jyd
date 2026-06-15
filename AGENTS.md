@@ -20,8 +20,7 @@ Treat `build/`, `out/`, generated Verilog, and cache directories as disposable o
 - `make -C npc reformat` / `make -C npc checkformat`: apply or verify Scala formatting.
 - `make -C nemu menuconfig` then `make -C nemu`: configure and build NEMU.
 - `make -C abstract-machine ARCH=riscv32-jyd`: build an AM image for a target architecture.
-- `./npc/scripts/update_digital_twin_pack_fpga.sh`: copy the current `pack-fpga` contents into the Windows Vivado digital twin project import directory.
-- `./npc/scripts/run_digital_twin_synth.sh`: open the Windows Vivado project and run `synth_1`; this script injects a synth pre-hook that promotes `Designutils 20-1307` and `Constraints 18-513` to errors so unsupported XDC syntax or invalid false-path startpoints fail fast.
+- `./npc/scripts/run_digital_twin_vivado.sh [impl|write_bitstream|bitstream] [--jobs N]`: run `make -C npc pack-fpga`, replace `$JYD_VIVADO_PROJ_HOME/digital_twin.srcs/sources_1/imports/pack-fpga`, then run the Vivado `digital_twin` project to implementation or bitstream. The script requires `JYD_VIVADO_PROJ_HOME`; `JOBS`/`--jobs` controls Vivado `launch_runs -jobs` and `general.maxThreads`.
 
 ## Coding Style & Naming Conventions
 Follow existing local style instead of reformatting unrelated code. In `npc/`, Scala formatting is enforced by `scalafmt` (`npc/.scalafmt.conf`): 2-space indentation, 120-column limit, and import sorting. Scala/Chisel source files generally use `UpperCamelCase.scala` for modules (for example, `BranchPredictor.scala`) and lower-case filenames for some pipeline blocks already present (for example, `ifu.scala`); preserve the surrounding convention in each area.
@@ -48,9 +47,8 @@ If you modify CSR-related code, you must also run the `rt-thread` (`rtt`) test b
 If you modify `JYDDevices` or other JYD-specific code, you must run tests with `ARCH=riscv32-jyd` so the JYD-only paths are covered.
 
 For digital twin FPGA packaging or XDC changes, use this validation flow:
-- Run `make -C npc pack-fpga`.
-- Run `./npc/scripts/update_digital_twin_pack_fpga.sh` to refresh the imported files under the Vivado project.
-- Run `./npc/scripts/run_digital_twin_synth.sh` before looking at timing results.
+- Run `./npc/scripts/run_digital_twin_vivado.sh impl` to rebuild `pack-fpga`, refresh the imported files under `$JYD_VIVADO_PROJ_HOME`, and run Vivado through implementation. Use `./npc/scripts/run_digital_twin_vivado.sh bitstream` when a bitstream is required.
+- To quickly extract timing WNS after implementation, run `python3 scripts/extract-timing-summary.py ./digital_twin.runs/impl_1/top_timing_summary_routed.rpt` from `$JYD_VIVADO_PROJ_HOME`.
 - If Vivado reports `Designutils 20-1307` for `jyd_cdc.xdc`, treat it as a hard constraint-parse failure and fix the XDC before doing further timing analysis.
 - If Vivado reports `Constraints 18-513` for `jyd_cdc.xdc`, treat it as a hard constraint-targeting failure; the XDC parsed, but the selected `-from` objects are not valid startpoints.
 

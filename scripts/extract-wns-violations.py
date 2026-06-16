@@ -129,9 +129,9 @@ def format_summary(paths: list[TimingPath]) -> str:
     return "\n".join(output).rstrip()
 
 
-def format_full(paths: list[TimingPath]) -> str:
+def format_full(paths: list[TimingPath], start: int = 1) -> str:
     output: list[str] = []
-    for number, path in enumerate(paths, start=1):
+    for number, path in enumerate(paths, start=start):
         output.append(f"# {number}: slack {path.slack:.3f}ns at line {path.line_number}")
         output.extend(path.lines)
         output.append("")
@@ -158,9 +158,16 @@ def main(argv: list[str] | None = None) -> int:
         default=str(DEFAULT_REPORT_PATH),
         help=f"Result directory or {REPORT_NAME} path. Defaults to {DEFAULT_REPORT_PATH}.",
     )
-    parser.add_argument("-n", "--limit", type=positive_int, default=10, help="Number of worst violations to print.")
+    parser.add_argument("-n", "--limit", type=positive_int, help="Number of worst violations to print. Defaults to 10.")
+    parser.add_argument(
+        "--index",
+        type=positive_int,
+        help="Print only the Nth worst violation using full output. N is 1-based.",
+    )
     parser.add_argument("--full", action="store_true", help="Print the full timing path blocks.")
     args = parser.parse_args(argv)
+    if args.index is not None and args.limit is not None:
+        parser.error("--index cannot be used with -n/--limit")
 
     report_path = resolve_report_path(Path(args.path))
     if not report_path.is_file():
@@ -172,7 +179,17 @@ def main(argv: list[str] | None = None) -> int:
         print("No WNS/setup timing violations found.")
         return 0
 
-    selected = paths[: args.limit]
+    if args.index is not None:
+        if args.index > len(paths):
+            print(
+                f"requested WNS/setup violation #{args.index}, but only {len(paths)} found.",
+                file=sys.stderr,
+            )
+            return 1
+        print(format_full([paths[args.index - 1]], start=args.index))
+        return 0
+
+    selected = paths[: args.limit if args.limit is not None else 10]
     print(format_full(selected) if args.full else format_summary(selected))
     return 0
 

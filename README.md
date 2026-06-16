@@ -17,6 +17,7 @@ python3 scripts/extract-timing-summary.py result/src0
 python3 scripts/extract-timing-summary.py result/src0/top_timing_summary_routed.rpt
 python3 scripts/extract-wns-violations.py
 python3 scripts/extract-wns-violations.py result/src0
+python3 scripts/extract-wns-violations.py result/src0 --index 3
 python3 scripts/extract-wns-violations.py result/src0 -n 20 --full
 python3 scripts/format-burn-summary.py burn-result-src0.json --sample src0
 ```

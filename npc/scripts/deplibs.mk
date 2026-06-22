@@ -1,8 +1,13 @@
 # include $(JYD_HOME)/init-deps/always-install-llvm.mk
 
 # sdb
+LLVM_CONFIG ?= llvm-config
+ifeq ($(shell command -v $(LLVM_CONFIG) 2>/dev/null),)
+  $(error llvm-config not found. Please install llvm-devel or set LLVM_CONFIG=/path/to/llvm-config)
+endif
 INC_PATH += $(abspath ../sdb/include)
 LDFLAGS += $(SAN_FLAGS) -L$(abspath ../sdb/build) -lsdb
+LDFLAGS += $(shell $(LLVM_CONFIG) --ldflags --libs --system-libs mcdisassembler riscv)
 ARCHIVES += $(NVBOARD_ARCHIVE) $(abspath ../sdb/build/libsdb.a)
 
 SDB_BUILD_LIB = $(abspath ../sdb/build/libsdb.a)
@@ -49,5 +54,3 @@ $(SIM_DEP_LIBS_BUILD_DONE): $(SDB_BUILD_LIB) $(SIM_DEP_LIBS_CLONE_DONE)
 	@touch $@
 
 sim-bin-deps: $(SIM_DEP_LIBS_CLONE_DONE) $(SIM_DEP_LIBS_BUILD_DONE)
-
-

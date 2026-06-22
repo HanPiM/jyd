@@ -71,8 +71,13 @@ run: export LSAN_OPTIONS=suppressions=asan_suppress.txt
 # 	@echo $(SRCS-y)
 
 # sdb
+LLVM_CONFIG ?= llvm-config
+ifeq ($(shell command -v $(LLVM_CONFIG) 2>/dev/null),)
+  $(error llvm-config not found. Please install llvm-devel or set LLVM_CONFIG=/path/to/llvm-config)
+endif
 INC_PATH += $(abspath ../sdb/include)
 LDFLAGS += -L$(abspath ../sdb/build) -lsdb
+LIBS += $(shell $(LLVM_CONFIG) --ldflags --libs --system-libs mcdisassembler riscv)
 ARCHIVES += $(abspath ../sdb/build/libsdb.a)
 
 # itrace_pack
@@ -94,4 +99,3 @@ else
 # Include rules to build NEMU
 include $(JYD_NEMU_HOME)/scripts/native.mk
 endif
-

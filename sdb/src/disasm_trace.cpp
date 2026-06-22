@@ -1,83 +1,113 @@
 #include <ansi_col.h>
 #include <tracers.hpp>
 
-#include <assert.h>
-#include <capstone/capstone.h>
-#include <dlfcn.h>
-#include <string.h>
+#include <llvm/ADT/ArrayRef.h>
+#include <llvm/ADT/SmallString.h>
+#include <llvm/MC/MCAsmInfo.h>
+#include <llvm/MC/MCContext.h>
+#include <llvm/MC/MCDisassembler/MCDisassembler.h>
+#include <llvm/MC/MCInst.h>
+#include <llvm/MC/MCInstPrinter.h>
+#include <llvm/MC/MCInstrInfo.h>
+#include <llvm/MC/MCRegisterInfo.h>
+#include <llvm/MC/MCSubtargetInfo.h>
+#include <llvm/MC/TargetRegistry.h>
+#include <llvm/Support/TargetSelect.h>
+#include <llvm/Support/raw_ostream.h>
+#include <llvm/TargetParser/Triple.h>
 
-#define _gv(n) n##_dl
-#define _gt(n) n##_func_t
+#include <algorithm>
+#include <cassert>
+#include <memory>
+#include <string_view>
 
-#define _def(st, ret, n, ...)                                                  \
-  typedef ret (*_gt(n))(__VA_ARGS__);                                          \
-  st _gt(n) _gv(n) = NULL;
+namespace {
+constexpr const char *kRiscvTriple = "riscv32-unknown-unknown";
+constexpr const char *kRiscvCpu = "generic-rv32";
+constexpr const char *kRiscvFeatures =
+    "+m,+a,+f,+d,+c,+zicsr,+zifencei,+zmmul,+zba,+zbb,+zbc,+zbs";
 
-#define _open(n)                                                               \
-  _gv(n) = (_gt(n))dlsym(dl_handle, #n);                                       \
-  assert(_gv(n));
+class llvm_riscv_disassembler {
+private:
+  std::unique_ptr<llvm::MCRegisterInfo> mri;
+  std::unique_ptr<llvm::MCAsmInfo> mai;
+  std::unique_ptr<llvm::MCInstrInfo> mii;
+  std::unique_ptr<llvm::MCSubtargetInfo> sti;
+  std::unique_ptr<llvm::MCContext> ctx;
+  std::unique_ptr<llvm::MCDisassembler> disasm;
+  std::unique_ptr<llvm::MCInstPrinter> printer;
 
-_def(static, size_t, cs_disasm, csh handle, const uint8_t *code,
-     size_t code_size, uint64_t address, size_t count, cs_insn **insn);
-_def(static, void, cs_free, cs_insn *insn, size_t count);
+public:
+  llvm_riscv_disassembler() {
+    llvm::InitializeAllTargetInfos();
+    llvm::InitializeAllTargetMCs();
+    llvm::InitializeAllDisassemblers();
 
-static csh handle;
+    std::string err;
+    const llvm::Target *target =
+        llvm::TargetRegistry::lookupTarget(kRiscvTriple, err);
+    assert(target && "failed to find LLVM RISC-V target");
 
-static void init_disasm() {
-  void *dl_handle;
-  char buf[512];
-  buf[0] = 0;
-  const char *am_home_env = getenv("JYD_AM_HOME");
-  assert(am_home_env);
-  strcpy(buf, am_home_env);
-  strcat(buf, "/../sdb/tools/capstone/repo/libcapstone.so.5");
-  dl_handle = dlopen(buf, RTLD_LAZY);
-  assert(dl_handle);
+    mri.reset(target->createMCRegInfo(kRiscvTriple));
+    assert(mri);
+    mai.reset(
+        target->createMCAsmInfo(*mri, kRiscvTriple, llvm::MCTargetOptions()));
+    assert(mai);
+    mii.reset(target->createMCInstrInfo());
+    assert(mii);
+    sti.reset(
+        target->createMCSubtargetInfo(kRiscvTriple, kRiscvCpu, kRiscvFeatures));
+    assert(sti);
 
-  _def(, cs_err, cs_open, cs_arch arch, cs_mode mode, csh * handle);
-  _open(cs_open);
-  _open(cs_disasm);
-  _open(cs_free);
-
-  cs_arch arch = CS_ARCH_RISCV;
-  cs_mode mode = CS_MODE_RISCV32;
-
-  int ret = cs_open_dl(arch, mode, &handle);
-  assert(ret == CS_ERR_OK);
-}
-static void disassemble(char *str, int size, uint64_t pc, uint8_t *code,
-                        int nbyte) {
-  cs_insn *insn;
-  size_t count = cs_disasm_dl(handle, code, nbyte, pc, 0, &insn);
-  // assert(count == 1);
-  if (count != 1) {
-    snprintf(str, size, "(invalid)");
-    return;
+    ctx = std::make_unique<llvm::MCContext>(llvm::Triple(kRiscvTriple),
+                                            mai.get(), mri.get(), nullptr);
+    disasm.reset(target->createMCDisassembler(*sti, *ctx));
+    assert(disasm);
+    printer.reset(target->createMCInstPrinter(llvm::Triple(kRiscvTriple), 0,
+                                             *mai, *mii, *mri));
+    assert(printer);
   }
-  int ret = snprintf(str, size, "%s", insn->mnemonic);
-  if (insn->op_str[0] != '\0') {
-    snprintf(str + ret, size - ret, "\t%s", insn->op_str);
+
+  std::string disassemble(uint64_t pc, const uint8_t *code, int nbyte) {
+    llvm::MCInst inst;
+    uint64_t inst_size = 0;
+    auto status = disasm->getInstruction(
+        inst, inst_size, llvm::ArrayRef<uint8_t>(code, nbyte), pc,
+        llvm::nulls());
+    if (status == llvm::MCDisassembler::Fail || inst_size == 0) {
+      return "(invalid)";
+    }
+
+    llvm::SmallString<128> out;
+    llvm::raw_svector_ostream os(out);
+    printer->printInst(&inst, pc, "", *sti, os);
+
+    std::string_view view(out.data(), out.size());
+    auto first = std::ranges::find_if_not(view, [](char c) {
+      return c == ' ' || c == '\t';
+    });
+    view.remove_prefix(static_cast<size_t>(first - view.begin()));
+    return std::string(view);
   }
-  cs_free_dl(insn, count);
+};
+
+llvm_riscv_disassembler &get_disassembler() {
+  static llvm_riscv_disassembler disasm;
+  return disasm;
 }
+} // namespace
+
 using namespace sdb;
 using namespace std;
 
 string sdb::default_inst_disasm(paddr_t pc, vlen_inst_view inst) {
-  static bool has_init = false;
-  if (!has_init) {
-    init_disasm();
-    has_init = true;
-  }
-  char buf[256];
   if (inst.size() == 4) {
     uint32_t code = *(uint32_t *)inst.data();
     if (code == 0) {
       return "(null)";
     }
   }
-  disassemble(buf, sizeof(buf), pc, (uint8_t *)inst.data(), inst.size());
-  return buf;
+  return get_disassembler().disassemble(pc, inst.data(), inst.size());
 }
 
 string sdb::_impl::expand_tabs(std::string_view in, int tabsize) {

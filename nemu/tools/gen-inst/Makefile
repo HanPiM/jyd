@@ -28,5 +28,6 @@ $(VENV_DONE): $(VENV_CREATED)
 
 clean:
 	$(MAKE) -C $(REPO_PATH) clean
+	rm -rf ./build
 
 .PHONY: default clean

@@ -14,6 +14,7 @@
 #**************************************************************************************/
 
 REPO_PATH = repo
+SPIKE_JOBS ?= 4
 ifeq ($(wildcard repo/spike_main),)
   $(shell git clone --depth=1 git@github.com:NJU-ProjectN/riscv-isa-sim $(REPO_PATH))
 endif
@@ -35,8 +36,10 @@ $(REPO_BITMANIP_STAMP): $(REPO_MAKEFILE) Makefile
 	rm -f $(REPO_BUILD_PATH)/insn_list.h
 	touch $@
 
-$(SPIKE): $(REPO_MAKEFILE) $(REPO_BITMANIP_STAMP)
-	CFLAGS="-fvisibility=hidden" CXXFLAGS="-fvisibility=hidden" $(MAKE) -C $(REPO_BUILD_PATH)
+$(SPIKE): $(REPO_BITMANIP_STAMP) | $(REPO_MAKEFILE)
+	CFLAGS="-fvisibility=hidden" CXXFLAGS="-fvisibility=hidden" $(MAKE) -j$(SPIKE_JOBS) -C $(REPO_BUILD_PATH)
+	test -f $(SPIKE)
+	touch $(REPO_BITMANIP_STAMP) $(SPIKE)
 
 BUILD_DIR = ./build
 $(shell mkdir -p $(BUILD_DIR))
@@ -60,4 +63,4 @@ clean:
 all: $(BINARY)
 .DEFAULT_GOAL = all
 
-.PHONY: all clean $(SPIKE)
+.PHONY: all clean

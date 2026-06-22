@@ -25,7 +25,8 @@ namespace {
 constexpr const char *kRiscvTriple = "riscv32-unknown-unknown";
 constexpr const char *kRiscvCpu = "generic-rv32";
 constexpr const char *kRiscvFeatures =
-    "+m,+a,+f,+d,+c,+zicsr,+zifencei,+zmmul,+zba,+zbb,+zbc,+zbs";
+    "+m,+a,+f,+d,+c,+zicsr,+zifencei,+zmmul,+zba,+zbb,+zbc,+zbs,+zbkb,+zbkc,"
+    "+zbkx";
 
 class llvm_riscv_disassembler {
 private:

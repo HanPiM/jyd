@@ -209,6 +209,50 @@ class JYDFPGAIROMBlackBox extends BlackBox {
   })
 }
 
+/** Simulation model for the 2 KiB, 32-bit-wide Vivado block-memory IP.
+  *
+  * Keep the BlackBox name identical to the Vivado IP so FPGA builds bind this
+  * instance to the IP output product. The inline SystemVerilog source is used
+  * only by RTL simulation and is excluded from synthesis/FPGA packaging.
+  */
+class BlkMemGen2KB extends BlackBox with HasBlackBoxInline {
+  override def desiredName: String = "blk_mem_gen_2KB"
+  val io = IO(new Bundle {
+    val clka  = Input(Clock())
+    val ena   = Input(Bool())
+    val wea   = Input(UInt(4.W))
+    val addra = Input(UInt(9.W))
+    val dina  = Input(UInt(32.W))
+    val douta = Output(UInt(32.W))
+  })
+
+  setInline(
+    "blk_mem_gen_2KB.sv",
+    """module blk_mem_gen_2KB (
+      |  input  wire        clka,
+      |  input  wire        ena,
+      |  input  wire [3:0]  wea,
+      |  input  wire [8:0]  addra,
+      |  input  wire [31:0] dina,
+      |  output reg  [31:0] douta
+      |);
+      |  reg [31:0] mem [0:511];
+      |
+      |  always @(posedge clka) begin
+      |    if (ena) begin
+      |      // Match the Vivado IP's read-first read-during-write mode.
+      |      douta <= mem[addra];
+      |      if (wea[0]) mem[addra][7:0]   <= dina[7:0];
+      |      if (wea[1]) mem[addra][15:8]  <= dina[15:8];
+      |      if (wea[2]) mem[addra][23:16] <= dina[23:16];
+      |      if (wea[3]) mem[addra][31:24] <= dina[31:24];
+      |    end
+      |  end
+      |endmodule
+      |""".stripMargin
+  )
+}
+
 class JYDFPGADRAMBlackBox extends BlackBox {
   override def desiredName: String = "blk_mem_gen_dram"
   val io = IO(new Bundle {

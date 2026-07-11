@@ -290,16 +290,16 @@ class CPUCore(
   exu.io.memReq <> dataMemBus.io.exuMemReq
   wbu.io.memResp <> dataMemBus.io.memResp
   dcache.io.queryAddr  := exu.io.dcache.queryAddr
-  exu.io.dcache.hit    := dcache.io.hit
+  exu.io.dcache.hit    := dcache.io.hit && p.enableDCache.B
   val dcacheStoreEpoch = RegInit(0.U(8.W))
-  when(exu.io.dcache.invalidate) {
+  when(exu.io.dcache.invalidate && p.enableDCache.B) {
     dcacheStoreEpoch := dcacheStoreEpoch + 1.U
   }
   exu.io.dcache.storeEpoch := dcacheStoreEpoch
   wbu.io.dcacheStoreEpoch  := dcacheStoreEpoch
-  dcache.io.invalidate := exu.io.dcache.invalidate
+  dcache.io.invalidate := exu.io.dcache.invalidate && p.enableDCache.B
   lsu.io.dcacheReadData := dcache.io.readData
-  dcache.io.update     := wbu.io.dcacheUpdate
+  dcache.io.update     := wbu.io.dcacheUpdate && p.enableDCache.B
   dcache.io.updateAddr := wbu.io.dcacheAddr
   dcache.io.updateData := wbu.io.dcacheData
   dcache.io.updateMask := wbu.io.dcacheMask

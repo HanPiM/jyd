@@ -284,6 +284,10 @@ class DistMemGen512x8 extends BlackBox with HasBlackBoxInline {
       |  output wire [7:0] dpo
       |);
       |  reg [7:0] mem [0:511];
+      |  integer i;
+      |  initial begin
+      |    for (i = 0; i < 512; i = i + 1) mem[i] = 8'b0;
+      |  end
       |
       |  always @(posedge clk) begin
       |    if (we) mem[a] <= d;

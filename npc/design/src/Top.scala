@@ -231,6 +231,7 @@ class CPUCore(
   val lsu        = Module(new LSU)
   val wbu        = Module(new WBU)
   val dataMemBus = Module(new DataMemBusCombiner)
+  val dcache     = Module(new DCache)
 
   val resetPCProvider = Module(new CPUTop_ResetPCProvider)
   val INIT_PC         = resetPCProvider.io.resetPC
@@ -288,6 +289,20 @@ class CPUCore(
   io.dram <> dataMemBus.io.out
   exu.io.memReq <> dataMemBus.io.exuMemReq
   wbu.io.memResp <> dataMemBus.io.memResp
+  dcache.io.queryAddr  := exu.io.dcache.queryAddr
+  exu.io.dcache.hit    := dcache.io.hit
+  val dcacheStoreEpoch = RegInit(0.U(8.W))
+  when(exu.io.dcache.invalidate) {
+    dcacheStoreEpoch := dcacheStoreEpoch + 1.U
+  }
+  exu.io.dcache.storeEpoch := dcacheStoreEpoch
+  wbu.io.dcacheStoreEpoch  := dcacheStoreEpoch
+  dcache.io.invalidate := exu.io.dcache.invalidate
+  lsu.io.dcacheReadData := dcache.io.readData
+  dcache.io.update     := wbu.io.dcacheUpdate
+  dcache.io.updateAddr := wbu.io.dcacheAddr
+  dcache.io.updateData := wbu.io.dcacheData
+  dcache.io.updateMask := wbu.io.dcacheMask
 
   ifu.io.pc.bits  := pcFeedToIFU
   ifu.io.pc.valid := true.B
@@ -323,7 +338,7 @@ class CPUCore(
   idu.io.csrJmpTarget.mepc  := csrs.io.mepc
   idu.io.csrJmpTarget.mtvec := csrs.io.mtvec
 
-  val lsuFwdInfo = ExtractFwdInfoFromLSU(lsu.io.in)
+  val lsuFwdInfo = ExtractFwdInfoFromLSU(lsu.io.in, dcache.io.readData)
   val wbuRawFwdInfo = Wire(new WrBackForwardInfo)
   wbuRawFwdInfo.addr      := wbu.io.in.bits.gpr.addr
   wbuRawFwdInfo.enWr      := wbu.io.in.bits.gpr.en && wbu.io.in.valid

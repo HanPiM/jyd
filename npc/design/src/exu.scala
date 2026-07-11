@@ -109,6 +109,13 @@ class EXU(
 
     val fwd = Output(new WrBackForwardInfo)
 
+    val dcache = new Bundle {
+      val hit        = Input(Bool())
+      val storeEpoch = Input(UInt(8.W))
+      val queryAddr  = Output(Types.UWord)
+      val invalidate = Output(Bool())
+    }
+
     val memReq = Decoupled(new MemReq)
     val out    = Decoupled(new LSUInput)
   })
@@ -241,6 +248,11 @@ class EXU(
   lsuInfo.isStore   := isTypStore
   lsuInfo.func3t    := dinst.code(14, 12)
   lsuInfo.storeData := reg_v2
+  lsuInfo.memWData  := GenMemWData(reg1AddImm(1, 0), reg_v2)
+  lsuInfo.memWMask  := GenMemWMask(reg1AddImm(1, 0), func3t)
+  lsuInfo.dcacheEn  := reg1AddImm(21, 20) === "b01".U
+  lsuInfo.dcacheHit := io.dcache.hit
+  lsuInfo.dcacheStoreEpoch := io.dcache.storeEpoch
 
   val snpc = dinst.info.staticNextPCOrCSRTarget
 
@@ -265,6 +277,13 @@ class EXU(
   writeBackInfo.lsuResult     := 0.U
   writeBackInfo.lsuFunc3t     := 0.U
   writeBackInfo.lsuAddrOffset := 0.U
+  writeBackInfo.memAddr       := 0.U
+  writeBackInfo.memWData      := 0.U
+  writeBackInfo.memWMask      := 0.U
+  writeBackInfo.dcacheEn      := false.B
+  writeBackInfo.dcacheHit     := false.B
+  writeBackInfo.dcacheStoreEpoch := 0.U
+  writeBackInfo.isStore       := false.B
 
   val isMemOP        = isTypLoad || isTypStore
   val exuResultValid = !isTypArithmetic || alu.io.out.valid
@@ -282,6 +301,9 @@ class EXU(
   }
 
   val memWData = GenMemWData(reg1AddImm(1, 0), reg_v2)
+
+  io.dcache.queryAddr  := reg1AddImm
+  io.dcache.invalidate := memReqFire && isTypStore && lsuInfo.dcacheEn
 
   io.memReq.valid      := needMemReq && io.in.valid && io.out.ready
   io.memReq.bits.addr  := reg1AddImm

@@ -11,13 +11,19 @@ class LSUInput(
   val isStore      = Bool()
   val destAddr     = Types.UWord
   val storeData    = Types.UWord
+  val memWData     = Types.UWord
+  val memWMask     = UInt(4.W)
+  val dcacheEn     = Bool()
+  val dcacheHit    = Bool()
+  val dcacheStoreEpoch = UInt(8.W)
   val func3t       = UInt(3.W)
   val exuWriteBack = new WriteBackInfo
 }
 
 object ExtractFwdInfoFromLSU {
   def apply(
-    info:       DecoupledIO[LSUInput]
+    info:       DecoupledIO[LSUInput],
+    dcacheData: UInt
   )(
     implicit p: CPUParameters
   ): WrBackForwardInfo = {
@@ -26,8 +32,12 @@ object ExtractFwdInfoFromLSU {
     val out = Wire(new WrBackForwardInfo)
     out.addr      := wrBack.gpr.addr
     out.enWr      := wrBack.gpr.en && info.valid
-    out.dataVaild := !info.bits.isLoad
-    out.data      := wrBack.gpr.data
+    out.dataVaild := !info.bits.isLoad || (info.bits.dcacheEn && info.bits.dcacheHit)
+    out.data      := Mux(
+      info.bits.isLoad && info.bits.dcacheEn && info.bits.dcacheHit,
+      ExtLoadData(dcacheData, info.bits.destAddr(1, 0), info.bits.func3t),
+      wrBack.gpr.data
+    )
 
     out.enWrCSR := wrBack.csr.en && info.valid
 
@@ -53,6 +63,7 @@ class LSUIO(
     extends Bundle {
   val in  = Flipped(Decoupled(new LSUInput))
   val out = Decoupled(new WriteBackInfo)
+  val dcacheReadData = Input(Types.UWord)
 }
 
 class LSU(
@@ -112,10 +123,17 @@ class LSU(
   outWriteBackInfo.gpr.data      := activeReq.exuWriteBack.gpr.data
   outWriteBackInfo.isLoad        := activeReq.isLoad
   outWriteBackInfo.isMemOp       := isMemOp
-  outWriteBackInfo.lsuResult     := activeReq.exuWriteBack.lsuResult
+  outWriteBackInfo.lsuResult     := io.dcacheReadData
   outWriteBackInfo.lsuFunc3t     := activeReq.func3t
   outWriteBackInfo.lsuAddrOffset := activeReq.destAddr(1, 0)
   outWriteBackInfo.iid           := activeReq.exuWriteBack.iid
+  outWriteBackInfo.memAddr       := activeReq.destAddr
+  outWriteBackInfo.memWData      := activeReq.memWData
+  outWriteBackInfo.memWMask      := activeReq.memWMask
+  outWriteBackInfo.dcacheEn      := activeReq.dcacheEn
+  outWriteBackInfo.dcacheHit     := activeReq.dcacheHit
+  outWriteBackInfo.dcacheStoreEpoch := activeReq.dcacheStoreEpoch
+  outWriteBackInfo.isStore       := activeReq.isStore
 
   StageLogger(
     clock,

@@ -10,7 +10,7 @@ Options:
   --project-root <path>   Vivado project root containing digital_twin.xpr (default: .)
   --coe-root <path>       Directory containing COE sample directories (default: ./jyd-coes)
   --output-dir <path>     Directory for generated bitstreams (default: ./bitstreams)
-  --run <name>            Vivado implementation run to launch (default: impl_Auto_1)
+  --run <name>            Vivado implementation run to launch (default: impl_1)
   --vivado <path>         Vivado executable (default: $VIVADO_BIN or vivado in PATH)
   -h, --help              Show this help
 EOF
@@ -19,7 +19,7 @@ EOF
 PROJECT_ROOT="."
 COE_ROOT="./jyd-coes"
 OUTPUT_DIR="./bitstreams"
-RUN_NAME="impl_Auto_1"
+RUN_NAME="impl_1"
 VIVADO_BIN="${VIVADO_BIN:-}"
 
 require_value() {

@@ -10,10 +10,7 @@ class LSUInput(
   val isLoad       = Bool()
   val isStore      = Bool()
   val destAddr     = Types.UWord
-  val storeData    = Types.UWord
-  val memWData     = Types.UWord
-  val memWMask     = UInt(4.W)
-  val dcacheEn     = Bool()
+  val cacheableLw  = Bool()
   val dcacheHit    = Bool()
   val dcacheStoreEpoch = UInt(8.W)
   val func3t       = UInt(3.W)
@@ -21,10 +18,7 @@ class LSUInput(
 }
 
 object ExtractFwdInfoFromLSU {
-  def apply(
-    info:       DecoupledIO[LSUInput],
-    dcacheData: UInt
-  )(
+  def apply(info: DecoupledIO[LSUInput])(
     implicit p: CPUParameters
   ): WrBackForwardInfo = {
     val wrBack = info.bits.exuWriteBack
@@ -32,12 +26,8 @@ object ExtractFwdInfoFromLSU {
     val out = Wire(new WrBackForwardInfo)
     out.addr      := wrBack.gpr.addr
     out.enWr      := wrBack.gpr.en && info.valid
-    out.dataVaild := !info.bits.isLoad || (info.bits.dcacheEn && info.bits.dcacheHit)
-    out.data      := Mux(
-      info.bits.isLoad && info.bits.dcacheEn && info.bits.dcacheHit,
-      ExtLoadData(dcacheData, info.bits.destAddr(1, 0), info.bits.func3t),
-      wrBack.gpr.data
-    )
+    out.dataVaild := !info.bits.isLoad
+    out.data      := wrBack.gpr.data
 
     out.enWrCSR := wrBack.csr.en && info.valid
 
@@ -128,12 +118,9 @@ class LSU(
   outWriteBackInfo.lsuAddrOffset := activeReq.destAddr(1, 0)
   outWriteBackInfo.iid           := activeReq.exuWriteBack.iid
   outWriteBackInfo.memAddr       := activeReq.destAddr
-  outWriteBackInfo.memWData      := activeReq.memWData
-  outWriteBackInfo.memWMask      := activeReq.memWMask
-  outWriteBackInfo.dcacheEn      := activeReq.dcacheEn
+  outWriteBackInfo.cacheableLw   := activeReq.cacheableLw
   outWriteBackInfo.dcacheHit     := activeReq.dcacheHit
   outWriteBackInfo.dcacheStoreEpoch := activeReq.dcacheStoreEpoch
-  outWriteBackInfo.isStore       := activeReq.isStore
 
   StageLogger(
     clock,

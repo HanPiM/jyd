@@ -20,12 +20,9 @@ class WriteBackInfo(implicit p:CPUParameters) extends Bundle {
   val lsuFunc3t    = UInt(3.W)
   val lsuAddrOffset = UInt(2.W)
   val memAddr       = Types.UWord
-  val memWData      = Types.UWord
-  val memWMask      = UInt(4.W)
-  val dcacheEn      = Bool()
+  val cacheableLw   = Bool()
   val dcacheHit     = Bool()
   val dcacheStoreEpoch = UInt(8.W)
-  val isStore       = Bool()
 
   val csr           = CSRegReqIO.TX.Write
   val csr_ecallflag = Bool()
@@ -133,9 +130,9 @@ class WBU(implicit p:CPUParameters) extends Module {
   when(valid && wbinfo.isMemOp) {
     assert(io.memResp.valid, "WBU memory response must be valid for memory operations")
   }
-  when(valid && wbinfo.isLoad && wbinfo.dcacheEn && wbinfo.dcacheHit && io.memResp.valid) {
+  when(valid && wbinfo.cacheableLw && wbinfo.dcacheHit && io.memResp.valid) {
     assert(
-      ExtLoadData(wbinfo.lsuResult, wbinfo.lsuAddrOffset, wbinfo.lsuFunc3t) === loadResult,
+      wbinfo.lsuResult === io.memResp.bits,
       p"DCache hit data mismatch: addr=${wbinfo.memAddr} cache=${wbinfo.lsuResult} mem=${io.memResp.bits}"
     )
   }
@@ -151,11 +148,8 @@ class WBU(implicit p:CPUParameters) extends Module {
 
   io.done := valid
 
-  // Sub-word and unaligned responses do not contain a complete cache line.
-  val isAlignedWordLoad = wbinfo.lsuFunc3t(1) && wbinfo.lsuAddrOffset === 0.U
   val noYoungerStore = wbinfo.dcacheStoreEpoch === io.dcacheStoreEpoch
-  val fillLoad = valid && wbinfo.dcacheEn && wbinfo.isLoad && !wbinfo.dcacheHit && isAlignedWordLoad &&
-    noYoungerStore && io.memResp.valid
+  val fillLoad = valid && wbinfo.cacheableLw && !wbinfo.dcacheHit && noYoungerStore && io.memResp.valid
   io.dcacheUpdate := fillLoad
   io.dcacheAddr   := wbinfo.memAddr
   io.dcacheData   := io.memResp.bits

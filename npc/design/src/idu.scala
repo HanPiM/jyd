@@ -86,6 +86,14 @@ class WrBackInfoGroup(
   val wbu = new WrBackForwardInfo
 }
 
+class DCacheForwardInfo(
+  implicit p: CPUParameters)
+    extends Bundle {
+  val valid = Bool()
+  val addr  = p.GPRAddr
+  val data  = Types.UWord
+}
+
 object SingleByPassMux {
   def conflict(rs: UInt, rd: UInt, en: Bool): Bool = (rs === rd) && (rd =/= 0.U) && en
   def apply(
@@ -114,6 +122,35 @@ object SingleByPassMux {
   }
 }
 
+object CacheAwareByPassMux {
+  def apply(
+    rs:         UInt,
+    regData:    UInt,
+    wrBacks:    Seq[WrBackForwardInfo],
+    dcacheFwd:  DCacheForwardInfo,
+    allowCache: Bool
+  ): (Bool, UInt) = {
+    require(wrBacks.length == 3)
+    val exuConflict = SingleByPassMux.conflict(rs, wrBacks(0).addr, wrBacks(0).enWr)
+    val lsuConflict = SingleByPassMux.conflict(rs, wrBacks(1).addr, wrBacks(1).enWr)
+    val wbuConflict = SingleByPassMux.conflict(rs, wrBacks(2).addr, wrBacks(2).enWr)
+    val cacheSelect = allowCache && SingleByPassMux.conflict(rs, dcacheFwd.addr, dcacheFwd.valid) && !exuConflict
+
+    val needStall = Mux(
+      exuConflict,
+      !wrBacks(0).dataVaild,
+      Mux(lsuConflict, !wrBacks(1).dataVaild && !cacheSelect, wbuConflict && !wrBacks(2).dataVaild)
+    )
+
+    val normalData = Mux(
+      exuConflict,
+      wrBacks(0).data,
+      Mux(lsuConflict, wrBacks(1).data, Mux(wbuConflict, wrBacks(2).data, regData))
+    )
+    (needStall, Mux(cacheSelect, dcacheFwd.data, normalData))
+  }
+}
+
 object CSRByPassNeedStall {
   def apply(wrBacks: Seq[WrBackForwardInfo]): Bool = {
     wrBacks.map(_.enWrCSR).reduce(_ || _)
@@ -130,6 +167,8 @@ class ByPassMux(
     val regData2 = Input(Types.UWord)
 
     val wrBackInfo = Input(new WrBackInfoGroup)
+    val dcacheFwd  = Input(new DCacheForwardInfo)
+    val allowCacheRs1 = Input(Bool())
     val needStall  = Output(Bool())
 
     val outData1 = Output(Types.UWord)
@@ -139,8 +178,8 @@ class ByPassMux(
   val wrBacks    = Seq(io.wrBackInfo.exu, io.wrBackInfo.lsu, io.wrBackInfo.wbu)
   val csrWrBacks = Seq(io.wrBackInfo.exu, io.wrBackInfo.lsu, io.wrBackInfo.wbu)
 
-  val (needStall1, outData1) = SingleByPassMux(io.rs1, io.regData1, wrBacks)
-  val (needStall2, outData2) = SingleByPassMux(io.rs2, io.regData2, wrBacks)
+  val (needStall1, outData1) = CacheAwareByPassMux(io.rs1, io.regData1, wrBacks, io.dcacheFwd, io.allowCacheRs1)
+  val (needStall2, outData2) = CacheAwareByPassMux(io.rs2, io.regData2, wrBacks, io.dcacheFwd, true.B)
 
   val needStallCSR = CSRByPassNeedStall(csrWrBacks)
 
@@ -164,6 +203,7 @@ class IDU(
     val pipelineFlush = Input(Bool())
 
     val wrBackInfo           = Input(new WrBackInfoGroup)
+    val dcacheFwd            = Input(new DCacheForwardInfo)
     val reg1AddImmWbuRawInfo = Input(new WrBackForwardInfo)
 
     val out = Decoupled(new DecodedInst)
@@ -232,19 +272,19 @@ class IDU(
     )
   )
 
-  val needBypassRs2 = ~isFmtI
-
   val bypassMux = Module(new ByPassMux())
   bypassMux.io.rs1        := res.rs1
   bypassMux.io.rs2        := res.rs2
   bypassMux.io.regData1   := io.rvec.data(0)
   bypassMux.io.regData2   := io.rvec.data(1)
   bypassMux.io.wrBackInfo := io.wrBackInfo
+  val needReg1AddImm = isTypLoad || isTypStore || isTypJALR
+  bypassMux.io.dcacheFwd := io.dcacheFwd
+  bypassMux.io.allowCacheRs1 := !needReg1AddImm
   res.reg1                := bypassMux.io.outData1
   res.reg2                := Mux(isFmtI, immI, bypassMux.io.outData2) // For exu ALU src2
   res.csrReadData         := io.csrRead.data
 
-  val needReg1AddImm             = isTypLoad || isTypStore || isTypJALR
   val needStallReg1AddImmFromEXU =
     needReg1AddImm && SingleByPassMux.conflict(res.rs1, io.wrBackInfo.exu.addr, io.wrBackInfo.exu.enWr)
   val needStallReg1AddImmFromWBU =

@@ -338,7 +338,11 @@ class CPUCore(
   idu.io.csrJmpTarget.mepc  := csrs.io.mepc
   idu.io.csrJmpTarget.mtvec := csrs.io.mtvec
 
-  val lsuFwdInfo = ExtractFwdInfoFromLSU(lsu.io.in, dcache.io.readData)
+  val lsuFwdInfo = ExtractFwdInfoFromLSU(lsu.io.in)
+  val dcacheFwdInfo = Wire(new DCacheForwardInfo)
+  dcacheFwdInfo.valid := lsu.io.in.valid && lsu.io.in.bits.cacheableLw && lsu.io.in.bits.dcacheHit
+  dcacheFwdInfo.addr  := lsu.io.in.bits.exuWriteBack.gpr.addr
+  dcacheFwdInfo.data  := dcache.io.readData
   val wbuRawFwdInfo = Wire(new WrBackForwardInfo)
   wbuRawFwdInfo.addr      := wbu.io.in.bits.gpr.addr
   wbuRawFwdInfo.enWr      := wbu.io.in.bits.gpr.en && wbu.io.in.valid
@@ -348,6 +352,7 @@ class CPUCore(
   idu.io.wrBackInfo.exu := exu.io.fwd
   idu.io.wrBackInfo.lsu := lsuFwdInfo
   idu.io.wrBackInfo.wbu := ExtractFwdInfoFromWrBack(wbu.io.in, wbu.io.memResp)
+  idu.io.dcacheFwd := dcacheFwdInfo
   idu.io.reg1AddImmWbuRawInfo := wbuRawFwdInfo
 
   idu.io.pipelineFlush := activeRedirectValid

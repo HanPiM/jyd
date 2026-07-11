@@ -253,33 +253,35 @@ class BlkMemGen2KB extends BlackBox with HasBlackBoxInline {
   )
 }
 
-/** Simulation model for the 1024 x 7-bit Vivado distributed-memory IP. */
-class DistMemGen1024x7 extends BlackBox with HasBlackBoxInline {
-  override def desiredName: String = "dist_mem_gen_1024x7"
+/** Simulation model for the 512 x 8-bit Vivado distributed-memory IP. */
+class DistMemGen512x8 extends BlackBox with HasBlackBoxInline {
+  override def desiredName: String = "dist_mem_gen_512x8"
   val io = IO(new Bundle {
-    val a   = Input(UInt(10.W))
-    val d   = Input(UInt(7.W))
-    val clk = Input(Clock())
-    val we  = Input(Bool())
-    val spo = Output(UInt(7.W))
+    val a    = Input(UInt(9.W))
+    val d    = Input(UInt(8.W))
+    val dpra = Input(UInt(9.W))
+    val clk  = Input(Clock())
+    val we   = Input(Bool())
+    val dpo  = Output(UInt(8.W))
   })
 
   setInline(
-    "dist_mem_gen_1024x7.sv",
-    """module dist_mem_gen_1024x7 (
-      |  input  wire [9:0] a,
-      |  input  wire [6:0] d,
+    "dist_mem_gen_512x8.sv",
+    """module dist_mem_gen_512x8 (
+      |  input  wire [8:0] a,
+      |  input  wire [7:0] d,
+      |  input  wire [8:0] dpra,
       |  input  wire       clk,
       |  input  wire       we,
-      |  output wire [6:0] spo
+      |  output wire [7:0] dpo
       |);
-      |  reg [6:0] mem [0:1023];
+      |  reg [7:0] mem [0:511];
       |
       |  always @(posedge clk) begin
       |    if (we) mem[a] <= d;
       |  end
       |
-      |  assign spo = mem[a];
+      |  assign dpo = mem[dpra];
       |endmodule
       |""".stripMargin
   )

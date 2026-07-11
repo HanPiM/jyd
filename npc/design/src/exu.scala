@@ -108,6 +108,7 @@ class EXU(
     val nxtPC = Output(Types.UWord)
 
     val fwd = Output(new WrBackForwardInfo)
+    val addFwd = Output(new AddForwardInfo)
 
     val dcache = new Bundle {
       val hit        = Input(Bool())
@@ -139,6 +140,8 @@ class EXU(
   val isTypBranch     = InstType.hasSame(dinst.info.typ, InstType.branch)
   val isTypArithmetic = InstType.hasSame(dinst.info.typ, InstType.arithmetic)
   val isTypLUI        = InstType.hasSame(dinst.info.typ, InstType.lui)
+
+  val isAdd = isTypArithmetic && func3t === 0.U && (isFmtI || func7t === 0.U)
 
   alu.io.in.valid := io.in.valid && isTypArithmetic
 
@@ -283,6 +286,9 @@ class EXU(
   val isMemOP        = isTypLoad || isTypStore
   val exuResultValid = !isTypArithmetic || alu.io.out.valid
   io.fwd := WrBackForwardInfo(io.in.valid, dinst, !isMemOP && exuResultValid, writeBackInfo.gpr.data, csrWrEnable)
+  io.addFwd.valid := io.in.valid && dinst.info.rdWrEn && dinst.info.rd =/= 0.U && isAdd
+  io.addFwd.addr  := dinst.info.rd
+  io.addFwd.data  := alu.io.addResult
 
   val memWMask = GenMemWMask(reg1AddImm(1, 0), func3t)
 

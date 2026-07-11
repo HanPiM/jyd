@@ -281,8 +281,9 @@ class Divider extends Module {
 
 class ALU extends Module {
   val io = IO(new Bundle {
-    val in  = Flipped(Decoupled(new ALUInput))
-    val out = Decoupled(Types.UWord)
+    val in        = Flipped(Decoupled(new ALUInput))
+    val out       = Decoupled(Types.UWord)
+    val addResult = Output(Types.UWord)
   })
 
   // alias
@@ -301,9 +302,9 @@ class ALU extends Module {
 
   val isAdd = ((~isOpAlt) || inbits.is_imm) //&& (~inbits.func3t(1))
 
-  val add_sub_res = Wire(Types.UWord)
-
-  add_sub_res := Mux(isAdd, src1 + src2, src1 - src2)
+  val addResult = src1 + src2
+  val add_sub_res = Mux(isAdd, addResult, src1 - src2)
+  io.addResult := addResult
 
   val sltu_res = src1 < src2
   val slt_res = s_src1 < s_src2

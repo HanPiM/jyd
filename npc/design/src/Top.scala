@@ -350,6 +350,7 @@ class CPUCore(
   wbuRawFwdInfo.data      := wbu.io.in.bits.gpr.data
   wbuRawFwdInfo.enWrCSR   := false.B
   idu.io.wrBackInfo.exu := exu.io.fwd
+  idu.io.exuAddFwd := exu.io.addFwd
   idu.io.wrBackInfo.lsu := lsuFwdInfo
   idu.io.wrBackInfo.wbu := ExtractFwdInfoFromWrBack(wbu.io.in, wbu.io.memResp)
   idu.io.dcacheFwd := dcacheFwdInfo

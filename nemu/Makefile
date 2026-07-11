@@ -72,9 +72,11 @@ run: export LSAN_OPTIONS=suppressions=asan_suppress.txt
 
 # sdb
 LLVM_CONFIG ?= llvm-config
-ifeq ($(shell command -v $(LLVM_CONFIG) 2>/dev/null),)
-  $(error llvm-config not found. Please install llvm-devel or set LLVM_CONFIG=/path/to/llvm-config)
-endif
+.PHONY: check-llvm-config
+check-llvm-config:
+	@command -v $(LLVM_CONFIG) >/dev/null 2>&1 || \
+	  { echo "llvm-config not found. Please install llvm-devel or set LLVM_CONFIG=/path/to/llvm-config."; exit 1; }
+app: check-llvm-config
 INC_PATH += $(abspath ../sdb/include)
 LDFLAGS += -L$(abspath ../sdb/build) -lsdb
 LIBS += $(shell $(LLVM_CONFIG) --ldflags --libs --system-libs mcdisassembler riscv)

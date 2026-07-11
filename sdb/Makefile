@@ -15,7 +15,7 @@ LLVM_CONFIG_EXISTS := $(shell command -v $(LLVM_CONFIG) 2>/dev/null)
 ifeq ($(LLVM_CONFIG_EXISTS),)
 $(error llvm-config not found. Please install llvm-devel or set LLVM_CONFIG=/path/to/llvm-config)
 endif
-LLVM_CXXFLAGS := $(patsubst -I%,-isystem %,$(filter-out -std=%,$(shell $(LLVM_CONFIG) --cxxflags)))
+LLVM_CXXFLAGS := $(patsubst -I%,-isystem %,$(filter-out -std=% -fno-exceptions,$(shell $(LLVM_CONFIG) --cxxflags)))
 
 INCLUDES = $(foreach dir,$(INC_PATH),-I$(dir))
 

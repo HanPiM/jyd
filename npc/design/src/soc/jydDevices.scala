@@ -223,7 +223,10 @@ class BlkMemGen2KB extends BlackBox with HasBlackBoxInline {
     val wea   = Input(UInt(4.W))
     val addra = Input(UInt(9.W))
     val dina  = Input(UInt(32.W))
-    val douta = Output(UInt(32.W))
+    val clkb  = Input(Clock())
+    val enb   = Input(Bool())
+    val addrb = Input(UInt(9.W))
+    val doutb = Output(UInt(32.W))
   })
 
   setInline(
@@ -234,19 +237,24 @@ class BlkMemGen2KB extends BlackBox with HasBlackBoxInline {
       |  input  wire [3:0]  wea,
       |  input  wire [8:0]  addra,
       |  input  wire [31:0] dina,
-      |  output reg  [31:0] douta
+      |  input  wire        clkb,
+      |  input  wire        enb,
+      |  input  wire [8:0]  addrb,
+      |  output reg  [31:0] doutb
       |);
       |  reg [31:0] mem [0:511];
       |
       |  always @(posedge clka) begin
       |    if (ena) begin
-      |      // Match the Vivado IP's read-first read-during-write mode.
-      |      douta <= mem[addra];
       |      if (wea[0]) mem[addra][7:0]   <= dina[7:0];
       |      if (wea[1]) mem[addra][15:8]  <= dina[15:8];
       |      if (wea[2]) mem[addra][23:16] <= dina[23:16];
       |      if (wea[3]) mem[addra][31:24] <= dina[31:24];
       |    end
+      |  end
+      |
+      |  always @(posedge clkb) begin
+      |    if (enb) doutb <= mem[addrb];
       |  end
       |endmodule
       |""".stripMargin

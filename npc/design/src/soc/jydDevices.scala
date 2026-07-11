@@ -253,6 +253,38 @@ class BlkMemGen2KB extends BlackBox with HasBlackBoxInline {
   )
 }
 
+/** Simulation model for the 1024 x 7-bit Vivado distributed-memory IP. */
+class DistMemGen1024x7 extends BlackBox with HasBlackBoxInline {
+  override def desiredName: String = "dist_mem_gen_1024x7"
+  val io = IO(new Bundle {
+    val a   = Input(UInt(10.W))
+    val d   = Input(UInt(7.W))
+    val clk = Input(Clock())
+    val we  = Input(Bool())
+    val spo = Output(UInt(7.W))
+  })
+
+  setInline(
+    "dist_mem_gen_1024x7.sv",
+    """module dist_mem_gen_1024x7 (
+      |  input  wire [9:0] a,
+      |  input  wire [6:0] d,
+      |  input  wire       clk,
+      |  input  wire       we,
+      |  output wire [6:0] spo
+      |);
+      |  reg [6:0] mem [0:1023];
+      |
+      |  always @(posedge clk) begin
+      |    if (we) mem[a] <= d;
+      |  end
+      |
+      |  assign spo = mem[a];
+      |endmodule
+      |""".stripMargin
+  )
+}
+
 class JYDFPGADRAMBlackBox extends BlackBox {
   override def desiredName: String = "blk_mem_gen_dram"
   val io = IO(new Bundle {

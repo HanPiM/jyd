@@ -103,6 +103,11 @@ jobs:
           echo "Downloading mill with version $MILL_VERSION"
           sh -c "curl -L https://github.com/com-lihaoyi/mill/releases/download/$MILL_VERSION/$MILL_VERSION > ~/.local/bin/mill && chmod +x ~/.local/bin/mill"
 
+      - name: Install LLVM toolchain
+        run: |
+          sudo apt update
+          sudo apt install -y llvm llvm-dev
+
       - name: Clone other repos
         run: |
           cd $JYD_HOME

@@ -5,6 +5,7 @@ import chisel3.util.{Cat, Counter, MuxLookup}
 
 import common_def._
 import dpiwrap._
+import jyd.DistMemGen32x32
 
 import Types.Ops._
 
@@ -64,20 +65,22 @@ class RegisterFile(
 )(
   implicit cfg: CPUParameters)
     extends Module {
+  require(READ_PORTS == 2, "the distributed-memory GPR implementation requires two read ports")
+  require(cfg.GPRNum <= 32, "DistMemGen32x32 supports at most 32 GPRs")
+
   val io = IO(new GPRIO(READ_PORTS))
 
-  val reg = Reg(Vec(cfg.GPRNum, Types.UWord))
+  val replicas = Seq.fill(READ_PORTS)(Module(new DistMemGen32x32))
+  val writeEn  = io.write.en && io.write.addr =/= 0.U
 
-  // val a0 = IO(Output(Types.UWord))
-  // a0 := reg(10)
-  // dontTouch(a0)
+  replicas.foreach { replica =>
+    replica.io.a   := io.write.addr.pad(5)
+    replica.io.d   := io.write.data
+    replica.io.clk := clock
+    replica.io.we  := writeEn
+  }
 
   when(io.write.en) {
-    // Chisel will optimize to remove reg[0] instance
-    when(io.write.addr =/= 0.U) {
-      reg(io.write.addr) := io.write.data
-    }
-
     ClockedCallVoidDPIC("gpr_upd")(
       clock,
       io.write.en,
@@ -86,11 +89,8 @@ class RegisterFile(
     )
   }
   for (i <- 0 until READ_PORTS) {
-    when(io.read.addr(i) === 0.U) {
-      io.read.data(i) := 0.U
-    }.otherwise {
-      io.read.data(i) := reg(io.read.addr(i))
-    }
+    replicas(i).io.dpra := io.read.addr(i).pad(5)
+    io.read.data(i)     := Mux(io.read.addr(i) === 0.U, 0.U, replicas(i).io.dpo)
   }
 }
 

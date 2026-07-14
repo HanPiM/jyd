@@ -347,7 +347,6 @@
           <Attr Name="UsedIn" Val="simulation"/>
         </FileInfo>
       </File>
-      <File Path="$PPRDIR/archive_project_summary.txt"/>
       <File Path="$PSRCDIR/sources_1/imports/pack-fpga/cpu/DualSimpleBusToAXI4.sv">
         <FileInfo>
           <Attr Name="AutoDisabled" Val="1"/>
@@ -429,27 +428,6 @@
           <Attr Name="UsedIn" Val="simulation"/>
         </FileInfo>
       </File>
-      <File Path="$PSRCDIR/sim_1/imports/JYD2025_Contest-rv32i-error/tb_uart_behav.wcfg">
-        <FileInfo>
-          <Attr Name="ImportPath" Val="$PPRDIR/../../../../jyd/digital_twin/tb_uart_behav.wcfg"/>
-          <Attr Name="ImportTime" Val="1744796992"/>
-          <Attr Name="UsedIn" Val="simulation"/>
-        </FileInfo>
-      </File>
-      <File Path="$PSRCDIR/sim_1/imports/JYD2025_Contest-rv32i-error/tb_top_behav.wcfg">
-        <FileInfo>
-          <Attr Name="ImportPath" Val="$PPRDIR/../../../../jyd/digital_twin/tb_top_behav.wcfg"/>
-          <Attr Name="ImportTime" Val="1744961714"/>
-          <Attr Name="UsedIn" Val="simulation"/>
-        </FileInfo>
-      </File>
-      <File Path="$PSRCDIR/sim_1/imports/JYD2025_Contest-rv32i-error/tb_myCPU_behav.wcfg">
-        <FileInfo>
-          <Attr Name="ImportPath" Val="$PPRDIR/../../../../jyd/digital_twin/tb_myCPU_behav.wcfg"/>
-          <Attr Name="ImportTime" Val="1745489270"/>
-          <Attr Name="UsedIn" Val="simulation"/>
-        </FileInfo>
-      </File>
       <File Path="$PPRDIR/tb_myCPU_behav.wcfg">
         <FileInfo>
           <Attr Name="UsedIn" Val="simulation"/>
@@ -468,9 +446,6 @@
         <Option Name="PamSignalDriverFile" Val="xil_bypass_driver"/>
         <Option Name="PamPseudoTop" Val="pseudo_tb"/>
         <Option Name="SrcSet" Val="sources_1"/>
-        <Option Name="XSimWcfgFile" Val="$PPRDIR/../../../../jyd/digital_twin/tb_uart_behav.wcfg"/>
-        <Option Name="XSimWcfgFile" Val="$PPRDIR/../../../../jyd/digital_twin/tb_top_behav.wcfg"/>
-        <Option Name="XSimWcfgFile" Val="$PPRDIR/../../../../jyd/digital_twin/tb_myCPU_behav.wcfg"/>
         <Option Name="XSimWcfgFile" Val="$PPRDIR/tb_myCPU_behav.wcfg"/>
         <Option Name="CosimPdi" Val=""/>
         <Option Name="CosimPlatform" Val=""/>
@@ -479,13 +454,6 @@
     </FileSet>
     <FileSet Name="utils_1" Type="Utils" RelSrcDir="$PSRCDIR/utils_1" RelGenDir="$PGENDIR/utils_1">
       <Filter Type="Utils"/>
-      <File Path="$PSRCDIR/utils_1/imports/synth_1/top.dcp">
-        <FileInfo>
-          <Attr Name="UsedIn" Val="synthesis"/>
-          <Attr Name="UsedIn" Val="implementation"/>
-          <Attr Name="AutoDcp" Val="1"/>
-        </FileInfo>
-      </File>
       <Config>
         <Option Name="TopAutoSet" Val="TRUE"/>
       </Config>

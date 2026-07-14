@@ -60,7 +60,6 @@
 #    "D:/jyd/digital_twin/digital_twin.srcs/sources_1/imports/test_src/irom.coe"
 #    "D:/jyd/digital_twin/digital_twin.srcs/sources_1/imports/src0/irom.coe"
 #    "D:/jyd/digital_twin/digital_twin.srcs/sources_1/imports/src0/dram.coe"
-#    "D:/jyd/digital_twin/archive_project_summary.txt"
 #    "D:/jyd/digital_twin/digital_twin.srcs/sources_1/imports/pack-fpga/cpu/DualSimpleBusToAXI4.sv"
 #    "D:/jyd/digital_twin/digital_twin.srcs/sources_1/ip/mult_gen_0/mult_gen_0.xci"
 #    "D:/jyd/digital_twin/digital_twin.srcs/sources_1/ip/div_gen_uradix2/div_gen_uradix2.xci"
@@ -69,10 +68,6 @@
 #    "D:/jyd/digital_twin/digital_twin.srcs/sim_1/new/tb_myCPU.sv"
 #    "D:/jyd/digital_twin/digital_twin.srcs/sim_1/new/tb_top.sv"
 #    "D:/jyd/digital_twin/digital_twin.srcs/sim_1/new/tb_uart.sv"
-#    "D:/jyd/digital_twin/digital_twin.srcs/sim_1/imports/JYD2025_Contest-rv32i-error/tb_uart_behav.wcfg"
-#    "D:/jyd/digital_twin/digital_twin.srcs/sim_1/imports/JYD2025_Contest-rv32i-error/tb_top_behav.wcfg"
-#    "D:/jyd/digital_twin/digital_twin.srcs/sim_1/imports/JYD2025_Contest-rv32i-error/tb_myCPU_behav.wcfg"
-#    "D:/jyd/digital_twin/digital_twin.srcs/utils_1/imports/synth_1/top.dcp"
 #
 # 3. The following remote source files that were added to the original project:-
 #
@@ -130,7 +125,6 @@ proc checkRequiredFiles { origin_dir} {
  "[file normalize "$origin_dir/digital_twin.srcs/sources_1/imports/test_src/irom.coe"]"\
  "[file normalize "$origin_dir/digital_twin.srcs/sources_1/imports/src0/irom.coe"]"\
  "[file normalize "$origin_dir/digital_twin.srcs/sources_1/imports/src0/dram.coe"]"\
- "[file normalize "$origin_dir/archive_project_summary.txt"]"\
  "[file normalize "$origin_dir/digital_twin.srcs/sources_1/imports/pack-fpga/cpu/DualSimpleBusToAXI4.sv"]"\
  "[file normalize "$origin_dir/digital_twin.srcs/sources_1/ip/mult_gen_0/mult_gen_0.xci"]"\
  "[file normalize "$origin_dir/digital_twin.srcs/sources_1/ip/div_gen_uradix2/div_gen_uradix2.xci"]"\
@@ -139,10 +133,6 @@ proc checkRequiredFiles { origin_dir} {
  "[file normalize "$origin_dir/digital_twin.srcs/sim_1/new/tb_myCPU.sv"]"\
  "[file normalize "$origin_dir/digital_twin.srcs/sim_1/new/tb_top.sv"]"\
  "[file normalize "$origin_dir/digital_twin.srcs/sim_1/new/tb_uart.sv"]"\
- "[file normalize "$origin_dir/digital_twin.srcs/sim_1/imports/JYD2025_Contest-rv32i-error/tb_uart_behav.wcfg"]"\
- "[file normalize "$origin_dir/digital_twin.srcs/sim_1/imports/JYD2025_Contest-rv32i-error/tb_top_behav.wcfg"]"\
- "[file normalize "$origin_dir/digital_twin.srcs/sim_1/imports/JYD2025_Contest-rv32i-error/tb_myCPU_behav.wcfg"]"\
- "[file normalize "$origin_dir/digital_twin.srcs/utils_1/imports/synth_1/top.dcp"]"\
   ]
   foreach ifile $files {
     if { ![file isfile $ifile] } {
@@ -343,7 +333,6 @@ set files [list \
  [file normalize "${origin_dir}/digital_twin.srcs/sources_1/imports/test_src/irom.coe"]\
  [file normalize "${origin_dir}/digital_twin.srcs/sources_1/imports/src0/irom.coe"]\
  [file normalize "${origin_dir}/digital_twin.srcs/sources_1/imports/src0/dram.coe"]\
- [file normalize "${origin_dir}/archive_project_summary.txt" ]\
  [file normalize "${origin_dir}/digital_twin.srcs/sources_1/imports/pack-fpga/cpu/DualSimpleBusToAXI4.sv" ]\
 ]
 set imported_files ""
@@ -589,9 +578,6 @@ set files [list \
  [file normalize "${origin_dir}/digital_twin.srcs/sim_1/new/tb_myCPU.sv" ]\
  [file normalize "${origin_dir}/digital_twin.srcs/sim_1/new/tb_top.sv" ]\
  [file normalize "${origin_dir}/digital_twin.srcs/sim_1/new/tb_uart.sv" ]\
- [file normalize "${origin_dir}/digital_twin.srcs/sim_1/imports/JYD2025_Contest-rv32i-error/tb_uart_behav.wcfg"]\
- [file normalize "${origin_dir}/digital_twin.srcs/sim_1/imports/JYD2025_Contest-rv32i-error/tb_top_behav.wcfg"]\
- [file normalize "${origin_dir}/digital_twin.srcs/sim_1/imports/JYD2025_Contest-rv32i-error/tb_myCPU_behav.wcfg"]\
 ]
 set imported_files ""
 foreach f $files {
@@ -622,29 +608,6 @@ set_property -name "top" -value "tb_myCPU" -objects $obj
 set_property -name "top_auto_set" -value "0" -objects $obj
 set_property -name "top_lib" -value "xil_defaultlib" -objects $obj
 
-# Set 'utils_1' fileset object
-set obj [get_filesets utils_1]
-# Import local files from the original project
-set files [list \
- [file normalize "${origin_dir}/digital_twin.srcs/utils_1/imports/synth_1/top.dcp" ]\
-]
-set imported_files ""
-foreach f $files {
-  lappend imported_files [import_files -fileset utils_1 $f]
-}
-
-# Set 'utils_1' fileset file properties for remote files
-# None
-
-# Set 'utils_1' fileset file properties for local files
-set file "synth_1/top.dcp"
-set file_obj [get_files -of_objects [get_filesets utils_1] [list "*$file"]]
-set_property -name "netlist_only" -value "0" -objects $file_obj
-
-
-# Set 'utils_1' fileset properties
-set obj [get_filesets utils_1]
-
 set idrFlowPropertiesConstraints ""
 catch {
  set idrFlowPropertiesConstraints [get_param runs.disableIDRFlowPropertyConstraints]
@@ -672,8 +635,6 @@ if { $obj != "" } {
 }
 set obj [get_runs synth_1]
 set_property -name "part" -value "xc7k325tffg900-2" -objects $obj
-set_property -name "incremental_checkpoint" -value "$proj_dir/${_xil_proj_name_}.srcs/utils_1/imports/synth_1/top.dcp" -objects $obj
-set_property -name "auto_incremental_checkpoint" -value "1" -objects $obj
 set_property -name "strategy" -value "Vivado Synthesis Defaults" -objects $obj
 
 # set the current synth run

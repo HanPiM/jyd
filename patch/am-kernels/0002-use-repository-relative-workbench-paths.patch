@@ -1,4 +1,4 @@
-From c7e247915f3b6145b7b82b56df64cb1b5d71a4be Mon Sep 17 00:00:00 2001
+From 960ef1c3506e8825238c064ec156e6c19a136479 Mon Sep 17 00:00:00 2001
 From: Wang Yi Jie <miwyj@mail.scut.edu.cn>
 Date: Tue, 24 Mar 2026 13:33:46 +0800
 Subject: [PATCH 2/2] use repository-relative workbench paths
@@ -203,7 +203,7 @@ index de6da42..cdf0198 100644
 -include $(AM_HOME)/Makefile
 +include $(abspath $(dir $(lastword $(MAKEFILE_LIST)))/../../../abstract-machine/Makefile)
 diff --git a/tests/cpu-tests/Makefile b/tests/cpu-tests/Makefile
-index b4499dc..3c03ae9 100644
+index b4499dc..cecc508 100644
 --- a/tests/cpu-tests/Makefile
 +++ b/tests/cpu-tests/Makefile
 @@ -15,7 +15,7 @@ all: $(addprefix Makefile., $(ALL))
@@ -211,7 +211,7 @@ index b4499dc..3c03ae9 100644
  
  Makefile.%: tests/%.c latest
 -	@/bin/echo -e "NAME = $*\nSRCS = $<\ninclude $${AM_HOME}/Makefile" > $@
-+	@/bin/echo -e "NAME = $*\nSRCS = $<\ninclude $$(abspath $$(CURDIR)/../../../abstract-machine)/Makefile" > $@
++	@/bin/echo -e "NAME = $*\nSRCS = $<\ninclude $${JYD_AM_HOME}/Makefile" > $@
  	@if make -s -f $@ ARCH=$(ARCH) $(MAKECMDGOALS); then \
  		printf "[%14s] $(COLOR_GREEN)PASS$(COLOR_NONE)\n" $* >> $(RESULT); \
  	else \

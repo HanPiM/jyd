@@ -47,13 +47,12 @@ jobs:
       - name: Common operations
         uses: ./.github/actions/common
         with:
-          JYD_HOME: ${{ needs.setup.outputs.JYD_HOME }}
           MAKEFLAGS: ${{ needs.setup.outputs.MAKEFLAGS }}
 
       - name: hello
         run: |
           KEY=$(head -c 5 /dev/urandom | base32)
-          python $MONITOR_PY --middle="Hello, AbstractMachine!" --good=$KEY make ARCH=riscv32-jyd -C $JYD_HOME/am-kernels/kernels/hello run mainargs=$KEY
+          python $MONITOR_PY --middle="Hello, AbstractMachine!" --good=$KEY make ARCH=riscv32-jyd -C am-kernels/kernels/hello run mainargs=$KEY
 
   basic-tests:
     needs: setup
@@ -78,22 +77,21 @@ jobs:
       - name: Common operations
         uses: ./.github/actions/common
         with:
-          JYD_HOME: ${{ needs.setup.outputs.JYD_HOME }}
           MAKEFLAGS: ${{ needs.setup.outputs.MAKEFLAGS }}
 
       - name: Make Binary
         run: |
           # make sim binary first to avoid parallel build issue
-          make ARCH=riscv32-jyd -C $JYD_HOME/npc
+          make ARCH=riscv32-jyd -C npc
 
       - name: Make precompile test set
         if: matrix.test-set.precompile
         run: |
-          make ARCH=riscv32-jyd -C $JYD_HOME/${{ matrix.test-set.dir }}
+          make ARCH=riscv32-jyd -C ${{ matrix.test-set.dir }}
 
       - name: Run basic test (${{ matrix.test-set.dir }})
         run: |
-          make ARCH=riscv32-jyd -C $JYD_HOME/${{ matrix.test-set.dir }} run ${{ matrix.test-set.args }}
+          make ARCH=riscv32-jyd -C ${{ matrix.test-set.dir }} run ${{ matrix.test-set.args }}
 
   rt-thread:
     needs: setup
@@ -106,7 +104,6 @@ jobs:
       - name: Common operations
         uses: ./.github/actions/common
         with:
-          JYD_HOME: ${{ needs.setup.outputs.JYD_HOME }}
           MAKEFLAGS: ${{ needs.setup.outputs.MAKEFLAGS }}
 
       - name: Install dependency
@@ -114,7 +111,7 @@ jobs:
 
       - name: rt-thread
         run: |
-          cd $JYD_HOME/rt-thread-am/bsp/abstract-machine
+          cd rt-thread-am/bsp/abstract-machine
           make ARCH=riscv32-jyd init
           KEY=$(head -c 5 /dev/urandom | base32)
           python $MONITOR_PY --good=$KEY make ARCH=riscv32-jyd run

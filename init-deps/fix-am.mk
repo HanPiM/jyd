@@ -1,3 +1,4 @@
+JYD_HOME := $(abspath $(dir $(lastword $(MAKEFILE_LIST)))/..)
 AM_FIX_DONE = $(JYD_HOME)/.am_fix_done
 AM_KERNELS_HOME = $(JYD_HOME)/am-kernels
 

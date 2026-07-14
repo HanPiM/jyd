@@ -1,5 +1,13 @@
 # Makefile for AbstractMachine Kernels and Libraries
 
+# Resolve repository-local dependencies from this file instead of the caller's
+# environment.  This Makefile is commonly included by projects in sibling
+# directories, so paths based on the current working directory are unreliable.
+JYD_AM_HOME := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
+JYD_HOME := $(abspath $(JYD_AM_HOME)/..)
+JYD_NEMU_HOME := $(JYD_HOME)/nemu
+JYD_NPC_HOME := $(JYD_HOME)/npc
+
 ### *Get a more readable version of this Makefile* by `make html` (requires python-markdown)
 html:
 	cat Makefile | sed 's/^\([^#]\)/    \1/g' | markdown_py > Makefile.html
@@ -19,9 +27,9 @@ ifeq ($(findstring $(MAKECMDGOALS),clean|clean-all|html),)
 ### Print build info message
 $(info # Building $(NAME)-$(MAKECMDGOALS) [$(ARCH)])
 
-### Check: environment variable `$JYD_AM_HOME` looks sane
+### Check: the repository-relative AbstractMachine path looks sane
 ifeq ($(wildcard $(JYD_AM_HOME)/am/include/am.h),)
-  $(error $$JYD_AM_HOME must be an AbstractMachine repo)
+  $(error $(JYD_AM_HOME) is not an AbstractMachine repo)
 endif
 
 ### Check: environment variable `$ARCH` must be in the supported list

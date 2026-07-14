@@ -4,4 +4,4 @@ INC_PATH += $(JYD_AM_HOME)/am/src
 
 CFLAGS += -g
 
-include $(JYD_AM_HOME)/Makefile
+include $(abspath $(dir $(lastword $(MAKEFILE_LIST)))/../Makefile)

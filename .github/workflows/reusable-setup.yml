@@ -3,9 +3,6 @@ name: Reusable Setup
 on:
   workflow_call:
     outputs:
-      JYD_HOME:
-        description: Repository root in the runner workspace
-        value: ${{ jobs.setup.outputs.JYD_HOME }}
       VFILE:
         description: Generated NPC Verilog file path
         value: ${{ jobs.setup.outputs.VFILE }}
@@ -26,7 +23,6 @@ jobs:
   setup:
     runs-on: ubuntu-24.04
     outputs:
-      JYD_HOME: ${{ steps.set-jyd-home.outputs.JYD_HOME }}
       VFILE: ${{ steps.vfilename.outputs.VFILE }}
       DESIGN: ${{ steps.vfilename.outputs.DESIGN }}
       MAKEFLAGS: ${{ steps.set-env.outputs.MAKEFLAGS }}
@@ -45,48 +41,28 @@ jobs:
         run: |
           git branch --show-current
 
-      - name: Set JYD_HOME
-        id: set-jyd-home
-        run: |
-          JYD_HOME=$(pwd)
-          echo "JYD_HOME=$JYD_HOME" >> $GITHUB_ENV
-          echo "JYD_HOME=$JYD_HOME" >> $GITHUB_OUTPUT
-
       - name: Set environment variables
         id: set-env
         run: |
-          cd $JYD_HOME
-          JYD_NEMU_HOME="`pwd`/nemu"
-          JYD_AM_HOME="`pwd`/abstract-machine"
-          NAVY_HOME="`pwd`/navy-apps"
-          JYD_NPC_HOME="`pwd`/npc"
-          NVBOARD_HOME="`pwd`/nvboard"
-
-          echo "JYD_NEMU_HOME=$JYD_NEMU_HOME" >> $GITHUB_ENV
-          echo "JYD_AM_HOME=$JYD_AM_HOME" >> $GITHUB_ENV
-          echo "NAVY_HOME=$NAVY_HOME" >> $GITHUB_ENV
-          echo "JYD_NPC_HOME=$JYD_NPC_HOME" >> $GITHUB_ENV
-          echo "NVBOARD_HOME=$NVBOARD_HOME" >> $GITHUB_ENV
-
           MAKEFLAGS="-j`nproc`"
           echo "MAKEFLAGS=$MAKEFLAGS" >> $GITHUB_ENV
           echo "MAKEFLAGS=$MAKEFLAGS" >> $GITHUB_OUTPUT
 
       - name: Check the version of AM
         run: |
-          if [[ ! -e $JYD_AM_HOME/tools/insert-arg.py ]] ; then
+          if [[ ! -e abstract-machine/tools/insert-arg.py ]] ; then
             URL="https://github.com/NJU-ProjectN/abstract-machine/commit/c52a41181f8ea5d0e970008e51f58867a3ce65bb"
-            echo "$JYD_AM_HOME/tools/insert-arg.py does not exist. Abort."
+            echo "abstract-machine/tools/insert-arg.py does not exist. Abort."
             echo "You may use AM with the version older than May, 2024."
             echo "Please refer to $URL to apply the patch to AM. After that, the CI flow can insert mainargs to the binary by the python script."
             false
           fi
 
-          sed -i -e 's/MAINARGS_PLACEHOLDER = .*/MAINARGS_PLACEHOLDER = the_insert-arg_rule_in_Makefile_will_insert_mainargs_here/' $JYD_AM_HOME/scripts/platform/npc.mk
+          sed -i -e 's/MAINARGS_PLACEHOLDER = .*/MAINARGS_PLACEHOLDER = the_insert-arg_rule_in_Makefile_will_insert_mainargs_here/' abstract-machine/scripts/platform/npc.mk
 
       - name: Check patch size
         run: |
-          SIZE=`du -sb $JYD_HOME/patch | grep -o '^[0-9]*'`
+          SIZE=`du -sb patch | grep -o '^[0-9]*'`
           SIZE_LIMIT=1048576 # 1MB
           if [[ $SIZE -gt $SIZE_LIMIT ]] ; then
             echo "Patch size($SIZE) is larger than the limit($SIZE_LIMIT)."
@@ -97,8 +73,8 @@ jobs:
         run: |
           mkdir -p ~/.local/bin
           MILL_VERSION=0.11.13
-          if [[ -e $JYD_HOME/npc/.mill-version ]]; then
-            MILL_VERSION=`cat $JYD_HOME/npc/.mill-version`
+          if [[ -e npc/.mill-version ]]; then
+            MILL_VERSION=`cat npc/.mill-version`
           fi
           echo "Downloading mill with version $MILL_VERSION"
           sh -c "curl -L https://github.com/com-lihaoyi/mill/releases/download/$MILL_VERSION/$MILL_VERSION > ~/.local/bin/mill && chmod +x ~/.local/bin/mill"
@@ -110,14 +86,13 @@ jobs:
 
       - name: Clone other repos
         run: |
-          cd $JYD_HOME
           git clone --depth 1 -b no-gui https://github.com/NJU-ProjectN/nvboard
 
       - name: Clean up
         run: |
-          make -C $JYD_NEMU_HOME clean
-          make -C $JYD_AM_HOME clean-all
-          make -C $JYD_NPC_HOME clean
+          make -C nemu clean
+          make -C abstract-machine clean-all
+          make -C npc clean
 
       - name: Compute packed FPGA source hash
         id: pack-fpga-hash
@@ -138,8 +113,8 @@ jobs:
       - name: Refresh cached NPC verilog timestamps
         if: steps.npc-verilog-cache.outputs.cache-hit == 'true'
         run: |
-          touch $JYD_NPC_HOME/build/verilog.done
-          for vfile in $JYD_NPC_HOME/build/*.v $JYD_NPC_HOME/build/*.sv; do
+          touch npc/build/verilog.done
+          for vfile in npc/build/*.v npc/build/*.sv; do
             if [[ -e $vfile ]]; then
               touch $vfile
             fi
@@ -147,14 +122,14 @@ jobs:
 
       - name: Generate verilog for NPC
         run: |
-          make -C $JYD_NPC_HOME verilog
+          make -C npc verilog
 
       - name: Check verilog file name
         id: vfilename
         run: |
-          VFILE=$(ls $JYD_NPC_HOME/build/*.sv $JYD_NPC_HOME/build/*.v 2>/dev/null | head -1)
+          VFILE=$(ls npc/build/*.sv npc/build/*.v 2>/dev/null | head -1)
           if [[ -z $VFILE ]]; then
-            echo "No .sv or .v file found in $JYD_NPC_HOME/build/. Abort."
+            echo "No .sv or .v file found in npc/build/. Abort."
             false
           fi
           echo "Find $VFILE"
@@ -179,25 +154,25 @@ jobs:
 
       - name: Pack FPGA sources
         run: |
-          make -C $JYD_NPC_HOME pack-fpga
+          make -C npc pack-fpga
 
       - name: Upload packed FPGA zip
         uses: actions/upload-artifact@v6
         with:
           name: packed-fpga
-          path: ${{ steps.set-jyd-home.outputs.JYD_HOME }}/npc/build/pack-fpga.zip
+          path: npc/build/pack-fpga.zip
 
       - name: Upload FPGA COE samples
         uses: actions/upload-artifact@v6
         with:
           name: test-coes
-          path: ${{ steps.set-jyd-home.outputs.JYD_HOME }}/jyd-tests/2026/coe/**
+          path: jyd-tests/2026/coe/**
           retention-days: 1
 
       - name: Pack workbench
         run: |
-          PARENT=$(dirname $JYD_HOME)
-          BASENAME=$(basename $JYD_HOME)
+          PARENT=..
+          BASENAME=$(basename "$PWD")
           mkdir -p /tmp/artifact-upload
           cd $PARENT
           tar -czf /tmp/artifact-upload/ysyx-workbench.tar.gz \

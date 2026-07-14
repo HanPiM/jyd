@@ -1,4 +1,10 @@
 BUILD_DIR = ./build
+
+# Repository-local paths are anchored at this Makefile, independent of cwd and
+# shell environment. External project locations remain configurable elsewhere.
+JYD_NPC_HOME := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
+JYD_HOME := $(abspath $(JYD_NPC_HOME)/..)
+NVBOARD_HOME := $(JYD_HOME)/nvboard
 # case sensitive
 CPU_DESIGN_NAME = CPUTop
 

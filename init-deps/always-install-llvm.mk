@@ -1,3 +1,5 @@
+JYD_HOME := $(abspath $(dir $(lastword $(MAKEFILE_LIST)))/..)
+
 update-buildtools:
 	$(JYD_HOME)/init-deps/check-and-install-buildtools.sh
 

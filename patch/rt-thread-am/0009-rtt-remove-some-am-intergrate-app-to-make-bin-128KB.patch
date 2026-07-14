@@ -1,4 +1,4 @@
-From 59b337570cacbf16ac4c005fad5ab1df3daef6eb Mon Sep 17 00:00:00 2001
+From b610727bfeae80ad75cc3ef94fa299743da791aa Mon Sep 17 00:00:00 2001
 From: Wang Yi Jie <miwyj@mail.scut.edu.cn>
 Date: Sun, 31 May 2026 00:27:51 +0800
 Subject: [PATCH 9/9] rtt remove some am intergrate app to make bin<128KB
@@ -8,10 +8,10 @@ Subject: [PATCH 9/9] rtt remove some am intergrate app to make bin<128KB
  1 file changed, 3 insertions(+), 3 deletions(-)
 
 diff --git a/bsp/abstract-machine/integrate-am-apps.py b/bsp/abstract-machine/integrate-am-apps.py
-index d4c2d8d..a9e3bcd 100644
+index 14cbb7b..5e084c4 100644
 --- a/bsp/abstract-machine/integrate-am-apps.py
 +++ b/bsp/abstract-machine/integrate-am-apps.py
-@@ -9,9 +9,9 @@ AM_KERNELS_HOME = (JYD_AM_HOME / ".." / "am-kernels").resolve()
+@@ -9,9 +9,9 @@ AM_KERNELS_HOME = AM_HOME.parent / "am-kernels"
  app_dir_list = [
    AM_KERNELS_HOME / "kernels" / "hello",
    AM_KERNELS_HOME / "benchmarks" / "microbench",
@@ -25,5 +25,5 @@ index d4c2d8d..a9e3bcd 100644
  
  if len(sys.argv) != 3:
 -- 
-2.43.0
+2.52.0
 

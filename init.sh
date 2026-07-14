@@ -42,10 +42,10 @@ function init() {
 
 case $1 in
   nemu)
-    init NJU-ProjectN/nemu ics2024 nemu true JYD_NEMU_HOME
+    init NJU-ProjectN/nemu ics2024 nemu true
     ;;
   abstract-machine)
-    init NJU-ProjectN/abstract-machine ics2024 abstract-machine true JYD_AM_HOME
+    init NJU-ProjectN/abstract-machine ics2024 abstract-machine true
     init NJU-ProjectN/fceux-am ics2021 fceux-am false
     ;;
   am-kernels)
@@ -58,18 +58,18 @@ case $1 in
     init NJU-ProjectN/navy-apps ics2024 navy-apps true NAVY_HOME
     ;;
   nvboard)
-    init NJU-ProjectN/nvboard master nvboard false NVBOARD_HOME
+    init NJU-ProjectN/nvboard master nvboard false
     ;;
   npc-chisel)
     if [ -d npc/playground ]; then
       echo "chisel repo is already initialized, skipping..."
     else
       rm -rf npc
-      init OSCPU/chisel-playground master npc true JYD_NPC_HOME
+      init OSCPU/chisel-playground master npc true
     fi
     ;;
   npc)
-    addenv JYD_NPC_HOME npc
+    echo "npc uses repository-relative paths; no environment setup is required."
     ;;
   *)
     echo "Invalid input..."

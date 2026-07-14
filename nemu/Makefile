@@ -1,4 +1,10 @@
 #***************************************************************************************
+
+# Resolve repository-local dependencies from NEMU's own Makefile.  Do not rely
+# on shell startup files when NEMU is invoked directly or by CI.
+JYD_NEMU_HOME := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
+JYD_HOME := $(abspath $(JYD_NEMU_HOME)/..)
+JYD_AM_HOME := $(JYD_HOME)/abstract-machine
 # Copyright (c) 2014-2024 Zihao Yu, Nanjing University
 #
 # NEMU is licensed under Mulan PSL v2.

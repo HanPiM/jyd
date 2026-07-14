@@ -14,7 +14,7 @@ VENV_DONE = ./venv.done
 OUT_DIR = $(abspath ./build)
 $(shell mkdir -p $(OUT_DIR))
 
-RISCV_UNIFIED_DB_GIT_DIR ?= ~/gitclones/riscv-unified-db/
+RISCV_UNIFIED_DB_GIT_DIR := $(abspath $(dir $(lastword $(MAKEFILE_LIST)))/../../../npc/deps/riscv-unified-db)
 
 default: $(VENV_DONE)
 	$(MAKE) -C $(REPO_PATH) VENV=$(VENV_PATH) BUILD_DIR=$(OUT_DIR) RISCV_UNIFIED_DB_GIT_DIR=$(RISCV_UNIFIED_DB_GIT_DIR)

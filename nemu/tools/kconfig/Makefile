@@ -1,3 +1,5 @@
+JYD_NEMU_HOME := $(abspath $(dir $(lastword $(MAKEFILE_LIST)))/../..)
+
 NAME = conf
 obj := build
 SRCS += confdata.c expr.c preprocess.c symbol.c util.c

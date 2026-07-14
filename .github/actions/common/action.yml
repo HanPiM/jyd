@@ -1,7 +1,5 @@
 name: common
 inputs:
-  JYD_HOME:
-    required: true
   MAKEFLAGS:
     required: true
   install-toolchain:
@@ -18,9 +16,7 @@ runs:
     - name: Extract workbench
       shell: bash
       run: |
-        PARENT=$(dirname ${{ inputs.JYD_HOME }})
-        mkdir -p $PARENT
-        cd $PARENT
+        cd ..
         tar -xzf /tmp/artifact-download/ysyx-workbench.tar.gz
 
     - name: Cache oss-cad-suite
@@ -47,8 +43,8 @@ runs:
       run: |
         mkdir -p ~/.local/bin
         MILL_VERSION=0.11.13
-        if [[ -e $JYD_HOME/npc/.mill-version ]]; then
-          MILL_VERSION=`cat $JYD_HOME/npc/.mill-version`
+        if [[ -e npc/.mill-version ]]; then
+          MILL_VERSION=`cat npc/.mill-version`
         fi
         echo "Downloading mill with version $MILL_VERSION"
         curl -L "https://github.com/com-lihaoyi/mill/releases/download/$MILL_VERSION/$MILL_VERSION" -o ~/.local/bin/mill
@@ -60,15 +56,6 @@ runs:
       run: |
         MONITOR_PY="$GITHUB_WORKSPACE/.github/monitor.py"
         echo "MONITOR_PY=$MONITOR_PY" >> $GITHUB_ENV
-
-        JYD_HOME=${{ inputs.JYD_HOME }}
-        echo "JYD_HOME=$JYD_HOME" >> $GITHUB_ENV
-        echo "JYD_NEMU_HOME=$JYD_HOME/nemu" >> $GITHUB_ENV
-        echo "JYD_AM_HOME=$JYD_HOME/abstract-machine" >> $GITHUB_ENV
-        echo "AM_HOME=$JYD_HOME/abstract-machine" >> $GITHUB_ENV
-        echo "NAVY_HOME=$JYD_HOME/navy-apps" >> $GITHUB_ENV
-        echo "JYD_NPC_HOME=$JYD_HOME/npc" >> $GITHUB_ENV
-        echo "NVBOARD_HOME=$JYD_HOME/nvboard" >> $GITHUB_ENV
 
         MAKEFLAGS=${{ inputs.MAKEFLAGS }}
         echo "MAKEFLAGS=$MAKEFLAGS" >> $GITHUB_ENV
@@ -166,16 +153,15 @@ runs:
       run: |
         git config --global user.email "ci@ysyx.org"
         git config --global user.name "ysyx-ci"
-        cd $JYD_HOME
         git clone --depth 1 -b master https://github.com/NJU-ProjectN/am-kernels
         cd am-kernels
-        git am $JYD_HOME/patch/am-kernels/*
-        cd $JYD_HOME
+        git am ../patch/am-kernels/*
+        cd ..
 
         git clone --depth 1 https://github.com/NJU-ProjectN/rt-thread-am
         cd rt-thread-am
-        git am $JYD_HOME/patch/rt-thread-am/*
-        cd $JYD_HOME
+        git am ../patch/rt-thread-am/*
+        cd ..
 
         git clone --depth 1 https://github.com/NJU-ProjectN/riscv-tests-am
 

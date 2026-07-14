@@ -1,3 +1,5 @@
+JYD_NEMU_HOME := $(abspath $(dir $(lastword $(MAKEFILE_LIST)))/../..)
+
 #***************************************************************************************
 # Copyright (c) 2014-2024 Zihao Yu, Nanjing University
 #

@@ -1,3 +1,5 @@
+JYD_AM_HOME := $(abspath $(dir $(lastword $(MAKEFILE_LIST)))/../../../../..)
+
 SRCS := start.S main.c
 bootblock.o: $(SRCS) Makefile
 	@echo + CC $(SRCS)

@@ -1,7 +1,7 @@
-From eb57383969a32824a3dde9969d0cc5870429037e Mon Sep 17 00:00:00 2001
+From c413065ebc39dc7cebd9b8b449cd4e33fb743d37 Mon Sep 17 00:00:00 2001
 From: Wang Yi Jie <miwyj@mail.scut.edu.cn>
 Date: Fri, 27 Feb 2026 16:59:12 +0800
-Subject: [PATCH 4/9] restore Makefile and ld
+Subject: [PATCH 04/10] restore Makefile and ld
 
 ---
  bsp/abstract-machine/Makefile | 9 ++++++++-
@@ -66,5 +66,5 @@ index 5cdc656..6fb413f 100644
  }
  INSERT BEFORE .bss;
 -- 
-2.43.0
+2.52.0
 

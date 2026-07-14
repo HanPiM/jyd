@@ -1,7 +1,7 @@
-From d1ed519f6c1d43f9c0e31fa04c1e7ce7e6c8a0e3 Mon Sep 17 00:00:00 2001
+From 868680319deefa0fe33517a2ed96091f7e8f5769 Mon Sep 17 00:00:00 2001
 From: Wang Yi Jie <miwyj@mail.scut.edu.cn>
 Date: Tue, 3 Mar 2026 14:25:21 +0800
-Subject: [PATCH 7/9] make data.extra bss.extra both ALIGN 8
+Subject: [PATCH 07/10] make data.extra bss.extra both ALIGN 8
 
 ---
  bsp/abstract-machine/extra.soc.ld | 4 ++--
@@ -28,5 +28,5 @@ index d24982f..803e761 100644
  
      . = ALIGN(8);
 -- 
-2.43.0
+2.52.0
 

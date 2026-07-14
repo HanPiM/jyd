@@ -1,0 +1,25 @@
+From 7a520314138c76a890b375de82a0ccb79f7e4948 Mon Sep 17 00:00:00 2001
+From: hanpi <hanpi@localhost.localdomain>
+Date: Tue, 14 Jul 2026 20:56:26 +0800
+Subject: [PATCH 10/10] force rtt .data.extra in JYD DRAM
+
+---
+ bsp/abstract-machine/extra.ld | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/bsp/abstract-machine/extra.ld b/bsp/abstract-machine/extra.ld
+index 6fb413f..eae1cca 100644
+--- a/bsp/abstract-machine/extra.ld
++++ b/bsp/abstract-machine/extra.ld
+@@ -30,7 +30,7 @@ SECTIONS {
+     __am_apps_data_end = .;
+     . = ALIGN(8);
+ 
+-  }
++  } > DRAM
+ 	__data_extra_load_start__  = LOADADDR(.data.extra);
+ 	__data_extra_size__   = SIZEOF(.data.extra);
+ }
+-- 
+2.52.0
+

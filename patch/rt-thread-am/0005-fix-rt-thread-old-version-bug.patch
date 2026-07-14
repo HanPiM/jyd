@@ -1,7 +1,7 @@
-From e0e5d683f13c24e3950c9e4abf520588addf3f81 Mon Sep 17 00:00:00 2001
+From 7886c826a5c14e5b0a084088ce46662f27957a2f Mon Sep 17 00:00:00 2001
 From: Wang Yi Jie <miwyj@mail.scut.edu.cn>
 Date: Fri, 27 Feb 2026 17:28:21 +0800
-Subject: [PATCH 5/9] fix rt-thread old version bug
+Subject: [PATCH 05/10] fix rt-thread old version bug
 
 ---
  components/libc/compilers/common/ctime.c | 4 ++--
@@ -23,5 +23,5 @@ index 4e4f8e8..e9d1450 100644
  static int __isleap(int year)
  {
 -- 
-2.43.0
+2.52.0
 

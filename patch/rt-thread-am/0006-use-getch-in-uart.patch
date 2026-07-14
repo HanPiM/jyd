@@ -1,7 +1,7 @@
-From 384b6b670589b028a073d8182ed20ca71444ef80 Mon Sep 17 00:00:00 2001
+From d2e0b28c10215d954196122f762918770680f4a0 Mon Sep 17 00:00:00 2001
 From: Wang Yi Jie <miwyj@mail.scut.edu.cn>
 Date: Mon, 2 Mar 2026 23:25:47 +0800
-Subject: [PATCH 6/9] use getch in uart
+Subject: [PATCH 06/10] use getch in uart
 
 ---
  bsp/abstract-machine/src/uart.c | 2 +-
@@ -21,5 +21,5 @@ index e4eb866..7c6b4cb 100644
  
  const struct rt_uart_ops _uart_ops = {
 -- 
-2.43.0
+2.52.0
 

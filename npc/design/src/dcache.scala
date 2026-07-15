@@ -11,6 +11,9 @@ class DCache extends Module {
     val readData  = Output(UInt(32.W))
 
     val invalidate = Input(Bool())
+    val storeUpdate = Input(Bool())
+    val storeData   = Input(UInt(32.W))
+    val storeMask   = Input(UInt(4.W))
     val update     = Input(Bool())
     val updateAddr = Input(UInt(32.W))
     val updateData = Input(UInt(32.W))
@@ -34,13 +37,16 @@ class DCache extends Module {
 
   // A younger store invalidation wins over an older WBU refill/update.
   tagMem.io.clk := clock
-  tagMem.io.we  := io.invalidate || io.update
-  tagMem.io.a   := Mux(io.invalidate, queryIndex, io.updateAddr(10, 2))
-  tagMem.io.d   := Mux(io.invalidate, 0.U(8.W), Cat(io.updateAddr(17, 11), 1.U(1.W)))
+  val queryTagData = Cat(queryTag, 1.U(1.W))
+  val updateTagData = Cat(io.updateAddr(17, 11), 1.U(1.W))
+  tagMem.io.we := io.invalidate || io.storeUpdate || io.update
+  tagMem.io.a  := Mux(io.invalidate || io.storeUpdate, queryIndex, io.updateAddr(10, 2))
+  tagMem.io.d  := Mux(io.invalidate, 0.U(8.W), Mux(io.storeUpdate, queryTagData, updateTagData))
 
   dataMem.io.clka  := clock
-  dataMem.io.ena   := io.update
-  dataMem.io.wea   := Mux(io.update, io.updateMask, 0.U)
-  dataMem.io.addra := io.updateAddr(10, 2)
-  dataMem.io.dina  := io.updateData
+  val dataWrite = io.storeUpdate || io.update
+  dataMem.io.ena   := dataWrite
+  dataMem.io.wea   := Mux(io.storeUpdate, io.storeMask, Mux(io.update, io.updateMask, 0.U))
+  dataMem.io.addra := Mux(io.storeUpdate, queryIndex, io.updateAddr(10, 2))
+  dataMem.io.dina  := Mux(io.storeUpdate, io.storeData, io.updateData)
 }

@@ -38,6 +38,10 @@ class DividerInput extends Bundle {
   val func3t = UInt(3.W)
 }
 
+object MultiplierConfig {
+  val latency = 4
+}
+
 class mult_gen_0 extends BlackBox with HasBlackBoxInline {
   val io = IO(new Bundle {
     val CLK  = Input(Clock())
@@ -48,30 +52,30 @@ class mult_gen_0 extends BlackBox with HasBlackBoxInline {
 
   setInline(
     "mult_gen_0.sv",
-    """module mult_gen_0(
+    s"""module mult_gen_0(
       |  input         CLK,
       |  input  [32:0] A,
       |  input  [32:0] B,
       |  output [65:0] P
       |);
-      |  reg [65:0] pipe [0:5];
+      |  reg [65:0] pipe [0:${MultiplierConfig.latency - 1}];
       |  integer i;
       |  wire signed [32:0] a_signed = A;
       |  wire signed [32:0] b_signed = B;
       |  wire signed [65:0] product = a_signed * b_signed;
       |
       |  initial begin
-      |    for (i = 0; i < 6; i = i + 1)
+      |    for (i = 0; i < ${MultiplierConfig.latency}; i = i + 1)
       |      pipe[i] = 66'd0;
       |  end
       |
       |  always @(posedge CLK) begin
       |    pipe[0] <= product;
-      |    for (i = 1; i < 6; i = i + 1)
+      |    for (i = 1; i < ${MultiplierConfig.latency}; i = i + 1)
       |      pipe[i] <= pipe[i - 1];
       |  end
       |
-      |  assign P = pipe[5];
+      |  assign P = pipe[${MultiplierConfig.latency - 1}];
       |endmodule
       |""".stripMargin
   )
@@ -146,7 +150,7 @@ class Multiplier extends Module {
 
   val func3tReg  = Reg(UInt(3.W))
   val resultReg  = Reg(Types.UWord)
-  val validPipe  = RegInit(0.U(6.W))
+  val validPipe  = RegInit(0.U(MultiplierConfig.latency.W))
   val multiplier = Module(new mult_gen_0)
 
   val inputFunc3t = io.in.bits.func3t
@@ -164,7 +168,7 @@ class Multiplier extends Module {
 
   val product = multiplier.io.P
   val result = Mux(func3tReg === 0.U, product(31, 0), product(63, 32))
-  val resultValid = validPipe(5)
+  val resultValid = validPipe(MultiplierConfig.latency - 1)
 
   io.in.ready  := state === State.idle
   io.out.valid := (state === State.done) || ((state === State.busy) && resultValid)

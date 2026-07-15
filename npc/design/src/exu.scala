@@ -97,6 +97,8 @@ class EXU(
     val in          = Flipped(Decoupled(new DecodedInst))
     val jmpHappen   = Output(Bool())
     val isJAL       = Output(Bool())
+    val isBranch    = Output(Bool())
+    val branchTaken = Output(Bool())
     val btbUpdateEn = Output(Bool())
 
     val predWrong = Output(Bool())
@@ -115,6 +117,9 @@ class EXU(
       val storeEpoch = Input(UInt(8.W))
       val queryAddr  = Output(Types.UWord)
       val invalidate = Output(Bool())
+      val storeUpdate = Output(Bool())
+      val storeData   = Output(Types.UWord)
+      val storeMask   = Output(UInt(4.W))
     }
 
     val memReq = Decoupled(new MemReq)
@@ -304,7 +309,13 @@ class EXU(
   val memWData = GenMemWData(reg1AddImm(1, 0), reg_v2)
 
   io.dcache.queryAddr  := reg1AddImm
-  io.dcache.invalidate := memReqFire && isTypStore && reg1AddImm(21, 20) === "b01".U
+  val cacheableStore = isTypStore && reg1AddImm(21, 20) === "b01".U
+  val cacheableStoreFire = memReqFire && cacheableStore
+  val fullWordStore = memWMask === "b1111".U
+  io.dcache.invalidate := cacheableStoreFire && !fullWordStore
+  io.dcache.storeUpdate := cacheableStoreFire && fullWordStore
+  io.dcache.storeData   := memWData
+  io.dcache.storeMask   := memWMask
 
   io.memReq.valid      := needMemReq && io.in.valid && io.out.ready
   io.memReq.bits.addr  := reg1AddImm
@@ -346,10 +357,12 @@ class EXU(
 
   io.jmpHappen   := willJmp
   io.isJAL       := isTypJAL
+  io.isBranch    := isTypBranch
+  io.branchTaken := takeBranch
   io.btbUpdateEn := isTypBranch || isTypJAL || isTypJALR
   // io.predWrong := (normalNxtPC =/= dinst.pred.pc) || isJmpCsr
   // io.predWrong := isTypJALR || isJmpCsr || (isFmtB && (takeBranch ^ dinst.pred.take)) || (isTypJAL && (~dinst.pred.hit))
-  io.predWrong   := (isFmtB && (takeBranch ^ dinst.pred.take)) || io.in.bits.info.notBranchPredWrong
+  io.predWrong := (isFmtB && (takeBranch ^ dinst.pred.take)) || io.in.bits.info.notBranchPredWrong
 
   StageLogger(
     clock,

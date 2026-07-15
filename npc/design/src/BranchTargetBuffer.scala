@@ -63,7 +63,9 @@ object BTBTarget {
 class BTBEntry extends Bundle {
   val valid  = Bool()
   val isJAL  = Bool()
+  val isBranch = Bool()
   val isBackward = Bool()
+  val directionCounter = UInt(2.W)
   val tag    = UInt(BTBParameters.TAG_WIDTH.W)
   val target = new BTBTarget()
 }
@@ -75,12 +77,16 @@ class BranchTargetBuffer extends Module {
       val hit    = Output(Bool())
       val target = Output(Types.UWord)
       val isJAL  = Output(Bool())
+      val isBranch = Output(Bool())
+      val directionTaken = Output(Bool())
       val isBackward = Output(Bool())
     }
     val update = new Bundle {
       val en     = Input(Bool())
       val addr   = Input(Types.UWord)
       val isJAL  = Input(Bool())
+      val isBranch = Input(Bool())
+      val actualTaken = Input(Bool())
       val target = Input(Types.UWord)
       val isBackward = Input(Bool())
     }
@@ -96,6 +102,8 @@ class BranchTargetBuffer extends Module {
   io.query.hit    := queryEntry.valid && (queryEntry.tag === queryTag)
   io.query.target := queryEntry.target.get
   io.query.isJAL  := queryEntry.isJAL
+  io.query.isBranch := queryEntry.isBranch
+  io.query.directionTaken := queryEntry.directionCounter(1)
   io.query.isBackward := queryEntry.isBackward
 
   // Update logic
@@ -107,6 +115,21 @@ class BranchTargetBuffer extends Module {
     entries(updateIndex).tag    := updateTag
     entries(updateIndex).target := BTBTarget(io.update.target)
     entries(updateIndex).isJAL  := io.update.isJAL
+    entries(updateIndex).isBranch := io.update.isBranch
     entries(updateIndex).isBackward := io.update.isBackward
+
+    when(io.update.isBranch) {
+      val entryMatches = entries(updateIndex).valid && entries(updateIndex).tag === updateTag &&
+        entries(updateIndex).isBranch
+      when(!entryMatches) {
+        entries(updateIndex).directionCounter := Mux(io.update.actualTaken, 2.U, 1.U)
+      }.elsewhen(io.update.actualTaken && entries(updateIndex).directionCounter =/= 3.U) {
+        entries(updateIndex).directionCounter := entries(updateIndex).directionCounter + 1.U
+      }.elsewhen(!io.update.actualTaken && entries(updateIndex).directionCounter =/= 0.U) {
+        entries(updateIndex).directionCounter := entries(updateIndex).directionCounter - 1.U
+      }
+    }.otherwise {
+      entries(updateIndex).directionCounter := 0.U
+    }
   }
 }

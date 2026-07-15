@@ -249,12 +249,16 @@ class CPUCore(
   bp.io.historyHit        := btb.io.query.hit
   bp.io.historyTarget     := btb.io.query.target
   bp.io.historyIsJAL      := btb.io.query.isJAL
+  bp.io.historyIsBranch   := btb.io.query.isBranch
+  bp.io.historyDirectionTaken := btb.io.query.directionTaken
   bp.io.historyIsBackward := btb.io.query.isBackward
 
   btb.io.update.en         := RegNext(exu.io.out.valid && exu.io.btbUpdateEn)
   btb.io.update.addr       := RegNext(exu.io.pc)
   btb.io.update.target     := RegNext(exu.io.branchTarget)
   btb.io.update.isJAL      := RegNext(exu.io.isJAL)
+  btb.io.update.isBranch   := RegNext(exu.io.isBranch)
+  btb.io.update.actualTaken := RegNext(exu.io.branchTaken)
   btb.io.update.isBackward := RegNext(exu.io.branchBackward)
 
   nxtPredictedPC := bp.io.pred.pc
@@ -292,14 +296,18 @@ class CPUCore(
   dcache.io.queryAddr  := exu.io.dcache.queryAddr
   exu.io.dcache.hit    := dcache.io.hit && p.enableDCache.B
   val dcacheStoreEpoch = RegInit(0.U(8.W))
-  when(exu.io.dcache.invalidate && p.enableDCache.B) {
+  when((exu.io.dcache.invalidate || exu.io.dcache.storeUpdate) && p.enableDCache.B) {
     dcacheStoreEpoch := dcacheStoreEpoch + 1.U
   }
   exu.io.dcache.storeEpoch := dcacheStoreEpoch
   wbu.io.dcacheStoreEpoch  := dcacheStoreEpoch
   dcache.io.invalidate := exu.io.dcache.invalidate && p.enableDCache.B
+  val dcacheStoreUpdate = exu.io.dcache.storeUpdate && p.enableDCache.B
+  dcache.io.storeUpdate := dcacheStoreUpdate
+  dcache.io.storeData   := exu.io.dcache.storeData
+  dcache.io.storeMask   := exu.io.dcache.storeMask
   lsu.io.dcacheReadData := dcache.io.readData
-  dcache.io.update     := wbu.io.dcacheUpdate && p.enableDCache.B
+  dcache.io.update     := wbu.io.dcacheUpdate && p.enableDCache.B && !dcacheStoreUpdate
   dcache.io.updateAddr := wbu.io.dcacheAddr
   dcache.io.updateData := wbu.io.dcacheData
   dcache.io.updateMask := wbu.io.dcacheMask

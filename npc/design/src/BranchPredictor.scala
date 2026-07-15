@@ -11,6 +11,8 @@ class BranchPredictorIO extends Bundle {
   val pc = Input(Types.UWord)
 
   val historyIsJAL  = Input(Bool())
+  val historyIsBranch = Input(Bool())
+  val historyDirectionTaken = Input(Bool())
   val historyIsBackward = Input(Bool())
 
   val historyTarget = Input(Types.UWord)
@@ -21,11 +23,9 @@ class BranchPredictorIO extends Bundle {
 class BranchPredictor extends Module {
   val io = IO(new BranchPredictorIO)
 
-  // Simple static predictor: BTFN (Backward Taken, Forward Not Taken)
+  // Per-BTB-entry dynamic direction prediction. JAL remains unconditionally taken.
 
-  val isBackward = io.historyIsBackward
-
-  val take = io.historyHit && (io.historyIsJAL || isBackward)
+  val take = io.historyHit && (io.historyIsJAL || (io.historyIsBranch && io.historyDirectionTaken))
 
   // io.predictTarget := Mux(io.historyHit, io.historyTarget, io.pc + 4.U)
   // io.predictTarget := Mux(io.historyHit && isBackward, io.historyTarget, io.pc + 4.U)

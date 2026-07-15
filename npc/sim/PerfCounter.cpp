@@ -295,7 +295,7 @@ void dumpPerfCountersStatistics(std::ostream &os, bool printFullPerf) {
 
 	os << "excution time estimate:\n";
 	os << fmt::format("  {:>8} {:>10}\n", "Clk(Mhz)", "Time(s)");
-	double clk_freqs[] = {50e6, 100e6, 200e6, 250e6};
+	double clk_freqs[] = {50e6, 100e6, 200e6, 250e6, 280e6};
 	for (double freq : clk_freqs) {
 		double time_sec = (double)cycle_count / freq;
 		os << fmt::format("  {:>8.0f} {:>10.5f}\n", freq / 1e6, time_sec);

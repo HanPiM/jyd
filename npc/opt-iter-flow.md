@@ -164,6 +164,19 @@ IP 改动后若顶层综合提示找不到模块或仍使用旧参数，先重�
 
 若旧目录仍存在，错误路径可能因为文件“碰巧存在”而不报错，所以路径越界必须作为硬失败，而不能依赖 Vivado 的 missing-file 检查。
 
+### 6.2 固定 synth DCP 后再比较实现策略
+
+`synth_1/top.dcp` 是 implementation 的直接输入，不只是可有可无的缓存。即使两次综合使用相同 RTL、IP、约束和 Vivado 版本，且日志中的综合逻辑 checksum 相同，重新生成的 synth DCP 仍可能具有不同的内部对象顺序、IP checkpoint 状态或工程路径元数据，进而使布局布线得到不同的物理解。几十皮秒级的 WNS 对这种变化尤其敏感。
+
+因此，横向比较 Auto_1、Retiming 等 implementation 策略时必须：
+
+1. 只运行一次 synthesis，记录 `synth_1/top.dcp` 的 SHA-256。
+2. 所有候选 implementation run 明确引用这一份 synth DCP。
+3. 记录每个 run 的实际 directive、routed DCP 哈希和 timing report 哈希。
+4. synth DCP 一旦重新生成，即使 RTL commit 未变，也开始一个新的实验批次；新旧批次的 WNS 不能直接归因于 implementation 策略。
+
+synth DCP 用于固定多个实现策略的共同输入；routed DCP 则保存某一次具体的放置布线解。需要精确复查一次几十皮秒裕量的结果时，两者都应归档。综合逻辑 checksum 只能辅助判断逻辑是否一致，不能替代 DCP 哈希。
+
 生成实现结果：
 
 ```sh
@@ -186,7 +199,7 @@ python3 jyd-vivado-proj/scripts/extract-timing-summary.py \
 - 小时序违例可尝试少量预先选定的 implementation 策略。
 - 多个策略仍不满足时，不继续随机扫描策略，回到结构优化。
 - 负 WNS bitstream 最多用于规则允许的探索测量；最终候选必须 `WNS >= 0`，并同时检查 TNS 和保持时间。
-- 小于 0.1 ns 的正 WNS 也属于敏感结果。最终记录前至少从已提交的工程和 RTL clean/reset 后复跑一次，或者固定并归档当次 `synth_1` 与 routed checkpoint；不应把一次几十皮秒的结果当作稳定基线。
+- 小于 0.1 ns 的正 WNS 也属于敏感结果。最终记录前至少从已提交的工程和 RTL clean/reset 后建立一个新批次并复跑，或者固定并归档当次 synth DCP 与 routed DCP；不应把一次几十皮秒的结果跨 synth DCP 当作稳定基线。
 
 每次记录最差路径的 source、destination、逻辑级数、logic/route delay 比例。这能区分逻辑过深、扇出过大和布局布线问题。
 

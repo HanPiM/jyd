@@ -53,8 +53,9 @@ If you modify CSR-related code, you must also run the `rt-thread` (`rtt`) test b
 If you modify `JYDDevices` or other JYD-specific code, you must run tests with `ARCH=riscv32-jyd` so the JYD-only paths are covered.
 
 For digital twin FPGA packaging or XDC changes, use this validation flow:
-- Run `./npc/scripts/run_digital_twin_vivado.sh impl` to rebuild `pack-fpga`, refresh the imported files under `$JYD_VIVADO_PROJ_HOME`, and run Vivado through implementation. Use `./npc/scripts/run_digital_twin_vivado.sh bitstream` when a bitstream is required.
-- To quickly extract timing WNS after implementation, run `python3 scripts/extract-timing-summary.py ./digital_twin.runs/impl_1/top_timing_summary_routed.rpt` from `$JYD_VIVADO_PROJ_HOME`.
+- From the repository root, run `./npc/scripts/run_digital_twin_vivado.sh bitstream` when a bitstream is required. The script rebuilds `pack-fpga`, refreshes the imported files under `$JYD_VIVADO_PROJ_HOME`, and runs Vivado through synthesis, implementation, and bitstream generation. Use `impl` when bitstream generation is not needed; `JOBS` or `--jobs N` controls Vivado parallelism.
+- Vivado produces substantial logs. For workflow logs, retain case-insensitive lines containing `finished` or `error`, but ignore lines beginning with `#` because they are echoed Tcl commands.
+- After the run, from `$JYD_VIVADO_PROJ_HOME`, run `python3 scripts/extract-wns-violations.py -n 1` to inspect the worst setup/WNS path. Any `VIOLATED` result means timing is not met; `No WNS/setup timing violations found.` means setup timing is met. The routed report can also be inspected directly with `python3 scripts/extract-timing-summary.py ./digital_twin.runs/impl_1/top_timing_summary_routed.rpt`.
 - If Vivado reports `Designutils 20-1307` for `jyd_cdc.xdc`, treat it as a hard constraint-parse failure and fix the XDC before doing further timing analysis.
 - If Vivado reports `Constraints 18-513` for `jyd_cdc.xdc`, treat it as a hard constraint-targeting failure; the XDC parsed, but the selected `-from` objects are not valid startpoints.
 

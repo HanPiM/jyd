@@ -48,8 +48,11 @@ flowchart TD
 基线至少记录：
 
 - RTL 与 Vivado 仓库 commit、dirty 状态。
+- Vivado 完整版本，以及 run 名、strategy 和各实现步骤实际执行的 directive；不能只记录策略显示名。
+- Vivado 解析后的综合源文件清单及其 SHA-256，确认所有项目输入都位于预期仓库或明确记录的外部目录。
 - COE 或输入镜像的 SHA-256。
 - 目标频率、实现策略、WNS/TNS/WHS。
+- `synth_1` DCP、routed DCP、时序报告和 bitstream 的 SHA-256；若产物太大不入库，必须保存到明确的归档位置。
 - 一次正确上板结果及对应 bitstream 哈希。
 - 动态指令数、运行周期、CPI，以及已有的 stall、flush、预测等性能计数。
 
@@ -149,6 +152,18 @@ IP 改动后若顶层综合提示找不到模块或仍使用旧参数，先重�
 
 ## 6. Vivado 时序门禁
 
+### 6.1 先证明综合输入可复现
+
+项目移动、合并或重建后，策略选择之前先检查 Vivado 实际解析的源文件，而不是只检查 `.xpr` 中看起来正确的相对路径：
+
+- `pack-fpga` 后确认目标目录存在，且与 `npc/build/pack-fpga` 逐文件一致。
+- 打开项目后检查 `get_files -all` 的规范化绝对路径，禁止 CPU RTL 指向旧仓库、旧 worktree 或已废弃的兄弟目录。
+- 综合后检查 `digital_twin.runs/synth_1/top.tcl` 中的 `read_verilog` 路径，确认实际读取的是刚刷新的项目内 RTL。
+- 对解析后的 RTL 文件按稳定顺序记录相对路径和 SHA-256；仅记录 RTL commit 不足以发现错误路径或陈旧生成物。
+- 不引用其他工程残留的自动综合 DCP。需要复用 checkpoint 时，必须明确记录其来源、哈希和对应源文件清单。
+
+若旧目录仍存在，错误路径可能因为文件“碰巧存在”而不报错，所以路径越界必须作为硬失败，而不能依赖 Vivado 的 missing-file 检查。
+
 生成实现结果：
 
 ```sh
@@ -166,10 +181,12 @@ python3 jyd-vivado-proj/scripts/extract-timing-summary.py \
 处理规则：
 
 - 约束解析或对象选择错误是硬失败，先修复 XDC。
+- 以 run 日志中的实际命令为准。策略名不等于实际 directive，例如 7-series 上 `place_design Auto_1` 会自动降级为 Explore。
 - 大时序违例说明结构有问题，应停止布线尝试并优化设计。
 - 小时序违例可尝试少量预先选定的 implementation 策略。
 - 多个策略仍不满足时，不继续随机扫描策略，回到结构优化。
 - 负 WNS bitstream 最多用于规则允许的探索测量；最终候选必须 `WNS >= 0`，并同时检查 TNS 和保持时间。
+- 小于 0.1 ns 的正 WNS 也属于敏感结果。最终记录前至少从已提交的工程和 RTL clean/reset 后复跑一次，或者固定并归档当次 `synth_1` 与 routed checkpoint；不应把一次几十皮秒的结果当作稳定基线。
 
 每次记录最差路径的 source、destination、逻辑级数、logic/route delay 比例。这能区分逻辑过深、扇出过大和布局布线问题。
 
@@ -232,6 +249,9 @@ make -C am-kernels/tests/cpu-tests run ARCH=riscv32-jyd ALL=recursion
 预期收益与继续阈值：
 RTL commit / dirty diff hash：
 Vivado commit / IP 配置 / implementation 策略：
+Vivado 完整版本 / run 名 / 各步骤实际 directive / 是否 reset：
+解析后的综合源清单 SHA-256：
+synth DCP / routed DCP / timing report SHA-256：
 输入镜像或 COE SHA-256：
 改动摘要：
 快速功能测试：
@@ -252,6 +272,7 @@ bitstream SHA-256：
 
 - `git diff --check`。
 - 核对 staged 文件，避免混入用户已有的无关修改和生成物。
+- 检查 Vivado 解析后的项目源路径没有逃出预期仓库；项目迁移后应在旧兄弟目录不存在或不可见的条件下做一次 clean synthesis，避免旧文件掩盖错误引用。
 - RTL 与独立 Vivado 工程的必要 IP 配置要分别保存；不要只提交一侧。
 - 提交信息描述可观察结果，而不是实验过程。
 - 在记录中写入最终 commit、bitstream 哈希和验证命令。

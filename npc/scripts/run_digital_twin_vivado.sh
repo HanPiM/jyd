@@ -115,17 +115,33 @@ tcl_file=$(mktemp "${TMPDIR:-/tmp}/digital_twin_flow.XXXXXX.tcl")
 trap 'rm -f "$tcl_file"' EXIT
 
 cat >"$tcl_file" <<'EOF'
-if {$argc != 2} {
-  error "Expected Tcl args: <mode> <jobs>"
+if {$argc != 3} {
+  error "Expected Tcl args: <mode> <jobs> <expected-pack-fpga-dir>"
 }
 set mode [lindex $argv 0]
 set jobs [lindex $argv 1]
+set expected_pack_dir [file normalize [lindex $argv 2]]
 
 open_project digital_twin.xpr
 set_param general.maxThreads $jobs
 update_compile_order -fileset sources_1
 puts "Vivado launch_runs jobs: $jobs"
 puts "Vivado general.maxThreads: [get_param general.maxThreads]"
+
+set pack_file_count 0
+foreach source_file [get_files -all] {
+  set resolved_file [file normalize $source_file]
+  if {[string first "/pack-fpga/" $resolved_file] >= 0} {
+    incr pack_file_count
+    if {[string first "${expected_pack_dir}/" $resolved_file] != 0} {
+      error "pack-fpga source escaped the in-tree project: $resolved_file (expected under $expected_pack_dir)"
+    }
+  }
+}
+if {$pack_file_count == 0} {
+  error "No pack-fpga sources were resolved from the Vivado project"
+}
+puts "Verified $pack_file_count pack-fpga sources under: $expected_pack_dir"
 
 if {[llength [get_runs synth_1]] == 0} {
   error "Vivado run synth_1 was not found"
@@ -154,6 +170,11 @@ foreach run_name {synth_1 impl_1} {
   } {
     clear_run_property_if_exists $run_name $prop_name
   }
+}
+
+set synth_run [get_runs synth_1]
+if {[lsearch -exact [list_property $synth_run] AUTO_INCREMENTAL_CHECKPOINT] >= 0} {
+  set_property AUTO_INCREMENTAL_CHECKPOINT false $synth_run
 }
 
 reset_run synth_1
@@ -198,4 +219,4 @@ EOF
 
 echo "# Running Vivado digital_twin to $mode"
 cd "$vivado_proj_home"
-"$vivado_bin" -mode batch -source "$tcl_file" -tclargs "$mode" "$jobs"
+"$vivado_bin" -mode batch -source "$tcl_file" -tclargs "$mode" "$jobs" "$pack_dst"

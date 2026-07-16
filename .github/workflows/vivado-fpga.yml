@@ -45,6 +45,9 @@ jobs:
     steps:
       - name: Checkout workbench
         uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+          sparse-checkout: jyd-vivado-proj
 
       - name: Download packed FPGA zip
         uses: actions/download-artifact@v8

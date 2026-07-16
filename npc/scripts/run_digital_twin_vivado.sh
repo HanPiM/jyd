@@ -10,7 +10,6 @@ Build npc pack-fpga, replace the Vivado project's imported pack-fpga directory,
 then run the digital_twin Vivado project to impl or write_bitstream.
 
 Environment:
-  JYD_VIVADO_PROJ_HOME  Path to the digital_twin Vivado project root.
   VIVADO                Vivado executable to use. Defaults to "vivado".
   JOBS                  Vivado jobs and max threads. Defaults to nproc.
 EOF
@@ -66,10 +65,10 @@ fi
 
 script_dir=$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 npc_dir=$(CDPATH= cd -- "$script_dir/.." && pwd)
+repo_root=$(CDPATH= cd -- "$npc_dir/.." && pwd)
 pack_src="$npc_dir/build/pack-fpga"
 
-: "${JYD_VIVADO_PROJ_HOME:?JYD_VIVADO_PROJ_HOME is not set}"
-vivado_proj_home=$JYD_VIVADO_PROJ_HOME
+vivado_proj_home="$repo_root/jyd-vivado-proj"
 vivado_project="$vivado_proj_home/digital_twin.xpr"
 pack_dst="$vivado_proj_home/digital_twin.srcs/sources_1/imports/pack-fpga"
 vivado_bin="${VIVADO:-vivado}"

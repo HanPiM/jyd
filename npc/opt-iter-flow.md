@@ -158,10 +158,9 @@ IP 改动后若顶层综合提示找不到模块或仍使用旧参数，先重�
 检查 routed timing：
 
 ```sh
-cd "$JYD_VIVADO_PROJ_HOME"
-python3 scripts/extract-wns-violations.py -n 3
-python3 scripts/extract-timing-summary.py \
-  ./digital_twin.runs/impl_1/top_timing_summary_routed.rpt
+python3 jyd-vivado-proj/scripts/extract-wns-violations.py -n 3
+python3 jyd-vivado-proj/scripts/extract-timing-summary.py \
+  ./jyd-vivado-proj/digital_twin.runs/impl_1/top_timing_summary_routed.rpt
 ```
 
 处理规则：

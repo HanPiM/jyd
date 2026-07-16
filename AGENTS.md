@@ -6,6 +6,7 @@ This repository is a multi-project hardware/software workbench. The main active 
 - `npc/`: Chisel CPU design, generated Verilog, and simulator sources (`design/src`, `sim/`, `scripts/`).
 - `nemu/`: reference emulator in C/C++ (`src/`, `include/`, `configs/`).
 - `abstract-machine/`: runtime, libraries, and platform build rules for bare-metal programs.
+- `jyd-vivado-proj/`: Vivado digital twin project, constraints, IP configurations, and FPGA flow scripts.
 - `sdb/`, `cachesim/`, `branchsim/`: shared support libraries used by NEMU/NPC.
 - `patch/`: patch series applied in CI, especially for `ysyxSoC`.
 
@@ -20,7 +21,7 @@ Treat `build/`, `out/`, generated Verilog, and cache directories as disposable o
 - `make -C npc reformat` / `make -C npc checkformat`: apply or verify Scala formatting.
 - `make -C nemu menuconfig` then `make -C nemu`: configure and build NEMU.
 - `make -C abstract-machine ARCH=riscv32-jyd`: build an AM image for a target architecture.
-- `./npc/scripts/run_digital_twin_vivado.sh [impl|write_bitstream|bitstream] [--jobs N]`: run `make -C npc pack-fpga`, replace `$JYD_VIVADO_PROJ_HOME/digital_twin.srcs/sources_1/imports/pack-fpga`, then run the Vivado `digital_twin` project to implementation or bitstream. The script requires `JYD_VIVADO_PROJ_HOME`; `JOBS`/`--jobs` controls Vivado `launch_runs -jobs` and `general.maxThreads`.
+- `./npc/scripts/run_digital_twin_vivado.sh [impl|write_bitstream|bitstream] [--jobs N]`: run `make -C npc pack-fpga`, replace `jyd-vivado-proj/digital_twin.srcs/sources_1/imports/pack-fpga`, then run the in-tree Vivado `digital_twin` project to implementation or bitstream. `JOBS`/`--jobs` controls Vivado `launch_runs -jobs` and `general.maxThreads`.
 
 Vivado IP simulation models such as `mult_gen_0.sv`, `div_gen_uradix2.sv`, and `blk_mem_gen_2KB.sv` are emitted inline by their Chisel `BlackBox` definitions. Add new IP models to `CHISEL_UNSYNTH_KEYWORDS` in `npc/scripts/chisel.mk`: RTL simulation must compile the emitted model, while synthesis and `pack-fpga` must omit it and bind the module name to the Vivado IP output product instead. `blk_mem_gen_2KB` is a 512 x 32-bit simple dual-port memory: port A performs rising-edge synchronous byte writes using `wea[3:0]`, while port B has one-cycle synchronous read latency.
 
@@ -53,9 +54,9 @@ If you modify CSR-related code, you must also run the `rt-thread` (`rtt`) test b
 If you modify `JYDDevices` or other JYD-specific code, you must run tests with `ARCH=riscv32-jyd` so the JYD-only paths are covered.
 
 For digital twin FPGA packaging or XDC changes, use this validation flow:
-- From the repository root, run `./npc/scripts/run_digital_twin_vivado.sh bitstream` when a bitstream is required. The script rebuilds `pack-fpga`, refreshes the imported files under `$JYD_VIVADO_PROJ_HOME`, and runs Vivado through synthesis, implementation, and bitstream generation. Use `impl` when bitstream generation is not needed; `JOBS` or `--jobs N` controls Vivado parallelism.
+- From the repository root, run `./npc/scripts/run_digital_twin_vivado.sh bitstream` when a bitstream is required. The script rebuilds `pack-fpga`, refreshes the imported files under `jyd-vivado-proj/`, and runs Vivado through synthesis, implementation, and bitstream generation. Use `impl` when bitstream generation is not needed; `JOBS` or `--jobs N` controls Vivado parallelism.
 - Vivado produces substantial logs. For workflow logs, retain case-insensitive lines containing `finished` or `error`, but ignore lines beginning with `#` because they are echoed Tcl commands.
-- After the run, from `$JYD_VIVADO_PROJ_HOME`, run `python3 scripts/extract-wns-violations.py -n 1` to inspect the worst setup/WNS path. Any `VIOLATED` result means timing is not met; `No WNS/setup timing violations found.` means setup timing is met. The routed report can also be inspected directly with `python3 scripts/extract-timing-summary.py ./digital_twin.runs/impl_1/top_timing_summary_routed.rpt`.
+- After the run, use `python3 jyd-vivado-proj/scripts/extract-wns-violations.py -n 1` to inspect the worst setup/WNS path. Any `VIOLATED` result means timing is not met; `No WNS/setup timing violations found.` means setup timing is met. The routed report can also be inspected directly with `python3 jyd-vivado-proj/scripts/extract-timing-summary.py ./jyd-vivado-proj/digital_twin.runs/impl_1/top_timing_summary_routed.rpt`.
 - If Vivado reports `Designutils 20-1307` for `jyd_cdc.xdc`, treat it as a hard constraint-parse failure and fix the XDC before doing further timing analysis.
 - If Vivado reports `Constraints 18-513` for `jyd_cdc.xdc`, treat it as a hard constraint-targeting failure; the XDC parsed, but the selected `-from` objects are not valid startpoints.
 

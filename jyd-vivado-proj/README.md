@@ -1,6 +1,8 @@
 # JYD Vivado Project
 
-Vivado digital twin project used by the `jyd` GitHub Actions FPGA flow.
+Vivado digital twin project used by the `jyd` GitHub Actions FPGA flow. This
+directory is tracked in the `jyd` workbench so CPU and Vivado changes can be
+committed together.
 
 ## CI Scripts
 

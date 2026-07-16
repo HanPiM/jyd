@@ -4,6 +4,6 @@
 
 ## Vivado FPGA CI
 
-`.github/workflows/vivado-fpga.yml` only checks out
-`WangYiJie020/jyd-vivado-proj` in the Vivado job. Timing extraction and burn
-summary formatting scripts both live in that Vivado project checkout.
+The Vivado digital twin project lives in `jyd-vivado-proj/`, so each workbench
+commit directly selects the matching CPU and Vivado project versions. The FPGA
+workflow uses the project and timing/burn helper scripts from the same checkout.

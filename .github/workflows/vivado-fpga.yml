@@ -6,6 +6,7 @@ on:
     paths:
       - 'npc/design/**'
       - 'jyd-tests/2026/coe/**'
+      - 'jyd-vivado-proj/**'
       - '.github/workflows/vivado-fpga.yml'
       - '.github/workflows/reusable-setup.yml'
   workflow_dispatch:
@@ -29,9 +30,6 @@ concurrency:
   group: vivado-fpga-${{ github.ref }}
   cancel-in-progress: true
 
-env:
-  VIVADO_PROJECT_REF: 8dd0b077549547104a024d3e9cc49a85b685465a
-
 jobs:
   setup:
     uses: ./.github/workflows/reusable-setup.yml
@@ -45,12 +43,8 @@ jobs:
       matrix:
         sample: [src0, src1, src2, withMext-v2]
     steps:
-      - name: Checkout Vivado project
+      - name: Checkout workbench
         uses: actions/checkout@v5
-        with:
-          repository: WangYiJie020/jyd-vivado-proj
-          ref: ${{ env.VIVADO_PROJECT_REF }}
-          path: jyd-vivado-proj
 
       - name: Download packed FPGA zip
         uses: actions/download-artifact@v8
@@ -83,7 +77,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p vivado-project-artifacts
-          zip -qr "vivado-project-artifacts/proj-${{ matrix.sample }}.zip" jyd-vivado-proj -x 'jyd-vivado-proj/.git/*'
+          zip -qr "vivado-project-artifacts/proj-${{ matrix.sample }}.zip" jyd-vivado-proj
 
       - name: Upload Vivado project
         id: upload-vivado-project

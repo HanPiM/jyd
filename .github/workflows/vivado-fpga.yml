@@ -126,17 +126,27 @@ jobs:
 
       - name: Upload Vivado result
         id: upload-vivado-result
+        continue-on-error: true
         uses: actions/upload-artifact@v6
         with:
           name: vivado-result-${{ matrix.sample }}
           path: vivado-result/${{ matrix.sample }}
+
+      - name: Retry Vivado result upload
+        id: retry-upload-vivado-result
+        if: steps.upload-vivado-result.outcome == 'failure'
+        uses: actions/upload-artifact@v6
+        with:
+          name: vivado-result-${{ matrix.sample }}
+          path: vivado-result/${{ matrix.sample }}
+          overwrite: true
 
       - name: Add Vivado summary
         run: |
           {
             echo "## Vivado result (${{ matrix.sample }})"
             echo ""
-            echo "- Artifact: [vivado-result-${{ matrix.sample }}](${{ steps.upload-vivado-result.outputs.artifact-url }})"
+            echo "- Artifact: [vivado-result-${{ matrix.sample }}](${{ steps.retry-upload-vivado-result.outputs.artifact-url || steps.upload-vivado-result.outputs.artifact-url }})"
             echo "- Project: [proj-${{ matrix.sample }}.zip](${{ steps.upload-vivado-project.outputs.artifact-url }})"
             echo ""
             echo "### Timing"

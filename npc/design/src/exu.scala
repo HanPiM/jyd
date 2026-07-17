@@ -116,7 +116,6 @@ class EXU(
       val hit        = Input(Bool())
       val storeEpoch = Input(UInt(8.W))
       val queryAddr  = Output(Types.UWord)
-      val storeAddr  = Output(Types.UWord)
       val invalidate = Output(Bool())
       val storeUpdate = Output(Bool())
       val storeData   = Output(Types.UWord)
@@ -330,7 +329,6 @@ class EXU(
   val memWData = GenMemWData(reg1AddImm(1, 0), dinst.info.reg2)
 
   io.dcache.queryAddr := reg1AddImm
-  io.dcache.storeAddr := reg1AddImm
   val cacheableStore = isTypStore && reg1AddImm(21, 20) === "b01".U
   val cacheableStoreFire = memReqFire && cacheableStore
   val fullWordStore = memWMask === "b1111".U

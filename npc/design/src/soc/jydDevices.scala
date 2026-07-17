@@ -261,52 +261,6 @@ class DCacheDataMem(words: Int, addrWidth: Int) extends BlackBox with HasBlackBo
   )
 }
 
-/** Simulation model for the synchronous simple-dual-port DCache tag BRAM. */
-class DCacheSyncTagMem(words: Int, addrWidth: Int, entryWidth: Int) extends BlackBox with HasBlackBoxInline {
-  override def desiredName: String = "blk_mem_gen_dcache_tag"
-  val io = IO(new Bundle {
-    val clka  = Input(Clock())
-    val ena   = Input(Bool())
-    val wea   = Input(Bool())
-    val addra = Input(UInt(addrWidth.W))
-    val dina  = Input(UInt(entryWidth.W))
-    val clkb  = Input(Clock())
-    val enb   = Input(Bool())
-    val addrb = Input(UInt(addrWidth.W))
-    val doutb = Output(UInt(entryWidth.W))
-  })
-
-  setInline(
-    "blk_mem_gen_dcache_tag.sv",
-    s"""module blk_mem_gen_dcache_tag (
-      |  input  wire clka,
-      |  input  wire ena,
-      |  input  wire wea,
-      |  input  wire [${addrWidth - 1}:0] addra,
-      |  input  wire [${entryWidth - 1}:0] dina,
-      |  input  wire clkb,
-      |  input  wire enb,
-      |  input  wire [${addrWidth - 1}:0] addrb,
-      |  output reg  [${entryWidth - 1}:0] doutb
-      |);
-      |  reg [${entryWidth - 1}:0] mem [0:${words - 1}];
-      |  integer i;
-      |  initial begin
-      |    for (i = 0; i < $words; i = i + 1) mem[i] = ${entryWidth}'b0;
-      |  end
-      |
-      |  always @(posedge clka) begin
-      |    if (ena && wea) mem[addra] <= dina;
-      |  end
-      |
-      |  always @(posedge clkb) begin
-      |    if (enb) doutb <= mem[addrb];
-      |  end
-      |endmodule
-      |""".stripMargin
-  )
-}
-
 /** Simulation model for the parameterized DCache tag Vivado distributed-memory IP. */
 class DCacheTagMem(words: Int, addrWidth: Int, entryWidth: Int) extends BlackBox with HasBlackBoxInline {
   override def desiredName: String = "dist_mem_gen_dcache_tag"

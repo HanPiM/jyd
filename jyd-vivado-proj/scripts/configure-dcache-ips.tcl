@@ -11,6 +11,10 @@ set addr_width [expr {int(log($words) / log(2))}]
 set tag_width [expr {16 - $addr_width}]
 set tag_entry_width [expr {$tag_width + 1}]
 set tag_depth $words
+if {$words == 4096} {
+  # Two word-tag banks each use addr[13:3] and store addr[17:14] plus valid.
+  set tag_depth [expr {$words / 2}]
+}
 set project_dir [file normalize [file join [file dirname [info script]] ..]]
 
 open_project [file join $project_dir digital_twin.xpr]
@@ -34,26 +38,20 @@ set_property -dict [list \
   CONFIG.Operating_Mode_A {READ_FIRST} \
 ] [get_ips $data_name]
 
-set tag_name blk_mem_gen_dcache_tag
+set tag_name dist_mem_gen_dcache_tag
 if {[llength [get_ips -quiet $tag_name]] == 0} {
-  create_ip -name blk_mem_gen -vendor xilinx.com -library ip -version 8.4 \
+  create_ip -name dist_mem_gen -vendor xilinx.com -library ip -version 8.0 \
     -module_name $tag_name -dir [file join $project_dir digital_twin.srcs sources_1 ip]
 }
 set_property -dict [list \
-  CONFIG.Memory_Type {Simple_Dual_Port_RAM} \
-  CONFIG.Use_Byte_Write_Enable {false} \
-  CONFIG.Write_Width_A $tag_entry_width \
-  CONFIG.Write_Depth_A $tag_depth \
-  CONFIG.Write_Width_B $tag_entry_width \
-  CONFIG.Read_Width_B $tag_entry_width \
-  CONFIG.Enable_A {Use_ENA_Pin} \
-  CONFIG.Enable_B {Use_ENB_Pin} \
-  CONFIG.Assume_Synchronous_Clk {true} \
-  CONFIG.Operating_Mode_A {READ_FIRST} \
-  CONFIG.Register_PortB_Output_of_Memory_Primitives {false} \
-  CONFIG.Register_PortB_Output_of_Memory_Core {false} \
-  CONFIG.Fill_Remaining_Memory_Locations {true} \
-  CONFIG.Remaining_Memory_Locations {0} \
+  CONFIG.depth $tag_depth \
+  CONFIG.data_width $tag_entry_width \
+  CONFIG.memory_type {simple_dual_port_ram} \
+  CONFIG.input_options {non_registered} \
+  CONFIG.dual_port_address {non_registered} \
+  CONFIG.simple_dual_port_address {non_registered} \
+  CONFIG.output_options {non_registered} \
+  CONFIG.Pipeline_Stages {0} \
 ] [get_ips $tag_name]
 
 foreach ip [list $data_name $tag_name] {

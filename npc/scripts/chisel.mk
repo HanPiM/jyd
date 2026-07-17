@@ -13,7 +13,7 @@ define rd_filelist_indir
 $(addprefix $(1)/, $(shell cat $(1)/filelist.f))
 endef
 
-CHISEL_UNSYNTH_KEYWORDS = DPICLayer|DifftestLayer|StageLogLayer|PerfCounterLayer|verification|mult_gen_0\.sv|div_gen_uradix2\.sv|blk_mem_gen_dcache_data\.sv|blk_mem_gen_dcache_tag\.sv|dist_mem_gen_dcache_tag\.sv|dist_mem_gen_32x32\.sv
+CHISEL_UNSYNTH_KEYWORDS = DPICLayer|DifftestLayer|StageLogLayer|PerfCounterLayer|verification|mult_gen_0\.sv|div_gen_uradix2\.sv|blk_mem_gen_dcache_data\.sv|dist_mem_gen_dcache_tag\.sv|dist_mem_gen_32x32\.sv
 define rd_synth_filelist_indir
 $(addprefix $(1)/, $(shell grep -vE "$(CHISEL_UNSYNTH_KEYWORDS)" $(1)/filelist.f))
 endef

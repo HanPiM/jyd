@@ -209,40 +209,40 @@ class JYDFPGAIROMBlackBox extends BlackBox {
   })
 }
 
-/** Simulation model for the 2 KiB, 32-bit-wide Vivado block-memory IP.
+/** Simulation model for the parameterized 32-bit-wide DCache Vivado block-memory IP.
   *
   * Keep the BlackBox name identical to the Vivado IP so FPGA builds bind this
   * instance to the IP output product. The inline SystemVerilog source is used
   * only by RTL simulation and is excluded from synthesis/FPGA packaging.
   */
-class BlkMemGen2KB extends BlackBox with HasBlackBoxInline {
-  override def desiredName: String = "blk_mem_gen_2KB"
+class DCacheDataMem(words: Int, addrWidth: Int) extends BlackBox with HasBlackBoxInline {
+  override def desiredName: String = "blk_mem_gen_dcache_data"
   val io = IO(new Bundle {
     val clka  = Input(Clock())
     val ena   = Input(Bool())
     val wea   = Input(UInt(4.W))
-    val addra = Input(UInt(9.W))
+    val addra = Input(UInt(addrWidth.W))
     val dina  = Input(UInt(32.W))
     val clkb  = Input(Clock())
     val enb   = Input(Bool())
-    val addrb = Input(UInt(9.W))
+    val addrb = Input(UInt(addrWidth.W))
     val doutb = Output(UInt(32.W))
   })
 
   setInline(
-    "blk_mem_gen_2KB.sv",
-    """module blk_mem_gen_2KB (
+    "blk_mem_gen_dcache_data.sv",
+    s"""module blk_mem_gen_dcache_data (
       |  input  wire        clka,
       |  input  wire        ena,
       |  input  wire [3:0]  wea,
-      |  input  wire [8:0]  addra,
+      |  input  wire [${addrWidth - 1}:0] addra,
       |  input  wire [31:0] dina,
       |  input  wire        clkb,
       |  input  wire        enb,
-      |  input  wire [8:0]  addrb,
+      |  input  wire [${addrWidth - 1}:0] addrb,
       |  output reg  [31:0] doutb
       |);
-      |  reg [31:0] mem [0:511];
+      |  reg [31:0] mem [0:${words - 1}];
       |
       |  always @(posedge clka) begin
       |    if (ena) begin
@@ -261,32 +261,32 @@ class BlkMemGen2KB extends BlackBox with HasBlackBoxInline {
   )
 }
 
-/** Simulation model for the 512 x 8-bit Vivado distributed-memory IP. */
-class DistMemGen512x8 extends BlackBox with HasBlackBoxInline {
-  override def desiredName: String = "dist_mem_gen_512x8"
+/** Simulation model for the parameterized DCache tag Vivado distributed-memory IP. */
+class DCacheTagMem(words: Int, addrWidth: Int, entryWidth: Int) extends BlackBox with HasBlackBoxInline {
+  override def desiredName: String = "dist_mem_gen_dcache_tag"
   val io = IO(new Bundle {
-    val a    = Input(UInt(9.W))
-    val d    = Input(UInt(8.W))
-    val dpra = Input(UInt(9.W))
+    val a    = Input(UInt(addrWidth.W))
+    val d    = Input(UInt(entryWidth.W))
+    val dpra = Input(UInt(addrWidth.W))
     val clk  = Input(Clock())
     val we   = Input(Bool())
-    val dpo  = Output(UInt(8.W))
+    val dpo  = Output(UInt(entryWidth.W))
   })
 
   setInline(
-    "dist_mem_gen_512x8.sv",
-    """module dist_mem_gen_512x8 (
-      |  input  wire [8:0] a,
-      |  input  wire [7:0] d,
-      |  input  wire [8:0] dpra,
+    "dist_mem_gen_dcache_tag.sv",
+    s"""module dist_mem_gen_dcache_tag (
+      |  input  wire [${addrWidth - 1}:0] a,
+      |  input  wire [${entryWidth - 1}:0] d,
+      |  input  wire [${addrWidth - 1}:0] dpra,
       |  input  wire       clk,
       |  input  wire       we,
-      |  output wire [7:0] dpo
+      |  output wire [${entryWidth - 1}:0] dpo
       |);
-      |  reg [7:0] mem [0:511];
+      |  reg [${entryWidth - 1}:0] mem [0:${words - 1}];
       |  integer i;
       |  initial begin
-      |    for (i = 0; i < 512; i = i + 1) mem[i] = 8'b0;
+      |    for (i = 0; i < $words; i = i + 1) mem[i] = ${entryWidth}'b0;
       |  end
       |
       |  always @(posedge clk) begin

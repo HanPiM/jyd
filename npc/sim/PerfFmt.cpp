@@ -83,8 +83,6 @@ void RAWStallPerfCounter::dumpStatistics(std::ostream &os) {
   const size_t multiConflictCycles =
       cycAnyConflict - cycConflictOnlyEXU - cycConflictOnlyLSU -
       cycConflictOnlyWBU;
-  const size_t multiStallCycles =
-      cycIDUStall - cycStallOnlyEXU - cycStallOnlyLSU - cycStallOnlyWBU;
   auto percentOfTotal = [](size_t cycles) {
     return sim_get_cycle() == 0
                ? NAN
@@ -138,8 +136,8 @@ void RAWStallPerfCounter::dumpStatistics(std::ostream &os) {
   addConflictRow("Multi-source conflict", multiConflictCycles);
   _PrintTable(conflictTable, os);
 
-  os << "Real stall cycles. Per-source rows can overlap; only/multi-source "
-        "rows are exclusive:\n";
+  os << "Legacy stall-source cycles. Per-source rows can overlap; the final "
+        "exclusive table below is authoritative:\n";
   Table stallTable;
   stallTable.add_row({"Reason", "Cycles", "%\n(in tot)",
                       "%\n(in all stalls)"});
@@ -155,8 +153,43 @@ void RAWStallPerfCounter::dumpStatistics(std::ostream &os) {
   addStallRow("EXU only stall-source", cycStallOnlyEXU);
   addStallRow("LSU only stall-source", cycStallOnlyLSU);
   addStallRow("WBU only stall-source", cycStallOnlyWBU);
-  addStallRow("Multi-source stall", multiStallCycles);
   _PrintTable(stallTable, os);
+
+  os << "Exclusive final needStall reasons (valid, non-flushed IDU instruction):\n";
+  Table finalTable;
+  finalTable.add_row({"Reason", "Cycles", "%\n(in all stalls)"});
+  auto addFinalRow = [&](const char *reason, size_t cycles) {
+    finalTable.add_row(RowStream{} << reason << cycles
+                                   << percentOfBase(cycles, cycIDUStall));
+  };
+  addFinalRow("EXU", cycFinalStallEXU);
+  addFinalRow("LSU", cycFinalStallLSU);
+  addFinalRow("WBU", cycFinalStallWBU);
+  addFinalRow("AGEN EXU", cycFinalStallAGENEXU);
+  addFinalRow("AGEN WBU", cycFinalStallAGENWBU);
+  addFinalRow("CSR", cycFinalStallCSR);
+  addFinalRow("Other", cycFinalStallOther);
+  _PrintTable(finalTable, os);
+
+  os << "DCache load/consumer counters:\n";
+  Table cacheTable;
+  cacheTable.add_row({"Event", "Count"});
+  cacheTable.add_row(RowStream{} << "Cacheable loads" << cacheableLoads);
+  cacheTable.add_row(RowStream{} << "Hits" << cacheableLoadHits);
+  cacheTable.add_row(RowStream{} << "Misses" << cacheableLoadMisses);
+  cacheTable.add_row(RowStream{} << "Immediate rs1 consumers" << immediateRs1Consumers);
+  cacheTable.add_row(RowStream{} << "Immediate rs2 consumers" << immediateRs2Consumers);
+  cacheTable.add_row(RowStream{} << "Immediate address consumers" << addressConsumers);
+  _PrintTable(cacheTable, os);
+
+  os << "M-extension IDU occupancy cycles:\n";
+  Table mulTable;
+  mulTable.add_row({"Operation", "Issued", "IDU cycles"});
+  mulTable.add_row(RowStream{} << "mul" << mulCount << mulCycles);
+  mulTable.add_row(RowStream{} << "mulh" << mulhCount << mulhCycles);
+  mulTable.add_row(RowStream{} << "mulhu" << mulhuCount << mulhuCycles);
+  mulTable.add_row(RowStream{} << "mulhsu" << mulhsuCount << mulhsuCycles);
+  _PrintTable(mulTable, os);
 }
 
 const char *IDUFlushPerfCounter::nameOfReason(int r) {

@@ -174,7 +174,7 @@ foreach run_name {synth_1 impl_1} {
 
 set synth_run [get_runs synth_1]
 if {[lsearch -exact [list_property $synth_run] AUTO_INCREMENTAL_CHECKPOINT] >= 0} {
-  set_property AUTO_INCREMENTAL_CHECKPOINT false $synth_run
+  set_property AUTO_INCREMENTAL_CHECKPOINT 0 $synth_run
 }
 
 reset_run synth_1

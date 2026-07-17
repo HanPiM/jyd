@@ -121,7 +121,8 @@ def markdown(record):
         ("中位时间", "—" if median is None else f"{median:g} ms"),
         ("中位 CPI", "—" if cpi is None else f"{cpi:.4f}"),
         ("WNS/TNS", f'{timing["wns_ns"]}/{timing["tns_ns"]} ns'),
-        ("结论", "PASS" if record["summary"]["meets_1900ms"] else "未达到/数据不足"),
+        ("硬目标", "PASS" if record["summary"]["meets_target"] else "未达到/数据不足"),
+        ("冲刺目标", "PASS" if record["summary"]["meets_stretch_target"] else "未达到/数据不足"),
     ]
     return "| " + " | ".join(name for name, _ in cells) + " |\n| " + " | ".join("---" for _ in cells) + " |\n| " + " | ".join(str(value) for _, value in cells) + " |"
 
@@ -130,7 +131,12 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--candidate", required=True, help="experiment/candidate name")
     parser.add_argument("--frequency-mhz", required=True, type=float)
-    parser.add_argument("--instructions", type=int, default=380_000_000)
+    parser.add_argument("--instructions", type=int, default=380_344_412,
+                        help="dynamic instruction count (default: withMext-v2 baseline)")
+    parser.add_argument("--target-ms", type=float, default=1750,
+                        help="hard elapsed-time target (default: 1750)")
+    parser.add_argument("--stretch-target-ms", type=float, default=1700,
+                        help="stretch elapsed-time target (default: 1700)")
     parser.add_argument("--timing-report", help="Vivado timing report or extracted WNS output")
     parser.add_argument("--board-log", action="append", default=[], help="board CLI log; repeatable, '-' reads stdin")
     parser.add_argument("--strategy")
@@ -153,13 +159,18 @@ def main():
     valid_runs = [run for run in runs if run.get("valid")]
     times = [run["elapsed_ms"] for run in valid_runs]
     cpis = [run["cpi"] for run in valid_runs]
+    median_elapsed_ms = statistics.median(times) if times else None
     record = {
-        "schema_version": 1,
+        "schema_version": 2,
         "recorded_at": dt.datetime.now(dt.timezone.utc).isoformat(),
         "candidate": args.candidate,
         "commit": args.commit,
         "frequency_mhz": args.frequency_mhz,
         "instruction_count": args.instructions,
+        "target_ms": args.target_ms,
+        "stretch_target_ms": args.stretch_target_ms,
+        "target_cycles": round(args.target_ms * args.frequency_mhz * 1000),
+        "stretch_target_cycles": round(args.stretch_target_ms * args.frequency_mhz * 1000),
         "strategy": args.strategy,
         "coe_sha256": args.coe_sha256,
         "bitstream_sha256": args.bitstream_sha256,
@@ -167,9 +178,10 @@ def main():
         "board_runs": runs,
         "summary": {
             "valid_runs": len(valid_runs),
-            "median_elapsed_ms": statistics.median(times) if times else None,
+            "median_elapsed_ms": median_elapsed_ms,
             "median_cpi": statistics.median(cpis) if cpis else None,
-            "meets_1900ms": bool(times) and statistics.median(times) <= 1900,
+            "meets_target": median_elapsed_ms is not None and median_elapsed_ms <= args.target_ms,
+            "meets_stretch_target": median_elapsed_ms is not None and median_elapsed_ms <= args.stretch_target_ms,
         },
     }
     encoded = json.dumps(record, ensure_ascii=False, sort_keys=True)

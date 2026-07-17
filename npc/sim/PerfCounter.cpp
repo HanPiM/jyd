@@ -62,6 +62,7 @@ void CachePerfCounter::dumpStatistics(std::ostream &os) {
 }
 
 void RAWStallPerfCounter::update() {
+  const bool countEnable = hCountEnable.get();
   const bool isAnyConflict = hIsAnyConflict.get();
   const bool isConflictEXU = hIsConflictEXU.get();
   const bool isConflictLSU = hIsConflictLSU.get();
@@ -78,48 +79,48 @@ void RAWStallPerfCounter::update() {
   const bool isStallOnlyWBU = hIsStallOnlyWBU.get();
   const bool isIDUStall = hIsIDUStall.get();
 
-  if (isAnyConflict) {
+  if (countEnable && isAnyConflict) {
     cycAnyConflict++;
   }
-  if (isConflictEXU) {
+  if (countEnable && isConflictEXU) {
     cycAllConflictEXU++;
   }
-  if (isConflictLSU) {
+  if (countEnable && isConflictLSU) {
     cycAllConflictLSU++;
   }
-  if (isConflictWBU) {
+  if (countEnable && isConflictWBU) {
     cycAllConflictWBU++;
   }
-  if (isConflictOnlyEXU) {
+  if (countEnable && isConflictOnlyEXU) {
     cycConflictOnlyEXU++;
   }
-  if (isConflictOnlyLSU) {
+  if (countEnable && isConflictOnlyLSU) {
     cycConflictOnlyLSU++;
   }
-  if (isConflictOnlyWBU) {
+  if (countEnable && isConflictOnlyWBU) {
     cycConflictOnlyWBU++;
   }
 
-  if (isStallEXU) {
+  if (countEnable && isStallEXU) {
     cycStallEXU++;
   }
-  if (isStallLSU) {
+  if (countEnable && isStallLSU) {
     cycStallLSU++;
   }
-  if (isStallWBU) {
+  if (countEnable && isStallWBU) {
     cycStallWBU++;
   }
-  if (isStallOnlyEXU) {
+  if (countEnable && isStallOnlyEXU) {
     cycStallOnlyEXU++;
   }
-  if (isStallOnlyLSU) {
+  if (countEnable && isStallOnlyLSU) {
     cycStallOnlyLSU++;
   }
-  if (isStallOnlyWBU) {
+  if (countEnable && isStallOnlyWBU) {
     cycStallOnlyWBU++;
   }
 
-  if (isIDUStall) {
+  if (countEnable && isIDUStall) {
     cycIDUStall++;
 
     if (isConflictEXU) {
@@ -132,6 +133,28 @@ void RAWStallPerfCounter::update() {
       cycConflictWBU++;
     }
   }
+
+  cycFinalStallEXU += hFinalStallEXU.get();
+  cycFinalStallLSU += hFinalStallLSU.get();
+  cycFinalStallWBU += hFinalStallWBU.get();
+  cycFinalStallAGENEXU += hFinalStallAGENEXU.get();
+  cycFinalStallAGENWBU += hFinalStallAGENWBU.get();
+  cycFinalStallCSR += hFinalStallCSR.get();
+  cycFinalStallOther += hFinalStallOther.get();
+  cacheableLoads += hCacheableLoad.get();
+  cacheableLoadHits += hCacheableLoadHit.get();
+  cacheableLoadMisses += hCacheableLoadMiss.get();
+  immediateRs1Consumers += hImmediateRs1.get();
+  immediateRs2Consumers += hImmediateRs2.get();
+  addressConsumers += hAddressConsumer.get();
+  mulCycles += hMul.get();
+  mulhCycles += hMulh.get();
+  mulhuCycles += hMulhu.get();
+  mulhsuCycles += hMulhsu.get();
+  mulCount += hMulIssued.get();
+  mulhCount += hMulhIssued.get();
+  mulhuCount += hMulhuIssued.get();
+  mulhsuCount += hMulhsuIssued.get();
 }
 void RAWStallPerfCounter::bind() {
   hIsAnyConflict = &GetIDU()->perfCounterLayer->rawStallPerfTap->io_isAnyConflict;
@@ -154,7 +177,32 @@ void RAWStallPerfCounter::bind() {
       &GetIDU()->perfCounterLayer->rawStallPerfTap->io_isNeedStallOnlyLSU;
   hIsStallOnlyWBU =
       &GetIDU()->perfCounterLayer->rawStallPerfTap->io_isNeedStallOnlyWBU;
-  hIsIDUStall = &GetIDU()->perfCounterLayer->rawStallPerfTap->io_isAnyStall;
+  hIsIDUStall = &GetIDU()->perfCounterLayer->rawStallPerfTap->io_finalStallAny;
+#define BIND_TAP(name, member)                                                 \
+  member = &GetIDU()->perfCounterLayer->rawStallPerfTap->io_##name
+  BIND_TAP(countEnable, hCountEnable);
+  BIND_TAP(finalStallEXU, hFinalStallEXU);
+  BIND_TAP(finalStallLSU, hFinalStallLSU);
+  BIND_TAP(finalStallWBU, hFinalStallWBU);
+  BIND_TAP(finalStallAGENEXU, hFinalStallAGENEXU);
+  BIND_TAP(finalStallAGENWBU, hFinalStallAGENWBU);
+  BIND_TAP(finalStallCSR, hFinalStallCSR);
+  BIND_TAP(finalStallOther, hFinalStallOther);
+  BIND_TAP(cacheableLoad, hCacheableLoad);
+  BIND_TAP(cacheableLoadHit, hCacheableLoadHit);
+  BIND_TAP(cacheableLoadMiss, hCacheableLoadMiss);
+  BIND_TAP(immediateRs1, hImmediateRs1);
+  BIND_TAP(immediateRs2, hImmediateRs2);
+  BIND_TAP(addressConsumer, hAddressConsumer);
+  BIND_TAP(mul, hMul);
+  BIND_TAP(mulh, hMulh);
+  BIND_TAP(mulhu, hMulhu);
+  BIND_TAP(mulhsu, hMulhsu);
+  BIND_TAP(mulIssued, hMulIssued);
+  BIND_TAP(mulhIssued, hMulhIssued);
+  BIND_TAP(mulhuIssued, hMulhuIssued);
+  BIND_TAP(mulhsuIssued, hMulhsuIssued);
+#undef BIND_TAP
 }
 IDUFlushPerfCounter::IDUFlushReason IDUFlushPerfCounter::getCurReason() const {
   auto &exu = *GetEXU();
@@ -341,7 +389,16 @@ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(RAWStallPerfCounter, cycAnyConflict,
                                    cycConflictOnlyWBU, cycIDUStall,
                                    cycStallEXU, cycStallLSU, cycStallWBU,
                                    cycStallOnlyEXU, cycStallOnlyLSU,
-                                   cycStallOnlyWBU)
+                                   cycStallOnlyWBU, cycFinalStallEXU,
+                                   cycFinalStallLSU, cycFinalStallWBU,
+                                   cycFinalStallAGENEXU, cycFinalStallAGENWBU,
+                                   cycFinalStallCSR, cycFinalStallOther,
+                                   cacheableLoads, cacheableLoadHits,
+                                   cacheableLoadMisses, immediateRs1Consumers,
+                                   immediateRs2Consumers, addressConsumers,
+                                   mulCycles, mulhCycles, mulhuCycles,
+                                   mulhsuCycles, mulCount, mulhCount,
+                                   mulhuCount, mulhsuCount)
 
 void to_json(nlohmann::json &j, const IDUFlushPerfCounter &c) {
   j["ctrName"] = c.ctrName;

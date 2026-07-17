@@ -21,6 +21,7 @@ object Elaborate extends App {
   )
 
   val designName = "jyd"
+  val dcacheWords = sys.env.get("JYD_DCACHE_WORDS").fold(512)(_.toInt)
 
   def emit(gen: => chisel3.RawModule, emitDir: String) = {
     println(s"Emitting Verilog... to $emitDir")
@@ -43,6 +44,7 @@ object Elaborate extends App {
       CPUParameters(
         gprAddrWidth = 5,
         enableDCache = true,
+        dcacheWords = dcacheWords,
         skipDifftestAddrs = jyd.AddrSpace.needSkipDifftestGroup
       )
     ),

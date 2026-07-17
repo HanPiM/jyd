@@ -136,17 +136,21 @@ object CacheAwareByPassMux {
     regData:    UInt,
     wrBacks:    Seq[WrBackForwardInfo],
     dcacheFwd:  DCacheForwardInfo,
-    allowCache: Bool
+    allowCache: Bool,
+    exuLateLoad: DCacheForwardInfo,
+    allowLateLoad: Bool
   ): (Bool, UInt) = {
     require(wrBacks.length == 3)
     val exuConflict = SingleByPassMux.conflict(rs, wrBacks(0).addr, wrBacks(0).enWr)
     val lsuConflict = SingleByPassMux.conflict(rs, wrBacks(1).addr, wrBacks(1).enWr)
     val wbuConflict = SingleByPassMux.conflict(rs, wrBacks(2).addr, wrBacks(2).enWr)
-    val cacheSelect = allowCache && SingleByPassMux.conflict(rs, dcacheFwd.addr, dcacheFwd.valid) && !exuConflict
+    val cacheSelect =
+      allowCache && SingleByPassMux.conflict(rs, dcacheFwd.addr, dcacheFwd.valid) && !exuConflict
+    val lateLoadSelect = allowLateLoad && SingleByPassMux.conflict(rs, exuLateLoad.addr, exuLateLoad.valid)
 
     val needStall = Mux(
       exuConflict,
-      !wrBacks(0).dataVaild,
+      !wrBacks(0).dataVaild && !lateLoadSelect,
       Mux(lsuConflict, !wrBacks(1).dataVaild && !cacheSelect, wbuConflict && !wrBacks(2).dataVaild)
     )
 
@@ -176,7 +180,10 @@ class ByPassMux(
 
     val wrBackInfo = Input(new WrBackInfoGroup)
     val dcacheFwd  = Input(new DCacheForwardInfo)
+    val exuLateLoad = Input(new DCacheForwardInfo)
     val allowCacheRs1 = Input(Bool())
+    val allowLateLoadRs1 = Input(Bool())
+    val allowLateLoadRs2 = Input(Bool())
     val needStall  = Output(Bool())
 
     val outData1 = Output(Types.UWord)
@@ -186,8 +193,12 @@ class ByPassMux(
   val wrBacks    = Seq(io.wrBackInfo.exu, io.wrBackInfo.lsu, io.wrBackInfo.wbu)
   val csrWrBacks = Seq(io.wrBackInfo.exu, io.wrBackInfo.lsu, io.wrBackInfo.wbu)
 
-  val (needStall1, outData1) = CacheAwareByPassMux(io.rs1, io.regData1, wrBacks, io.dcacheFwd, io.allowCacheRs1)
-  val (needStall2, outData2) = CacheAwareByPassMux(io.rs2, io.regData2, wrBacks, io.dcacheFwd, true.B)
+  val (needStall1, outData1) = CacheAwareByPassMux(
+    io.rs1, io.regData1, wrBacks, io.dcacheFwd, io.allowCacheRs1, io.exuLateLoad, io.allowLateLoadRs1
+  )
+  val (needStall2, outData2) = CacheAwareByPassMux(
+    io.rs2, io.regData2, wrBacks, io.dcacheFwd, true.B, io.exuLateLoad, io.allowLateLoadRs2
+  )
 
   val needStallCSR = CSRByPassNeedStall(csrWrBacks)
 
@@ -212,8 +223,11 @@ class IDU(
 
     val wrBackInfo           = Input(new WrBackInfoGroup)
     val dcacheFwd            = Input(new DCacheForwardInfo)
+    val exuLateLoad          = Input(new DCacheForwardInfo)
     val exuAddFwd            = Input(new AddForwardInfo)
     val reg1AddImmWbuRawInfo = Input(new WrBackForwardInfo)
+    val perfDCacheLoadValid  = Input(Bool())
+    val perfDCacheLoadHit    = Input(Bool())
 
     val out = Decoupled(new DecodedInst)
   })
@@ -241,6 +255,7 @@ class IDU(
   val isTypLUI    = InstType.hasSame(res.typ, InstType.lui)
   val isTypAUIPC  = InstType.hasSame(res.typ, InstType.auipc)
   val isTypSys    = InstType.hasSame(res.typ, InstType.system)
+  val isTypArithmetic = InstType.hasSame(res.typ, InstType.arithmetic)
 
   val isFmtI = InstFmt.hasSame(res.fmt, InstFmt.imm)
   val isFmtU = InstFmt.hasSame(res.fmt, InstFmt.upper)
@@ -289,7 +304,22 @@ class IDU(
   bypassMux.io.wrBackInfo := io.wrBackInfo
   val needReg1AddImm = isTypLoad || isTypStore || isTypJALR
   bypassMux.io.dcacheFwd := io.dcacheFwd
+  bypassMux.io.exuLateLoad := io.exuLateLoad
   bypassMux.io.allowCacheRs1 := !needReg1AddImm
+  // Late load data is consumed only after the IDU/EXU register. Address and
+  // other IDU-precomputed paths deliberately retain the ordinary RAW stall.
+  val isMExtension = inst(6, 0) === "b0110011".U && inst(31, 25) === "b0000001".U
+  val isLateLoadAdd = isTypArithmetic && inst(14, 12) === 0.U && (isFmtI || inst(31, 25) === 0.U)
+  // Branch operands feed redirect/PC control in the same cycle. Keeping them
+  // on the ordinary RAW stall avoids a DCache -> compare -> PC critical path.
+  val allowLateLoadRs1 = isLateLoadAdd
+  val allowLateLoadRs2 = !isFmtI && isLateLoadAdd
+  bypassMux.io.allowLateLoadRs1 := allowLateLoadRs1
+  bypassMux.io.allowLateLoadRs2 := allowLateLoadRs2
+  res.lateLoadRs1 := allowLateLoadRs1 &&
+    SingleByPassMux.conflict(res.rs1, io.exuLateLoad.addr, io.exuLateLoad.valid)
+  res.lateLoadRs2 := allowLateLoadRs2 &&
+    SingleByPassMux.conflict(res.rs2, io.exuLateLoad.addr, io.exuLateLoad.valid)
   res.reg1                := bypassMux.io.outData1
   res.reg2                := Mux(isFmtI, immI, bypassMux.io.outData2) // For exu ALU src2
   res.csrReadData         := io.csrRead.data
@@ -312,6 +342,34 @@ class IDU(
     rawStallPerfTap.io.rs1        := res.rs1
     rawStallPerfTap.io.rs2        := res.rs2
     rawStallPerfTap.io.wrBackInfo := io.wrBackInfo
+    rawStallPerfTap.io.instValid := io.in.valid
+    rawStallPerfTap.io.instFire := io.in.fire
+    rawStallPerfTap.io.pipelineFlush := io.pipelineFlush
+    rawStallPerfTap.io.finalNeedStall := needStall
+    rawStallPerfTap.io.stallEXU := bypassMux.io.needStall &&
+      (SingleByPassMux.conflict(res.rs1, io.wrBackInfo.exu.addr, io.wrBackInfo.exu.enWr) ||
+        SingleByPassMux.conflict(res.rs2, io.wrBackInfo.exu.addr, io.wrBackInfo.exu.enWr))
+    rawStallPerfTap.io.stallLSU := bypassMux.io.needStall &&
+      (SingleByPassMux.conflict(res.rs1, io.wrBackInfo.lsu.addr, io.wrBackInfo.lsu.enWr) ||
+        SingleByPassMux.conflict(res.rs2, io.wrBackInfo.lsu.addr, io.wrBackInfo.lsu.enWr))
+    rawStallPerfTap.io.stallWBU := bypassMux.io.needStall &&
+      (SingleByPassMux.conflict(res.rs1, io.wrBackInfo.wbu.addr, io.wrBackInfo.wbu.enWr) ||
+        SingleByPassMux.conflict(res.rs2, io.wrBackInfo.wbu.addr, io.wrBackInfo.wbu.enWr))
+    rawStallPerfTap.io.stallAGENEXU := needStallReg1AddImmFromEXU
+    rawStallPerfTap.io.stallAGENWBU := needStallReg1AddImmFromWBU
+    rawStallPerfTap.io.stallCSR := bypassMux.io.needStall &&
+      (io.wrBackInfo.exu.enWrCSR || io.wrBackInfo.lsu.enWrCSR || io.wrBackInfo.wbu.enWrCSR)
+    rawStallPerfTap.io.dcacheLoadValid := io.perfDCacheLoadValid
+    rawStallPerfTap.io.dcacheLoadHit := io.perfDCacheLoadHit
+    val immediateRs1 = SingleByPassMux.conflict(res.rs1, io.dcacheFwd.addr, io.dcacheFwd.valid)
+    val immediateRs2 = SingleByPassMux.conflict(res.rs2, io.dcacheFwd.addr, io.dcacheFwd.valid)
+    rawStallPerfTap.io.dcacheImmediateRs1 := immediateRs1
+    rawStallPerfTap.io.dcacheImmediateRs2 := immediateRs2
+    rawStallPerfTap.io.dcacheAddressConsumer := immediateRs1 && needReg1AddImm
+    rawStallPerfTap.io.isMul    := isMExtension && inst(14, 12) === "b000".U
+    rawStallPerfTap.io.isMulh   := isMExtension && inst(14, 12) === "b001".U
+    rawStallPerfTap.io.isMulhsu := isMExtension && inst(14, 12) === "b010".U
+    rawStallPerfTap.io.isMulhu  := isMExtension && inst(14, 12) === "b011".U
   }
 
   // res.snpc       := io.in.bits.pc + 4.U

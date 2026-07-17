@@ -276,6 +276,14 @@ struct RAWStallPerfCounter : public PerfCounterBase {
   SignalHandle hIsStallOnlyLSU;
   SignalHandle hIsStallOnlyWBU;
   SignalHandle hIsIDUStall;
+  SignalHandle hCountEnable;
+  SignalHandle hFinalStallEXU, hFinalStallLSU, hFinalStallWBU;
+  SignalHandle hFinalStallAGENEXU, hFinalStallAGENWBU, hFinalStallCSR;
+  SignalHandle hFinalStallOther;
+  SignalHandle hCacheableLoad, hCacheableLoadHit, hCacheableLoadMiss;
+  SignalHandle hImmediateRs1, hImmediateRs2, hAddressConsumer;
+  SignalHandle hMul, hMulh, hMulhu, hMulhsu;
+  SignalHandle hMulIssued, hMulhIssued, hMulhuIssued, hMulhsuIssued;
 
   size_t cycAnyConflict = 0;
   size_t cycAllConflictEXU = 0;
@@ -295,6 +303,14 @@ struct RAWStallPerfCounter : public PerfCounterBase {
   size_t cycStallOnlyEXU = 0;
   size_t cycStallOnlyLSU = 0;
   size_t cycStallOnlyWBU = 0;
+  size_t cycFinalStallEXU = 0, cycFinalStallLSU = 0, cycFinalStallWBU = 0;
+  size_t cycFinalStallAGENEXU = 0, cycFinalStallAGENWBU = 0;
+  size_t cycFinalStallCSR = 0, cycFinalStallOther = 0;
+  size_t cacheableLoads = 0, cacheableLoadHits = 0, cacheableLoadMisses = 0;
+  size_t immediateRs1Consumers = 0, immediateRs2Consumers = 0;
+  size_t addressConsumers = 0;
+  size_t mulCycles = 0, mulhCycles = 0, mulhuCycles = 0, mulhsuCycles = 0;
+  size_t mulCount = 0, mulhCount = 0, mulhuCount = 0, mulhsuCount = 0;
 
   RAWStallPerfCounter() { ctrName = "RAWStallPerfCounter"; }
 

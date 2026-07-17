@@ -58,6 +58,7 @@ object AddrSpace {
 case class CPUParameters(
   gprAddrWidth:      Int = 4,
   enableDCache:      Boolean = false,
+  dcacheWords:       Int = 512,
   skipDifftestAddrs: Seq[(UInt, UInt)] = AddrSpace.needSkipDifftestGroup
 ) {
   def GPRAddr = UInt(gprAddrWidth.W)
@@ -177,6 +178,8 @@ class DecodedInstInfo(implicit p : CPUParameters) extends InstMetaInfo with HasR
 
   val pcAddImm = Types.UWord
   val reg1AddImm = Types.UWord
+  val lateLoadRs1 = Bool()
+  val lateLoadRs2 = Bool()
 
   val isECall = Bool()
   val isMRet  = Bool()

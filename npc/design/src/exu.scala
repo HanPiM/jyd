@@ -121,6 +121,8 @@ class EXU(
       val storeData   = Output(Types.UWord)
       val storeMask   = Output(UInt(4.W))
     }
+    val lateLoad = Output(new DCacheForwardInfo)
+    val lateLoadData = Input(Types.UWord)
 
     val memReq = Decoupled(new MemReq)
     val out    = Decoupled(new LSUInput)
@@ -150,8 +152,12 @@ class EXU(
 
   alu.io.in.valid := io.in.valid && isTypArithmetic
 
-  val reg_v1     = dinst.info.reg1
-  val reg_v2     = dinst.info.reg2
+  // Late-load bypass is limited to consumers that finish in this cycle, so
+  // the synchronous DCache output never has to be retained across an EXU
+  // stall. In particular, keeping this mux out of the multi-cycle M units
+  // avoids a DCache -> M result -> EXU forward -> IDU payload timing path.
+  val reg_v1 = Mux(dinst.info.lateLoadRs1, io.lateLoadData, dinst.info.reg1)
+  val reg_v2 = Mux(dinst.info.lateLoadRs2, io.lateLoadData, dinst.info.reg2)
   // val pcAddImm   = dinst.pc + dinst.info.imm
   val pcAddImm   = dinst.info.pcAddImm
   val reg1AddImm = dinst.info.reg1AddImm
@@ -159,14 +165,22 @@ class EXU(
   io.branchTarget   := pcAddImm
   io.branchBackward := dinst.info.imm(31)
 
-  alu_in.src1   := reg_v1
+  // Keep the existing multi-cycle ALU operand/ready network independent of
+  // the synchronous DCache output. A compact duplicate below computes only
+  // the single-cycle late-load case.
+  alu_in.src1   := dinst.info.reg1
   // alu_in.src2   := Mux(isFmtI, dinst.info.imm, reg_v2)
-  alu_in.src2   := reg_v2
+  alu_in.src2   := dinst.info.reg2
   alu_in.is_imm := isFmtI
   alu_in.func3t := func3t
   alu_in.func7t := func7t
 
   val aluOut = alu.io.out.bits
+  // IDU only marks ADD/ADDI consumers for late-load execution, so this
+  // duplicate data path is a single adder rather than a second full ALU.
+  val lateArithmeticOut = reg_v1 + reg_v2
+  val hasLateLoadOperand = dinst.info.lateLoadRs1 || dinst.info.lateLoadRs2
+  val arithmeticOut = Mux(hasLateLoadOperand, lateArithmeticOut, aluOut)
 
   // --- CSR ---
   val is_mret  = dinst.info.isMRet
@@ -200,7 +214,7 @@ class EXU(
     val isRS = func3t(1, 0) === CSROp.RS
     val isRC = func3t(1, 0) === CSROp.RC
 
-    val csrOpMask = Mux(func3t(2), csrUIMM, reg_v1)
+    val csrOpMask = Mux(func3t(2), csrUIMM, dinst.info.reg1)
 
     when(is_ecall) {
       csrWrAddr := CSRAddr.mepc
@@ -230,9 +244,12 @@ class EXU(
 
   val isFmtB = InstFmt.hasSame(dinst.info.fmt, InstFmt.branch)
 
-  val isEqual     = reg_v1 === reg_v2
-  val isLessThan  = reg_v1.asSInt < reg_v2.asSInt
-  val isLessThanU = reg_v1 < reg_v2
+  // Late-load data is only valid for arithmetic consumers. Keep it out of
+  // branch redirect logic so the DCache output cannot become a PC control
+  // path even when synthesis shares the operand network.
+  val isEqual     = dinst.info.reg1 === dinst.info.reg2
+  val isLessThan  = dinst.info.reg1.asSInt < dinst.info.reg2.asSInt
+  val isLessThanU = dinst.info.reg1 < dinst.info.reg2
 
   // val isEqual = dinst.info.isEqual
   // val isLessThan = dinst.info.isLessThan
@@ -275,7 +292,7 @@ class EXU(
   //   )
   // )
 
-  writeBackInfo.gpr.data := Mux(isTypArithmetic, aluOut, dinst.info.preMuxWrBackData)
+  writeBackInfo.gpr.data := Mux(isTypArithmetic, arithmeticOut, dinst.info.preMuxWrBackData)
 
   // Fill in LSU stage
   writeBackInfo.isLoad        := false.B
@@ -293,7 +310,10 @@ class EXU(
   io.fwd := WrBackForwardInfo(io.in.valid, dinst, !isMemOP && exuResultValid, writeBackInfo.gpr.data, csrWrEnable)
   io.addFwd.valid := io.in.valid && dinst.info.rdWrEn && dinst.info.rd =/= 0.U && isAdd
   io.addFwd.addr  := dinst.info.rd
-  io.addFwd.data  := alu.io.addResult
+  io.addFwd.data  := Mux(hasLateLoadOperand, lateArithmeticOut, alu.io.addResult)
+  io.lateLoad.valid := io.in.valid && lsuInfo.dcacheHit && dinst.info.rdWrEn && dinst.info.rd =/= 0.U
+  io.lateLoad.addr  := dinst.info.rd
+  io.lateLoad.data  := DontCare
 
   val memWMask = GenMemWMask(reg1AddImm(1, 0), func3t)
 
@@ -306,9 +326,9 @@ class EXU(
     }
   }
 
-  val memWData = GenMemWData(reg1AddImm(1, 0), reg_v2)
+  val memWData = GenMemWData(reg1AddImm(1, 0), dinst.info.reg2)
 
-  io.dcache.queryAddr  := reg1AddImm
+  io.dcache.queryAddr := reg1AddImm
   val cacheableStore = isTypStore && reg1AddImm(21, 20) === "b01".U
   val cacheableStoreFire = memReqFire && cacheableStore
   val fullWordStore = memWMask === "b1111".U

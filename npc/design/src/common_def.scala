@@ -178,6 +178,12 @@ class DecodedInstInfo(implicit p : CPUParameters) extends InstMetaInfo with HasR
   val pcAddImm = Types.UWord
   val reg1AddImm = Types.UWord
 
+  // A dependent ADD/ADDI may enter EXU before an LW result is available.
+  // EXU resolves these operands from the registered LSU/WBU producer stages
+  // and holds the instruction until the data is valid.
+  val lateLoadRs1 = Bool()
+  val lateLoadRs2 = Bool()
+
   val isECall = Bool()
   val isMRet  = Bool()
 

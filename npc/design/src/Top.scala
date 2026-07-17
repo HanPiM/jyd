@@ -244,7 +244,10 @@ class CPUCore(
 
   val btb = Module(new BranchTargetBuffer)
   val bp  = Module(new BranchPredictor)
-  btb.io.query.addr       := pc
+  // A pending redirect is a registered PC mailbox. Query prediction state
+  // with the address actually presented to IFU, not the speculative pcReg
+  // hidden behind the mailbox.
+  btb.io.query.addr       := pcFeedToIFU
   bp.io.pc                := pcFeedToIFU
   bp.io.historyHit        := btb.io.query.hit
   bp.io.historyTarget     := btb.io.query.target
@@ -279,15 +282,15 @@ class CPUCore(
   activeRedirectValid := redirectNow || redirectPendingReg
   dontTouch(activeRedirectValid)
 
+  // redirectNow still flushes younger instructions in the resolving cycle,
+  // while the registered mailbox presents its target to IFU in the next
+  // cycle. This is the same earliest visible target cycle as writing pc here,
+  // but removes the branch comparator from pcReg's clock-enable path.
   pc := TrimmedPC.expand(
-    Mux(
-      redirectNow,
-      TrimmedPC.trim(redirectNowTarget),
-      Mux(ifu.io.pc.ready, TrimmedPC.trim(nxtPredictedPC), TrimmedPC.trim(pc))
-    )
+    Mux(ifu.io.pc.ready, TrimmedPC.trim(nxtPredictedPC), TrimmedPC.trim(pc))
   )
 
-  pcFeedToIFU := pc
+  pcFeedToIFU := Mux(redirectPendingReg, redirectTargetReg, pc)
 
   io.irom <> ifu.io.mem
   io.dram <> dataMemBus.io.out
@@ -295,6 +298,7 @@ class CPUCore(
   wbu.io.memResp <> dataMemBus.io.memResp
   dcache.io.queryAddr  := exu.io.dcache.queryAddr
   exu.io.dcache.hit    := dcache.io.hit && p.enableDCache.B
+  exu.io.dcache.lateReadData := dcache.io.lateReadData
   val dcacheStoreEpoch = RegInit(0.U(8.W))
   when((exu.io.dcache.invalidate || exu.io.dcache.storeUpdate) && p.enableDCache.B) {
     dcacheStoreEpoch := dcacheStoreEpoch + 1.U
@@ -358,11 +362,28 @@ class CPUCore(
   wbuRawFwdInfo.data      := wbu.io.in.bits.gpr.data
   wbuRawFwdInfo.enWrCSR   := false.B
   idu.io.wrBackInfo.exu := exu.io.fwd
+  idu.io.lateLoadProducer := exu.io.lateLoadProducer
+  idu.io.lateAddFwd := exu.io.lateAddFwd
   idu.io.exuAddFwd := exu.io.addFwd
   idu.io.wrBackInfo.lsu := lsuFwdInfo
   idu.io.wrBackInfo.wbu := ExtractFwdInfoFromWrBack(wbu.io.in, wbu.io.memResp)
   idu.io.dcacheFwd := dcacheFwdInfo
   idu.io.reg1AddImmWbuRawInfo := wbuRawFwdInfo
+
+  val lateLoadLSUIsLw =
+    lsu.io.in.valid && lsu.io.in.bits.isLoad && lsu.io.in.bits.func3t === "b010".U
+  exu.io.lateLoadLSU.valid := lateLoadLSUIsLw
+  exu.io.lateLoadLSU.dataValid := lateLoadLSUIsLw && lsu.io.in.bits.cacheableLw && lsu.io.in.bits.dcacheHit
+  // lateLoadData was sampled from the asynchronous shadow in C0 and crossed
+  // the existing EXU-to-LSU pipeline register.  Do not reconnect the C1
+  // consumer directly to either the shadow output or the synchronous BRAM.
+  exu.io.lateLoadLSU.data := lsu.io.in.bits.lateLoadData
+
+  val lateLoadWBUIsLw =
+    wbu.io.in.valid && wbu.io.in.bits.isLoad && wbu.io.in.bits.lsuFunc3t === "b010".U
+  exu.io.lateLoadWBU.valid := lateLoadWBUIsLw
+  exu.io.lateLoadWBU.dataValid := lateLoadWBUIsLw && wbu.io.memResp.valid
+  exu.io.lateLoadWBU.data := wbu.io.memResp.bits
 
   idu.io.pipelineFlush := activeRedirectValid
 

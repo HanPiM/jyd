@@ -102,6 +102,25 @@ class AddForwardInfo(
   val data  = Types.UWord
 }
 
+class LateLoadProducerInfo(
+  implicit p: CPUParameters)
+    extends Bundle {
+  val valid = Bool()
+}
+
+class LateLoadSourceInfo(
+  implicit p: CPUParameters)
+    extends Bundle {
+  val valid     = Bool()
+  val dataValid = Bool()
+  val data      = Types.UWord
+}
+
+class LateAddForwardInfo extends Bundle {
+  val valid = Bool()
+  val data  = Types.UWord
+}
+
 object SingleByPassMux {
   def conflict(rs: UInt, rd: UInt, en: Bool): Bool = (rs === rd) && (rd =/= 0.U) && en
   def apply(
@@ -136,26 +155,36 @@ object CacheAwareByPassMux {
     regData:    UInt,
     wrBacks:    Seq[WrBackForwardInfo],
     dcacheFwd:  DCacheForwardInfo,
-    allowCache: Bool
-  ): (Bool, UInt) = {
+    allowCache: Bool,
+    lateLoadProducer: LateLoadProducerInfo,
+    allowLateLoad: Bool,
+    lateAddFwd: LateAddForwardInfo
+  ): (Bool, UInt, Bool) = {
     require(wrBacks.length == 3)
     val exuConflict = SingleByPassMux.conflict(rs, wrBacks(0).addr, wrBacks(0).enWr)
     val lsuConflict = SingleByPassMux.conflict(rs, wrBacks(1).addr, wrBacks(1).enWr)
     val wbuConflict = SingleByPassMux.conflict(rs, wrBacks(2).addr, wrBacks(2).enWr)
     val cacheSelect = allowCache && SingleByPassMux.conflict(rs, dcacheFwd.addr, dcacheFwd.valid) && !exuConflict
+    // This exception is independent of the combinational DCache hit result.
+    // The dependent ADD/ADDI is held in EXU if the registered LSU source later
+    // reports a miss.
+    val lateLoadSelect = allowLateLoad && exuConflict && lateLoadProducer.valid
+    // Sequential single issue makes exuConflict identify the producer; the
+    // dedicated late-add result therefore needs no second rd comparison.
+    val lateAddSelect = exuConflict && lateAddFwd.valid
 
     val needStall = Mux(
       exuConflict,
-      !wrBacks(0).dataVaild,
+      !wrBacks(0).dataVaild && !lateLoadSelect && !lateAddSelect,
       Mux(lsuConflict, !wrBacks(1).dataVaild && !cacheSelect, wbuConflict && !wrBacks(2).dataVaild)
     )
 
     val normalData = Mux(
       exuConflict,
-      wrBacks(0).data,
+      Mux(lateAddSelect, lateAddFwd.data, wrBacks(0).data),
       Mux(lsuConflict, wrBacks(1).data, Mux(wbuConflict, wrBacks(2).data, regData))
     )
-    (needStall, Mux(cacheSelect, dcacheFwd.data, normalData))
+    (needStall, Mux(cacheSelect, dcacheFwd.data, normalData), lateLoadSelect)
   }
 }
 
@@ -176,8 +205,14 @@ class ByPassMux(
 
     val wrBackInfo = Input(new WrBackInfoGroup)
     val dcacheFwd  = Input(new DCacheForwardInfo)
+    val lateLoadProducer = Input(new LateLoadProducerInfo)
+    val lateAddFwd       = Input(new LateAddForwardInfo)
     val allowCacheRs1 = Input(Bool())
+    val allowLateLoadRs1 = Input(Bool())
+    val allowLateLoadRs2 = Input(Bool())
     val needStall  = Output(Bool())
+    val lateLoadRs1 = Output(Bool())
+    val lateLoadRs2 = Output(Bool())
 
     val outData1 = Output(Types.UWord)
     val outData2 = Output(Types.UWord)
@@ -186,12 +221,32 @@ class ByPassMux(
   val wrBacks    = Seq(io.wrBackInfo.exu, io.wrBackInfo.lsu, io.wrBackInfo.wbu)
   val csrWrBacks = Seq(io.wrBackInfo.exu, io.wrBackInfo.lsu, io.wrBackInfo.wbu)
 
-  val (needStall1, outData1) = CacheAwareByPassMux(io.rs1, io.regData1, wrBacks, io.dcacheFwd, io.allowCacheRs1)
-  val (needStall2, outData2) = CacheAwareByPassMux(io.rs2, io.regData2, wrBacks, io.dcacheFwd, true.B)
+  val (needStall1, outData1, lateLoadRs1) = CacheAwareByPassMux(
+    io.rs1,
+    io.regData1,
+    wrBacks,
+    io.dcacheFwd,
+    io.allowCacheRs1,
+    io.lateLoadProducer,
+    io.allowLateLoadRs1,
+    io.lateAddFwd
+  )
+  val (needStall2, outData2, lateLoadRs2) = CacheAwareByPassMux(
+    io.rs2,
+    io.regData2,
+    wrBacks,
+    io.dcacheFwd,
+    true.B,
+    io.lateLoadProducer,
+    io.allowLateLoadRs2,
+    io.lateAddFwd
+  )
 
   val needStallCSR = CSRByPassNeedStall(csrWrBacks)
 
   io.needStall := needStall1 || needStall2 || needStallCSR
+  io.lateLoadRs1 := lateLoadRs1
+  io.lateLoadRs2 := lateLoadRs2
   io.outData1  := outData1
   io.outData2  := outData2
 }
@@ -212,6 +267,8 @@ class IDU(
 
     val wrBackInfo           = Input(new WrBackInfoGroup)
     val dcacheFwd            = Input(new DCacheForwardInfo)
+    val lateLoadProducer     = Input(new LateLoadProducerInfo)
+    val lateAddFwd           = Input(new LateAddForwardInfo)
     val exuAddFwd            = Input(new AddForwardInfo)
     val reg1AddImmWbuRawInfo = Input(new WrBackForwardInfo)
 
@@ -241,6 +298,7 @@ class IDU(
   val isTypLUI    = InstType.hasSame(res.typ, InstType.lui)
   val isTypAUIPC  = InstType.hasSame(res.typ, InstType.auipc)
   val isTypSys    = InstType.hasSame(res.typ, InstType.system)
+  val isTypArithmetic = InstType.hasSame(res.typ, InstType.arithmetic)
 
   val isFmtI = InstFmt.hasSame(res.fmt, InstFmt.imm)
   val isFmtU = InstFmt.hasSame(res.fmt, InstFmt.upper)
@@ -289,7 +347,19 @@ class IDU(
   bypassMux.io.wrBackInfo := io.wrBackInfo
   val needReg1AddImm = isTypLoad || isTypStore || isTypJALR
   bypassMux.io.dcacheFwd := io.dcacheFwd
+  bypassMux.io.lateLoadProducer := io.lateLoadProducer
+  bypassMux.io.lateAddFwd       := io.lateAddFwd
   bypassMux.io.allowCacheRs1 := !needReg1AddImm
+  // Only the dedicated single-cycle ADD/ADDI result path may consume a load
+  // whose hit/miss is not known in IDU. Address generation, branches, CSR and
+  // multi-cycle arithmetic retain the normal RAW stall behavior.
+  val isLateLoadAdd = isTypArithmetic && inst(14, 12) === 0.U && (isFmtI || inst(31, 25) === 0.U)
+  val allowLateLoadRs1 = isLateLoadAdd
+  val allowLateLoadRs2 = isLateLoadAdd && !isFmtI
+  bypassMux.io.allowLateLoadRs1 := allowLateLoadRs1
+  bypassMux.io.allowLateLoadRs2 := allowLateLoadRs2
+  res.lateLoadRs1 := bypassMux.io.lateLoadRs1
+  res.lateLoadRs2 := bypassMux.io.lateLoadRs2
   res.reg1                := bypassMux.io.outData1
   res.reg2                := Mux(isFmtI, immI, bypassMux.io.outData2) // For exu ALU src2
   res.csrReadData         := io.csrRead.data

@@ -288,6 +288,7 @@ class ALU extends Module {
     val in        = Flipped(Decoupled(new ALUInput))
     val out       = Decoupled(Types.UWord)
     val addResult = Output(Types.UWord)
+    val singleCycleResult = Output(Types.UWord)
   })
 
   // alias
@@ -349,6 +350,7 @@ class ALU extends Module {
       7.U -> logic_and     // 111: and/andi
     )
   )
+  io.singleCycleResult := aluResult
 
   val isMExt = !inbits.is_imm && inbits.func7t(0)
 

@@ -9,6 +9,7 @@ class DCache extends Module {
     val queryAddr = Input(UInt(32.W))
     val hit       = Output(Bool())
     val readData  = Output(UInt(32.W))
+    val lateReadData = Output(UInt(32.W))
 
     val invalidate = Input(Bool())
     val storeUpdate = Input(Bool())
@@ -22,6 +23,11 @@ class DCache extends Module {
 
   val dataMem = Module(new BlkMemGen2KB)
   val tagMem  = Module(new DistMemGen512x8)
+  // The normal LSU/WBU path keeps using the synchronous BRAM.  Four byte-wide
+  // distributed memories mirror its writes and provide an asynchronous C0
+  // lookup for the narrow late-load path.  EXU captures this value in its
+  // registered LSU payload; it is never consumed directly by the C1 adder.
+  val lateDataMem = Seq.fill(4)(Module(new DistMemGen512x8))
 
   val queryIndex = io.queryAddr(10, 2)
   val queryTag   = io.queryAddr(17, 11)
@@ -35,6 +41,11 @@ class DCache extends Module {
   dataMem.io.addrb := queryIndex
   io.readData      := dataMem.io.doutb
 
+  lateDataMem.foreach { bank =>
+    bank.io.dpra := queryIndex
+  }
+  io.lateReadData := Cat(lateDataMem.reverse.map(_.io.dpo))
+
   // A younger store invalidation wins over an older WBU refill/update.
   tagMem.io.clk := clock
   val queryTagData = Cat(queryTag, 1.U(1.W))
@@ -45,8 +56,18 @@ class DCache extends Module {
 
   dataMem.io.clka  := clock
   val dataWrite = io.storeUpdate || io.update
+  val dataWriteMask = Mux(io.storeUpdate, io.storeMask, Mux(io.update, io.updateMask, 0.U))
+  val dataWriteAddr = Mux(io.storeUpdate, queryIndex, io.updateAddr(10, 2))
+  val dataWriteData = Mux(io.storeUpdate, io.storeData, io.updateData)
   dataMem.io.ena   := dataWrite
-  dataMem.io.wea   := Mux(io.storeUpdate, io.storeMask, Mux(io.update, io.updateMask, 0.U))
-  dataMem.io.addra := Mux(io.storeUpdate, queryIndex, io.updateAddr(10, 2))
-  dataMem.io.dina  := Mux(io.storeUpdate, io.storeData, io.updateData)
+  dataMem.io.wea   := dataWriteMask
+  dataMem.io.addra := dataWriteAddr
+  dataMem.io.dina  := dataWriteData
+
+  lateDataMem.zipWithIndex.foreach { case (bank, byte) =>
+    bank.io.clk := clock
+    bank.io.we  := dataWrite && dataWriteMask(byte)
+    bank.io.a   := dataWriteAddr
+    bank.io.d   := dataWriteData(8 * byte + 7, 8 * byte)
+  }
 }

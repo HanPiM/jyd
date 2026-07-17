@@ -111,9 +111,14 @@ class EXU(
 
     val fwd = Output(new WrBackForwardInfo)
     val addFwd = Output(new AddForwardInfo)
+    val lateLoadProducer = Output(new LateLoadProducerInfo)
+    val lateLoadLSU = Input(new LateLoadSourceInfo)
+    val lateLoadWBU = Input(new LateLoadSourceInfo)
+    val lateAddFwd = Output(new LateAddForwardInfo)
 
     val dcache = new Bundle {
       val hit        = Input(Bool())
+      val lateReadData = Input(Types.UWord)
       val storeEpoch = Input(UInt(8.W))
       val queryAddr  = Output(Types.UWord)
       val invalidate = Output(Bool())
@@ -150,8 +155,30 @@ class EXU(
 
   alu.io.in.valid := io.in.valid && isTypArithmetic
 
-  val reg_v1     = dinst.info.reg1
-  val reg_v2     = dinst.info.reg2
+  // A late-load operand first looks at LSU. This priority is required when an
+  // older WBU instruction happens to target the same register. A miss keeps
+  // the LSU match selected but not ready; the existing IDU/EXU payload
+  // register then holds the consumer until its producer reaches WBU.
+  def resolveLateLoadOperand(late: Bool, normalData: UInt): (Bool, UInt) = {
+    val lsuMatch = late && io.lateLoadLSU.valid
+    val wbuMatch = late && !lsuMatch && io.lateLoadWBU.valid
+    val ready = !late || (lsuMatch && io.lateLoadLSU.dataValid) || (wbuMatch && io.lateLoadWBU.dataValid)
+    val data = Mux(lsuMatch, io.lateLoadLSU.data, Mux(wbuMatch, io.lateLoadWBU.data, normalData))
+    (ready, data)
+  }
+
+  val (lateRs1Ready, lateRegV1) =
+    resolveLateLoadOperand(dinst.info.lateLoadRs1, dinst.info.reg1)
+  val (lateRs2Ready, lateRegV2) =
+    resolveLateLoadOperand(dinst.info.lateLoadRs2, dinst.info.reg2)
+  val hasLateLoadOperand = dinst.info.lateLoadRs1 || dinst.info.lateLoadRs2
+  val lateDataReady = lateRs1Ready && lateRs2Ready
+
+  // Keep late load data out of the generic ALU and every control/address
+  // path. IDU marks only ADD/ADDI, which uses this compact duplicate adder.
+  val lateAddResult = lateRegV1 + lateRegV2
+  val reg_v1       = dinst.info.reg1
+  val reg_v2       = dinst.info.reg2
   // val pcAddImm   = dinst.pc + dinst.info.imm
   val pcAddImm   = dinst.info.pcAddImm
   val reg1AddImm = dinst.info.reg1AddImm
@@ -258,6 +285,10 @@ class EXU(
   lsuInfo.cacheableLw := isTypLoad && func3t === "b010".U && reg1AddImm(1, 0) === 0.U &&
     reg1AddImm(21, 20) === "b01".U
   lsuInfo.dcacheHit := lsuInfo.cacheableLw && io.dcache.hit
+  // The distributed-memory lookup is asynchronous in C0, but this field is
+  // part of the existing EXU-to-LSU payload register.  A miss ignores it and
+  // retains the normal WBU/memory-response path.
+  lsuInfo.lateLoadData := io.dcache.lateReadData
   lsuInfo.dcacheStoreEpoch := io.dcache.storeEpoch
 
   val snpc = dinst.info.staticNextPCOrCSRTarget
@@ -275,7 +306,8 @@ class EXU(
   //   )
   // )
 
-  writeBackInfo.gpr.data := Mux(isTypArithmetic, aluOut, dinst.info.preMuxWrBackData)
+  val arithmeticResult = Mux(hasLateLoadOperand, lateAddResult, aluOut)
+  writeBackInfo.gpr.data := Mux(isTypArithmetic, arithmeticResult, dinst.info.preMuxWrBackData)
 
   // Fill in LSU stage
   writeBackInfo.isLoad        := false.B
@@ -289,11 +321,33 @@ class EXU(
   writeBackInfo.dcacheStoreEpoch := 0.U
 
   val isMemOP        = isTypLoad || isTypStore
-  val exuResultValid = !isTypArithmetic || alu.io.out.valid
-  io.fwd := WrBackForwardInfo(io.in.valid, dinst, !isMemOP && exuResultValid, writeBackInfo.gpr.data, csrWrEnable)
-  io.addFwd.valid := io.in.valid && dinst.info.rdWrEn && dinst.info.rd =/= 0.U && isAdd
+  val exuResultValid = !isTypArithmetic || (alu.io.out.valid && (!hasLateLoadOperand || lateDataReady))
+  // Every ordinary single-cycle ALU instruction can bypass the M/D output
+  // mux. Multi-cycle M-extension results retain the generic result path.
+  val isMExt = !isFmtI && func7t(0)
+  val useSingleCycleForward = isTypArithmetic && !isMExt && !hasLateLoadOperand
+  val fastForwardData = Mux(useSingleCycleForward, alu.io.singleCycleResult, writeBackInfo.gpr.data)
+  // Keep lateAddResult out of the generic M/D forwarding mux. Its compact
+  // dedicated channel preserves same-cycle forwarding without another rd
+  // comparison; sequential single issue supplies producer identity.
+  val exuForwardDataValid = !isMemOP && exuResultValid && !hasLateLoadOperand
+  io.fwd := WrBackForwardInfo(io.in.valid, dinst, exuForwardDataValid, fastForwardData, csrWrEnable)
+  io.lateAddFwd.valid :=
+    io.in.valid && dinst.info.rdWrEn && dinst.info.rd =/= 0.U && hasLateLoadOperand && exuResultValid
+  io.lateAddFwd.data := lateAddResult
+  // A held late-load ADD must remain visible through generic forwarding so
+  // dependent consumers stall, but it must never drive the special address-
+  // generation bypass.  Keeping data fixed at the normal ALU output also
+  // removes lateAddResult from the IDU AGEN cone.
+  io.addFwd.valid :=
+    io.in.valid && dinst.info.rdWrEn && dinst.info.rd =/= 0.U && isAdd && !hasLateLoadOperand
   io.addFwd.addr  := dinst.info.rd
   io.addFwd.data  := alu.io.addResult
+
+  // The producer token is decode-only.  In particular, do not feed the
+  // current load address/cacheability back into IDU ready; cache hit only
+  // decides whether the already-issued consumer completes in the next cycle.
+  io.lateLoadProducer.valid := io.in.valid && isTypLoad && func3t === "b010".U
 
   val memWMask = GenMemWMask(reg1AddImm(1, 0), func3t)
 
@@ -325,10 +379,10 @@ class EXU(
   io.memReq.bits.wmask := memWMask
 
   io.in.ready  := memReqFire || (
-    io.out.ready && !needMemReq && (!isTypArithmetic || alu.io.out.valid)
+    io.out.ready && !needMemReq && exuResultValid
   )
   io.out.valid := memReqFire || (
-    io.in.valid && !needMemReq && (!isTypArithmetic || alu.io.out.valid)
+    io.in.valid && !needMemReq && exuResultValid
   )
 
   writeBackInfo.iid := dinst.iid

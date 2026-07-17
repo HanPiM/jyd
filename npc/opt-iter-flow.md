@@ -135,6 +135,18 @@ make -C am-kernels/tests/cpu-tests run ARCH=riscv32-jyd ALL=add
 - 若上板显示无收益但原因不清楚，或需要区分 stall、flush、访存和预测来源：再运行 RTL perf 做诊断。
 - 若改动涉及难以上板观察的内部协议、偶发数据相关或缓存一致性：即使耗时更长，也应补充针对性仿真。
 
+### 4.1 稳定预测后并行启动 implementation
+
+完整 RTL perf 已运行足够比例，且在多个相隔足够远的检查点上总周期/CPI 轨迹稳定时，可以先外推最终周期。若预测值明确越过本实验预先写下的继续门槛，且截至启动点没有功能错误，可由独立 subagent 提前并行启动 Vivado implementation，避免完整仿真结束后再串行等待实现。该优化只改变任务调度，不降低任何功能、性能或时序门禁。
+
+并行启动必须满足以下约束：
+
+- 记录启动时已完成的动态指令数、当前周期/CPI、外推方法、预测最终周期，以及它相对继续门槛的余量；临界或仍明显漂移的预测不能触发提前 implementation。
+- 固定 implementation 消费的该时点 RTL、`pack-fpga` 生成物、XCI/IP output products 和约束；记录 commit、dirty diff 或文件哈希。共享工作树上的其他代理不得在 run 期间修改这批输入，必要时使用独立、不可变的工作目录或归档副本。
+- 将 run 的负责人、启动点、目标频率、PLL requested/actual、策略和产物目录写入当轮记录。负责 Vivado 的 subagent 只运行和收集结果，不同时修改候选 RTL。
+- 外推值只是调度依据，不是性能结果。完整仿真最终必须正常结束，并用真实总周期、指令数和 CPI 替换预测；若仿真功能失败、最终性能未达到继续门槛，或最终 RTL/生成物与 implementation 输入不一致，立即终止尚在运行的 implementation，或把已完成结果标为作废。
+- 被终止或作废的 implementation 不得继续生成 bitstream 或上板。只有最终仿真通过、输入身份核对一致且 Vivado 时序门禁也满足后，才可进入后续阶段。
+
 因此，RTL perf 是性能定位和解释工具，不是每次上板前的强制门禁。无论选择哪条路径，都要回答：优化是否确实减少真实负载时间，以及收益是否足以覆盖时序或复杂度代价。
 
 需要 RTL perf 时，固定主样例可用轻量模式运行，示例：
@@ -205,7 +217,15 @@ IP 改动后若顶层综合提示找不到模块或仍使用旧参数，先重�
 3. 记录每个 run 的实际 directive、routed DCP 哈希和 timing report 哈希。
 4. synth DCP 一旦重新生成，即使 RTL commit 未变，也开始一个新的实验批次；新旧批次的 WNS 不能直接归因于 implementation 策略。
 
+策略筛选使用的 standalone checkpoint 只用于比较，不能代替工程的正式实现状态。若某个组合胜出，必须把相同的 step/directive 持久化到正式 `impl_1`，再从已提交的 RTL、IP 和工程输入全量运行。最终验收以正式 `impl_1` 的 `runme.log`、routed DCP 和独立 reopen 报告为准；策略显示名与实际命令不一致时，以实际命令为准。
+
 synth DCP 用于固定多个实现策略的共同输入；routed DCP 则保存某一次具体的放置布线解。需要精确复查一次几十皮秒裕量的结果时，两者都应归档。综合逻辑 checksum 只能辅助判断逻辑是否一致，不能替代 DCP 哈希。
+
+### 6.3 冷工程中的 XCI 规范化
+
+Vivado 可能在首次打开迁移后的工程时改写 XCI 的 GUI 元数据，即使 IP 参数和生成 HDL 的语义未变。只要一次正式 run 的 XCI 字节清单在进程前后发生变化，该 run 仍必须作废，不能通过放宽 manifest 门禁继续使用。
+
+需要处理这类迁移时，在一次性目录中先打开/规范化工程，逐行审核 XCI diff，并核对关键 IP 参数和生成 HDL/output product 哈希；确认只有无语义元数据变化后，将规范化结果作为新的 canonical 输入冻结。随后从 canonical 输入分别创建新的 cold sample，正式 run 期间 XCI 必须逐字节不变。cold copy 要排除 `.runs`、`.cache`、`.gen`、`.Xil`、`ip_user_files` 以及 `digital_twin.srcs/utils_1/imports/synth_1/top.dcp` 等旧 checkpoint，且正式结果要独立 reopen routed DCP 重报。
 
 生成实现结果：
 
@@ -235,11 +255,14 @@ python3 jyd-vivado-proj/scripts/extract-timing-summary.py \
 
 ## 7. 上板测量和重试规则
 
-上板命令必须直接执行，不增加 shell 包装：
+上板客户端的 `.venv` 位于 `/home/hanpi/gitclone/submit-bits`。执行相对路径形式的命令前必须先切换到该目录；不要在 `jyd` 仓库根目录重复尝试 `.venv/bin/python3`。上板命令必须直接执行，不增加 shell 包装：
 
 ```sh
+cd /home/hanpi/gitclone/submit-bits
 .venv/bin/python3 -m jyd_client.cli run --skip-login /path/to/candidate.bit
 ```
+
+若自动化工具能设置工作目录，应直接把工作目录设为 `/home/hanpi/gitclone/submit-bits`，而不是用额外 shell 包装间接切换目录。
 
 测量分为两个阶段：
 
@@ -259,7 +282,11 @@ python3 jyd-vivado-proj/scripts/extract-timing-summary.py \
 
 - JTAG target 被其他 hw_server 锁定。
 - 网络、上传、烧录或串口采样异常。
-- 烧录成功但串口没有形成稳定有效结果。
+- 烧录成功但串口没有形成稳定有效结果，包括偶发的全 `0`/`0000` 显示。首次出现时不能直接归因为候选 RTL 或时序失败，应固定同一 bitstream 按总计最多三次的上限重试。
+
+如果同一 bitstream 多次稳定复现全 `0`，则标记该产物上板失败并保留原始日志，等待结构或人工核查。若同一产物在重试中时而正常、时而全 `0`，也不能长期只归类为偶发基础设施错误；尤其当 routed setup/hold 已全部通过仍多次全 `0` 或时好时坏时，优先核对 Vivado IP output product 与 Chisel inline 仿真模型的端口、位宽、读写时序、初始化和 packaging 排除规则是否一致，并检查 IP 输出产物是否确实随当前配置重新生成和被工程引用；仿真通过不能替代这项一致性检查。
+
+Vivado run 启动前和重新生成 output products 后，所有工程 IP 的 `IS_LOCKED` 必须为 false；locked/stale 是硬失败，不能仅凭频率数值或综合成功继续。run 还必须冻结工程源目录下全部 XCI 的内容清单哈希：若 Vivado 进程前后哈希不同，即使 requested/actual、综合时钟周期和 timing report 看似正常，该批次也只能作为诊断并必须作废，不能生成 bitstream 或上板。
 
 功能结果错误、稳定但性能不达标，不属于基础设施失败，不应靠重复测量掩盖。
 

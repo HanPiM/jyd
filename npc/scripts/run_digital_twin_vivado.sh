@@ -143,6 +143,65 @@ if {$pack_file_count == 0} {
 }
 puts "Verified $pack_file_count pack-fpga sources under: $expected_pack_dir"
 
+# Generated IP output products and OOC checkpoints are ignored build
+# artifacts.  They may therefore belong to an older experiment even when the
+# checked-in XCI is correct.  Rebuild every project IP before top synthesis so
+# neither clocks nor COE-backed memories can silently reuse stale products.
+set project_ips [get_ips -quiet]
+if {[llength $project_ips] == 0} {
+  error "No project IPs were found"
+}
+set locked_ips [list]
+foreach ip_obj $project_ips {
+  if {[get_property IS_LOCKED $ip_obj]} {
+    lappend locked_ips [get_property NAME $ip_obj]
+  }
+}
+if {[llength $locked_ips] > 0} {
+  error "Locked/stale project IPs must be resolved before synthesis: $locked_ips"
+}
+set pll_ip [get_ips -quiet mypll]
+if {[llength $pll_ip] != 1} {
+  error "Expected exactly one mypll IP, got [llength $pll_ip]"
+}
+set requested_cpu_mhz [get_property CONFIG.CLKOUT2_REQUESTED_OUT_FREQ $pll_ip]
+set pll_input_mhz [get_property CONFIG.PRIM_IN_FREQ $pll_ip]
+set pll_feedback_mult [get_property CONFIG.MMCM_CLKFBOUT_MULT_F $pll_ip]
+set pll_input_divide [get_property CONFIG.MMCM_DIVCLK_DIVIDE $pll_ip]
+# The external clk_out2 CPU port is Clock Wizard's internal CLKOUT1.
+set pll_cpu_divide [get_property CONFIG.MMCM_CLKOUT1_DIVIDE $pll_ip]
+set pll_vco_mhz [expr {double($pll_input_mhz) * double($pll_feedback_mult) / double($pll_input_divide)}]
+set configured_cpu_mhz [expr {$pll_vco_mhz / double($pll_cpu_divide)}]
+set configured_freq_error_mhz [expr {abs(double($requested_cpu_mhz) - $configured_cpu_mhz)}]
+puts [format "Configured CPU clock: requested=%.6f MHz actual=%.6f MHz error=%.6f MHz VCO=%.6f MHz divclk=%s feedback=%s output=%s" \
+  $requested_cpu_mhz $configured_cpu_mhz $configured_freq_error_mhz $pll_vco_mhz \
+  $pll_input_divide $pll_feedback_mult $pll_cpu_divide]
+if {$configured_freq_error_mhz > 0.001} {
+  error [format "CPU clock requested/actual mismatch exceeds 1 kHz: %.6f MHz" $configured_freq_error_mhz]
+}
+puts "Resetting and regenerating [llength $project_ips] project IP output products"
+reset_target all $project_ips
+generate_target all $project_ips
+set checkpoint_ips [list]
+foreach ip_obj $project_ips {
+  if {[get_property GENERATE_SYNTH_CHECKPOINT $ip_obj]} {
+    lappend checkpoint_ips $ip_obj
+  }
+}
+puts "Rebuilding [llength $checkpoint_ips] project IP synthesis checkpoints"
+if {[llength $checkpoint_ips] > 0} {
+  synth_ip -force $checkpoint_ips
+}
+set locked_ips_after_generate [list]
+foreach ip_obj $project_ips {
+  if {[get_property IS_LOCKED $ip_obj]} {
+    lappend locked_ips_after_generate [get_property NAME $ip_obj]
+  }
+}
+if {[llength $locked_ips_after_generate] > 0} {
+  error "Project IPs became locked/stale while regenerating output products: $locked_ips_after_generate"
+}
+
 if {[llength [get_runs synth_1]] == 0} {
   error "Vivado run synth_1 was not found"
 }
@@ -174,7 +233,9 @@ foreach run_name {synth_1 impl_1} {
 
 set synth_run [get_runs synth_1]
 if {[lsearch -exact [list_property $synth_run] AUTO_INCREMENTAL_CHECKPOINT] >= 0} {
-  set_property AUTO_INCREMENTAL_CHECKPOINT false $synth_run
+  # Vivado 2024.2 exposes this run property as an integer.  Passing the Tcl
+  # boolean string "false" fails with "bad lexical cast" before synthesis.
+  set_property AUTO_INCREMENTAL_CHECKPOINT 0 $synth_run
 }
 
 reset_run synth_1
@@ -192,6 +253,26 @@ if {$synth_progress ne "100%"} {
 if {[string match -nocase {*failed*} $synth_status]} {
   error "synth_1 failed: $synth_status"
 }
+
+# The CPU is driven by mypll/clk_out2.  Validate the clock that top synthesis
+# actually propagated, not only the requested value stored in the XCI.
+open_run synth_1
+set cpu_clocks [get_clocks -quiet clk_out2_mypll]
+if {[llength $cpu_clocks] != 1} {
+  error "Expected exactly one synthesized clk_out2_mypll clock, got [llength $cpu_clocks]"
+}
+set cpu_period_ns [get_property PERIOD $cpu_clocks]
+set expected_cpu_period_ns [expr {1000.0 / $configured_cpu_mhz}]
+set cpu_period_error_ns [expr {abs(double($cpu_period_ns) - $expected_cpu_period_ns)}]
+puts [format "Synthesized CPU clock: configured=%.6f MHz reported_period=%.6f ns expected_period=%.6f ns" \
+  $configured_cpu_mhz $cpu_period_ns $expected_cpu_period_ns]
+# get_clocks PERIOD is reported with only ps precision.  This check catches a
+# stale clock product (for example 3.810 ns at 262.5 MHz) while the exact 1 kHz
+# requested/actual gate above is computed from the PLL divisors.
+if {$cpu_period_error_ns > 0.0005} {
+  error [format "Synthesized CPU clock period does not match configured PLL: %.6f ns" $cpu_period_error_ns]
+}
+close_design
 
 if {$mode eq "impl"} {
   launch_runs impl_1 -jobs $jobs
@@ -219,4 +300,28 @@ EOF
 
 echo "# Running Vivado digital_twin to $mode"
 cd "$vivado_proj_home"
+
+ip_config_hash() {
+  find "$vivado_proj_home/digital_twin.srcs/sources_1/ip" -type f -name '*.xci' -print0 \
+    | sort -z \
+    | xargs -0 sha256sum \
+    | sha256sum \
+    | awk '{print $1}'
+}
+
+# Vivado may warn instead of failing when an IP configuration changes while a
+# run is active, then silently reuse a cached output product. Freeze the XCI
+# manifest across the entire process so such a run is always rejected.
+ip_config_hash_before=$(ip_config_hash)
+set +e
 "$vivado_bin" -mode batch -source "$tcl_file" -tclargs "$mode" "$jobs" "$pack_dst"
+vivado_status=$?
+set -e
+ip_config_hash_after=$(ip_config_hash)
+if [ "$ip_config_hash_before" != "$ip_config_hash_after" ]; then
+  echo "Vivado IP configuration changed during the run:" >&2
+  echo "  before: $ip_config_hash_before" >&2
+  echo "  after:  $ip_config_hash_after" >&2
+  exit 1
+fi
+exit "$vivado_status"

@@ -228,6 +228,43 @@ void BranchPredPerfCounter::update() {
   }
 }
 
+void OptimizationDirectionPerfCounter::update() {
+  const auto *exu = GetEXU();
+  if (exu->io_in_valid && exu->io_in_ready) {
+    const uint32_t inst = exu->io_in_bits_code;
+    const uint32_t opcode = inst & 0x7f;
+    const uint32_t func3 = (inst >> 12) & 0x7;
+    const uint32_t func7 = (inst >> 25) & 0x7f;
+    if (opcode == 0x33 && func7 == 0x01) {
+      mOpCount[func3]++;
+    }
+
+    const bool lateRs1 = exu->io_in_bits_info_lateLoadRs1;
+    const bool lateRs2 = exu->io_in_bits_info_lateLoadRs2;
+    if (lateRs1 || lateRs2) {
+      lateLoadAddCount[lateRs1 && lateRs2
+                           ? BothRs
+                           : (lateRs1 ? Rs1Only : Rs2Only)]++;
+    }
+  }
+
+  if (exu->cacheableStoreFire && exu->memWMask == 0xf) {
+    cacheableFullWordStores++;
+  }
+
+  const auto *idu = GetIDU();
+  if (idu->io_out_valid && idu->io_out_ready) {
+    const bool lateAddRs1 = idu->bypassMux->lateAddSelect;
+    const bool lateAddRs2 = idu->bypassMux->lateAddSelect_1;
+    if (lateAddRs1 || lateAddRs2) {
+      lateAddSuccessorCount[lateAddRs1 && lateAddRs2
+                                ? LateAddBothRs
+                                : (lateAddRs1 ? LateAddRs1Only
+                                              : LateAddRs2Only)]++;
+    }
+  }
+}
+
 std::vector<PerfCounterVariant> perf_counters;
 
 void initPerfCounters() {
@@ -235,6 +272,7 @@ void initPerfCounters() {
   RAWStallPerfCounter rawStallCtr;
   IDUFlushPerfCounter iduFlushCtr;
   BranchPredPerfCounter branchPredCtr;
+  OptimizationDirectionPerfCounter optimizationDirectionCtr;
 
   pipeCtr.add(PipeStagePerfCounter().bind(
                   &GetIFU()->io_mem_req_valid, &GetIFU()->io_mem_req_ready,
@@ -252,6 +290,7 @@ void initPerfCounters() {
   perf_counters.push_back(std::move(rawStallCtr));
   perf_counters.push_back(std::move(iduFlushCtr));
   perf_counters.push_back(std::move(branchPredCtr));
+  perf_counters.push_back(std::move(optimizationDirectionCtr));
 }
 
 void updatePerfCounters() {
@@ -364,6 +403,24 @@ void to_json(nlohmann::json &j, const BranchPredPerfCounter &c) {
         {"type", BranchPredPerfCounter::nameOf(t)},
         {"count", c.totMispredictOfType[t]},
     };
+  }
+}
+
+void to_json(nlohmann::json &j, const OptimizationDirectionPerfCounter &c) {
+  static const char *mOpNames[] = {"mul",  "mulh", "mulhsu", "mulhu",
+                                   "div",  "divu", "rem",    "remu"};
+  static const char *lateLoadNames[] = {"rs1_only", "rs2_only", "both"};
+  static const char *lateAddNames[] = {"rs1_only", "rs2_only", "both"};
+  j["ctrName"] = c.ctrName;
+  for (int i = 0; i < OptimizationDirectionPerfCounter::MOpNum; i++) {
+    j["m_ops"][mOpNames[i]] = c.mOpCount[i];
+  }
+  j["cacheable_full_word_stores"] = c.cacheableFullWordStores;
+  for (int i = 0; i < OptimizationDirectionPerfCounter::LateLoadUseNum; i++) {
+    j["late_load_add"][lateLoadNames[i]] = c.lateLoadAddCount[i];
+  }
+  for (int i = 0; i < OptimizationDirectionPerfCounter::LateAddUseNum; i++) {
+    j["late_add_successor"][lateAddNames[i]] = c.lateAddSuccessorCount[i];
   }
 }
 

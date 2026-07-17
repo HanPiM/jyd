@@ -22,7 +22,7 @@ class WriteBackInfo(implicit p:CPUParameters) extends Bundle {
   val memAddr       = Types.UWord
   val cacheableLw   = Bool()
   val dcacheHit     = Bool()
-  val dcacheStoreEpoch = UInt(8.W)
+  val dcacheStoreEpoch = Bool()
 
   val csr           = CSRegReqIO.TX.Write
   val csr_ecallflag = Bool()
@@ -105,7 +105,7 @@ class WBU(implicit p:CPUParameters) extends Module {
     val dcacheAddr   = Output(Types.UWord)
     val dcacheData   = Output(Types.UWord)
     val dcacheMask   = Output(UInt(4.W))
-    val dcacheStoreEpoch = Input(UInt(8.W))
+    val dcacheStoreEpoch = Input(Bool())
   })
 
   val wbinfo = io.in.bits

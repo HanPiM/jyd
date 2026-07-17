@@ -249,6 +249,37 @@ void BranchPredPerfCounter::dumpStatistics(std::ostream &os) {
   _PrintTable(t, os);
 }
 
+void OptimizationDirectionPerfCounter::dumpStatistics(std::ostream &os) {
+  static const char *mOpNames[] = {"mul",  "mulh", "mulhsu", "mulhu",
+                                   "div",  "divu", "rem",    "remu"};
+  os << "Optimization Direction Performance Counter Statistics:\n";
+  Table mTable;
+  mTable.add_row({"M operation", "Issued"});
+  for (int i = 0; i < MOpNum; i++) {
+    mTable.add_row(RowStream{} << mOpNames[i] << mOpCount[i]);
+  }
+  const size_t divideTotal = mOpCount[Div] + mOpCount[Divu] + mOpCount[Rem] +
+                             mOpCount[Remu];
+  mTable.add_row(RowStream{} << "div/rem total" << divideTotal);
+  _PrintTable(mTable, os);
+
+  os << "  cacheable full-word stores: " << cacheableFullWordStores << "\n";
+  Table dependencyTable;
+  dependencyTable.add_row({"Dependency selection", "rs1 only", "rs2 only",
+                           "both"});
+  dependencyTable.add_row(RowStream{}
+                          << "late-load ADD/ADDI"
+                          << lateLoadAddCount[Rs1Only]
+                          << lateLoadAddCount[Rs2Only]
+                          << lateLoadAddCount[BothRs]);
+  dependencyTable.add_row(RowStream{}
+                          << "late-add successor"
+                          << lateAddSuccessorCount[LateAddRs1Only]
+                          << lateAddSuccessorCount[LateAddRs2Only]
+                          << lateAddSuccessorCount[LateAddBothRs]);
+  _PrintTable(dependencyTable, os);
+}
+
 void AXI4CounterBase::dumpStatistics(std::ostream &os) {
   spdlog::error("AXI4CounterBase::dumpStatistics unimpled!!!");
 }

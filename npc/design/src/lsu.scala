@@ -15,7 +15,7 @@ class LSUInput(
   // Asynchronous shadow data sampled in C0 and carried by the registered
   // EXU-to-LSU payload.  Only a registered C1 hit may consume this value.
   val lateLoadData = Types.UWord
-  val dcacheStoreEpoch = UInt(8.W)
+  val dcacheStoreEpoch = Bool()
   val func3t       = UInt(3.W)
   val exuWriteBack = new WriteBackInfo
 }

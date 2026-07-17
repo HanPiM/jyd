@@ -209,6 +209,14 @@ if {[llength [get_runs impl_1]] == 0} {
   error "Vivado run impl_1 was not found"
 }
 
+# The 270 MHz v6 design closes timing only after the post-route physical
+# optimization pass. Keep it inside impl_1 so timing reports and bitstreams are
+# produced from the same reproducible run rather than a standalone DCP edit.
+set impl_run [get_runs impl_1]
+set_property STEPS.POST_ROUTE_PHYS_OPT_DESIGN.IS_ENABLED true $impl_run
+set_property STEPS.POST_ROUTE_PHYS_OPT_DESIGN.ARGS.DIRECTIVE AggressiveExplore $impl_run
+puts "impl_1 post-route physopt: enabled, directive=AggressiveExplore"
+
 proc clear_run_property_if_exists {run_name prop_name} {
   set run_obj [get_runs $run_name]
   if {[lsearch -exact [list_property $run_obj] $prop_name] >= 0} {

@@ -119,7 +119,7 @@ class EXU(
     val dcache = new Bundle {
       val hit        = Input(Bool())
       val lateReadData = Input(Types.UWord)
-      val storeEpoch = Input(UInt(8.W))
+      val storeEpoch = Input(Bool())
       val queryAddr  = Output(Types.UWord)
       val invalidate = Output(Bool())
       val storeUpdate = Output(Bool())
@@ -318,7 +318,7 @@ class EXU(
   writeBackInfo.memAddr       := 0.U
   writeBackInfo.cacheableLw   := false.B
   writeBackInfo.dcacheHit     := false.B
-  writeBackInfo.dcacheStoreEpoch := 0.U
+  writeBackInfo.dcacheStoreEpoch := false.B
 
   val isMemOP        = isTypLoad || isTypStore
   val exuResultValid = !isTypArithmetic || (alu.io.out.valid && (!hasLateLoadOperand || lateDataReady))

@@ -367,10 +367,29 @@ struct BranchPredPerfCounter : public PerfCounterBase {
   void dumpStatistics(std::ostream &) override;
 };
 
+struct OptimizationDirectionPerfCounter : public PerfCounterBase {
+  enum MOp { Mul, Mulh, Mulhsu, Mulhu, Div, Divu, Rem, Remu, MOpNum };
+  enum LateLoadUse { Rs1Only, Rs2Only, BothRs, LateLoadUseNum };
+  enum LateAddUse { LateAddRs1Only, LateAddRs2Only, LateAddBothRs, LateAddUseNum };
+
+  size_t mOpCount[MOpNum] = {0};
+  size_t cacheableFullWordStores = 0;
+  size_t lateLoadAddCount[LateLoadUseNum] = {0};
+  size_t lateAddSuccessorCount[LateAddUseNum] = {0};
+
+  OptimizationDirectionPerfCounter() {
+    ctrName = "OptimizationDirectionPerfCounter";
+  }
+
+  void update();
+  void dumpStatistics(std::ostream &) override;
+};
+
 using PerfCounterVariant =
     std::variant<HandShakeCounterManager, AXI4PerfCounterManager,
                  PipePerfManager, CachePerfCounter, RAWStallPerfCounter,
-                 IDUFlushPerfCounter, BranchPredPerfCounter>;
+                 IDUFlushPerfCounter, BranchPredPerfCounter,
+                 OptimizationDirectionPerfCounter>;
 
 void initPerfCounters();
 void dumpPerfCountersStatistics(std::ostream &os, bool printFullPerf);

@@ -299,9 +299,10 @@ class CPUCore(
   dcache.io.queryAddr  := exu.io.dcache.queryAddr
   exu.io.dcache.hit    := dcache.io.hit && p.enableDCache.B
   exu.io.dcache.lateReadData := dcache.io.lateReadData
-  val dcacheStoreEpoch = RegInit(0.U(8.W))
-  when((exu.io.dcache.invalidate || exu.io.dcache.storeUpdate) && p.enableDCache.B) {
-    dcacheStoreEpoch := dcacheStoreEpoch + 1.U
+  val dcacheStoreMutation = (exu.io.dcache.invalidate || exu.io.dcache.storeUpdate) && p.enableDCache.B
+  val dcacheStoreEpoch    = RegInit(false.B)
+  when(dcacheStoreMutation) {
+    dcacheStoreEpoch := ~dcacheStoreEpoch
   }
   exu.io.dcache.storeEpoch := dcacheStoreEpoch
   wbu.io.dcacheStoreEpoch  := dcacheStoreEpoch
@@ -311,10 +312,21 @@ class CPUCore(
   dcache.io.storeData   := exu.io.dcache.storeData
   dcache.io.storeMask   := exu.io.dcache.storeMask
   lsu.io.dcacheReadData := dcache.io.readData
-  dcache.io.update     := wbu.io.dcacheUpdate && p.enableDCache.B && !dcacheStoreUpdate
+  dcache.io.update     := wbu.io.dcacheUpdate && p.enableDCache.B && !dcacheStoreMutation
   dcache.io.updateAddr := wbu.io.dcacheAddr
   dcache.io.updateData := wbu.io.dcacheData
   dcache.io.updateMask := wbu.io.dcacheMask
+
+  // JYD memory accepts one request per cycle and responds two cycles later.
+  // A store in the intervening cycle changes the generation; a store in the
+  // response cycle wins directly over the older refill.
+  val previousDcacheStoreMutation = RegNext(dcacheStoreMutation, false.B)
+  when(wbu.io.dcacheUpdate) {
+    assert(!previousDcacheStoreMutation, "A refill must observe an intervening store generation")
+  }
+  when(dcache.io.update) {
+    assert(!dcacheStoreMutation, "A store mutation and WBU refill must be mutually exclusive")
+  }
 
   ifu.io.pc.bits  := pcFeedToIFU
   ifu.io.pc.valid := true.B

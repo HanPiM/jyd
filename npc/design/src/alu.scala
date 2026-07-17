@@ -39,7 +39,12 @@ class DividerInput extends Bundle {
 }
 
 object MultiplierConfig {
-  val latency = 4
+  val latency     = 4
+  val fastLatency = 3
+}
+
+object DividerConfig {
+  val latency = 35
 }
 
 class mult_gen_0 extends BlackBox with HasBlackBoxInline {
@@ -81,6 +86,43 @@ class mult_gen_0 extends BlackBox with HasBlackBoxInline {
   )
 }
 
+class mult_gen_mul32_fast extends BlackBox with HasBlackBoxInline {
+  val io = IO(new Bundle {
+    val CLK = Input(Clock())
+    val A   = Input(UInt(32.W))
+    val B   = Input(UInt(32.W))
+    val P   = Output(UInt(32.W))
+  })
+
+  setInline(
+    "mult_gen_mul32_fast.sv",
+    s"""module mult_gen_mul32_fast(
+      |  input         CLK,
+      |  input  [31:0] A,
+      |  input  [31:0] B,
+      |  output [31:0] P
+      |);
+      |  reg [31:0] pipe [0:${MultiplierConfig.fastLatency - 1}];
+      |  integer i;
+      |  wire [63:0] product = A * B;
+      |
+      |  initial begin
+      |    for (i = 0; i < ${MultiplierConfig.fastLatency}; i = i + 1)
+      |      pipe[i] = 32'd0;
+      |  end
+      |
+      |  always @(posedge CLK) begin
+      |    pipe[0] <= product[31:0];
+      |    for (i = 1; i < ${MultiplierConfig.fastLatency}; i = i + 1)
+      |      pipe[i] <= pipe[i - 1];
+      |  end
+      |
+      |  assign P = pipe[${MultiplierConfig.fastLatency - 1}];
+      |endmodule
+      |""".stripMargin
+  )
+}
+
 class div_gen_uradix2 extends BlackBox with HasBlackBoxInline {
   val io = IO(new Bundle {
     val aclk                   = Input(Clock())
@@ -94,7 +136,7 @@ class div_gen_uradix2 extends BlackBox with HasBlackBoxInline {
 
   setInline(
     "div_gen_uradix2.sv",
-    """module div_gen_uradix2(
+    s"""module div_gen_uradix2(
       |  input         aclk,
       |  input         s_axis_divisor_tvalid,
       |  input  [31:0] s_axis_divisor_tdata,
@@ -103,13 +145,13 @@ class div_gen_uradix2 extends BlackBox with HasBlackBoxInline {
       |  output        m_axis_dout_tvalid,
       |  output [63:0] m_axis_dout_tdata
       |);
-      |  reg        valid_pipe [0:33];
-      |  reg [63:0] data_pipe  [0:33];
+      |  reg        valid_pipe [0:${DividerConfig.latency - 1}];
+      |  reg [63:0] data_pipe  [0:${DividerConfig.latency - 1}];
       |  integer i;
       |  wire fire = s_axis_divisor_tvalid && s_axis_dividend_tvalid;
       |
       |  initial begin
-      |    for (i = 0; i < 34; i = i + 1) begin
+      |    for (i = 0; i < ${DividerConfig.latency}; i = i + 1) begin
       |      valid_pipe[i] = 1'b0;
       |      data_pipe[i] = 64'd0;
       |    end
@@ -124,14 +166,14 @@ class div_gen_uradix2 extends BlackBox with HasBlackBoxInline {
       |      };
       |    else
       |      data_pipe[0] <= 64'd0;
-      |    for (i = 1; i < 34; i = i + 1) begin
+      |    for (i = 1; i < ${DividerConfig.latency}; i = i + 1) begin
       |      valid_pipe[i] <= valid_pipe[i - 1];
       |      data_pipe[i] <= data_pipe[i - 1];
       |    end
       |  end
       |
-      |  assign m_axis_dout_tvalid = valid_pipe[33];
-      |  assign m_axis_dout_tdata = data_pipe[33];
+      |  assign m_axis_dout_tvalid = valid_pipe[${DividerConfig.latency - 1}];
+      |  assign m_axis_dout_tdata = data_pipe[${DividerConfig.latency - 1}];
       |endmodule
       |""".stripMargin
   )
@@ -148,10 +190,12 @@ class Multiplier extends Module {
   }
   val state = RegInit(State.idle)
 
-  val func3tReg  = Reg(UInt(3.W))
-  val resultReg  = Reg(Types.UWord)
-  val validPipe  = RegInit(0.U(MultiplierConfig.latency.W))
-  val multiplier = Module(new mult_gen_0)
+  val isFastReg     = Reg(Bool())
+  val resultReg     = Reg(Types.UWord)
+  val slowValidPipe = RegInit(0.U(MultiplierConfig.latency.W))
+  val fastValidPipe = RegInit(0.U(MultiplierConfig.fastLatency.W))
+  val multiplier    = Module(new mult_gen_0)
+  val fastMultiplier = Module(new mult_gen_mul32_fast)
 
   val inputFunc3t = io.in.bits.func3t
   val inputIsMulh = inputFunc3t === 1.U
@@ -165,10 +209,17 @@ class Multiplier extends Module {
   multiplier.io.CLK := clock
   multiplier.io.A   := aExt
   multiplier.io.B   := bExt
+  fastMultiplier.io.CLK := clock
+  fastMultiplier.io.A   := io.in.bits.src1
+  fastMultiplier.io.B   := io.in.bits.src2
 
   val product = multiplier.io.P
-  val result = Mux(func3tReg === 0.U, product(31, 0), product(63, 32))
-  val resultValid = validPipe(MultiplierConfig.latency - 1)
+  val result = Mux(isFastReg, fastMultiplier.io.P, product(63, 32))
+  val resultValid = Mux(
+    isFastReg,
+    fastValidPipe(MultiplierConfig.fastLatency - 1),
+    slowValidPipe(MultiplierConfig.latency - 1)
+  )
 
   io.in.ready  := state === State.idle
   io.out.valid := (state === State.done) || ((state === State.busy) && resultValid)
@@ -177,13 +228,15 @@ class Multiplier extends Module {
   switch(state) {
     is(State.idle) {
       when(io.in.fire) {
-        func3tReg := io.in.bits.func3t
-        validPipe := 1.U
-        state     := State.busy
+        isFastReg := io.in.bits.func3t === 0.U
+        slowValidPipe := Mux(io.in.bits.func3t === 0.U, 0.U, 1.U)
+        fastValidPipe := Mux(io.in.bits.func3t === 0.U, 1.U, 0.U)
+        state := State.busy
       }
     }
     is(State.busy) {
-      validPipe := validPipe << 1
+      slowValidPipe := slowValidPipe << 1
+      fastValidPipe := fastValidPipe << 1
       when(resultValid) {
         when(io.out.ready) {
           state := State.idle

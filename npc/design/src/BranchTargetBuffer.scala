@@ -4,7 +4,6 @@ import chisel3._
 import chisel3.util._
 
 import common_def._
-import jyd.DistMemGen32x32
 
 object BTBParameters {
   val ENTRY_NUM   = 16
@@ -93,24 +92,14 @@ class BranchTargetBuffer extends Module {
     }
   })
 
-  require((new BTBEntry).getWidth == 32, "BTB entry must match the 32-bit distributed-memory IP")
-
-  // The memory IP has one asynchronous read port, so keep two coherent
-  // replicas: one for the fetch query and one for read-modify-write updates of
-  // the direction counter. The separate resettable valid mask prevents
-  // uninitialized FPGA memory contents from producing hits after reset.
-  val queryMem  = Module(new DistMemGen32x32)
-  val updateMem = Module(new DistMemGen32x32)
-  val validMask = RegInit(0.U(BTBParameters.ENTRY_NUM.W))
+  val entries = RegInit(VecInit.fill(BTBParameters.ENTRY_NUM)(0.U.asTypeOf(new BTBEntry)))
 
   // Query logic
   val queryTag   = BTBParameters.extractTag(io.query.addr)
   val queryIndex = BTBParameters.extractIndex(io.query.addr)
-  queryMem.io.dpra := queryIndex.pad(5)
-  val queryEntry = queryMem.io.dpo.asTypeOf(new BTBEntry)
-  val queryValid = validMask(queryIndex)
+  val queryEntry = entries(queryIndex)
 
-  io.query.hit    := queryValid && queryEntry.valid && (queryEntry.tag === queryTag)
+  io.query.hit    := queryEntry.valid && (queryEntry.tag === queryTag)
   io.query.target := queryEntry.target.get
   io.query.isJAL  := queryEntry.isJAL
   io.query.isBranch := queryEntry.isBranch
@@ -118,46 +107,29 @@ class BranchTargetBuffer extends Module {
   io.query.isBackward := queryEntry.isBackward
 
   // Update logic
-  val updateTag   = BTBParameters.extractTag(io.update.addr)
-  val updateIndex = BTBParameters.extractIndex(io.update.addr)
-  updateMem.io.dpra := updateIndex.pad(5)
-  val oldUpdateEntry = updateMem.io.dpo.asTypeOf(new BTBEntry)
-  val oldUpdateValid = validMask(updateIndex)
+  when(io.update.en) {
+    val updateTag   = BTBParameters.extractTag(io.update.addr)
+    val updateIndex = BTBParameters.extractIndex(io.update.addr)
 
-  val nextEntry = Wire(new BTBEntry)
-  nextEntry.valid            := true.B
-  nextEntry.tag              := updateTag
-  nextEntry.target           := BTBTarget(io.update.target)
-  nextEntry.isJAL            := io.update.isJAL
-  nextEntry.isBranch         := io.update.isBranch
-  nextEntry.isBackward       := io.update.isBackward
-  nextEntry.directionCounter := 0.U
+    entries(updateIndex).valid  := true.B
+    entries(updateIndex).tag    := updateTag
+    entries(updateIndex).target := BTBTarget(io.update.target)
+    entries(updateIndex).isJAL  := io.update.isJAL
+    entries(updateIndex).isBranch := io.update.isBranch
+    entries(updateIndex).isBackward := io.update.isBackward
 
-  when(io.update.isBranch) {
-    val entryMatches = oldUpdateValid && oldUpdateEntry.valid && oldUpdateEntry.tag === updateTag &&
-      oldUpdateEntry.isBranch
-    when(!entryMatches) {
-      nextEntry.directionCounter := Mux(io.update.actualTaken, 2.U, 1.U)
-    }.elsewhen(io.update.actualTaken && oldUpdateEntry.directionCounter =/= 3.U) {
-      nextEntry.directionCounter := oldUpdateEntry.directionCounter + 1.U
-    }.elsewhen(!io.update.actualTaken && oldUpdateEntry.directionCounter =/= 0.U) {
-      nextEntry.directionCounter := oldUpdateEntry.directionCounter - 1.U
+    when(io.update.isBranch) {
+      val entryMatches = entries(updateIndex).valid && entries(updateIndex).tag === updateTag &&
+        entries(updateIndex).isBranch
+      when(!entryMatches) {
+        entries(updateIndex).directionCounter := Mux(io.update.actualTaken, 2.U, 1.U)
+      }.elsewhen(io.update.actualTaken && entries(updateIndex).directionCounter =/= 3.U) {
+        entries(updateIndex).directionCounter := entries(updateIndex).directionCounter + 1.U
+      }.elsewhen(!io.update.actualTaken && entries(updateIndex).directionCounter =/= 0.U) {
+        entries(updateIndex).directionCounter := entries(updateIndex).directionCounter - 1.U
+      }
     }.otherwise {
-      nextEntry.directionCounter := oldUpdateEntry.directionCounter
+      entries(updateIndex).directionCounter := 0.U
     }
-  }
-
-  val updateEn = io.update.en && !reset.asBool
-  queryMem.io.a   := updateIndex.pad(5)
-  queryMem.io.d   := nextEntry.asUInt
-  queryMem.io.clk := clock
-  queryMem.io.we  := updateEn
-  updateMem.io.a   := updateIndex.pad(5)
-  updateMem.io.d   := nextEntry.asUInt
-  updateMem.io.clk := clock
-  updateMem.io.we  := updateEn
-
-  when(updateEn) {
-    validMask := validMask | UIntToOH(updateIndex, BTBParameters.ENTRY_NUM)
   }
 }

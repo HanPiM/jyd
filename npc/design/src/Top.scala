@@ -307,7 +307,6 @@ class CPUCore(
   dcache.io.storeData   := exu.io.dcache.storeData
   dcache.io.storeMask   := exu.io.dcache.storeMask
   lsu.io.dcacheReadData := dcache.io.readData
-  exu.io.lateLoadData   := dcache.io.readData
   dcache.io.update     := wbu.io.dcacheUpdate && p.enableDCache.B && !dcacheStoreUpdate
   dcache.io.updateAddr := wbu.io.dcacheAddr
   dcache.io.updateData := wbu.io.dcacheData
@@ -348,6 +347,10 @@ class CPUCore(
   idu.io.csrJmpTarget.mtvec := csrs.io.mtvec
 
   val lsuFwdInfo = ExtractFwdInfoFromLSU(lsu.io.in)
+  val dcacheFwdInfo = Wire(new DCacheForwardInfo)
+  dcacheFwdInfo.valid := lsu.io.in.valid && lsu.io.in.bits.cacheableLw && lsu.io.in.bits.dcacheHit
+  dcacheFwdInfo.addr  := lsu.io.in.bits.exuWriteBack.gpr.addr
+  dcacheFwdInfo.data  := dcache.io.readData
   val wbuRawFwdInfo = Wire(new WrBackForwardInfo)
   wbuRawFwdInfo.addr      := wbu.io.in.bits.gpr.addr
   wbuRawFwdInfo.enWr      := wbu.io.in.bits.gpr.en && wbu.io.in.valid
@@ -358,15 +361,8 @@ class CPUCore(
   idu.io.exuAddFwd := exu.io.addFwd
   idu.io.wrBackInfo.lsu := lsuFwdInfo
   idu.io.wrBackInfo.wbu := ExtractFwdInfoFromWrBack(wbu.io.in, wbu.io.memResp)
-  val dcacheFwdInfo = Wire(new DCacheForwardInfo)
-  dcacheFwdInfo.valid := lsu.io.in.valid && lsu.io.in.bits.cacheableLw && lsu.io.in.bits.dcacheHit
-  dcacheFwdInfo.addr  := lsu.io.in.bits.exuWriteBack.gpr.addr
-  dcacheFwdInfo.data  := dcache.io.readData
   idu.io.dcacheFwd := dcacheFwdInfo
-  idu.io.exuLateLoad := exu.io.lateLoad
   idu.io.reg1AddImmWbuRawInfo := wbuRawFwdInfo
-  idu.io.perfDCacheLoadValid := lsu.io.in.fire && lsu.io.in.bits.cacheableLw
-  idu.io.perfDCacheLoadHit := lsu.io.in.bits.dcacheHit
 
   idu.io.pipelineFlush := activeRedirectValid
 

@@ -293,25 +293,44 @@ class CPUCore(
   io.dram <> dataMemBus.io.out
   exu.io.memReq <> dataMemBus.io.exuMemReq
   wbu.io.memResp <> dataMemBus.io.memResp
-  dcache.io.queryAddr  := exu.io.dcache.queryAddr
-  exu.io.dcache.hit    := dcache.io.hit && p.enableDCache.B
+  dcache.io.accessAddr := exu.io.dcache.queryAddr
+  dcache.io.storeAddr  := exu.io.dcache.storeAddr
+  exu.io.dcache.hit    := dcache.io.hit && p.enableDCache.B && dcache.io.lookupValid
   val dcacheStoreEpoch = RegInit(0.U(8.W))
   when((exu.io.dcache.invalidate || exu.io.dcache.storeUpdate) && p.enableDCache.B) {
     dcacheStoreEpoch := dcacheStoreEpoch + 1.U
   }
   exu.io.dcache.storeEpoch := dcacheStoreEpoch
   wbu.io.dcacheStoreEpoch  := dcacheStoreEpoch
-  dcache.io.invalidate := exu.io.dcache.invalidate && p.enableDCache.B
+  val dcacheInvalidate = exu.io.dcache.invalidate && p.enableDCache.B
+  dcache.io.invalidate := dcacheInvalidate
   val dcacheStoreUpdate = exu.io.dcache.storeUpdate && p.enableDCache.B
   dcache.io.storeUpdate := dcacheStoreUpdate
   dcache.io.storeData   := exu.io.dcache.storeData
   dcache.io.storeMask   := exu.io.dcache.storeMask
   lsu.io.dcacheReadData := dcache.io.readData
   exu.io.lateLoadData   := dcache.io.readData
-  dcache.io.update     := wbu.io.dcacheUpdate && p.enableDCache.B && !dcacheStoreUpdate
+  val dcacheUpdate = wbu.io.dcacheUpdate && p.enableDCache.B && !dcacheStoreUpdate
+  dcache.io.update     := dcacheUpdate
   dcache.io.updateAddr := wbu.io.dcacheAddr
   dcache.io.updateData := wbu.io.dcacheData
   dcache.io.updateMask := wbu.io.dcacheMask
+
+  // A lookup starts exactly when an IDU instruction enters EXU. The BRAM read
+  // address stays directly on the IDU address path; writes affecting a held
+  // EXU lookup are handled by DCache's separate held override state.
+  val dcacheIncomingLookup = idu.io.out.fire
+  dcache.io.tagReadEn   := dcacheIncomingLookup && p.enableDCache.B
+  dcache.io.tagReadAddr := idu.io.out.bits.info.reg1AddImm
+  dcache.io.lookupHeld  := exu.io.in.valid && !exu.io.in.ready
+
+  when(exu.io.in.valid && p.enableDCache.B) {
+    assert(dcache.io.lookupValid, "DCache tag lookup must be valid for an EXU instruction")
+    assert(
+      dcache.io.lookupAddr === exu.io.dcache.queryAddr,
+      "DCache tag lookup address must remain aligned with the EXU instruction"
+    )
+  }
 
   ifu.io.pc.bits  := pcFeedToIFU
   ifu.io.pc.valid := true.B

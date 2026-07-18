@@ -322,16 +322,18 @@ class EXU(
 
   val isMemOP        = isTypLoad || isTypStore
   val exuResultValid = !isTypArithmetic || (alu.io.out.valid && (!hasLateLoadOperand || lateDataReady))
-  // Every ordinary single-cycle ALU instruction can bypass the M/D output
-  // mux. Multi-cycle M-extension results retain the generic result path.
+  // Keep the same-cycle forwarding loop independent of the multi-cycle M/D
+  // result mux.  An M/D producer still advertises its destination while it is
+  // in EXU, but its data remains unavailable to IDU; a dependent consumer
+  // waits one cycle and receives the registered result from LSU instead.
   val isMExt = !isFmtI && func7t(0)
   val useSingleCycleForward = isTypArithmetic && !isMExt && !hasLateLoadOperand
-  val fastForwardData = Mux(useSingleCycleForward, alu.io.singleCycleResult, writeBackInfo.gpr.data)
+  val exuForwardData = Mux(isTypArithmetic, alu.io.singleCycleResult, dinst.info.preMuxWrBackData)
   // Keep lateAddResult out of the generic M/D forwarding mux. Its compact
   // dedicated channel preserves same-cycle forwarding without another rd
   // comparison; sequential single issue supplies producer identity.
-  val exuForwardDataValid = !isMemOP && exuResultValid && !hasLateLoadOperand
-  io.fwd := WrBackForwardInfo(io.in.valid, dinst, exuForwardDataValid, fastForwardData, csrWrEnable)
+  val exuForwardDataValid = !isMemOP && !hasLateLoadOperand && (!isTypArithmetic || useSingleCycleForward)
+  io.fwd := WrBackForwardInfo(io.in.valid, dinst, exuForwardDataValid, exuForwardData, csrWrEnable)
   io.lateAddFwd.valid :=
     io.in.valid && dinst.info.rdWrEn && dinst.info.rd =/= 0.U && hasLateLoadOperand && exuResultValid
   io.lateAddFwd.data := lateAddResult

@@ -229,8 +229,10 @@ Vivado 可能在首次打开迁移后的工程时改写 XCI 的 GUI 元数据，
 
 生成实现结果：
 
+并行度优先沿用已审核并持久化在 Vivado 工程 run 中的设置；当前 `digital_twin` 工程统一使用 16 jobs。脚本调用也应显式传入相同数值，避免 GUI、XPR 和批处理流程使用不同并行度。只有实验记录明确要求复现其他并行度时才覆盖该值，并记录为新的实现批次条件。
+
 ```sh
-./npc/scripts/run_digital_twin_vivado.sh bitstream --jobs 32
+./npc/scripts/run_digital_twin_vivado.sh bitstream --jobs 16
 ```
 
 检查 routed timing：

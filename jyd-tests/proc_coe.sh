@@ -37,5 +37,5 @@ tail -n +3 "$DEST_COE" | tr -d ',\r\n' | xxd -r -p > "$DEST_BIN"
 objcopy -I binary -O binary --reverse-bytes=4 "$DEST_BIN" "$DEST_BIN"
 
 if [ "$NO_DISASM" -eq 0 ]; then
-    riscv64-linux-gnu-objdump -D -b binary -m riscv:rv32 --adjust-vma=0x80000000 "$DEST_BIN" > "$DEST_DISASM"
+    riscv64-linux-gnu-objdump -D -b binary -m riscv:rv32 -M max --adjust-vma=0x80000000 "$DEST_BIN" > "$DEST_DISASM"
 fi

@@ -4,6 +4,7 @@ import chisel3._
 import chisel3.util._
 
 import common_def._
+import jyd.DistMemGen32x32
 
 object BTBParameters {
   val ENTRY_NUM   = 16
@@ -92,14 +93,25 @@ class BranchTargetBuffer extends Module {
     }
   })
 
-  val entries = RegInit(VecInit.fill(BTBParameters.ENTRY_NUM)(0.U.asTypeOf(new BTBEntry)))
+  require((new BTBEntry).getWidth == 32, "BTB entry must match the 32-bit distributed-memory IP")
+
+  // Keep the fetch query in one asynchronous distributed-memory copy.  The
+  // update port only needs the old tag/type/counter to compute the next
+  // direction state, so retain that narrow state in resettable registers
+  // instead of a second 32-bit memory replica.
+  val queryMem              = Module(new DistMemGen32x32)
+  val validMask             = RegInit(0.U(BTBParameters.ENTRY_NUM.W))
+  val updateTags            = RegInit(VecInit.fill(BTBParameters.ENTRY_NUM)(0.U(BTBParameters.TAG_WIDTH.W)))
+  val updateIsBranches      = RegInit(VecInit.fill(BTBParameters.ENTRY_NUM)(false.B))
+  val updateDirectionStates = RegInit(VecInit.fill(BTBParameters.ENTRY_NUM)(0.U(2.W)))
 
   // Query logic
   val queryTag   = BTBParameters.extractTag(io.query.addr)
   val queryIndex = BTBParameters.extractIndex(io.query.addr)
-  val queryEntry = entries(queryIndex)
+  queryMem.io.dpra := queryIndex.pad(5)
+  val queryEntry = queryMem.io.dpo.asTypeOf(new BTBEntry)
 
-  io.query.hit    := queryEntry.valid && (queryEntry.tag === queryTag)
+  io.query.hit    := validMask(queryIndex) && queryEntry.valid && (queryEntry.tag === queryTag)
   io.query.target := queryEntry.target.get
   io.query.isJAL  := queryEntry.isJAL
   io.query.isBranch := queryEntry.isBranch
@@ -107,29 +119,44 @@ class BranchTargetBuffer extends Module {
   io.query.isBackward := queryEntry.isBackward
 
   // Update logic
-  when(io.update.en) {
-    val updateTag   = BTBParameters.extractTag(io.update.addr)
-    val updateIndex = BTBParameters.extractIndex(io.update.addr)
+  val updateTag      = BTBParameters.extractTag(io.update.addr)
+  val updateIndex    = BTBParameters.extractIndex(io.update.addr)
+  val oldDirection   = updateDirectionStates(updateIndex)
+  val entryMatches   = validMask(updateIndex) && updateTags(updateIndex) === updateTag &&
+    updateIsBranches(updateIndex)
+  val nextDirection = WireDefault(0.U(2.W))
 
-    entries(updateIndex).valid  := true.B
-    entries(updateIndex).tag    := updateTag
-    entries(updateIndex).target := BTBTarget(io.update.target)
-    entries(updateIndex).isJAL  := io.update.isJAL
-    entries(updateIndex).isBranch := io.update.isBranch
-    entries(updateIndex).isBackward := io.update.isBackward
-
-    when(io.update.isBranch) {
-      val entryMatches = entries(updateIndex).valid && entries(updateIndex).tag === updateTag &&
-        entries(updateIndex).isBranch
-      when(!entryMatches) {
-        entries(updateIndex).directionCounter := Mux(io.update.actualTaken, 2.U, 1.U)
-      }.elsewhen(io.update.actualTaken && entries(updateIndex).directionCounter =/= 3.U) {
-        entries(updateIndex).directionCounter := entries(updateIndex).directionCounter + 1.U
-      }.elsewhen(!io.update.actualTaken && entries(updateIndex).directionCounter =/= 0.U) {
-        entries(updateIndex).directionCounter := entries(updateIndex).directionCounter - 1.U
-      }
+  when(io.update.isBranch) {
+    when(!entryMatches) {
+      nextDirection := Mux(io.update.actualTaken, 2.U, 1.U)
+    }.elsewhen(io.update.actualTaken && oldDirection =/= 3.U) {
+      nextDirection := oldDirection + 1.U
+    }.elsewhen(!io.update.actualTaken && oldDirection =/= 0.U) {
+      nextDirection := oldDirection - 1.U
     }.otherwise {
-      entries(updateIndex).directionCounter := 0.U
+      nextDirection := oldDirection
     }
+  }
+
+  val nextEntry = Wire(new BTBEntry)
+  nextEntry.valid            := true.B
+  nextEntry.tag              := updateTag
+  nextEntry.target           := BTBTarget(io.update.target)
+  nextEntry.isJAL            := io.update.isJAL
+  nextEntry.isBranch         := io.update.isBranch
+  nextEntry.isBackward       := io.update.isBackward
+  nextEntry.directionCounter := nextDirection
+
+  val updateEn = io.update.en && !reset.asBool
+  queryMem.io.a   := updateIndex.pad(5)
+  queryMem.io.d   := nextEntry.asUInt
+  queryMem.io.clk := clock
+  queryMem.io.we  := updateEn
+
+  when(updateEn) {
+    validMask := validMask | UIntToOH(updateIndex, BTBParameters.ENTRY_NUM)
+    updateTags(updateIndex) := updateTag
+    updateIsBranches(updateIndex) := io.update.isBranch
+    updateDirectionStates(updateIndex) := nextDirection
   }
 }

@@ -69,6 +69,8 @@ class BExtensionUnit extends Module {
   val workA     = Reg(Types.UWord)
   val workB     = Reg(Types.UWord)
   val accum     = Reg(Types.UWord)
+  val count     = Reg(UInt(6.W))
+  val rorRemain = Reg(UInt(5.W))
   val found     = Reg(Bool())
   val iteration = Reg(UInt(5.W))
   val resultReg = Reg(Types.UWord)
@@ -80,6 +82,8 @@ class BExtensionUnit extends Module {
   val nextWorkA = WireDefault(workA)
   val nextWorkB = WireDefault(workB)
   val nextAccum = WireDefault(accum)
+  val nextCount = WireDefault(count)
+  val nextRorRemain = WireDefault(rorRemain)
   val nextFound = WireDefault(found)
 
   switch(opReg) {
@@ -89,7 +93,7 @@ class BExtensionUnit extends Module {
         when(workA(31)) {
           nextFound := true.B
         }.otherwise {
-          nextAccum := accum + 1.U
+          nextCount := count + 1.U
         }
       }
     }
@@ -99,13 +103,13 @@ class BExtensionUnit extends Module {
         when(workA(0)) {
           nextFound := true.B
         }.otherwise {
-          nextAccum := accum + 1.U
+          nextCount := count + 1.U
         }
       }
     }
     is(BExtensionOp.cpop) {
       nextWorkA := workA >> 1
-      nextAccum := accum + workA(0)
+      nextCount := count + workA(0)
     }
     is(BExtensionOp.clmul) {
       nextWorkA := workA << 1
@@ -131,9 +135,9 @@ class BExtensionUnit extends Module {
       }
     }
     is(BExtensionOp.ror) {
-      when(workB(4, 0) =/= 0.U) {
+      when(rorRemain =/= 0.U) {
         nextWorkA := Cat(workA(0), workA(31, 1))
-        nextWorkB := workB - 1.U
+        nextRorRemain := rorRemain - 1.U
       }
     }
   }
@@ -146,6 +150,8 @@ class BExtensionUnit extends Module {
         workA     := io.in.bits.src1
         workB     := io.in.bits.src2
         accum     := 0.U
+        count     := 0.U
+        rorRemain := io.in.bits.src2(4, 0)
         found     := false.B
         iteration := 0.U
         state     := State.busy
@@ -155,9 +161,13 @@ class BExtensionUnit extends Module {
       workA := nextWorkA
       workB := nextWorkB
       accum := nextAccum
+      count := nextCount
+      rorRemain := nextRorRemain
       found := nextFound
       when(iteration === 31.U) {
-        resultReg := Mux(opReg === BExtensionOp.ror, nextWorkA, nextAccum)
+        val countResult = Cat(0.U(26.W), nextCount)
+        val isCountOp = opReg === BExtensionOp.clz || opReg === BExtensionOp.ctz || opReg === BExtensionOp.cpop
+        resultReg := Mux(opReg === BExtensionOp.ror, nextWorkA, Mux(isCountOp, countResult, nextAccum))
         state     := State.done
       }.otherwise {
         iteration := iteration + 1.U

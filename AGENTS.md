@@ -66,6 +66,24 @@ Platform device differences matter here:
 
 For emulator/runtime changes, rebuild the affected module and run the local workload you changed. CI validates `npc/**`, `patch/**`, and `.github/**`, so changes there should be kept green.
 
+## Optimization Experiment Documentation
+
+Optimization experiment documentation has a single canonical home: branch `opt-notes`, checked out at
+`/home/hanpi/gitclone/jyd-opt-notes`. Before starting or continuing an optimization experiment, read
+`npc/opt-iter-flow.md` and the relevant files under `npc/opt-try/` from that worktree. Copies of those files on RTL
+optimization branches are historical snapshots and must not be edited.
+
+Keep RTL, Vivado project, IP, constraint, and script changes on the relevant code branch. Commit the frozen candidate
+there first, then record the experiment in the `opt-notes` worktree with the code branch name and full commit SHA. Do
+not cherry-pick ordinary experiment-record commits back to code branches, and do not cherry-pick RTL commits into
+`opt-notes`.
+
+Changes that all active optimization branches must share, such as this `AGENTS.md` contract, must be isolated in their
+own commit and cherry-picked to `opt-loop`, `opt-280mhz-arch-baseline`, `opt-280mhz-next-arch`, and
+`opt-270mhz-1.704s`. The `opt-archive-*` branches are frozen and must not be updated. If documentation is accidentally
+committed on a code branch, transfer only the documentation diff to `opt-notes`, then restore the code branch's
+documentation in a follow-up commit. Never cherry-pick a mixed RTL/documentation commit into `opt-notes`.
+
 ## Commit & Pull Request Guidelines
 Recent history favors short, imperative commit subjects such as `fix using old CPU_DESIGN_NAME` and scoped prefixes like `ci:` or `jyd:`. Keep subjects under roughly 72 characters and make each commit a single logical change.
 

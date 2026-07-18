@@ -192,6 +192,7 @@ class EXU(
   alu_in.is_imm := isFmtI
   alu_in.func3t := func3t
   alu_in.func7t := func7t
+  alu_in.code   := dinst.code
 
   val aluOut = alu.io.out.bits
 
@@ -322,12 +323,13 @@ class EXU(
 
   val isMemOP        = isTypLoad || isTypStore
   val exuResultValid = !isTypArithmetic || (alu.io.out.valid && (!hasLateLoadOperand || lateDataReady))
-  // Keep the same-cycle forwarding loop independent of the multi-cycle M/D
-  // result mux.  An M/D producer still advertises its destination while it is
+  // Keep the same-cycle forwarding loop independent of the multi-cycle M/D/B
+  // result mux.  A multi-cycle producer still advertises its destination while it is
   // in EXU, but its data remains unavailable to IDU; a dependent consumer
   // waits one cycle and receives the registered result from LSU instead.
-  val isMExt = !isFmtI && func7t(0)
-  val useSingleCycleForward = isTypArithmetic && !isMExt && !hasLateLoadOperand
+  val isMExt = !isFmtI && func7t === "b0000001".U
+  val (isBExt, _) = BExtensionDecode(dinst.code)
+  val useSingleCycleForward = isTypArithmetic && !isMExt && !isBExt && !hasLateLoadOperand
   val exuForwardData = Mux(isTypArithmetic, alu.io.singleCycleResult, dinst.info.preMuxWrBackData)
   // Keep lateAddResult out of the generic M/D forwarding mux. Its compact
   // dedicated channel preserves same-cycle forwarding without another rd

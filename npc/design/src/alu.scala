@@ -9,6 +9,7 @@ class ALUInput extends Bundle {
   val is_imm = Bool()
   val func3t = UInt(3.W)
   val func7t = UInt(7.W)
+  val code   = Types.UWord
   val src1   = Types.UWord
   val src2   = Types.UWord
 }
@@ -405,10 +406,19 @@ class ALU extends Module {
   )
   io.singleCycleResult := aluResult
 
-  val isMExt = !inbits.is_imm && inbits.func7t(0)
+  val (isBExt, bExtOp) = BExtensionDecode(inbits.code)
+
+  val isMExt = !inbits.is_imm && inbits.func7t === "b0000001".U
 
   val isMulOp = isMExt && ~inbits.func3t(2)
   val isDivOp = isMExt && inbits.func3t(2)
+
+  val bExtension = Module(new BExtensionUnit)
+  bExtension.io.in.valid     := io.in.valid && isBExt
+  bExtension.io.in.bits.op   := bExtOp
+  bExtension.io.in.bits.src1 := src1
+  bExtension.io.in.bits.src2 := src2
+  bExtension.io.out.ready    := io.out.ready
 
   val multiplier = Module(new Multiplier)
   multiplier.io.in.valid       := io.in.valid && isMulOp
@@ -426,24 +436,27 @@ class ALU extends Module {
 
   io.in.ready := Mux1H(
     Seq(
+      isBExt -> bExtension.io.in.ready,
       isMulOp -> multiplier.io.in.ready,
       isDivOp -> divider.io.in.ready,
-      !isMExt -> io.out.ready
+      (!isBExt && !isMExt) -> io.out.ready
     )
   )
 
   io.out.valid := Mux1H(
     Seq(
+      isBExt -> bExtension.io.out.valid,
       isMulOp -> multiplier.io.out.valid,
       isDivOp -> divider.io.out.valid,
-      !isMExt -> io.in.valid
+      (!isBExt && !isMExt) -> io.in.valid
     )
   )
   io.out.bits := Mux1H(
     Seq(
+      isBExt -> bExtension.io.out.bits,
       isMulOp -> multiplier.io.out.bits,
       isDivOp -> divider.io.out.bits,
-      !isMExt -> aluResult
+      (!isBExt && !isMExt) -> aluResult
     )
   )
 }

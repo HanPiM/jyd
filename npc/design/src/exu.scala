@@ -192,7 +192,9 @@ class EXU(
   alu_in.is_imm := isFmtI
   alu_in.func3t := func3t
   alu_in.func7t := func7t
-  alu_in.code   := dinst.code
+  val (isBExt, bExtOp) = BExtensionDecode(dinst.code)
+  alu_in.bExtValid := isBExt
+  alu_in.bExtOp    := bExtOp
 
   val aluOut = alu.io.out.bits
 
@@ -328,7 +330,6 @@ class EXU(
   // in EXU, but its data remains unavailable to IDU; a dependent consumer
   // waits one cycle and receives the registered result from LSU instead.
   val isMExt = !isFmtI && func7t === "b0000001".U
-  val (isBExt, _) = BExtensionDecode(dinst.code)
   val useSingleCycleForward = isTypArithmetic && !isMExt && !isBExt && !hasLateLoadOperand
   val exuForwardData = Mux(isTypArithmetic, alu.io.singleCycleResult, dinst.info.preMuxWrBackData)
   // Keep lateAddResult out of the generic M/D forwarding mux. Its compact

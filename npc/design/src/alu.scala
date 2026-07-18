@@ -6,12 +6,13 @@ import common_def._
 import busfsm._
 
 class ALUInput extends Bundle {
-  val is_imm = Bool()
-  val func3t = UInt(3.W)
-  val func7t = UInt(7.W)
-  val code   = Types.UWord
-  val src1   = Types.UWord
-  val src2   = Types.UWord
+  val is_imm    = Bool()
+  val func3t    = UInt(3.W)
+  val func7t    = UInt(7.W)
+  val bExtValid = Bool()
+  val bExtOp    = BExtensionOp()
+  val src1      = Types.UWord
+  val src2      = Types.UWord
 }
 
 class ALU_foo extends Module {
@@ -406,7 +407,7 @@ class ALU extends Module {
   )
   io.singleCycleResult := aluResult
 
-  val (isBExt, bExtOp) = BExtensionDecode(inbits.code)
+  val isBExt = inbits.bExtValid
 
   val isMExt = !inbits.is_imm && inbits.func7t === "b0000001".U
 
@@ -415,7 +416,7 @@ class ALU extends Module {
 
   val bExtension = Module(new BExtensionUnit)
   bExtension.io.in.valid     := io.in.valid && isBExt
-  bExtension.io.in.bits.op   := bExtOp
+  bExtension.io.in.bits.op   := inbits.bExtOp
   bExtension.io.in.bits.src1 := src1
   bExtension.io.in.bits.src2 := src2
   bExtension.io.out.ready    := io.out.ready

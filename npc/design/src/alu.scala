@@ -42,7 +42,7 @@ class DividerInput extends Bundle {
 
 object MultiplierConfig {
   val latency     = 4
-  val fastLatency = 2
+  val fastLatency = 3
 }
 
 class mult_gen_0 extends BlackBox with HasBlackBoxInline {
@@ -121,40 +121,6 @@ class mult_gen_mul32_fast extends BlackBox with HasBlackBoxInline {
   )
 }
 
-class Mul32Low2Cycle extends BlackBox with HasBlackBoxInline {
-  val io = IO(new Bundle {
-    val CLK = Input(Clock())
-    val A   = Input(UInt(32.W))
-    val B   = Input(UInt(32.W))
-    val P   = Output(UInt(32.W))
-  })
-
-  setInline(
-    "Mul32Low2Cycle.sv",
-    """module Mul32Low2Cycle(
-      |  input         CLK,
-      |  input  [31:0] A,
-      |  input  [31:0] B,
-      |  output [31:0] P
-      |);
-      |  (* use_dsp = "yes" *) reg [31:0] low_product;
-      |  (* use_dsp = "yes" *) reg [31:0] cross_ah_bl;
-      |  (* use_dsp = "yes" *) reg [31:0] cross_al_bh;
-      |  reg [31:0] result;
-      |
-      |  always @(posedge CLK) begin
-      |    low_product <= A[15:0] * B[15:0];
-      |    cross_ah_bl <= A[31:16] * B[15:0];
-      |    cross_al_bh <= A[15:0] * B[31:16];
-      |    result <= {low_product[31:16] + cross_ah_bl[15:0] + cross_al_bh[15:0], low_product[15:0]};
-      |  end
-      |
-      |  assign P = result;
-      |endmodule
-      |""".stripMargin
-  )
-}
-
 class Multiplier extends Module {
   val io = IO(new Bundle {
     val in  = Flipped(Decoupled(new MultiplierInput))
@@ -171,7 +137,7 @@ class Multiplier extends Module {
   val slowValidPipe = RegInit(0.U(MultiplierConfig.latency.W))
   val fastValidPipe = RegInit(0.U(MultiplierConfig.fastLatency.W))
   val multiplier    = Module(new mult_gen_0)
-  val fastMultiplier = Module(new Mul32Low2Cycle)
+  val fastMultiplier = Module(new mult_gen_mul32_fast)
 
   val inputFunc3t = io.in.bits.func3t
   val inputIsMulh = inputFunc3t === 1.U

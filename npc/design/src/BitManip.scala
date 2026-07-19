@@ -6,7 +6,7 @@ import chisel3.util._
 import common_def._
 
 object BExtensionOp extends ChiselEnum {
-  val clz, ctz, cpop, clmul, orcB, xperm4, ror = Value
+  val clz, ctz, cpop, clmul, orcB, xperm4, ror, pack = Value
 }
 
 class BExtensionInput extends Bundle {
@@ -74,7 +74,9 @@ class BExtensionUnit extends Module {
     !io.in.bits.isImm && io.in.bits.func3t === "b010".U && io.in.bits.func7t === "b0010100".U
   val isRor =
     !io.in.bits.isImm && io.in.bits.func3t === "b101".U && io.in.bits.func7t === "b0110000".U
-  val decodedValid = isClz || isCtz || isCpop || isClmul || isOrcB || isXperm4 || isRor
+  val isPack =
+    !io.in.bits.isImm && io.in.bits.func3t === "b100".U && io.in.bits.func7t === "b0000100".U
+  val decodedValid = isClz || isCtz || isCpop || isClmul || isOrcB || isXperm4 || isRor || isPack
   val decodedOp = MuxCase(
     BExtensionOp.clz,
     Seq(
@@ -83,7 +85,8 @@ class BExtensionUnit extends Module {
       isClmul  -> BExtensionOp.clmul,
       isOrcB   -> BExtensionOp.orcB,
       isXperm4 -> BExtensionOp.xperm4,
-      isRor    -> BExtensionOp.ror
+      isRor    -> BExtensionOp.ror,
+      isPack   -> BExtensionOp.pack
     )
   )
 
@@ -140,6 +143,9 @@ class BExtensionUnit extends Module {
         nextWorkA := Cat(workA(0), workA(31, 1))
         nextRorRemain := rorRemain - 1.U
       }
+    }
+    is(BExtensionOp.pack) {
+      nextAccum := Cat(workB(15, 0), workA(15, 0))
     }
   }
 

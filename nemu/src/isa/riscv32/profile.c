@@ -109,8 +109,9 @@ static PcStat *pcs;
 static LoadPairStat *load_pairs;
 static uint64_t pair_table_full;
 static uint64_t btb16_miss, btb32_miss, btb16_jalr_miss,
-                btb32_jalr_miss;
-static BtbEnt btb16[16], btb32[32], btb16j[16], btb32j[32];
+                btb32_jalr_miss, btb32_stored_jalr_not_predicted_miss;
+static BtbEnt btb16[16], btb32[32], btb16j[16], btb32j[32],
+    btb32_stored_jalr_not_predicted[32];
 static DCacheEnt current_dcache[DCACHE_LINES], proposed_dcache[DCACHE_LINES];
 static DCacheStat current_dcache_stat, proposed_dcache_stat;
 static PreviousLoad previous_load;
@@ -292,6 +293,20 @@ static void model(BtbEnt *b, unsigned n, uint32_t pc, uint32_t target,
       b[i].counter--;
   }
 }
+static void model_stored_jalr_not_predicted(BtbEnt *b, unsigned n, uint32_t pc,
+                                            uint32_t target, unsigned type,
+                                            bool taken, uint64_t *miss) {
+  if (type != K_JALR) {
+    model(b, n, pc, target, type, taken, false, miss);
+    return;
+  }
+
+  /* Match the current RTL: JALR allocates and refreshes a BTB entry, but the
+   * entry is not considered unconditionally taken by the predictor. */
+  (*miss)++;
+  unsigned i = (pc >> 2) & (n - 1);
+  b[i] = (BtbEnt){pc, target, 1, type, 2};
+}
 static LoadPairStat *find_load_pair(uint32_t producer_pc, uint32_t consumer_pc,
                                     unsigned width, unsigned consumer) {
   uint32_t h = producer_pc * 2654435761u ^ consumer_pc * 2246822519u ^
@@ -446,6 +461,9 @@ void riscv_profile_record(const Decode *s, word_t x, word_t rs1_before,
     model(btb32, 32, s->pc, s->dnpc, k, taken, false, &btb32_miss);
     model(btb16j, 16, s->pc, s->dnpc, k, taken, true, &btb16_jalr_miss);
     model(btb32j, 32, s->pc, s->dnpc, k, taken, true, &btb32_jalr_miss);
+    model_stored_jalr_not_predicted(
+        btb32_stored_jalr_not_predicted, 32, s->pc, s->dnpc, k, taken,
+        &btb32_stored_jalr_not_predicted_miss);
   }
   if (k == K_JALR) {
     jalr_rd[rd == 0 ? 0 : rd == 1 ? 1 : 2]++;
@@ -617,10 +635,12 @@ void riscv_profile_finish(void) {
           "\"note\":\"not a cycle-accurate model\","
           "\"btb16_no_jalr_misses\":%llu,"
           "\"btb32_no_jalr_misses\":%llu,"
+          "\"btb32_stored_jalr_not_predicted_misses\":%llu,"
           "\"btb16_with_jalr_misses\":%llu,"
           "\"btb32_with_jalr_misses\":%llu},\n",
           (unsigned long long)btb16_miss,
           (unsigned long long)btb32_miss,
+          (unsigned long long)btb32_stored_jalr_not_predicted_miss,
           (unsigned long long)btb16_jalr_miss,
           (unsigned long long)btb32_jalr_miss);
 

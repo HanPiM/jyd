@@ -75,6 +75,12 @@ class BTBEntry extends Bundle {
   val target = new BTBTarget()
 }
 
+class BTBUpdateState extends Bundle {
+  val tag              = UInt(BTBParameters.TAG_WIDTH.W)
+  val isBranch         = Bool()
+  val directionCounter = UInt(2.W)
+}
+
 class BranchTargetBuffer extends Module {
   val io = IO(new Bundle {
     val query  = new Bundle {
@@ -100,14 +106,13 @@ class BranchTargetBuffer extends Module {
   require((new BTBEntry).getWidth == 32, "BTB entry must match the 32-bit distributed-memory IP")
 
   // Keep the fetch query in one asynchronous distributed-memory copy.  The
-  // update port only needs the old tag/type/counter to compute the next
-  // direction state, so retain that narrow state in resettable registers
-  // instead of a second 32-bit memory replica.
-  val queryMem              = Module(new DistMemGen32x32)
-  val validMask             = RegInit(0.U(BTBParameters.ENTRY_NUM.W))
-  val updateTags            = RegInit(VecInit.fill(BTBParameters.ENTRY_NUM)(0.U(BTBParameters.TAG_WIDTH.W)))
-  val updateIsBranches      = RegInit(VecInit.fill(BTBParameters.ENTRY_NUM)(false.B))
-  val updateDirectionStates = RegInit(VecInit.fill(BTBParameters.ENTRY_NUM)(0.U(2.W)))
+  // update port only needs the old tag/type/counter.  Keep that narrow
+  // state in a distributed-memory shadow so expanding the BTB does not add
+  // hundreds of resettable flops and clock loads.  validMask prevents the
+  // uninitialized shadow contents from matching after reset.
+  val queryMem       = Module(new DistMemGen32x32)
+  val updateStateMem = Mem(BTBParameters.ENTRY_NUM, new BTBUpdateState)
+  val validMask      = RegInit(0.U(BTBParameters.ENTRY_NUM.W))
 
   // Query logic
   val queryTag   = BTBParameters.extractTag(io.query.addr)
@@ -125,9 +130,9 @@ class BranchTargetBuffer extends Module {
   // Update logic
   val updateTag      = BTBParameters.extractTag(io.update.addr)
   val updateIndex    = BTBParameters.extractIndex(io.update.addr)
-  val oldDirection   = updateDirectionStates(updateIndex)
-  val entryMatches   = validMask(updateIndex) && updateTags(updateIndex) === updateTag &&
-    updateIsBranches(updateIndex)
+  val oldUpdateState = updateStateMem(updateIndex)
+  val oldDirection   = oldUpdateState.directionCounter
+  val entryMatches   = validMask(updateIndex) && oldUpdateState.tag === updateTag && oldUpdateState.isBranch
   val nextDirection = WireDefault(0.U(2.W))
 
   when(io.update.isBranch) {
@@ -152,6 +157,11 @@ class BranchTargetBuffer extends Module {
   nextEntry.isBackward       := io.update.isBackward
   nextEntry.directionCounter := nextDirection
 
+  val nextUpdateState = Wire(new BTBUpdateState)
+  nextUpdateState.tag              := updateTag
+  nextUpdateState.isBranch         := io.update.isBranch
+  nextUpdateState.directionCounter := nextDirection
+
   val updateEn = io.update.en && !reset.asBool
   queryMem.io.a   := updateIndex.pad(5)
   queryMem.io.d   := nextEntry.asUInt
@@ -160,8 +170,6 @@ class BranchTargetBuffer extends Module {
 
   when(updateEn) {
     validMask := validMask | UIntToOH(updateIndex, BTBParameters.ENTRY_NUM)
-    updateTags(updateIndex) := updateTag
-    updateIsBranches(updateIndex) := io.update.isBranch
-    updateDirectionStates(updateIndex) := nextDirection
+    updateStateMem.write(updateIndex, nextUpdateState)
   }
 }

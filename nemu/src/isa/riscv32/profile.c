@@ -82,7 +82,7 @@ typedef struct {
 } LoadPairStat;
 typedef struct {
   uint32_t pc;
-  uint8_t rd, width, current_hit, proposed_hit, valid;
+  uint8_t rd, width, current_hit, rtl_hit, proposed_hit, d1_state_diff, valid;
 } PreviousLoad;
 
 static const char *kind_names[] = {
@@ -104,6 +104,16 @@ static uint64_t load_raw_current_hit[W_NR][K_NR];
 static uint64_t load_raw_proposed_hit[W_NR][K_NR];
 static uint64_t load_raw_incremental_hit[W_NR][K_NR];
 static uint64_t load_raw_lost_hit[W_NR][K_NR];
+/* Isolate masked partial-store updates from the already-retained narrow-load
+ * eligibility change.  Distance 1 uses the exact restricted late-load
+ * consumer forms; distance 2 is the generic LSU-cache forwarding opportunity.
+ */
+static uint64_t masked_store_baseline_hit[2][W_NR];
+static uint64_t masked_store_candidate_hit[2][W_NR];
+static uint64_t masked_store_incremental_hit[2][W_NR];
+static uint64_t masked_store_lost_hit[2][W_NR];
+static uint64_t masked_store_baseline_miss_successor_deps;
+static uint64_t masked_store_candidate_miss_successor_deps;
 static Phase phases[MAX_PHASES];
 static PcStat *pcs;
 static LoadPairStat *load_pairs;
@@ -112,12 +122,15 @@ static uint64_t btb16_miss, btb32_miss, btb16_jalr_miss,
                 btb32_jalr_miss, btb32_stored_jalr_not_predicted_miss;
 static BtbEnt btb16[16], btb32[32], btb16j[16], btb32j[32],
     btb32_stored_jalr_not_predicted[32];
-static DCacheEnt current_dcache[DCACHE_LINES], proposed_dcache[DCACHE_LINES];
-static DCacheStat current_dcache_stat, proposed_dcache_stat;
-static PreviousLoad previous_load;
+static DCacheEnt current_dcache[DCACHE_LINES], rtl_dcache[DCACHE_LINES],
+    proposed_dcache[DCACHE_LINES];
+static DCacheStat current_dcache_stat, rtl_dcache_stat, proposed_dcache_stat;
+static PreviousLoad previous_load, distance2_load;
 static uint64_t last_write[32];
 static uint8_t last_kind[32];
 static uint8_t previous_miss_consumer_rd;
+static uint8_t masked_baseline_miss_consumer_rd;
+static uint8_t masked_candidate_miss_consumer_rd;
 
 void riscv_profile_set_output(const char *path) {
   out_path = path;
@@ -255,6 +268,18 @@ static void current_dcache_store(uint32_t addr, unsigned width) {
     current_dcache[dcache_index(addr)].valid = 0;
   }
 }
+static void rtl_dcache_store(uint32_t addr, unsigned width) {
+  if (!dcacheable(addr))
+    return;
+  if (width == W_WORD) {
+    rtl_dcache_stat.full_store_allocate++;
+    dcache_allocate(rtl_dcache, addr);
+  } else {
+    rtl_dcache_stat.partial_store_total++;
+    rtl_dcache_stat.partial_store_invalidate++;
+    rtl_dcache[dcache_index(addr)].valid = 0;
+  }
+}
 static void proposed_dcache_store(uint32_t addr, unsigned width) {
   if (!dcacheable(addr))
     return;
@@ -269,6 +294,56 @@ static void proposed_dcache_store(uint32_t addr, unsigned width) {
     proposed_dcache_stat.partial_store_invalidate++;
     proposed_dcache[dcache_index(addr)].valid = 0;
   }
+}
+
+static bool late_load_source_eligible(uint32_t x, unsigned source_mask) {
+  unsigned op = x & 0x7f, f3 = (x >> 12) & 7, f7 = x >> 25;
+  uint32_t imm12 = x >> 20;
+  bool add = f3 == 0 && (op == 0x13 || (op == 0x33 && f7 == 0));
+  bool andi1 = op == 0x13 && f3 == 7 && imm12 == 1;
+  bool srli1 = op == 0x13 && f3 == 5 && imm12 == 1;
+  bool allow_rs1 = add || andi1 || srli1;
+  bool allow_rs2 = add && op == 0x33;
+  return (!(source_mask & 1) || allow_rs1) &&
+         (!(source_mask & 2) || allow_rs2);
+}
+
+static void record_masked_store_update_saving(PreviousLoad *load,
+                                              unsigned distance, uint32_t x,
+                                              unsigned consumer, unsigned rs1,
+                                              unsigned rs2, bool use1,
+                                              bool use2) {
+  if (!load->valid)
+    return;
+  unsigned source_mask = ((use1 && rs1 == load->rd) ? 1 : 0) |
+                         ((use2 && rs2 == load->rd) ? 2 : 0);
+  if (!source_mask)
+    return;
+
+  bool eligible;
+  if (distance == 1) {
+    eligible = late_load_source_eligible(x, source_mask);
+  } else {
+    bool address_rs1 = consumer == K_LOAD || consumer == K_STORE ||
+                       consumer == K_JALR;
+    eligible = !(address_rs1 && (source_mask & 1));
+  }
+  if (!eligible)
+    return;
+  if (distance == 2 && load->d1_state_diff)
+    return;
+
+  unsigned slot = distance - 1;
+  unsigned width = load->width;
+  bool baseline_hit = load->rtl_hit;
+  bool candidate_hit = load->proposed_hit;
+  masked_store_baseline_hit[slot][width] += baseline_hit;
+  masked_store_candidate_hit[slot][width] += candidate_hit;
+  masked_store_incremental_hit[slot][width] +=
+      candidate_hit && !baseline_hit;
+  masked_store_lost_hit[slot][width] += baseline_hit && !candidate_hit;
+  if (distance == 1)
+    load->d1_state_diff = baseline_hit != candidate_hit;
 }
 static void model(BtbEnt *b, unsigned n, uint32_t pc, uint32_t target,
                   unsigned type, bool taken, bool allow_jalr, uint64_t *miss) {
@@ -405,14 +480,35 @@ void riscv_profile_record(const Decode *s, word_t x, word_t rs1_before,
     miss_consumer_successor_deps++;
   previous_miss_consumer_rd = 0;
 
+  if (masked_baseline_miss_consumer_rd &&
+      ((use1 && rs1 == masked_baseline_miss_consumer_rd) ||
+       (use2 && rs2 == masked_baseline_miss_consumer_rd)))
+    masked_store_baseline_miss_successor_deps++;
+  if (masked_candidate_miss_consumer_rd &&
+      ((use1 && rs1 == masked_candidate_miss_consumer_rd) ||
+       (use2 && rs2 == masked_candidate_miss_consumer_rd)))
+    masked_store_candidate_miss_successor_deps++;
+  masked_baseline_miss_consumer_rd = 0;
+  masked_candidate_miss_consumer_rd = 0;
+
   if (previous_load.valid && rd && is_late_load_consumer(x)) {
     unsigned source_mask =
         ((use1 && rs1 == previous_load.rd) ? 1 : 0) |
         ((use2 && rs2 == previous_load.rd) ? 2 : 0);
     if (source_mask && !previous_load.proposed_hit)
       previous_miss_consumer_rd = rd;
+    if (source_mask && late_load_source_eligible(x, source_mask)) {
+      if (!previous_load.rtl_hit)
+        masked_baseline_miss_consumer_rd = rd;
+      if (!previous_load.proposed_hit)
+        masked_candidate_miss_consumer_rd = rd;
+    }
   }
 
+  record_masked_store_update_saving(&previous_load, 1, x, k, rs1, rs2,
+                                    use1, use2);
+  record_masked_store_update_saving(&distance2_load, 2, x, k, rs1, rs2,
+                                    use1, use2);
   record_immediate_load_raw(s->pc, k, rs1, rs2, use1, use2, p);
 
   /* Multiplication is a permutation modulo 2^20. Workloads currently execute
@@ -470,6 +566,7 @@ void riscv_profile_record(const Decode *s, word_t x, word_t rs1_before,
     jalr_rs1[rs1 == 1 ? 0 : rs1 == 5 ? 1 : 2]++;
   }
 
+  distance2_load = previous_load;
   previous_load.valid = 0;
   if (k == K_LOAD || k == K_STORE) {
     int32_t imm = k == K_LOAD
@@ -494,16 +591,20 @@ void riscv_profile_record(const Decode *s, word_t x, word_t rs1_before,
       bool current_hit =
           dcache_load(current_dcache, &current_dcache_stat, addr, width,
                       current_eligible);
+      bool rtl_hit =
+          dcache_load(rtl_dcache, &rtl_dcache_stat, addr, width,
+                      proposed_eligible);
       bool proposed_hit =
           dcache_load(proposed_dcache, &proposed_dcache_stat, addr, width,
                       proposed_eligible);
       if (rd) {
-        previous_load = (PreviousLoad){s->pc, rd, width, current_hit,
-                                       proposed_hit, 1};
+        previous_load = (PreviousLoad){s->pc, rd, width, current_hit, rtl_hit,
+                                       proposed_hit, 0, 1};
       }
     } else {
       p->store++;
       current_dcache_store(addr, width);
+      rtl_dcache_store(addr, width);
       proposed_dcache_store(addr, width);
       (void)rs2_before;
     }
@@ -578,6 +679,23 @@ void riscv_profile_finish(void) {
   uint64_t lost_bypass = matrix_sum(load_raw_lost_hit);
   long long net_bypass = (long long)proposed_bypass - (long long)current_bypass;
   double net_ms_280mhz = (double)net_bypass / 280000.0;
+  uint64_t masked_baseline_cycles = 0, masked_candidate_cycles = 0,
+           masked_incremental_cycles = 0, masked_lost_cycles = 0;
+  for (unsigned distance = 0; distance < 2; distance++)
+    for (unsigned width = 0; width < W_NR; width++) {
+      masked_baseline_cycles += masked_store_baseline_hit[distance][width];
+      masked_candidate_cycles += masked_store_candidate_hit[distance][width];
+      masked_incremental_cycles +=
+          masked_store_incremental_hit[distance][width];
+      masked_lost_cycles += masked_store_lost_hit[distance][width];
+    }
+  long long masked_forward_net_cycles =
+      (long long)masked_candidate_cycles - (long long)masked_baseline_cycles;
+  long long masked_successor_net_cycles =
+      (long long)masked_store_baseline_miss_successor_deps -
+      (long long)masked_store_candidate_miss_successor_deps;
+  long long masked_net_cycles =
+      masked_forward_net_cycles + masked_successor_net_cycles;
 
   fprintf(f,
           "{\n  \"schema\":2,\n  \"total_instructions\":%llu,\n  "
@@ -655,6 +773,55 @@ void riscv_profile_finish(void) {
   fprintf(f, ",\"proposed\":");
   dcache_stat_json(f, &proposed_dcache_stat);
   fprintf(f, "},\n");
+
+  fprintf(f,
+          "  \"partial_store_hit_update_isolated\":{"
+          "\"baseline_model\":\"narrow loads plus partial-store invalidate\","
+          "\"candidate_model\":\"narrow loads plus masked update on hit\","
+          "\"rtl_narrow_invalidate_cache\":");
+  dcache_stat_json(f, &rtl_dcache_stat);
+  fprintf(f, ",\"candidate_masked_update_cache\":");
+  dcache_stat_json(f, &proposed_dcache_stat);
+  fprintf(f,
+          ",\"distance1_exact_late_consumer_baseline_by_width\":[");
+  arr(f, masked_store_baseline_hit[0], W_NR);
+  fprintf(f, "],\"distance1_exact_late_consumer_candidate_by_width\":[");
+  arr(f, masked_store_candidate_hit[0], W_NR);
+  fprintf(f, "],\"distance1_incremental_by_width\":[");
+  arr(f, masked_store_incremental_hit[0], W_NR);
+  fprintf(f, "],\"distance1_lost_by_width\":[");
+  arr(f, masked_store_lost_hit[0], W_NR);
+  fprintf(f, "],\"distance2_no_d1_stall_baseline_by_width\":[");
+  arr(f, masked_store_baseline_hit[1], W_NR);
+  fprintf(f, "],\"distance2_no_d1_stall_candidate_by_width\":[");
+  arr(f, masked_store_candidate_hit[1], W_NR);
+  fprintf(f, "],\"distance2_no_d1_stall_incremental_by_width\":[");
+  arr(f, masked_store_incremental_hit[1], W_NR);
+  fprintf(f, "],\"distance2_no_d1_stall_lost_by_width\":[");
+  arr(f, masked_store_lost_hit[1], W_NR);
+  fprintf(f,
+          "],\"one_cycle_saving_estimate\":{"
+          "\"baseline_cycles\":%llu,\"candidate_cycles\":%llu,"
+          "\"incremental_hits\":%llu,\"lost_hits\":%llu,"
+          "\"forward_net_cycles\":%lld,"
+          "\"baseline_miss_consumer_successor_deps\":%llu,"
+          "\"candidate_miss_consumer_successor_deps\":%llu,"
+          "\"successor_net_cycles\":%lld,\"net_cycles\":%lld,"
+          "\"net_ms_at_280mhz\":%.6f},"
+          "\"assumptions\":\"one cycle per newly enabled hit-dependent "
+          "consumer; distance 1 mirrors restricted late ADD/ANDI-1/SRLI-1; "
+          "distance 2 mirrors generic LSU cache forwarding and excludes "
+          "loads already changed at distance 1; miss-completed consumer "
+          "successor dependencies add one cycle; intervening multi-cycle "
+          "instructions can still make the estimate an upper bound\"},\n",
+          (unsigned long long)masked_baseline_cycles,
+          (unsigned long long)masked_candidate_cycles,
+          (unsigned long long)masked_incremental_cycles,
+          (unsigned long long)masked_lost_cycles, masked_forward_net_cycles,
+          (unsigned long long)masked_store_baseline_miss_successor_deps,
+          (unsigned long long)masked_store_candidate_miss_successor_deps,
+          masked_successor_net_cycles, masked_net_cycles,
+          (double)masked_net_cycles / 280000.0);
 
   fprintf(f,
           "  \"load_raw_distance1\":{"

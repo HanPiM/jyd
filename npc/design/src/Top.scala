@@ -259,7 +259,9 @@ class CPUCore(
   btb.io.update.en         := RegNext(exu.io.out.valid && exu.io.btbUpdateEn)
   btb.io.update.addr       := RegNext(exu.io.pc)
   btb.io.update.target     := RegNext(exu.io.branchTarget)
-  btb.io.update.isJAL      := RegNext(exu.io.isJAL)
+  // JAL and JALR are both unconditional BTB entries.  Reuse the existing
+  // isJAL bit so JALR prediction adds neither a BTB data bit nor a module port.
+  btb.io.update.isJAL      := RegNext(exu.io.btbUpdateEn && !exu.io.isBranch)
   btb.io.update.isBranch   := RegNext(exu.io.isBranch)
   btb.io.update.actualTaken := RegNext(exu.io.branchTaken)
   btb.io.update.isBackward := RegNext(exu.io.branchBackward)

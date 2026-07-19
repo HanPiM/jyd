@@ -208,7 +208,9 @@ class EXU(
   val pcAddImm   = dinst.info.pcAddImm
   val reg1AddImm = dinst.info.reg1AddImm
 
-  io.branchTarget   := pcAddImm
+  // Branches/JAL use PC+imm, while a JALR BTB entry must learn the resolved
+  // rs1+imm target.  The BTB stores only the same trimmed PC bits either way.
+  io.branchTarget   := Mux(isTypJALR, reg1AddImm, pcAddImm)
   io.branchBackward := dinst.info.imm(31)
 
   alu_in.src1   := reg_v1
@@ -463,9 +465,10 @@ class EXU(
   io.isBranch    := isTypBranch
   io.branchTaken := takeBranch
   io.btbUpdateEn := isTypBranch || isTypJAL || isTypJALR
-  // io.predWrong := (normalNxtPC =/= dinst.pred.pc) || isJmpCsr
-  // io.predWrong := isTypJALR || isJmpCsr || (isFmtB && (takeBranch ^ dinst.pred.take)) || (isTypJAL && (~dinst.pred.hit))
-  io.predWrong := (isFmtB && (takeBranch ^ dinst.pred.take)) || io.in.bits.info.notBranchPredWrong
+  val jalrTargetPredWrong = isTypJALR && dinst.pred.hit &&
+    TrimmedPC.trim(normalNxtPC) =/= TrimmedPC.trim(dinst.pred.pc)
+  io.predWrong := (isFmtB && (takeBranch ^ dinst.pred.take)) ||
+    jalrTargetPredWrong || io.in.bits.info.notBranchPredWrong
 
   StageLogger(
     clock,

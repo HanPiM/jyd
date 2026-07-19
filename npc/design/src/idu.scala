@@ -470,7 +470,7 @@ class IDU(
 
   val isJmpCSR = res.isECall || res.isMRet
 
-  res.notBranchPredWrong := isTypJALR || isJmpCSR || (isTypJAL && ~io.in.bits.pred.hit)
+  res.notBranchPredWrong := isJmpCSR || ((isTypJAL || isTypJALR) && ~io.in.bits.pred.hit)
 
   io.in.ready  := (io.out.ready && !needStall)
   io.out.valid := io.in.valid && !needStall

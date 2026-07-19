@@ -15,6 +15,11 @@ static void _Get(int &field, const char *env_p) {
 		field = atoi(env_p);
 	}
 }
+static void _Get(uint64_t &field, const char *env_p) {
+  if (env_p != nullptr) {
+    field = strtoull(env_p, nullptr, 0);
+  }
+}
 [[maybe_unused]]
 static void _Get(std::string &field, const char *env_p) {
   if (env_p != nullptr) {
@@ -37,6 +42,7 @@ void load_sim_setting_from_env(sim_setting &setting) {
 
 	spdlog::info("loading sim_setting from env");
 
+  GET(max_instructions);
   GET(en_wave);
   GET(en_inst_trace);
   GET(showdisasm);
@@ -65,4 +71,7 @@ void load_sim_setting_from_env(sim_setting &setting) {
   GET_DPI_FLAG(psram_write);
 
   spdlog::info("{}", log_msg);
+  if (setting.max_instructions != 0) {
+    spdlog::info("partial-run instruction limit: {}", setting.max_instructions);
+  }
 }

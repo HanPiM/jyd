@@ -155,7 +155,16 @@ int sdb_mainloop() {
                cfg.is_batch_mode() ? "batch" : "interactive");
 
   if (cfg.is_batch_mode()) {
-    sdb_exec("c", nullptr);
+    if (cfg.setting.max_instructions != 0) {
+      sdb_exec(fmt::format("si {}", cfg.setting.max_instructions), nullptr);
+      if (!sim_halted() && sim_get_inst_count() == cfg.setting.max_instructions) {
+        spdlog::info("partial simulation reached the requested {} committed instructions",
+                     cfg.setting.max_instructions);
+        return 0;
+      }
+    } else {
+      sdb_exec("c", nullptr);
+    }
     return sdb_is_hitbadtrap() ? 1 : 0;
   }
 

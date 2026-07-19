@@ -33,6 +33,11 @@ using sim_time_t = uint64_t;
 using sim_cycle_t = uint64_t;
 
 struct sim_setting {
+  // Stop a batch simulation after this many committed instructions and dump a
+  // normal performance report.  Zero keeps the historical run-until-halt
+  // behavior.
+  uint64_t max_instructions = 0;
+
   bool en_inst_trace = true;
 
   bool showdisasm = true;

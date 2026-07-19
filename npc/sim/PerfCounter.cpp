@@ -306,6 +306,13 @@ void dumpPerfCountersStatistics(std::ostream &os, bool printFullPerf) {
   os << "Git commit: " << _STR(GIT_COMMIT_HASH) << "\n\n";
 
   os << "Statistics:\n";
+  const auto instruction_limit = sim_get_config()->setting.max_instructions;
+  const bool partial_run = instruction_limit != 0 && inst_count == instruction_limit && !sim_halted();
+  os << "run completion:\n";
+  os << "  partial run: " << (partial_run ? "yes" : "no") << "\n";
+  if (instruction_limit != 0) {
+    os << "  instruction limit: " << instruction_limit << "\n";
+  }
   os << "cycle and instruction counts:\n";
   os << "  total cycle count: " << cycle_count << "\n";
 	os << fmt::format("  total instruction count: {} ({}M)\n", inst_count, inst_count / 1000000);
@@ -429,6 +436,14 @@ void dumpPerfCounterTo(std::ostream &os) {
   std::string value_row;
 
   nlohmann::json j;
+
+  const auto instruction_limit = sim_get_config()->setting.max_instructions;
+  j["run"] = {
+      {"partial", instruction_limit != 0 && sim_get_inst_count() == instruction_limit && !sim_halted()},
+      {"instruction_limit", instruction_limit},
+      {"instruction_count", sim_get_inst_count()},
+      {"cycle_count", sim_get_cycle()},
+  };
 
   bool first = true;
   for (auto &ctr : perf_counters) {

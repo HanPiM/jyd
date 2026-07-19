@@ -46,7 +46,7 @@ object MultiplierConfig {
 }
 
 object DividerConfig {
-  val latency = 35
+  val latency = 34
 }
 
 class mult_gen_0 extends BlackBox with HasBlackBoxInline {
@@ -129,10 +129,8 @@ class div_gen_uradix2 extends BlackBox with HasBlackBoxInline {
   val io = IO(new Bundle {
     val aclk                   = Input(Clock())
     val s_axis_divisor_tvalid  = Input(Bool())
-    val s_axis_divisor_tready  = Output(Bool())
     val s_axis_divisor_tdata   = Input(UInt(32.W))
     val s_axis_dividend_tvalid = Input(Bool())
-    val s_axis_dividend_tready = Output(Bool())
     val s_axis_dividend_tdata  = Input(UInt(32.W))
     val m_axis_dout_tvalid     = Output(Bool())
     val m_axis_dout_tdata      = Output(UInt(64.W))
@@ -143,26 +141,18 @@ class div_gen_uradix2 extends BlackBox with HasBlackBoxInline {
     s"""module div_gen_uradix2(
       |  input         aclk,
       |  input         s_axis_divisor_tvalid,
-      |  output        s_axis_divisor_tready,
       |  input  [31:0] s_axis_divisor_tdata,
       |  input         s_axis_dividend_tvalid,
-      |  output        s_axis_dividend_tready,
       |  input  [31:0] s_axis_dividend_tdata,
       |  output        m_axis_dout_tvalid,
       |  output [63:0] m_axis_dout_tdata
       |);
       |  reg        valid_pipe [0:${DividerConfig.latency - 1}];
       |  reg [63:0] data_pipe  [0:${DividerConfig.latency - 1}];
-      |  reg [1:0]  ready_phase;
       |  integer i;
-      |  wire input_ready = ready_phase == 2'd3;
-      |  wire fire = s_axis_divisor_tvalid && s_axis_dividend_tvalid && input_ready;
-      |
-      |  assign s_axis_divisor_tready = input_ready;
-      |  assign s_axis_dividend_tready = input_ready;
+      |  wire fire = s_axis_divisor_tvalid && s_axis_dividend_tvalid;
       |
       |  initial begin
-      |    ready_phase = 2'd0;
       |    for (i = 0; i < ${DividerConfig.latency}; i = i + 1) begin
       |      valid_pipe[i] = 1'b0;
       |      data_pipe[i] = 64'd0;
@@ -170,7 +160,6 @@ class div_gen_uradix2 extends BlackBox with HasBlackBoxInline {
       |  end
       |
       |  always @(posedge aclk) begin
-      |    ready_phase <= ready_phase + 1'b1;
       |    valid_pipe[0] <= fire;
       |    if (fire && (s_axis_divisor_tdata != 32'd0))
       |      data_pipe[0] <= {
@@ -284,10 +273,6 @@ class Divider extends Module {
   val specialReg     = Reg(Bool())
   val specialResultReg = Reg(Types.UWord)
   val resultReg      = Reg(Types.UWord)
-  val divisorReg     = Reg(Types.UWord)
-  val dividendReg    = Reg(Types.UWord)
-  val divisorPending = RegInit(false.B)
-  val dividendPending = RegInit(false.B)
   val divider        = Module(new div_gen_uradix2)
 
   val inputFunc3t = io.in.bits.func3t
@@ -304,21 +289,13 @@ class Divider extends Module {
   val inputOverflowResult = Mux(inputIsRem, 0.U, "h80000000".U)
   val inputSpecialResult = Mux(inputDivideByZero, inputDivideByZeroResult, inputOverflowResult)
 
+  val ipFire = io.in.fire && !inputSpecial
+
   divider.io.aclk                   := clock
-  divider.io.s_axis_divisor_tvalid  := divisorPending
-  divider.io.s_axis_divisor_tdata   := divisorReg
-  divider.io.s_axis_dividend_tvalid := dividendPending
-  divider.io.s_axis_dividend_tdata  := dividendReg
-
-  val divisorAccepted = divisorPending && divider.io.s_axis_divisor_tready
-  val dividendAccepted = dividendPending && divider.io.s_axis_dividend_tready
-
-  when(divisorAccepted) {
-    divisorPending := false.B
-  }
-  when(dividendAccepted) {
-    dividendPending := false.B
-  }
+  divider.io.s_axis_divisor_tvalid  := ipFire
+  divider.io.s_axis_divisor_tdata   := Mux(inputDivisorAbs === 0.U, 1.U, inputDivisorAbs)
+  divider.io.s_axis_dividend_tvalid := ipFire
+  divider.io.s_axis_dividend_tdata  := inputDividendAbs
 
   val ipResult = divider.io.m_axis_dout_tdata
   val ipQuotient = ipResult(63, 32)
@@ -340,15 +317,6 @@ class Divider extends Module {
         remainderNegReg := inputDividendNeg
         specialReg      := inputSpecial
         specialResultReg := inputSpecialResult
-        when(inputSpecial) {
-          divisorPending  := false.B
-          dividendPending := false.B
-        }.otherwise {
-          divisorReg      := inputDivisorAbs
-          dividendReg     := inputDividendAbs
-          divisorPending  := true.B
-          dividendPending := true.B
-        }
         state           := State.busy
       }
     }

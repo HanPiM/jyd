@@ -10,6 +10,7 @@ class ALUInput extends Bundle {
   val func3t    = UInt(3.W)
   val func7t    = UInt(7.W)
   val bExtValid = Bool()
+  val bExtOp    = BExtensionOp()
   val src1      = Types.UWord
   val src2      = Types.UWord
 }
@@ -353,9 +354,7 @@ class ALU extends Module {
 
   val bExtension = Module(new BExtensionUnit)
   bExtension.io.in.valid     := io.in.valid && isBExt
-  bExtension.io.in.bits.isImm := inbits.is_imm
-  bExtension.io.in.bits.func3t := inbits.func3t
-  bExtension.io.in.bits.func7t := inbits.func7t
+  bExtension.io.in.bits.op   := inbits.bExtOp
   bExtension.io.in.bits.src1 := src1
   bExtension.io.in.bits.src2 := src2
   bExtension.io.out.ready    := io.out.ready

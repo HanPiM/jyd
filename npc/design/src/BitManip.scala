@@ -9,10 +9,40 @@ object BExtensionOp extends ChiselEnum {
   val clz, ctz, cpop, clmul, orcB, xperm4, ror = Value
 }
 
+object BExtensionDecode {
+  private def matches(inst: UInt, value: Long, mask: Long): Bool =
+    (inst & mask.U(32.W)) === value.U(32.W)
+
+  def apply(inst: UInt): (Bool, BExtensionOp.Type) = {
+    val isClz    = matches(inst, 0x60001013L, 0xfff0707fL)
+    val isCtz    = matches(inst, 0x60101013L, 0xfff0707fL)
+    val isCpop   = matches(inst, 0x60201013L, 0xfff0707fL)
+    val isClmul  = matches(inst, 0x0a001033L, 0xfe00707fL)
+    val isOrcB   = matches(inst, 0x28705013L, 0xfff0707fL)
+    val isXperm4 = matches(inst, 0x28002033L, 0xfe00707fL)
+    val isRor    = matches(inst, 0x60005033L, 0xfe00707fL)
+
+    val op = WireDefault(BExtensionOp.clz)
+    when(isCtz) {
+      op := BExtensionOp.ctz
+    }.elsewhen(isCpop) {
+      op := BExtensionOp.cpop
+    }.elsewhen(isClmul) {
+      op := BExtensionOp.clmul
+    }.elsewhen(isOrcB) {
+      op := BExtensionOp.orcB
+    }.elsewhen(isXperm4) {
+      op := BExtensionOp.xperm4
+    }.elsewhen(isRor) {
+      op := BExtensionOp.ror
+    }
+
+    (isClz || isCtz || isCpop || isClmul || isOrcB || isXperm4 || isRor, op)
+  }
+}
+
 class BExtensionInput extends Bundle {
-  val isImm = Bool()
-  val func3t = UInt(3.W)
-  val func7t = UInt(7.W)
+  val op   = BExtensionOp()
   val src1 = Types.UWord
   val src2 = Types.UWord
 }
@@ -30,13 +60,10 @@ class BExtensionUnit extends Module {
   })
 
   object State extends ChiselEnum {
-    val idle, decode, busy, done = Value
+    val idle, busy, done = Value
   }
 
   val state     = RegInit(State.idle)
-  val isImmReg  = Reg(Bool())
-  val func3Reg  = Reg(UInt(3.W))
-  val func7Reg  = Reg(UInt(7.W))
   val opReg     = Reg(BExtensionOp())
   val sourceA   = Reg(Types.UWord)
   val workA     = Reg(Types.UWord)
@@ -58,27 +85,6 @@ class BExtensionUnit extends Module {
   val nextCount = WireDefault(count)
   val nextRorRemain = WireDefault(rorRemain)
   val nextFound = WireDefault(found)
-
-  val immLow5 = workB(4, 0)
-  val isClz = isImmReg && func3Reg === "b001".U && func7Reg === "b0110000".U && immLow5 === 0.U
-  val isCtz = isImmReg && func3Reg === "b001".U && func7Reg === "b0110000".U && immLow5 === 1.U
-  val isCpop = isImmReg && func3Reg === "b001".U && func7Reg === "b0110000".U && immLow5 === 2.U
-  val isClmul = !isImmReg && func3Reg === "b001".U && func7Reg === "b0000101".U
-  val isOrcB = isImmReg && func3Reg === "b101".U && func7Reg === "b0010100".U && immLow5 === 7.U
-  val isXperm4 = !isImmReg && func3Reg === "b010".U && func7Reg === "b0010100".U
-  val isRor = !isImmReg && func3Reg === "b101".U && func7Reg === "b0110000".U
-  val decodedValid = isClz || isCtz || isCpop || isClmul || isOrcB || isXperm4 || isRor
-  val decodedOp = MuxCase(
-    BExtensionOp.clz,
-    Seq(
-      isCtz    -> BExtensionOp.ctz,
-      isCpop   -> BExtensionOp.cpop,
-      isClmul  -> BExtensionOp.clmul,
-      isOrcB   -> BExtensionOp.orcB,
-      isXperm4 -> BExtensionOp.xperm4,
-      isRor    -> BExtensionOp.ror
-    )
-  )
 
   switch(opReg) {
     is(BExtensionOp.clz) {
@@ -139,9 +145,7 @@ class BExtensionUnit extends Module {
   switch(state) {
     is(State.idle) {
       when(io.in.fire) {
-        isImmReg  := io.in.bits.isImm
-        func3Reg  := io.in.bits.func3t
-        func7Reg  := io.in.bits.func7t
+        opReg     := io.in.bits.op
         sourceA   := io.in.bits.src1
         workA     := io.in.bits.src1
         workB     := io.in.bits.src2
@@ -150,13 +154,8 @@ class BExtensionUnit extends Module {
         rorRemain := io.in.bits.src2(4, 0)
         found     := false.B
         iteration := 0.U
-        state     := State.decode
+        state     := State.busy
       }
-    }
-    is(State.decode) {
-      assert(decodedValid, "unsupported arithmetic encoding entered BExtensionUnit")
-      opReg := decodedOp
-      state := State.busy
     }
     is(State.busy) {
       workA := nextWorkA

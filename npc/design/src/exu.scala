@@ -120,7 +120,7 @@ class EXU(
       val hit        = Input(Bool())
       val lateReadData = Input(Types.UWord)
       val storeEpoch = Input(Bool())
-      val queryIndex = Output(UInt(9.W))
+      val dataQueryIndex = Output(UInt(9.W))
       val queryTag   = Output(UInt(7.W))
       val storeUpdate = Output(Bool())
       val storeData   = Output(Types.UWord)
@@ -409,7 +409,7 @@ class EXU(
 
   val memWData = GenMemWData(reg1AddImm(1, 0), reg_v2)
 
-  io.dcache.queryIndex := reg1AddImm(10, 2)
+  io.dcache.dataQueryIndex := reg1AddImm(10, 2)
   io.dcache.queryTag   := reg1AddImm(17, 11)
   val cacheableStore = isTypStore && reg1AddImm(21, 20) === "b01".U
   val cacheableStoreFire = memReqFire && cacheableStore

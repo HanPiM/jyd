@@ -10,10 +10,10 @@ class LSUInput(
   val isLoad       = Bool()
   val isStore      = Bool()
   val destAddr     = Types.UWord
-  val cacheableLw  = Bool()
+  val cacheableLoad = Bool()
   val dcacheHit    = Bool()
-  // Asynchronous shadow data sampled in C0 and carried by the registered
-  // EXU-to-LSU payload.  Only a registered C1 hit may consume this value.
+  // Asynchronous shadow data is selected and extended in C0, then carried by
+  // the registered EXU-to-LSU payload. Only a registered C1 hit consumes it.
   val lateLoadData = Types.UWord
   val dcacheStoreEpoch = Bool()
   val func3t       = UInt(3.W)
@@ -121,7 +121,7 @@ class LSU(
   outWriteBackInfo.lsuAddrOffset := activeReq.destAddr(1, 0)
   outWriteBackInfo.iid           := activeReq.exuWriteBack.iid
   outWriteBackInfo.memAddr       := activeReq.destAddr
-  outWriteBackInfo.cacheableLw   := activeReq.cacheableLw
+  outWriteBackInfo.cacheableLoad := activeReq.cacheableLoad
   outWriteBackInfo.dcacheHit     := activeReq.dcacheHit
   outWriteBackInfo.dcacheStoreEpoch := activeReq.dcacheStoreEpoch
 

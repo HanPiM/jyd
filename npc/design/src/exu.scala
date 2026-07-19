@@ -285,13 +285,16 @@ class EXU(
   lsuInfo.isLoad    := isTypLoad
   lsuInfo.isStore   := isTypStore
   lsuInfo.func3t    := dinst.code(14, 12)
-  lsuInfo.cacheableLw := isTypLoad && func3t === "b010".U && reg1AddImm(1, 0) === 0.U &&
-    reg1AddImm(21, 20) === "b01".U
-  lsuInfo.dcacheHit := lsuInfo.cacheableLw && io.dcache.hit
-  // The distributed-memory lookup is asynchronous in C0, but this field is
-  // part of the existing EXU-to-LSU payload register.  A miss ignores it and
-  // retains the normal WBU/memory-response path.
-  lsuInfo.lateLoadData := io.dcache.lateReadData
+  val supportedLoadWidth = func3t === "b000".U || func3t === "b001".U || func3t === "b010".U ||
+    func3t === "b100".U || func3t === "b101".U
+  val loadAddressAligned = Mux(func3t(1), reg1AddImm(1, 0) === 0.U, Mux(func3t(0), !reg1AddImm(0), true.B))
+  lsuInfo.cacheableLoad :=
+    isTypLoad && supportedLoadWidth && loadAddressAligned && reg1AddImm(21, 20) === "b01".U
+  lsuInfo.dcacheHit := lsuInfo.cacheableLoad && io.dcache.hit
+  // Select and extend the asynchronous shadow result before the existing
+  // EXU-to-LSU payload register. A miss ignores it and retains the normal
+  // WBU/memory-response path.
+  lsuInfo.lateLoadData := ExtLoadData(io.dcache.lateReadData, reg1AddImm(1, 0), func3t)
   lsuInfo.dcacheStoreEpoch := io.dcache.storeEpoch
 
   val snpc = dinst.info.staticNextPCOrCSRTarget
@@ -319,7 +322,7 @@ class EXU(
   writeBackInfo.lsuFunc3t     := 0.U
   writeBackInfo.lsuAddrOffset := 0.U
   writeBackInfo.memAddr       := 0.U
-  writeBackInfo.cacheableLw   := false.B
+  writeBackInfo.cacheableLoad := false.B
   writeBackInfo.dcacheHit     := false.B
   writeBackInfo.dcacheStoreEpoch := false.B
 
@@ -371,8 +374,9 @@ class EXU(
   val cacheableStore = isTypStore && reg1AddImm(21, 20) === "b01".U
   val cacheableStoreFire = memReqFire && cacheableStore
   val fullWordStore = memWMask === "b1111".U
-  io.dcache.invalidate := cacheableStoreFire && !fullWordStore
-  io.dcache.storeUpdate := cacheableStoreFire && fullWordStore
+  val canUpdateCachedStore = fullWordStore || io.dcache.hit
+  io.dcache.invalidate := cacheableStoreFire && !canUpdateCachedStore
+  io.dcache.storeUpdate := cacheableStoreFire && canUpdateCachedStore
   io.dcache.storeData   := memWData
   io.dcache.storeMask   := memWMask
 

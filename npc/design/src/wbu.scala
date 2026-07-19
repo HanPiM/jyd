@@ -20,7 +20,7 @@ class WriteBackInfo(implicit p:CPUParameters) extends Bundle {
   val lsuFunc3t    = UInt(3.W)
   val lsuAddrOffset = UInt(2.W)
   val memAddr       = Types.UWord
-  val cacheableLw   = Bool()
+  val cacheableLoad = Bool()
   val dcacheHit     = Bool()
   val dcacheStoreEpoch = Bool()
 
@@ -130,7 +130,7 @@ class WBU(implicit p:CPUParameters) extends Module {
   when(valid && wbinfo.isMemOp) {
     assert(io.memResp.valid, "WBU memory response must be valid for memory operations")
   }
-  when(valid && wbinfo.cacheableLw && wbinfo.dcacheHit && io.memResp.valid) {
+  when(valid && wbinfo.cacheableLoad && wbinfo.dcacheHit && io.memResp.valid) {
     assert(
       wbinfo.lsuResult === io.memResp.bits,
       p"DCache hit data mismatch: addr=${wbinfo.memAddr} cache=${wbinfo.lsuResult} mem=${io.memResp.bits}"
@@ -149,7 +149,7 @@ class WBU(implicit p:CPUParameters) extends Module {
   io.done := valid
 
   val noYoungerStore = wbinfo.dcacheStoreEpoch === io.dcacheStoreEpoch
-  val fillLoad = valid && wbinfo.cacheableLw && !wbinfo.dcacheHit && noYoungerStore && io.memResp.valid
+  val fillLoad = valid && wbinfo.cacheableLoad && !wbinfo.dcacheHit && noYoungerStore && io.memResp.valid
   io.dcacheUpdate := fillLoad
   io.dcacheAddr   := wbinfo.memAddr
   io.dcacheData   := io.memResp.bits

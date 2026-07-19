@@ -7,7 +7,7 @@ import common_def._
 import jyd.DistMemGen32x32
 
 object BTBParameters {
-  val ENTRY_NUM   = 16
+  val ENTRY_NUM   = 32
   val INDEX_WIDTH = log2Ceil(ENTRY_NUM)
   val TAG_WIDTH   = 15 - INDEX_WIDTH
 
@@ -62,6 +62,10 @@ object BTBTarget {
 }
 
 class BTBEntry extends Bundle {
+  // The physical query memory is 32 bits wide.  A 32-entry BTB needs one
+  // fewer tag bit than the former 16-entry organization, so keep the spare
+  // bit explicit instead of changing the IP or the target encoding.
+  val reserved = Bool()
   val valid  = Bool()
   val isJAL  = Bool()
   val isBranch = Bool()
@@ -139,6 +143,7 @@ class BranchTargetBuffer extends Module {
   }
 
   val nextEntry = Wire(new BTBEntry)
+  nextEntry.reserved         := false.B
   nextEntry.valid            := true.B
   nextEntry.tag              := updateTag
   nextEntry.target           := BTBTarget(io.update.target)

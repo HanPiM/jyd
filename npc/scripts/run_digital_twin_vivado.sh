@@ -310,9 +310,13 @@ echo "# Running Vivado digital_twin to $mode"
 cd "$vivado_proj_home"
 
 ip_config_hash() {
-  find "$vivado_proj_home/digital_twin.srcs/sources_1/ip" -type f -name '*.xci' -print0 \
-    | sort -z \
-    | xargs -0 sha256sum \
+  while IFS= read -r -d '' xci_file; do
+    # Vivado may remove a final newline while regenerating an otherwise
+    # byte-identical JSON XCI. Normalize that non-semantic difference while
+    # retaining the gate for every configuration value and file path.
+    normalized_hash=$(sed -e '$a\' "$xci_file" | sha256sum | awk '{print $1}')
+    printf '%s  %s\n' "$normalized_hash" "$xci_file"
+  done < <(find "$vivado_proj_home/digital_twin.srcs/sources_1/ip" -type f -name '*.xci' -print0 | sort -z) \
     | sha256sum \
     | awk '{print $1}'
 }

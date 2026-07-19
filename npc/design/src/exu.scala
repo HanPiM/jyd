@@ -465,10 +465,7 @@ class EXU(
   io.isBranch    := isTypBranch
   io.branchTaken := takeBranch
   io.btbUpdateEn := isTypBranch || isTypJAL || isTypJALR
-  val jalrTargetPredWrong = isTypJALR && dinst.pred.hit &&
-    TrimmedPC.trim(normalNxtPC) =/= TrimmedPC.trim(dinst.pred.pc)
-  io.predWrong := (isFmtB && (takeBranch ^ dinst.pred.take)) ||
-    jalrTargetPredWrong || io.in.bits.info.notBranchPredWrong
+  io.predWrong := (isFmtB && (takeBranch ^ dinst.predTake)) || io.in.bits.info.notBranchPredWrong
 
   StageLogger(
     clock,

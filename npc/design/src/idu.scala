@@ -279,7 +279,10 @@ class IDU(
 
   // TODO: handle invalid instruction
 
-  io.out.bits.viewAsSupertype(new Inst) := io.in.bits.viewAsSupertype(new Inst)
+  io.out.bits.code     := io.in.bits.code
+  io.out.bits.pc       := io.in.bits.pc
+  io.out.bits.iid      := io.in.bits.iid
+  io.out.bits.predTake := io.in.bits.pred.take
 
   // alias
   val res      = io.out.bits.info
@@ -470,7 +473,10 @@ class IDU(
 
   val isJmpCSR = res.isECall || res.isMRet
 
-  res.notBranchPredWrong := isJmpCSR || ((isTypJAL || isTypJALR) && ~io.in.bits.pred.hit)
+  val jalrTargetPredWrong = isTypJALR && io.in.bits.pred.hit &&
+    TrimmedPC.trim(res.reg1AddImm) =/= TrimmedPC.trim(io.in.bits.pred.pc)
+  res.notBranchPredWrong := isJmpCSR ||
+    ((isTypJAL || isTypJALR) && ~io.in.bits.pred.hit) || jalrTargetPredWrong
 
   io.in.ready  := (io.out.ready && !needStall)
   io.out.valid := io.in.valid && !needStall

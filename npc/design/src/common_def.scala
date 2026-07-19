@@ -204,7 +204,15 @@ class DecodedInstInfo(implicit p : CPUParameters) extends InstMetaInfo with HasR
   val preMuxWrBackData = Types.UWord
 }
 
-class DecodedInst(implicit p : CPUParameters) extends Inst {
+class DecodedInst(implicit p : CPUParameters) extends Bundle {
+  val code = Types.UWord
+  val pc   = Types.UWord
+  val iid  = Types.InstID
+
+  // IDU consumes the predicted PC and BTB-hit flag when it resolves JALR.
+  // EXU only needs the direction bit for conditional branches, so avoid
+  // carrying the other 33 prediction bits across the IDU/EXU boundary.
+  val predTake = Bool()
   val info = new DecodedInstInfo
 }
 

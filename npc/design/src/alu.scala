@@ -202,7 +202,7 @@ class Divider extends Module {
   })
 
   object State extends ChiselEnum {
-    val idle, busy, done = Value
+    val idle, busy, correct, done = Value
   }
   val state = RegInit(State.idle)
 
@@ -234,7 +234,7 @@ class Divider extends Module {
   val nextRemainder = Mux(canSubtract, subtractResult, shiftedRemainder)
   val nextQuotient = Cat(quotientReg(30, 0), canSubtract)
   val unsignedResult = Mux(resultIsRemReg, nextRemainder(31, 0), nextQuotient)
-  val correctedResult = Mux(resultNegReg, (~unsignedResult).asUInt + 1.U, unsignedResult)
+  val correctedResult = Mux(resultNegReg, (~resultReg).asUInt + 1.U, resultReg)
 
   io.in.ready  := state === State.idle
   io.out.valid := state === State.done
@@ -259,13 +259,20 @@ class Divider extends Module {
     }
     is(State.busy) {
       when(iterationReg === 31.U) {
-        resultReg := correctedResult
-        state     := State.done
+        // Register the final unsigned result before optional sign correction.
+        // Keeping the iterative 33-bit subtract and 32-bit two's-complement
+        // carry chains in separate cycles removes their former serial path.
+        resultReg := unsignedResult
+        state     := State.correct
       }.otherwise {
         quotientReg  := nextQuotient
         remainderReg := nextRemainder
         iterationReg := iterationReg + 1.U
       }
+    }
+    is(State.correct) {
+      resultReg := correctedResult
+      state     := State.done
     }
     is(State.done) {
       when(io.out.fire) {

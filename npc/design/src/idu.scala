@@ -180,12 +180,16 @@ object CacheAwareByPassMux {
       Mux(lsuConflict, !wrBacks(1).dataVaild && !cacheSelect, wbuConflict && !wrBacks(2).dataVaild)
     )
 
-    val normalData = Mux(
-      exuConflict,
-      Mux(lateAddSelect, lateAddFwd.data, wrBacks(0).data),
+    // cacheSelect already excludes an EXU conflict.  Put the EXU arm at the
+    // outermost level so a same-cycle ALU result does not cross the cache/LSU
+    // selection layer on its way back into the next decoded instruction.
+    val nonExuData = Mux(
+      cacheSelect,
+      dcacheFwd.data,
       Mux(lsuConflict, wrBacks(1).data, Mux(wbuConflict, wrBacks(2).data, regData))
     )
-    (needStall, Mux(cacheSelect, dcacheFwd.data, normalData), lateLoadSelect)
+    val outData = Mux(exuConflict, Mux(lateAddSelect, lateAddFwd.data, wrBacks(0).data), nonExuData)
+    (needStall, outData, lateLoadSelect)
   }
 }
 

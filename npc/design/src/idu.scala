@@ -375,7 +375,8 @@ class IDU(
   )
   val isBaseRegArithmetic = !isFmtI && (
     arithmeticFunc7 === 0.U ||
-      (arithmeticFunc7 === "b0100000".U && (arithmeticFunc3 === 0.U || arithmeticFunc3 === "b101".U))
+      (arithmeticFunc7 === "b0100000".U && (arithmeticFunc3 === 0.U || arithmeticFunc3 === "b101".U)) ||
+      (arithmeticFunc7 === "b0000100".U && arithmeticFunc3 === "b100".U)
   )
   val isMExtArithmetic = !isFmtI && arithmeticFunc7 === "b0000001".U
   res.bExtValid :=

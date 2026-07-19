@@ -175,8 +175,14 @@ class EXU(
   val lateDataReady = lateRs1Ready && lateRs2Ready
 
   // Keep late load data out of the generic ALU and every control/address
-  // path. IDU marks only ADD/ADDI, which uses this compact duplicate adder.
+  // path. The non-add cases are fixed-immediate hot paths and synthesize to
+  // a bit select or wiring shift rather than a second general ALU.
   val lateAddResult = lateRegV1 + lateRegV2
+  val lateSimpleResult = Mux(
+    func3t === "b111".U,
+    Cat(0.U(31.W), lateRegV1(0)),
+    Mux(func3t === "b101".U, Cat(0.U(1.W), lateRegV1(31, 1)), lateAddResult)
+  )
   val reg_v1       = dinst.info.reg1
   val reg_v2       = dinst.info.reg2
   // val pcAddImm   = dinst.pc + dinst.info.imm
@@ -342,7 +348,7 @@ class EXU(
   io.fwd := WrBackForwardInfo(io.in.valid, dinst, exuForwardDataValid, exuForwardData, csrWrEnable)
   io.lateAddFwd.valid :=
     io.in.valid && dinst.info.rdWrEn && dinst.info.rd =/= 0.U && hasLateLoadOperand && exuResultValid
-  io.lateAddFwd.data := lateAddResult
+  io.lateAddFwd.data := lateSimpleResult
   // A held late-load ADD must remain visible through generic forwarding so
   // dependent consumers stall, but it must never drive the special address-
   // generation bypass.  Keeping data fixed at the normal ALU output also
@@ -355,7 +361,9 @@ class EXU(
   // The producer token is decode-only.  In particular, do not feed the
   // current load address/cacheability back into IDU ready; cache hit only
   // decides whether the already-issued consumer completes in the next cycle.
-  io.lateLoadProducer.valid := io.in.valid && isTypLoad && func3t === "b010".U
+  val lateLoadWidthSupported =
+    func3t === "b000".U || func3t === "b001".U || func3t === "b010".U || func3t === "b100".U || func3t === "b101".U
+  io.lateLoadProducer.valid := io.in.valid && isTypLoad && lateLoadWidthSupported
 
   val memWMask = GenMemWMask(reg1AddImm(1, 0), func3t)
 

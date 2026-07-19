@@ -350,11 +350,13 @@ class IDU(
   bypassMux.io.lateLoadProducer := io.lateLoadProducer
   bypassMux.io.lateAddFwd       := io.lateAddFwd
   bypassMux.io.allowCacheRs1 := !needReg1AddImm
-  // Only the dedicated single-cycle ADD/ADDI result path may consume a load
-  // whose hit/miss is not known in IDU. Address generation, branches, CSR and
-  // multi-cycle arithmetic retain the normal RAW stall behavior.
+  // Only compact dedicated results may consume a load whose hit/miss is not
+  // known in IDU. The fixed-immediate forms cover the hot xibei bit-extraction
+  // loop without placing a general AND or barrel shifter in the late path.
   val isLateLoadAdd = isTypArithmetic && inst(14, 12) === 0.U && (isFmtI || inst(31, 25) === 0.U)
-  val allowLateLoadRs1 = isLateLoadAdd
+  val isLateLoadAndi1 = isTypArithmetic && isFmtI && inst(14, 12) === "b111".U && inst(31, 20) === 1.U
+  val isLateLoadSrli1 = isTypArithmetic && isFmtI && inst(14, 12) === "b101".U && inst(31, 20) === 1.U
+  val allowLateLoadRs1 = isLateLoadAdd || isLateLoadAndi1 || isLateLoadSrli1
   val allowLateLoadRs2 = isLateLoadAdd && !isFmtI
   bypassMux.io.allowLateLoadRs1 := allowLateLoadRs1
   bypassMux.io.allowLateLoadRs2 := allowLateLoadRs2

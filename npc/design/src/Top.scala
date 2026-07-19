@@ -382,21 +382,28 @@ class CPUCore(
   idu.io.dcacheFwd := dcacheFwdInfo
   idu.io.reg1AddImmWbuRawInfo := wbuRawFwdInfo
 
-  val lateLoadLSUIsLw =
-    lsu.io.in.valid && lsu.io.in.bits.isLoad && lsu.io.in.bits.func3t === "b010".U
-  exu.io.lateLoadLSU.valid := lateLoadLSUIsLw
+  val lateLoadLSUWidthSupported =
+    lsu.io.in.bits.func3t === "b000".U || lsu.io.in.bits.func3t === "b001".U ||
+      lsu.io.in.bits.func3t === "b010".U || lsu.io.in.bits.func3t === "b100".U ||
+      lsu.io.in.bits.func3t === "b101".U
+  val lateLoadLSUValid = lsu.io.in.valid && lsu.io.in.bits.isLoad && lateLoadLSUWidthSupported
+  exu.io.lateLoadLSU.valid := lateLoadLSUValid
   exu.io.lateLoadLSU.dataValid :=
-    lateLoadLSUIsLw && lsu.io.in.bits.cacheableLoad && lsu.io.in.bits.dcacheHit
+    lateLoadLSUValid && lsu.io.in.bits.cacheableLoad && lsu.io.in.bits.dcacheHit
   // lateLoadData was selected and extended from the asynchronous shadow in C0,
   // then crossed the existing EXU-to-LSU pipeline register. Do not reconnect
   // the C1 consumer directly to either shadow output or synchronous BRAM.
   exu.io.lateLoadLSU.data := lsu.io.in.bits.lateLoadData
 
-  val lateLoadWBUIsLw =
-    wbu.io.in.valid && wbu.io.in.bits.isLoad && wbu.io.in.bits.lsuFunc3t === "b010".U
-  exu.io.lateLoadWBU.valid := lateLoadWBUIsLw
-  exu.io.lateLoadWBU.dataValid := lateLoadWBUIsLw && wbu.io.memResp.valid
-  exu.io.lateLoadWBU.data := wbu.io.memResp.bits
+  val lateLoadWBUWidthSupported =
+    wbu.io.in.bits.lsuFunc3t === "b000".U || wbu.io.in.bits.lsuFunc3t === "b001".U ||
+      wbu.io.in.bits.lsuFunc3t === "b010".U || wbu.io.in.bits.lsuFunc3t === "b100".U ||
+      wbu.io.in.bits.lsuFunc3t === "b101".U
+  val lateLoadWBUValid = wbu.io.in.valid && wbu.io.in.bits.isLoad && lateLoadWBUWidthSupported
+  exu.io.lateLoadWBU.valid := lateLoadWBUValid
+  exu.io.lateLoadWBU.dataValid := lateLoadWBUValid && wbu.io.memResp.valid
+  exu.io.lateLoadWBU.data :=
+    ExtLoadData(wbu.io.memResp.bits, wbu.io.in.bits.lsuAddrOffset, wbu.io.in.bits.lsuFunc3t)
 
   idu.io.pipelineFlush := activeRedirectValid
 

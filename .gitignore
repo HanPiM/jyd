@@ -31,3 +31,9 @@
 /ysyxSoC
 /am-kernels
 /am-kernels-myraw
+
+# Vivado/XSim transient logs created in the repository root.
+/vivado*.jou
+/vivado*.log
+/xsim.log
+/andbg_hs_err_pid*.log

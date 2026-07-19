@@ -103,6 +103,11 @@ class AddForwardInfo(
   val data = UInt(22.W)
 }
 
+class Reg1AddImmWbuRawInfo extends Bundle {
+  val dataValid = Bool()
+  val data      = UInt(22.W)
+}
+
 class LateLoadProducerInfo(
   implicit p: CPUParameters)
     extends Bundle {
@@ -275,7 +280,7 @@ class IDU(
     val lateLoadProducer     = Input(new LateLoadProducerInfo)
     val lateAddFwd           = Input(new LateAddForwardInfo)
     val exuAddFwd            = Input(new AddForwardInfo)
-    val reg1AddImmWbuRawInfo = Input(new WrBackForwardInfo)
+    val reg1AddImmWbuRawInfo = Input(new Reg1AddImmWbuRawInfo)
 
     val out = Decoupled(new DecodedInst)
   })
@@ -399,8 +404,8 @@ class IDU(
   val needStallReg1AddImmFromEXU = needReg1AddImm && reg1AddImmExuConflict && !exuReg1AddImmBypass
   val needStallReg1AddImmFromWBU =
     needReg1AddImm &&
-      SingleByPassMux.conflict(res.rs1, io.reg1AddImmWbuRawInfo.addr, io.reg1AddImmWbuRawInfo.enWr) &&
-      !io.reg1AddImmWbuRawInfo.dataVaild
+      SingleByPassMux.conflict(res.rs1, io.wrBackInfo.wbu.addr, io.wrBackInfo.wbu.enWr) &&
+      !io.reg1AddImmWbuRawInfo.dataValid
   // val needStallReg1AddImmFromEXU = false.B
 
   val needStall = bypassMux.io.needStall || needStallReg1AddImmFromEXU || needStallReg1AddImmFromWBU
@@ -426,11 +431,11 @@ class IDU(
   val lsuReg1AddImmBypass =
     SingleByPassMux.conflict(res.rs1, io.wrBackInfo.lsu.addr, io.wrBackInfo.lsu.enWr) && io.wrBackInfo.lsu.dataVaild
   val wbuReg1AddImmBypass =
-    SingleByPassMux.conflict(res.rs1, io.reg1AddImmWbuRawInfo.addr, io.reg1AddImmWbuRawInfo.enWr) &&
-      io.reg1AddImmWbuRawInfo.dataVaild
+    SingleByPassMux.conflict(res.rs1, io.wrBackInfo.wbu.addr, io.wrBackInfo.wbu.enWr) &&
+      io.reg1AddImmWbuRawInfo.dataValid
   val nonExuReg1AddImmBase = Mux(
     wbuReg1AddImmBypass,
-    io.reg1AddImmWbuRawInfo.data(21, 0),
+    io.reg1AddImmWbuRawInfo.data,
     io.rvec.data(0)(21, 0)
   )
   val nonLsuReg1AddImmBase = Mux(exuReg1AddImmBypass, io.exuAddFwd.data, nonExuReg1AddImmBase)

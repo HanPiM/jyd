@@ -368,12 +368,9 @@ class CPUCore(
   dcacheFwdInfo.valid := lsu.io.in.valid && lsu.io.in.bits.cacheableLoad && lsu.io.in.bits.dcacheHit
   dcacheFwdInfo.addr  := lsu.io.in.bits.exuWriteBack.gpr.addr
   dcacheFwdInfo.data  := lsu.io.in.bits.lateLoadData
-  val wbuRawFwdInfo = Wire(new WrBackForwardInfo)
-  wbuRawFwdInfo.addr      := wbu.io.in.bits.gpr.addr
-  wbuRawFwdInfo.enWr      := wbu.io.in.bits.gpr.en && wbu.io.in.valid
-  wbuRawFwdInfo.dataVaild := wbu.io.in.valid && !wbu.io.in.bits.isLoad
-  wbuRawFwdInfo.data      := wbu.io.in.bits.gpr.data
-  wbuRawFwdInfo.enWrCSR   := false.B
+  val wbuRawFwdInfo = Wire(new Reg1AddImmWbuRawInfo)
+  wbuRawFwdInfo.dataValid := wbu.io.in.valid && !wbu.io.in.bits.isLoad
+  wbuRawFwdInfo.data      := wbu.io.in.bits.gpr.data(21, 0)
   idu.io.wrBackInfo.exu := exu.io.fwd
   idu.io.lateLoadProducer := exu.io.lateLoadProducer
   idu.io.lateAddFwd := exu.io.lateAddFwd

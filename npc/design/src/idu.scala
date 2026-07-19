@@ -98,8 +98,9 @@ class AddForwardInfo(
   implicit p: CPUParameters)
     extends Bundle {
   val valid = Bool()
-  val addr  = p.GPRAddr
-  val data  = Types.UWord
+  // Address generation only consumes bits 21:0.  Producer identity is already
+  // carried by the ordinary EXU writeback-forward bundle.
+  val data = UInt(22.W)
 }
 
 class LateLoadProducerInfo(
@@ -390,8 +391,7 @@ class IDU(
 
   val reg1AddImmExuConflict =
     SingleByPassMux.conflict(res.rs1, io.wrBackInfo.exu.addr, io.wrBackInfo.exu.enWr)
-  val exuReg1AddImmBypass =
-    reg1AddImmExuConflict && SingleByPassMux.conflict(res.rs1, io.exuAddFwd.addr, io.exuAddFwd.valid)
+  val exuReg1AddImmBypass = reg1AddImmExuConflict && io.exuAddFwd.valid
   val needStallReg1AddImmFromEXU = needReg1AddImm && reg1AddImmExuConflict && !exuReg1AddImmBypass
   val needStallReg1AddImmFromWBU =
     needReg1AddImm &&
@@ -424,17 +424,14 @@ class IDU(
   val wbuReg1AddImmBypass =
     SingleByPassMux.conflict(res.rs1, io.reg1AddImmWbuRawInfo.addr, io.reg1AddImmWbuRawInfo.enWr) &&
       io.reg1AddImmWbuRawInfo.dataVaild
-  val nonLsuReg1AddImmBase = Mux(
-    exuReg1AddImmBypass,
-    io.exuAddFwd.data,
-    Mux(
-      wbuReg1AddImmBypass,
-      io.reg1AddImmWbuRawInfo.data,
-      io.rvec.data(0)
-    )
+  val nonExuReg1AddImmBase = Mux(
+    wbuReg1AddImmBypass,
+    io.reg1AddImmWbuRawInfo.data(21, 0),
+    io.rvec.data(0)(21, 0)
   )
+  val nonLsuReg1AddImmBase = Mux(exuReg1AddImmBypass, io.exuAddFwd.data, nonExuReg1AddImmBase)
   val useLsuReg1AddImm = !exuReg1AddImmBypass && lsuReg1AddImmBypass
-  val reg1AddImmBase = Mux(useLsuReg1AddImm, io.wrBackInfo.lsu.data, nonLsuReg1AddImmBase)
+  val reg1AddImmBase = Mux(useLsuReg1AddImm, io.wrBackInfo.lsu.data(21, 0), nonLsuReg1AddImmBase)
   def genReg1AddImm(base: UInt): UInt = {
     val region = base(21, 20) + base(19)
     "h80".U(8.W) ## 0.U(2.W) ## region ## 0.U(2.W) ## addAddrImm(base)
@@ -475,8 +472,14 @@ class IDU(
   // bypassed x1 value directly and does not extend the IDU address-add path.
   // Other JALR encodings retain the original always-redirect behavior.
   val isPredictableReturn = inst === "h00008067".U
+  // Do not place the EXU add-result carry chain on the return-prediction
+  // validation path.  A return immediately dependent on an EXU write to x1
+  // takes the ordinary redirect path; normal compiler epilogues restore x1
+  // earlier through LSU and retain prediction.  The comparison base excludes
+  // EXU data structurally even when the conservative redirect term is true.
+  val returnTargetBase = Mux(lsuReg1AddImmBypass, io.wrBackInfo.lsu.data, nonExuReg1AddImmBase)
   val returnTargetPredWrong = isPredictableReturn && io.in.bits.pred.hit &&
-    reg1AddImmBase(16, 2) =/= TrimmedPC.trim(io.in.bits.pred.pc)
+    (exuReg1AddImmBypass || returnTargetBase(16, 2) =/= TrimmedPC.trim(io.in.bits.pred.pc))
   res.notBranchPredWrong := isJmpCSR ||
     (isTypJAL && ~io.in.bits.pred.hit) ||
     (isTypJALR && (!isPredictableReturn || ~io.in.bits.pred.hit)) || returnTargetPredWrong

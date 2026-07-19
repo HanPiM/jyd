@@ -386,8 +386,7 @@ class EXU(
   // removes lateAddResult from the IDU AGEN cone.
   io.addFwd.valid :=
     io.in.valid && dinst.info.rdWrEn && dinst.info.rd =/= 0.U && isAdd && !hasLateLoadOperand
-  io.addFwd.addr  := dinst.info.rd
-  io.addFwd.data  := alu.io.addResult
+  io.addFwd.data := alu.io.addResult(21, 0)
 
   // The producer token is decode-only.  In particular, do not feed the
   // current load address/cacheability back into IDU ready; cache hit only

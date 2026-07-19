@@ -18,6 +18,9 @@
 #include <memory/paddr.h>
 #include <stdio.h>
 #include <unistd.h>
+#include <profile.h>
+
+const char *g_btrace_path = NULL;
 
 void init_rand();
 void init_log(const char *log_file);
@@ -87,11 +90,15 @@ static int parse_args(int argc, char *argv[]) {
       {"help", no_argument, NULL, 'h'},
       {"elf", required_argument, NULL, 'e'},
       {"soc", no_argument, NULL, 's'},
+      {"btrace", required_argument, NULL, 1000},
+      {"profile", required_argument, NULL, 1001},
       {0, 0, NULL, 0},
   };
   int o;
   while ((o = getopt_long(argc, argv, "-bshl:d:p:e:", table, NULL)) != -1) {
     switch (o) {
+    case 1000: g_btrace_path = optarg; break;
+    case 1001: riscv_profile_set_output(optarg); break;
     case 'b':
       sdb_set_batch_mode();
       break;
@@ -121,6 +128,8 @@ static int parse_args(int argc, char *argv[]) {
       printf("\t-p,--port=PORT          run DiffTest with port PORT\n");
       printf("\t-e,--eld=FILE           set elf file to provide symbols for "
              "ftrace\n");
+      printf("\t--btrace=FILE           write packed control-flow trace\n");
+      printf("\t--profile=JSON          write low-overhead execution profile\n");
       printf("\n");
       exit(0);
     }

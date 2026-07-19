@@ -31,6 +31,7 @@
 
 #include "memory/paddr.h"
 #include <encoding.out.h>
+#include <profile.h>
 
 // We are in riscv32
 #define signed_min INT_MIN
@@ -60,6 +61,11 @@ static int decode_exec(Decode *s) {
 	word_t csr_uimm = BITS(s->isa.inst, 19, 15); // no sext
 
   word_t inst = s->isa.inst;
+  word_t profile_rs1 = 0, profile_rs2 = 0;
+  if (riscv_profile_enabled()) {
+    profile_rs1 = R((inst >> 15) & 31);
+    profile_rs2 = R((inst >> 20) & 31);
+  }
 
   word_t rd = (inst & INSN_FIELD_RD) >> 7;
   word_t rs1 = (inst & INSN_FIELD_RS1) >> 15;
@@ -160,6 +166,9 @@ static int decode_exec(Decode *s) {
   }
 
   R(0) = 0; // reset $zero to 0
+
+  if (riscv_profile_enabled())
+    riscv_profile_record(s, inst, profile_rs1, profile_rs2);
 
   return 0;
 }

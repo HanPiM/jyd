@@ -30,6 +30,8 @@ extern itrace_pack_t g_itrace_pack;
 extern itrace_pack_t g_mtrace_pack;
 extern btrace_pack_t g_btrace_pack;
 extern uint64_t g_nbranches;
+extern const char *g_btrace_path;
+void riscv_profile_finish(void);
 
 int main(int argc, char *argv[]) {
   /* Initialize the monitor. */
@@ -48,7 +50,8 @@ int main(int argc, char *argv[]) {
       g_mtrace_pack = itrace_pack_create("mtrace_pack.bin");
     }
   }
-    g_btrace_pack = btrace_pack_create("btrace_pack.bin");
+  if (g_btrace_path)
+    g_btrace_pack = btrace_pack_create(g_btrace_path);
 
   /* Start engine. */
   engine_start();
@@ -63,7 +66,9 @@ int main(int argc, char *argv[]) {
       itrace_pack_close(g_mtrace_pack);
     }
   }
+  if (g_btrace_pack)
     btrace_pack_close(g_btrace_pack);
+  riscv_profile_finish();
 
   printf("total branches: %lu\n", g_nbranches);
 

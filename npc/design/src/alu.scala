@@ -222,11 +222,11 @@ class Divider extends Module {
   val inputDividendAbs = Mux(inputDividendNeg, (~io.in.bits.src1).asUInt + 1.U, io.in.bits.src1)
   val inputDivisorAbs = Mux(inputDivisorNeg, (~io.in.bits.src2).asUInt + 1.U, io.in.bits.src2)
   val inputDivideByZero = io.in.bits.src2 === 0.U
-  val inputSignedOverflow = inputIsSigned && (io.in.bits.src1 === "h80000000".U) && (io.in.bits.src2 === "hffffffff".U)
-  val inputSpecial = inputDivideByZero || inputSignedOverflow
+  // The iterative algorithm naturally produces the architecturally required
+  // INT_MIN / -1 quotient and remainder.  Keeping overflow on the ordinary
+  // path avoids a wide operand comparison in the special-result control cone.
+  val inputSpecial = inputDivideByZero
   val inputDivideByZeroResult = Mux(inputIsRem, io.in.bits.src1, "hffffffff".U)
-  val inputOverflowResult = Mux(inputIsRem, 0.U, "h80000000".U)
-  val inputSpecialResult = Mux(inputDivideByZero, inputDivideByZeroResult, inputOverflowResult)
 
   val shiftedRemainder = Cat(remainderReg(31, 0), quotientReg(31))
   val subtractResult = shiftedRemainder - Cat(0.U(1.W), divisorReg)
@@ -246,7 +246,7 @@ class Divider extends Module {
         resultIsRemReg  := inputIsRem
         resultNegReg    := Mux(inputIsRem, inputDividendNeg, inputDividendNeg ^ inputDivisorNeg)
         when(inputSpecial) {
-          resultReg := inputSpecialResult
+          resultReg := inputDivideByZeroResult
           state     := State.done
         }.otherwise {
           divisorReg   := inputDivisorAbs

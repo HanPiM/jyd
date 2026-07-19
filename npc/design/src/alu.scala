@@ -6,11 +6,26 @@ import common_def._
 import busfsm._
 
 class ALUInput extends Bundle {
-  val isImm   = Bool()
-  val func3t  = UInt(3.W)
-  val isOpAlt = Bool()
-  val src1    = Types.UWord
-  val src2    = Types.UWord
+  val is_imm    = Bool()
+  val func3t    = UInt(3.W)
+  val func7t    = UInt(7.W)
+  val bExtValid = Bool()
+  val bExtOp    = BExtensionOp()
+  val src1      = Types.UWord
+  val src2      = Types.UWord
+}
+
+class ALU_foo extends Module {
+  val io = IO(new Bundle {
+    val in  = Flipped(Decoupled(new ALUInput))
+    val out = Decoupled(Types.UWord)
+  })
+
+  io.out.valid := io.in.valid
+  io.in.ready := io.out.ready
+
+  // do some foo op for test
+  io.out.bits := io.in.bits.src1 + io.in.bits.src2 + io.in.bits.func3t
 }
 
 class MultiplierInput extends Bundle {
@@ -263,12 +278,14 @@ class Divider extends Module {
 
 class ALU extends Module {
   val io = IO(new Bundle {
-    val in        = Input(new ALUInput)
-    val result    = Output(Types.UWord)
+    val in        = Flipped(Decoupled(new ALUInput))
+    val out       = Decoupled(Types.UWord)
     val addResult = Output(Types.UWord)
+    val singleCycleResult = Output(Types.UWord)
   })
 
-  val inbits = io.in
+  // alias
+  val inbits = io.in.bits
   val src1   = inbits.src1
   val src2   = inbits.src2
 
@@ -279,9 +296,9 @@ class ALU extends Module {
 
   val shamt = src2(4, 0)
 
-  val isOpAlt = inbits.isOpAlt
+  val isOpAlt = inbits.func7t(5)
 
-  val isAdd = ((~isOpAlt) || inbits.isImm) //&& (~inbits.func3t(1))
+  val isAdd = ((~isOpAlt) || inbits.is_imm) //&& (~inbits.func3t(1))
 
   val addResult = src1 + src2
   val add_sub_res = Mux(isAdd, addResult, src1 - src2)
@@ -326,5 +343,59 @@ class ALU extends Module {
       7.U -> logic_and     // 111: and/andi
     )
   )
-  io.result := aluResult
+  io.singleCycleResult := aluResult
+
+  val isBExt = inbits.bExtValid
+
+  val isMExt = !inbits.is_imm && inbits.func7t === "b0000001".U
+
+  val isMulOp = isMExt && ~inbits.func3t(2)
+  val isDivOp = isMExt && inbits.func3t(2)
+
+  val bExtension = Module(new BExtensionUnit)
+  bExtension.io.in.valid     := io.in.valid && isBExt
+  bExtension.io.in.bits.op   := inbits.bExtOp
+  bExtension.io.in.bits.src1 := src1
+  bExtension.io.in.bits.src2 := src2
+  bExtension.io.out.ready    := io.out.ready
+
+  val multiplier = Module(new Multiplier)
+  multiplier.io.in.valid       := io.in.valid && isMulOp
+  multiplier.io.in.bits.src1   := src1
+  multiplier.io.in.bits.src2   := src2
+  multiplier.io.in.bits.func3t := func3t
+  multiplier.io.out.ready      := io.out.ready
+
+  val divider = Module(new Divider)
+  divider.io.in.valid       := io.in.valid && isDivOp
+  divider.io.in.bits.src1   := src1
+  divider.io.in.bits.src2   := src2
+  divider.io.in.bits.func3t := func3t
+  divider.io.out.ready      := io.out.ready
+
+  io.in.ready := Mux1H(
+    Seq(
+      isBExt -> bExtension.io.in.ready,
+      isMulOp -> multiplier.io.in.ready,
+      isDivOp -> divider.io.in.ready,
+      (!isBExt && !isMExt) -> io.out.ready
+    )
+  )
+
+  io.out.valid := Mux1H(
+    Seq(
+      isBExt -> bExtension.io.out.valid,
+      isMulOp -> multiplier.io.out.valid,
+      isDivOp -> divider.io.out.valid,
+      (!isBExt && !isMExt) -> io.in.valid
+    )
+  )
+  io.out.bits := Mux1H(
+    Seq(
+      isBExt -> bExtension.io.out.bits,
+      isMulOp -> multiplier.io.out.bits,
+      isDivOp -> divider.io.out.bits,
+      (!isBExt && !isMExt) -> aluResult
+    )
+  )
 }

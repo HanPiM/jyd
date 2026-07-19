@@ -202,6 +202,7 @@ class EXU(
     Cat(0.U(31.W), lateForwardRegV1(0)),
     Cat(0.U(1.W), lateForwardRegV1(31, 1))
   )
+  val lateArithmeticResult = Mux(isLateLoadAndi1 || isLateLoadSrli1, lateBitResult, lateAddResult)
   val reg_v1       = dinst.info.reg1
   val reg_v2       = dinst.info.reg2
   // val pcAddImm   = dinst.pc + dinst.info.imm
@@ -320,8 +321,6 @@ class EXU(
   // WBU/memory-response path.
   lsuInfo.lateLoadData := ExtLoadData(io.dcache.lateReadData, reg1AddImm(1, 0), func3t)
   lsuInfo.dcacheStoreEpoch := io.dcache.storeEpoch
-  lsuInfo.useLateAddResult := hasLateLoadOperand && isAdd
-  lsuInfo.lateAddResult    := lateAddResult
 
   val snpc = dinst.info.staticNextPCOrCSRTarget
 
@@ -338,10 +337,7 @@ class EXU(
   //   )
   // )
 
-  // Late ADD data crosses the EXU-to-LSU boundary in its dedicated lane.
-  // Only the wiring-only late bit operations still use the ordinary GPR
-  // writeback-data field here.
-  val arithmeticResult = Mux(isLateLoadAndi1 || isLateLoadSrli1, lateBitResult, aluOut)
+  val arithmeticResult = Mux(hasLateLoadOperand, lateArithmeticResult, aluOut)
   writeBackInfo.gpr.data := Mux(isTypArithmetic, arithmeticResult, dinst.info.preMuxWrBackData)
 
   // Fill in LSU stage

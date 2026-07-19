@@ -17,11 +17,6 @@ class LSUInput(
   val lateLoadData = Types.UWord
   val dcacheStoreEpoch = Bool()
   val func3t       = UInt(3.W)
-  // Late-load ADD completion uses a dedicated EXU-to-LSU register lane so
-  // the carry chain terminates at the pipeline boundary before joining the
-  // ordinary writeback-data mux.
-  val useLateAddResult = Bool()
-  val lateAddResult    = Types.UWord
   val exuWriteBack = new WriteBackInfo
 }
 
@@ -30,13 +25,12 @@ object ExtractFwdInfoFromLSU {
     implicit p: CPUParameters
   ): WrBackForwardInfo = {
     val wrBack = info.bits.exuWriteBack
-    val gprData = Mux(info.bits.useLateAddResult, info.bits.lateAddResult, wrBack.gpr.data)
 
     val out = Wire(new WrBackForwardInfo)
     out.addr      := wrBack.gpr.addr
     out.enWr      := wrBack.gpr.en && info.valid
     out.dataVaild := !info.bits.isLoad
-    out.data      := gprData
+    out.data      := wrBack.gpr.data
 
     out.enWrCSR := wrBack.csr.en && info.valid
 
@@ -119,8 +113,7 @@ class LSU(
   outWriteBackInfo.csr_ecallflag := activeReq.exuWriteBack.csr_ecallflag
   outWriteBackInfo.gpr.addr      := activeReq.exuWriteBack.gpr.addr
   outWriteBackInfo.gpr.en        := activeReq.exuWriteBack.gpr.en
-  outWriteBackInfo.gpr.data :=
-    Mux(activeReq.useLateAddResult, activeReq.lateAddResult, activeReq.exuWriteBack.gpr.data)
+  outWriteBackInfo.gpr.data      := activeReq.exuWriteBack.gpr.data
   outWriteBackInfo.isLoad        := activeReq.isLoad
   outWriteBackInfo.isMemOp       := isMemOp
   outWriteBackInfo.lsuResult     := io.dcacheReadData

@@ -30,13 +30,10 @@ class BExtensionUnit extends Module {
   })
 
   object State extends ChiselEnum {
-    val idle, decode, busy, done = Value
+    val idle, busy, done = Value
   }
 
   val state     = RegInit(State.idle)
-  val isImmReg  = Reg(Bool())
-  val func3Reg  = Reg(UInt(3.W))
-  val func7Reg  = Reg(UInt(7.W))
   val opReg     = Reg(BExtensionOp())
   val sourceA   = Reg(Types.UWord)
   val workA     = Reg(Types.UWord)
@@ -59,14 +56,24 @@ class BExtensionUnit extends Module {
   val nextRorRemain = WireDefault(rorRemain)
   val nextFound = WireDefault(found)
 
-  val immLow5 = workB(4, 0)
-  val isClz = isImmReg && func3Reg === "b001".U && func7Reg === "b0110000".U && immLow5 === 0.U
-  val isCtz = isImmReg && func3Reg === "b001".U && func7Reg === "b0110000".U && immLow5 === 1.U
-  val isCpop = isImmReg && func3Reg === "b001".U && func7Reg === "b0110000".U && immLow5 === 2.U
-  val isClmul = !isImmReg && func3Reg === "b001".U && func7Reg === "b0000101".U
-  val isOrcB = isImmReg && func3Reg === "b101".U && func7Reg === "b0010100".U && immLow5 === 7.U
-  val isXperm4 = !isImmReg && func3Reg === "b010".U && func7Reg === "b0010100".U
-  val isRor = !isImmReg && func3Reg === "b101".U && func7Reg === "b0110000".U
+  // Exact B decoding remains local to this low-throughput unit. Decode the
+  // accepted request directly and register only the selected operation, so no
+  // extra decode state enters the global EXU pipeline-enable path.
+  val immLow5 = io.in.bits.src2(4, 0)
+  val isClz =
+    io.in.bits.isImm && io.in.bits.func3t === "b001".U && io.in.bits.func7t === "b0110000".U && immLow5 === 0.U
+  val isCtz =
+    io.in.bits.isImm && io.in.bits.func3t === "b001".U && io.in.bits.func7t === "b0110000".U && immLow5 === 1.U
+  val isCpop =
+    io.in.bits.isImm && io.in.bits.func3t === "b001".U && io.in.bits.func7t === "b0110000".U && immLow5 === 2.U
+  val isClmul =
+    !io.in.bits.isImm && io.in.bits.func3t === "b001".U && io.in.bits.func7t === "b0000101".U
+  val isOrcB =
+    io.in.bits.isImm && io.in.bits.func3t === "b101".U && io.in.bits.func7t === "b0010100".U && immLow5 === 7.U
+  val isXperm4 =
+    !io.in.bits.isImm && io.in.bits.func3t === "b010".U && io.in.bits.func7t === "b0010100".U
+  val isRor =
+    !io.in.bits.isImm && io.in.bits.func3t === "b101".U && io.in.bits.func7t === "b0110000".U
   val decodedValid = isClz || isCtz || isCpop || isClmul || isOrcB || isXperm4 || isRor
   val decodedOp = MuxCase(
     BExtensionOp.clz,
@@ -139,9 +146,8 @@ class BExtensionUnit extends Module {
   switch(state) {
     is(State.idle) {
       when(io.in.fire) {
-        isImmReg  := io.in.bits.isImm
-        func3Reg  := io.in.bits.func3t
-        func7Reg  := io.in.bits.func7t
+        assert(decodedValid, "unsupported arithmetic encoding entered BExtensionUnit")
+        opReg     := decodedOp
         sourceA   := io.in.bits.src1
         workA     := io.in.bits.src1
         workB     := io.in.bits.src2
@@ -150,13 +156,8 @@ class BExtensionUnit extends Module {
         rorRemain := io.in.bits.src2(4, 0)
         found     := false.B
         iteration := 0.U
-        state     := State.decode
+        state     := State.busy
       }
-    }
-    is(State.decode) {
-      assert(decodedValid, "unsupported arithmetic encoding entered BExtensionUnit")
-      opReg := decodedOp
-      state := State.busy
     }
     is(State.busy) {
       workA := nextWorkA

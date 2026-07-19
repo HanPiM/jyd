@@ -42,6 +42,7 @@ enum BOp {
   B_ORCB,
   B_XPERM4,
   B_ROR,
+  B_PACK,
   B_OTHER,
   B_NR
 };
@@ -91,6 +92,9 @@ static const char *width_names[] = {"byte", "half", "word", "other"};
 
 static const char *out_path;
 static uint64_t total, kinds[K_NR], mops[M_NR], bops[B_NR], raw_dist[9];
+static uint64_t pack_rs2_zero, pack_rs1_upper_zero, pack_matches_xor;
+static uint64_t miss_consumer_successor_deps;
+static uint64_t m_divide_by_zero, m_signed_overflow;
 static uint64_t prod_cons[K_NR][K_NR];
 static uint64_t widths[W_NR], regions[5], aliases[512], jalr_rd[3], jalr_rs1[3];
 static uint64_t load_raw[W_NR][K_NR];
@@ -111,6 +115,7 @@ static DCacheStat current_dcache_stat, proposed_dcache_stat;
 static PreviousLoad previous_load;
 static uint64_t last_write[32];
 static uint8_t last_kind[32];
+static uint8_t previous_miss_consumer_rd;
 
 void riscv_profile_set_output(const char *path) {
   out_path = path;
@@ -122,7 +127,7 @@ void riscv_profile_set_output(const char *path) {
 bool riscv_profile_enabled(void) { return out_path != NULL; }
 
 static unsigned kind_of(uint32_t x) {
-  unsigned op = x & 0x7f, f7 = x >> 25;
+  unsigned op = x & 0x7f, f3 = (x >> 12) & 7, f7 = x >> 25;
   if (op == 0x63)
     return K_BRANCH;
   if (op == 0x6f)
@@ -137,9 +142,16 @@ static unsigned kind_of(uint32_t x) {
     return K_SYSTEM;
   if (op == 0x33 && f7 == 1)
     return K_M;
-  if ((op == 0x33 || op == 0x13) &&
+  if (op == 0x33 && f7 == 0x04 && ((x >> 12) & 7) == 4)
+    return K_B;
+  bool b_register =
+      op == 0x33 && (f7 == 0x05 || f7 == 0x30 || f7 == 0x24 ||
+                     f7 == 0x14 || f7 == 0x34);
+  bool b_immediate =
+      op == 0x13 && (f3 == 1 || f3 == 5) &&
       (f7 == 0x05 || f7 == 0x30 || f7 == 0x24 || f7 == 0x14 ||
-       f7 == 0x34))
+       f7 == 0x34);
+  if (b_register || b_immediate)
     return K_B;
   if (op == 0x33 || op == 0x13 || op == 0x37 || op == 0x17)
     return K_ALU;
@@ -166,7 +178,18 @@ static unsigned bop_of(uint32_t x) {
   if ((op == 0x33 && f7 == 0x30 && f3 == 5) ||
       (op == 0x13 && f7 == 0x30 && f3 == 5))
     return B_ROR;
+  if (op == 0x33 && f7 == 0x04 && f3 == 4)
+    return B_PACK;
   return B_OTHER;
+}
+
+static bool is_late_load_consumer(uint32_t x) {
+  unsigned op = x & 0x7f, f3 = (x >> 12) & 7, f7 = x >> 25;
+  uint32_t imm12 = x >> 20;
+  bool add = f3 == 0 && (op == 0x13 || (op == 0x33 && f7 == 0));
+  bool andi1 = op == 0x13 && f3 == 7 && imm12 == 1;
+  bool srli1 = op == 0x13 && f3 == 5 && imm12 == 1;
+  return add || andi1 || srli1;
 }
 static int32_t sext(uint32_t x, unsigned n) {
   return (int32_t)(x << (32 - n)) >> (32 - n);
@@ -360,6 +383,20 @@ void riscv_profile_record(const Decode *s, word_t x, word_t rs1_before,
   Phase *p = &phases[(seq - 1) / PHASE_LEN];
   p->inst++;
 
+  if (previous_miss_consumer_rd &&
+      ((use1 && rs1 == previous_miss_consumer_rd) ||
+       (use2 && rs2 == previous_miss_consumer_rd)))
+    miss_consumer_successor_deps++;
+  previous_miss_consumer_rd = 0;
+
+  if (previous_load.valid && rd && is_late_load_consumer(x)) {
+    unsigned source_mask =
+        ((use1 && rs1 == previous_load.rd) ? 1 : 0) |
+        ((use2 && rs2 == previous_load.rd) ? 2 : 0);
+    if (source_mask && !previous_load.proposed_hit)
+      previous_miss_consumer_rd = rd;
+  }
+
   record_immediate_load_raw(s->pc, k, rs1, rs2, use1, use2, p);
 
   /* Multiplication is a permutation modulo 2^20. Workloads currently execute
@@ -377,10 +414,26 @@ void riscv_profile_record(const Decode *s, word_t x, word_t rs1_before,
       prod_cons[last_kind[src[z]]][k]++;
       p->raw++;
     }
-  if (k == K_M)
+  if (k == K_M) {
     mops[mop_of(x)]++;
-  if (k == K_B)
-    bops[bop_of(x)]++;
+    unsigned m_func3 = (x >> 12) & 7;
+    bool is_div_rem = m_func3 >= 4;
+    bool is_signed_div_rem = m_func3 == 4 || m_func3 == 6;
+    m_divide_by_zero += is_div_rem && rs2_before == 0;
+    m_signed_overflow += is_signed_div_rem &&
+                         rs1_before == 0x80000000u &&
+                         rs2_before == 0xffffffffu;
+  }
+  if (k == K_B) {
+    unsigned bop = bop_of(x);
+    bops[bop]++;
+    if (bop == B_PACK) {
+      uint32_t pack_result = (rs1_before & 0xffffu) | (rs2_before << 16);
+      pack_rs2_zero += rs2_before == 0;
+      pack_rs1_upper_zero += (rs1_before >> 16) == 0;
+      pack_matches_xor += pack_result == (rs1_before ^ rs2_before);
+    }
+  }
   if (k == K_BRANCH || k == K_JAL || k == K_JALR) {
     bool taken = s->dnpc != s->snpc;
     p->control++;
@@ -518,10 +571,25 @@ void riscv_profile_finish(void) {
           "\"div\",\"divu\",\"rem\",\"remu\"],\n  \"m_ops\":[");
   arr(f, mops, M_NR);
   fprintf(f,
-          "],\n  \"b_ops_order\":[\"clz\",\"ctz\",\"cpop\",\"clmul\","
-          "\"orc.b\",\"xperm4\",\"ror\",\"other\"],\n  \"b_ops\":[");
+          "],\n  \"m_special_operands\":{\"divide_by_zero\":%llu,"
+          "\"signed_overflow\":%llu},"
+          "\n  \"b_ops_order\":[\"clz\",\"ctz\",\"cpop\",\"clmul\","
+          "\"orc.b\",\"xperm4\",\"ror\",\"pack\",\"other\"],\n  \"b_ops\":[",
+          (unsigned long long)m_divide_by_zero,
+          (unsigned long long)m_signed_overflow);
   arr(f, bops, B_NR);
-  fprintf(f, "],\n  \"raw_distance_1_to_7_then_8plus\":[");
+  fprintf(f,
+          "],\n  \"pack_diagnostics\":{"
+          "\"rs2_zero\":%llu,\"rs1_upper_zero\":%llu,"
+          "\"matches_previous_xor_result\":%llu},"
+          "\n  \"miss_consumer_immediate_successor_dependencies\":%llu,"
+          "\n  \"miss_successor_penalty_ms_at_280mhz\":%.6f,"
+          "\n  \"raw_distance_1_to_7_then_8plus\":[",
+          (unsigned long long)pack_rs2_zero,
+          (unsigned long long)pack_rs1_upper_zero,
+          (unsigned long long)pack_matches_xor,
+          (unsigned long long)miss_consumer_successor_deps,
+          (double)miss_consumer_successor_deps / 280000.0);
   arr(f, raw_dist + 1, 8);
   fprintf(f, "],\n  \"producer_consumer_category_matrix\":[");
   for (int i = 0; i < K_NR; i++) {

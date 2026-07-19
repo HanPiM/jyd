@@ -50,15 +50,29 @@ void PipeStagePerfCounter::update() {
 }
 
 void CachePerfCounter::bind() {
-  // Cache is currently disabled in the simple-bus refactor.
+  // The current DCache lookup result is already exposed in the EXU-to-LSU
+  // payload; no extra RTL instrumentation is needed.
 }
 
 void CachePerfCounter::update() {
-  // Cache is currently disabled in the simple-bus refactor.
+  const auto *exu = GetEXU();
+  const bool issued = exu->io_in_valid && exu->io_in_ready;
+  if (issued && exu->io_out_bits_cacheableLoad) {
+    totalVisitCount++;
+    if (exu->io_out_bits_dcacheHit) {
+      hitCount++;
+    }
+  }
 }
 
 void CachePerfCounter::dumpStatistics(std::ostream &os) {
-  os << "Cache Performance Counter Statistics: disabled\n";
+  os << "DCache Cacheable Load Performance Counter Statistics:\n";
+  os << "  definition: EXU-issued cacheable loads; hit is the dcacheHit "
+        "captured for that EXU-to-LSU payload\n";
+  os << "  accesses: " << totalVisitCount << "\n";
+  os << "  hits: " << hitCount << "\n";
+  os << "  misses: " << missCount() << "\n";
+  os << fmt::format("  hit rate: {:.4f}%\n", hitRate() * 100.0);
 }
 
 void RAWStallPerfCounter::update() {
@@ -273,6 +287,7 @@ void initPerfCounters() {
   IDUFlushPerfCounter iduFlushCtr;
   BranchPredPerfCounter branchPredCtr;
   OptimizationDirectionPerfCounter optimizationDirectionCtr;
+  CachePerfCounter dcacheLoadCtr;
 
   pipeCtr.add(PipeStagePerfCounter().bind(
                   &GetIFU()->io_mem_req_valid, &GetIFU()->io_mem_req_ready,
@@ -285,11 +300,13 @@ void initPerfCounters() {
   iduFlushCtr.bind();
   rawStallCtr.bind();
   branchPredCtr.bind();
+  dcacheLoadCtr.bind();
 
   perf_counters.push_back(std::move(pipeCtr));
   perf_counters.push_back(std::move(rawStallCtr));
   perf_counters.push_back(std::move(iduFlushCtr));
   perf_counters.push_back(std::move(branchPredCtr));
+  perf_counters.push_back(std::move(dcacheLoadCtr));
   perf_counters.push_back(std::move(optimizationDirectionCtr));
 }
 
@@ -377,8 +394,16 @@ void to_json(nlohmann::json &j, const PipeStagePerfCounter &c) {
 
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(PipePerfManager, stageCtrs)
 
-NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(CachePerfCounter, totalVisitCount, hitCount,
-                                   totalHitAccessCycles, rdMemCtr)
+void to_json(nlohmann::json &j, const CachePerfCounter &c) {
+  j = {
+      {"ctrName", c.ctrName},
+      {"definition", "EXU-issued cacheable loads; hit is the dcacheHit captured for that EXU-to-LSU payload"},
+      {"accesses", c.totalVisitCount},
+      {"hits", c.hitCount},
+      {"misses", c.missCount()},
+      {"hit_rate", c.hitRate()},
+  };
+}
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(RAWStallPerfCounter, cycAnyConflict,
                                    cycAllConflictEXU, cycAllConflictLSU,
                                    cycAllConflictWBU, cycConflictEXU,

@@ -219,26 +219,13 @@ public:
 
 class CachePerfCounter : public PerfCounterBase {
 public:
-	// for 1cycle cache
-  // enum State { idle, sendFetch, waitMem };
-	
-	enum State { idle, checkHit, sendFetch, waitMem };
-
-  SignalHandle hCacheHit;
-  SignalHandle hState;
-
-  SignalHandle hARValid, hARReady;
-
-  // cache miss penalty counter
-  AXI4ReadPerfCounter rdMemCtr;
-
+  // Count one access when a cacheable load is issued by EXU.  dcacheHit is
+  // sampled from the same EXU-to-LSU payload, so a held pipeline cycle cannot
+  // count the load more than once.
   size_t totalVisitCount = 0;
   size_t hitCount = 0;
 
-  sim_cycle_t currentHitAccessStartCycle = 0;
-  size_t totalHitAccessCycles = 0;
-
-  CachePerfCounter() { ctrName = "CachePerfCounter"; }
+  CachePerfCounter() { ctrName = "DCacheLoadPerfCounter"; }
 
   void bind();
   void update();
@@ -248,16 +235,7 @@ public:
     return totalVisitCount == 0 ? NAN
                                 : (double)hitCount / (double)totalVisitCount;
   }
-  double avgHitAccessCycles() const {
-    return hitCount == 0 ? NAN
-                         : (double)totalHitAccessCycles / (double)hitCount;
-  }
-  double avgMissPenaltyCycles() const { return rdMemCtr.avgLatency(); }
-
-  // avg memory access time in cycles
-  double AMAT() const {
-    return avgHitAccessCycles() + (1.0 - hitRate()) * avgMissPenaltyCycles();
-  }
+  size_t missCount() const { return totalVisitCount - hitCount; }
 };
 
 struct RAWStallPerfCounter : public PerfCounterBase {

@@ -29,6 +29,7 @@ fi
 work_dir=$(mktemp -d "${TMPDIR:-/tmp}/jyd-xsim-seg37.XXXXXX")
 echo "SEG37_WORK_DIR=$work_dir"
 echo "SEG37_COE_DIR=$coe_dir"
+echo "SEG37_DIV_IMPLEMENTATION=rtl-iterative retained_fallback_ip=div_gen_uradix2"
 sha256sum "$coe_dir/irom.coe" "$coe_dir/dram.coe"
 
 # Refresh only npc/build/pack-fpga.  The in-tree Vivado project, generated IP

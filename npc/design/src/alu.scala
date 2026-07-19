@@ -45,10 +45,6 @@ object MultiplierConfig {
   val fastLatency = 3
 }
 
-object DividerConfig {
-  val latency = 34
-}
-
 class mult_gen_0 extends BlackBox with HasBlackBoxInline {
   val io = IO(new Bundle {
     val CLK  = Input(Clock())
@@ -120,62 +116,6 @@ class mult_gen_mul32_fast extends BlackBox with HasBlackBoxInline {
       |  end
       |
       |  assign P = pipe[${MultiplierConfig.fastLatency - 1}];
-      |endmodule
-      |""".stripMargin
-  )
-}
-
-class div_gen_uradix2 extends BlackBox with HasBlackBoxInline {
-  val io = IO(new Bundle {
-    val aclk                   = Input(Clock())
-    val s_axis_divisor_tvalid  = Input(Bool())
-    val s_axis_divisor_tdata   = Input(UInt(32.W))
-    val s_axis_dividend_tvalid = Input(Bool())
-    val s_axis_dividend_tdata  = Input(UInt(32.W))
-    val m_axis_dout_tvalid     = Output(Bool())
-    val m_axis_dout_tdata      = Output(UInt(64.W))
-  })
-
-  setInline(
-    "div_gen_uradix2.sv",
-    s"""module div_gen_uradix2(
-      |  input         aclk,
-      |  input         s_axis_divisor_tvalid,
-      |  input  [31:0] s_axis_divisor_tdata,
-      |  input         s_axis_dividend_tvalid,
-      |  input  [31:0] s_axis_dividend_tdata,
-      |  output        m_axis_dout_tvalid,
-      |  output [63:0] m_axis_dout_tdata
-      |);
-      |  reg        valid_pipe [0:${DividerConfig.latency - 1}];
-      |  reg [63:0] data_pipe  [0:${DividerConfig.latency - 1}];
-      |  integer i;
-      |  wire fire = s_axis_divisor_tvalid && s_axis_dividend_tvalid;
-      |
-      |  initial begin
-      |    for (i = 0; i < ${DividerConfig.latency}; i = i + 1) begin
-      |      valid_pipe[i] = 1'b0;
-      |      data_pipe[i] = 64'd0;
-      |    end
-      |  end
-      |
-      |  always @(posedge aclk) begin
-      |    valid_pipe[0] <= fire;
-      |    if (fire && (s_axis_divisor_tdata != 32'd0))
-      |      data_pipe[0] <= {
-      |        s_axis_dividend_tdata / s_axis_divisor_tdata,
-      |        s_axis_dividend_tdata % s_axis_divisor_tdata
-      |      };
-      |    else
-      |      data_pipe[0] <= 64'd0;
-      |    for (i = 1; i < ${DividerConfig.latency}; i = i + 1) begin
-      |      valid_pipe[i] <= valid_pipe[i - 1];
-      |      data_pipe[i] <= data_pipe[i - 1];
-      |    end
-      |  end
-      |
-      |  assign m_axis_dout_tvalid = valid_pipe[${DividerConfig.latency - 1}];
-      |  assign m_axis_dout_tdata = data_pipe[${DividerConfig.latency - 1}];
       |endmodule
       |""".stripMargin
   )
@@ -267,13 +207,13 @@ class Divider extends Module {
   }
   val state = RegInit(State.idle)
 
-  val func3tReg      = Reg(UInt(3.W))
-  val quotientNegReg = Reg(Bool())
-  val remainderNegReg = Reg(Bool())
-  val specialReg     = Reg(Bool())
-  val specialResultReg = Reg(Types.UWord)
+  val resultIsRemReg = Reg(Bool())
+  val resultNegReg   = Reg(Bool())
   val resultReg      = Reg(Types.UWord)
-  val divider        = Module(new div_gen_uradix2)
+  val divisorReg     = Reg(Types.UWord)
+  val quotientReg    = Reg(Types.UWord)
+  val remainderReg   = Reg(UInt(33.W))
+  val iterationReg   = Reg(UInt(5.W))
 
   val inputFunc3t = io.in.bits.func3t
   val inputIsRem = inputFunc3t(1)
@@ -289,45 +229,43 @@ class Divider extends Module {
   val inputOverflowResult = Mux(inputIsRem, 0.U, "h80000000".U)
   val inputSpecialResult = Mux(inputDivideByZero, inputDivideByZeroResult, inputOverflowResult)
 
-  val ipFire = io.in.fire && !inputSpecial
-
-  divider.io.aclk                   := clock
-  divider.io.s_axis_divisor_tvalid  := ipFire
-  divider.io.s_axis_divisor_tdata   := Mux(inputDivisorAbs === 0.U, 1.U, inputDivisorAbs)
-  divider.io.s_axis_dividend_tvalid := ipFire
-  divider.io.s_axis_dividend_tdata  := inputDividendAbs
-
-  val ipResult = divider.io.m_axis_dout_tdata
-  val ipQuotient = ipResult(63, 32)
-  val ipRemainder = ipResult(31, 0)
-  val quotient = Mux(quotientNegReg, (~ipQuotient).asUInt + 1.U, ipQuotient)
-  val remainder = Mux(remainderNegReg, (~ipRemainder).asUInt + 1.U, ipRemainder)
-  val result = Mux(func3tReg(1), remainder, quotient)
-  val resultValid = divider.io.m_axis_dout_tvalid
+  val shiftedRemainder = Cat(remainderReg(31, 0), quotientReg(31))
+  val subtractResult = shiftedRemainder - Cat(0.U(1.W), divisorReg)
+  val canSubtract = !subtractResult(32)
+  val nextRemainder = Mux(canSubtract, subtractResult, shiftedRemainder)
+  val nextQuotient = Cat(quotientReg(30, 0), canSubtract)
+  val unsignedResult = Mux(resultIsRemReg, nextRemainder(31, 0), nextQuotient)
+  val correctedResult = Mux(resultNegReg, (~unsignedResult).asUInt + 1.U, unsignedResult)
 
   io.in.ready  := state === State.idle
-  io.out.valid := (state === State.done) || ((state === State.busy) && (specialReg || resultValid))
-  io.out.bits  := Mux(state === State.done, resultReg, Mux(specialReg, specialResultReg, result))
+  io.out.valid := state === State.done
+  io.out.bits  := resultReg
 
   switch(state) {
     is(State.idle) {
       when(io.in.fire) {
-        func3tReg       := io.in.bits.func3t
-        quotientNegReg  := inputDividendNeg ^ inputDivisorNeg
-        remainderNegReg := inputDividendNeg
-        specialReg      := inputSpecial
-        specialResultReg := inputSpecialResult
-        state           := State.busy
+        resultIsRemReg  := inputIsRem
+        resultNegReg    := Mux(inputIsRem, inputDividendNeg, inputDividendNeg ^ inputDivisorNeg)
+        when(inputSpecial) {
+          resultReg := inputSpecialResult
+          state     := State.done
+        }.otherwise {
+          divisorReg   := inputDivisorAbs
+          quotientReg  := inputDividendAbs
+          remainderReg := 0.U
+          iterationReg := 0.U
+          state        := State.busy
+        }
       }
     }
     is(State.busy) {
-      when(specialReg || resultValid) {
-        when(io.out.ready) {
-          state := State.idle
-        }.otherwise {
-          resultReg := Mux(specialReg, specialResultReg, result)
-          state     := State.done
-        }
+      when(iterationReg === 31.U) {
+        resultReg := correctedResult
+        state     := State.done
+      }.otherwise {
+        quotientReg  := nextQuotient
+        remainderReg := nextRemainder
+        iterationReg := iterationReg + 1.U
       }
     }
     is(State.done) {

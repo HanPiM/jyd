@@ -400,18 +400,25 @@ class IDU(
   val wbuReg1AddImmBypass =
     SingleByPassMux.conflict(res.rs1, io.reg1AddImmWbuRawInfo.addr, io.reg1AddImmWbuRawInfo.enWr) &&
       io.reg1AddImmWbuRawInfo.dataVaild
-  val reg1AddImmBase = Mux(
+  val nonLsuReg1AddImmBase = Mux(
     exuReg1AddImmBypass,
     io.exuAddFwd.data,
     Mux(
-      lsuReg1AddImmBypass,
-      io.wrBackInfo.lsu.data,
-      Mux(wbuReg1AddImmBypass, io.reg1AddImmWbuRawInfo.data, io.rvec.data(0))
+      wbuReg1AddImmBypass,
+      io.reg1AddImmWbuRawInfo.data,
+      io.rvec.data(0)
     )
   )
-  val reg1AddImmRegion = reg1AddImmBase(21, 20) + reg1AddImmBase(19)
-  res.reg1AddImm :=
-    "h80".U(8.W) ## 0.U(2.W) ## reg1AddImmRegion ## 0.U(2.W) ## addAddrImm(reg1AddImmBase)
+  val useLsuReg1AddImm = !exuReg1AddImmBypass && lsuReg1AddImmBypass
+  def genReg1AddImm(base: UInt): UInt = {
+    val region = base(21, 20) + base(19)
+    "h80".U(8.W) ## 0.U(2.W) ## region ## 0.U(2.W) ## addAddrImm(base)
+  }
+  res.reg1AddImm := Mux(
+    useLsuReg1AddImm,
+    genReg1AddImm(io.wrBackInfo.lsu.data),
+    genReg1AddImm(nonLsuReg1AddImmBase)
+  )
 
   res.isECall := inst === "h73".U
   res.isMRet  := inst === "h30200073".U

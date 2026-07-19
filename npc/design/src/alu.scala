@@ -332,20 +332,16 @@ class ALU extends Module {
   val isPack = !inbits.is_imm && inbits.func3t === "b100".U && inbits.func7t === "b0000100".U
   val packResult = Cat(src2(15, 0), src1(15, 0))
 
-  val aluResult = Mux(
-    isPack,
-    packResult,
-    MuxLookup(inbits.func3t, defaultRes)(
-      Seq(
-        0.U -> add_sub_res,  // 000: add/sub/addi
-        1.U -> lShiftResult, // 001: sll/slli
-        2.U -> slt_res,      // 010: slt/slti
-        3.U -> sltu_res,     // 011: sltu/sltiu
-        4.U -> logic_xor,    // 100: xor/xori
-        5.U -> rShiftResult, // 101: srl/srli/sra/srai
-        6.U -> logic_or,     // 110: or/ori
-        7.U -> logic_and     // 111: and/andi
-      )
+  val aluResult = MuxLookup(inbits.func3t, defaultRes)(
+    Seq(
+      0.U -> add_sub_res,                        // 000: add/sub/addi
+      1.U -> lShiftResult,                       // 001: sll/slli
+      2.U -> slt_res,                            // 010: slt/slti
+      3.U -> sltu_res,                           // 011: sltu/sltiu
+      4.U -> Mux(isPack, packResult, logic_xor), // 100: pack/xor/xori
+      5.U -> rShiftResult,                       // 101: srl/srli/sra/srai
+      6.U -> logic_or,                           // 110: or/ori
+      7.U -> logic_and                           // 111: and/andi
     )
   )
   io.singleCycleResult := aluResult

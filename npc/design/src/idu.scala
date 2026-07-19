@@ -434,15 +434,12 @@ class IDU(
     )
   )
   val useLsuReg1AddImm = !exuReg1AddImmBypass && lsuReg1AddImmBypass
+  val reg1AddImmBase = Mux(useLsuReg1AddImm, io.wrBackInfo.lsu.data, nonLsuReg1AddImmBase)
   def genReg1AddImm(base: UInt): UInt = {
     val region = base(21, 20) + base(19)
     "h80".U(8.W) ## 0.U(2.W) ## region ## 0.U(2.W) ## addAddrImm(base)
   }
-  res.reg1AddImm := Mux(
-    useLsuReg1AddImm,
-    genReg1AddImm(io.wrBackInfo.lsu.data),
-    genReg1AddImm(nonLsuReg1AddImmBase)
-  )
+  res.reg1AddImm := genReg1AddImm(reg1AddImmBase)
 
   res.isECall := inst === "h73".U
   res.isMRet  := inst === "h30200073".U
@@ -473,10 +470,16 @@ class IDU(
 
   val isJmpCSR = res.isECall || res.isMRet
 
-  val jalrTargetPredWrong = isTypJALR && io.in.bits.pred.hit &&
-    TrimmedPC.trim(res.reg1AddImm) =/= TrimmedPC.trim(io.in.bits.pred.pc)
+  // The workload's reusable indirect transfers are standard returns.  Limit
+  // prediction to that exact form so target validation compares the already
+  // bypassed x1 value directly and does not extend the IDU address-add path.
+  // Other JALR encodings retain the original always-redirect behavior.
+  val isPredictableReturn = inst === "h00008067".U
+  val returnTargetPredWrong = isPredictableReturn && io.in.bits.pred.hit &&
+    reg1AddImmBase(16, 2) =/= TrimmedPC.trim(io.in.bits.pred.pc)
   res.notBranchPredWrong := isJmpCSR ||
-    ((isTypJAL || isTypJALR) && ~io.in.bits.pred.hit) || jalrTargetPredWrong
+    (isTypJAL && ~io.in.bits.pred.hit) ||
+    (isTypJALR && (!isPredictableReturn || ~io.in.bits.pred.hit)) || returnTargetPredWrong
 
   io.in.ready  := (io.out.ready && !needStall)
   io.out.valid := io.in.valid && !needStall

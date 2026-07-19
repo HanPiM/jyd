@@ -461,7 +461,9 @@ class EXU(
   io.pc       := dinst.pc
 
   io.jmpHappen   := willJmp
-  io.isJAL       := isTypJAL
+  // Reuse the existing unconditional-entry bit for direct JAL and the exact
+  // return encoding that IDU can validate without an address-add dependency.
+  io.isJAL       := isTypJAL || dinst.code === "h00008067".U
   io.isBranch    := isTypBranch
   io.branchTaken := takeBranch
   io.btbUpdateEn := isTypBranch || isTypJAL || isTypJALR

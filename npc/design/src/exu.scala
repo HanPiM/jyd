@@ -133,9 +133,7 @@ class EXU(
 
   val alu = Module(new ALU)
 
-  alu.io.out.ready := io.out.ready
-
-  val alu_in = alu.io.in.bits
+  val alu_in = alu.io.in
   val dinst  = io.in.bits
   val func3t = dinst.code(14, 12)
   val func7t = dinst.code(31, 25)
@@ -152,8 +150,6 @@ class EXU(
   val isTypLUI        = InstType.hasSame(dinst.info.typ, InstType.lui)
 
   val isAdd = isTypArithmetic && func3t === 0.U && (isFmtI || func7t === 0.U)
-
-  alu.io.in.valid := io.in.valid && isTypArithmetic
 
   // A late-load operand first looks at LSU. This priority is required when an
   // older WBU instruction happens to target the same register. A miss keeps
@@ -189,14 +185,51 @@ class EXU(
   alu_in.src1   := reg_v1
   // alu_in.src2   := Mux(isFmtI, dinst.info.imm, reg_v2)
   alu_in.src2   := reg_v2
-  alu_in.is_imm := isFmtI
+  alu_in.isImm   := isFmtI
   alu_in.func3t := func3t
-  alu_in.func7t := func7t
+  alu_in.isOpAlt := func7t(5)
   val (isBExt, bExtOp) = BExtensionDecode(dinst.code)
-  alu_in.bExtValid := isBExt
-  alu_in.bExtOp    := bExtOp
+  val isMExt = !isFmtI && func7t === "b0000001".U
+  val isMulOp = isMExt && !func3t(2)
+  val isDivOp = isMExt && func3t(2)
 
-  val aluOut = alu.io.out.bits
+  val bExtension = Module(new BExtensionUnit)
+  bExtension.io.in.valid     := io.in.valid && isTypArithmetic && isBExt
+  bExtension.io.in.bits.op   := bExtOp
+  bExtension.io.in.bits.src1 := reg_v1
+  bExtension.io.in.bits.src2 := reg_v2
+  bExtension.io.out.ready    := io.out.ready
+
+  val multiplier = Module(new Multiplier)
+  multiplier.io.in.valid       := io.in.valid && isTypArithmetic && isMulOp
+  multiplier.io.in.bits.src1   := reg_v1
+  multiplier.io.in.bits.src2   := reg_v2
+  multiplier.io.in.bits.func3t := func3t
+  multiplier.io.out.ready      := io.out.ready
+
+  val divider = Module(new Divider)
+  divider.io.in.valid       := io.in.valid && isTypArithmetic && isDivOp
+  divider.io.in.bits.src1   := reg_v1
+  divider.io.in.bits.src2   := reg_v2
+  divider.io.in.bits.func3t := func3t
+  divider.io.out.ready      := io.out.ready
+
+  val aluOut = Mux1H(
+    Seq(
+      isBExt -> bExtension.io.out.bits,
+      isMulOp -> multiplier.io.out.bits,
+      isDivOp -> divider.io.out.bits,
+      (!isBExt && !isMExt) -> alu.io.result
+    )
+  )
+  val arithmeticResultValid = Mux1H(
+    Seq(
+      isBExt -> bExtension.io.out.valid,
+      isMulOp -> multiplier.io.out.valid,
+      isDivOp -> divider.io.out.valid,
+      (!isBExt && !isMExt) -> true.B
+    )
+  )
 
   // --- CSR ---
   val is_mret  = dinst.info.isMRet
@@ -324,14 +357,13 @@ class EXU(
   writeBackInfo.dcacheStoreEpoch := false.B
 
   val isMemOP        = isTypLoad || isTypStore
-  val exuResultValid = !isTypArithmetic || (alu.io.out.valid && (!hasLateLoadOperand || lateDataReady))
+  val exuResultValid = !isTypArithmetic || (arithmeticResultValid && (!hasLateLoadOperand || lateDataReady))
   // Keep the same-cycle forwarding loop independent of the multi-cycle M/D/B
   // result mux.  A multi-cycle producer still advertises its destination while it is
   // in EXU, but its data remains unavailable to IDU; a dependent consumer
   // waits one cycle and receives the registered result from LSU instead.
-  val isMExt = !isFmtI && func7t === "b0000001".U
   val useSingleCycleForward = isTypArithmetic && !isMExt && !isBExt && !hasLateLoadOperand
-  val exuForwardData = Mux(isTypArithmetic, alu.io.singleCycleResult, dinst.info.preMuxWrBackData)
+  val exuForwardData = Mux(isTypArithmetic, alu.io.result, dinst.info.preMuxWrBackData)
   // Keep lateAddResult out of the generic M/D forwarding mux. Its compact
   // dedicated channel preserves same-cycle forwarding without another rd
   // comparison; sequential single issue supplies producer identity.

@@ -11,7 +11,6 @@ class DCache extends Module {
     val readData  = Output(UInt(32.W))
     val lateReadData = Output(UInt(32.W))
 
-    val invalidate = Input(Bool())
     val storeUpdate = Input(Bool())
     val storeData   = Input(UInt(32.W))
     val storeMask   = Input(UInt(4.W))
@@ -46,13 +45,17 @@ class DCache extends Module {
   }
   io.lateReadData := Cat(lateDataMem.reverse.map(_.io.dpo))
 
-  // A younger store invalidation wins over an older WBU refill/update.
+  // A store wins over an older WBU refill/update. Full-word stores allocate a
+  // line. A narrow hit preserves it while a narrow miss leaves the queried tag
+  // invalid. Every store writes the tag port unconditionally, so the async hit
+  // only drives the valid data bit instead of the RAM write enable.
   tagMem.io.clk := clock
-  val queryTagData = Cat(queryTag, 1.U(1.W))
   val updateTagData = Cat(io.updateAddr(17, 11), 1.U(1.W))
-  tagMem.io.we := io.invalidate || io.storeUpdate || io.update
-  tagMem.io.a  := Mux(io.invalidate || io.storeUpdate, queryIndex, io.updateAddr(10, 2))
-  tagMem.io.d  := Mux(io.invalidate, 0.U(8.W), Mux(io.storeUpdate, queryTagData, updateTagData))
+  val storeTagValid = io.storeMask.andR || io.hit
+  val storeTagData  = Cat(queryTag, storeTagValid)
+  tagMem.io.we := io.storeUpdate || io.update
+  tagMem.io.a  := Mux(io.storeUpdate, queryIndex, io.updateAddr(10, 2))
+  tagMem.io.d  := Mux(io.storeUpdate, storeTagData, updateTagData)
 
   dataMem.io.clka  := clock
   val dataWrite = io.storeUpdate || io.update

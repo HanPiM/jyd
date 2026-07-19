@@ -262,7 +262,7 @@ void OptimizationDirectionPerfCounter::update() {
     }
   }
 
-  if (exu->cacheableStoreFire && exu->memWMask == 0xf) {
+  if (exu->io_dcache_storeUpdate && exu->memWMask == 0xf) {
     cacheableFullWordStores++;
   }
 

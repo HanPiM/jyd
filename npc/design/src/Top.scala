@@ -301,14 +301,13 @@ class CPUCore(
   dcache.io.queryAddr  := exu.io.dcache.queryAddr
   exu.io.dcache.hit    := dcache.io.hit && p.enableDCache.B
   exu.io.dcache.lateReadData := dcache.io.lateReadData
-  val dcacheStoreMutation = (exu.io.dcache.invalidate || exu.io.dcache.storeUpdate) && p.enableDCache.B
+  val dcacheStoreMutation = exu.io.dcache.storeUpdate && p.enableDCache.B
   val dcacheStoreEpoch    = RegInit(false.B)
   when(dcacheStoreMutation) {
     dcacheStoreEpoch := ~dcacheStoreEpoch
   }
   exu.io.dcache.storeEpoch := dcacheStoreEpoch
   wbu.io.dcacheStoreEpoch  := dcacheStoreEpoch
-  dcache.io.invalidate := exu.io.dcache.invalidate && p.enableDCache.B
   val dcacheStoreUpdate = exu.io.dcache.storeUpdate && p.enableDCache.B
   dcache.io.storeUpdate := dcacheStoreUpdate
   dcache.io.storeData   := exu.io.dcache.storeData

@@ -121,7 +121,6 @@ class EXU(
       val lateReadData = Input(Types.UWord)
       val storeEpoch = Input(Bool())
       val queryAddr  = Output(Types.UWord)
-      val invalidate = Output(Bool())
       val storeUpdate = Output(Bool())
       val storeData   = Output(Types.UWord)
       val storeMask   = Output(UInt(4.W))
@@ -413,12 +412,9 @@ class EXU(
   io.dcache.queryAddr  := reg1AddImm
   val cacheableStore = isTypStore && reg1AddImm(21, 20) === "b01".U
   val cacheableStoreFire = memReqFire && cacheableStore
-  val fullWordStore = memWMask === "b1111".U
-  // Keep the store write-enable independent of the asynchronous tag lookup.
-  // Narrow stores are rare in this workload, so invalidate their line instead
-  // of extending the EXU address/tag path into every shadow-RAM write port.
-  io.dcache.invalidate := cacheableStoreFire && !fullWordStore
-  io.dcache.storeUpdate := cacheableStoreFire && fullWordStore
+  // DCache resolves a narrow-store hit locally. Keep its asynchronous tag
+  // lookup out of this cross-module control and every data-memory write enable.
+  io.dcache.storeUpdate := cacheableStoreFire
   io.dcache.storeData   := memWData
   io.dcache.storeMask   := memWMask
 

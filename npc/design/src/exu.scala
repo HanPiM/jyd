@@ -173,15 +173,34 @@ class EXU(
     resolveLateLoadOperand(dinst.info.lateLoadRs2, dinst.info.reg2)
   val hasLateLoadOperand = dinst.info.lateLoadRs1 || dinst.info.lateLoadRs2
   val lateDataReady = lateRs1Ready && lateRs2Ready
+  val lateDataReadyFromLSU = hasLateLoadOperand && io.lateLoadLSU.dataValid
 
   // Keep late load data out of the generic ALU and every control/address
   // path. The non-add cases are fixed-immediate hot paths and synthesize to
   // a bit select or wiring shift rather than a second general ALU.
   val lateAddResult = lateRegV1 + lateRegV2
-  val lateSimpleResult = Mux(
-    func3t === "b111".U,
+  // Successor forwarding must be structurally independent of WBU response
+  // data.  Gating only the forwarding valid bit does not remove the WBU ->
+  // carry chain -> IDU path from static timing.  Cache-hit forwarding uses a
+  // dedicated LSU-only result; the original result remains responsible for
+  // completing the held consumer after a miss reaches WBU.
+  val lateForwardRegV1 = Mux(dinst.info.lateLoadRs1, io.lateLoadLSU.data, dinst.info.reg1)
+  val lateForwardRegV2 = Mux(dinst.info.lateLoadRs2, io.lateLoadLSU.data, dinst.info.reg2)
+  val lateAddForwardResult = lateForwardRegV1 + lateForwardRegV2
+  // IDU sets a late-load operand only for ADD/ADDI and the fixed ANDI 1 or
+  // SRLI 1 forms. Reuse that invariant here instead of repeating a 32-bit
+  // immediate comparison in the EXU-to-IDU ready/forwarding cone.
+  val isLateLoadAndi1 = hasLateLoadOperand && func3t === "b111".U
+  val isLateLoadSrli1 = hasLateLoadOperand && func3t === "b101".U
+  val lateBitResult = Mux(
+    isLateLoadAndi1,
     Cat(0.U(31.W), lateRegV1(0)),
-    Mux(func3t === "b101".U, Cat(0.U(1.W), lateRegV1(31, 1)), lateAddResult)
+    Cat(0.U(1.W), lateRegV1(31, 1))
+  )
+  val lateBitForwardResult = Mux(
+    isLateLoadAndi1,
+    Cat(0.U(31.W), lateForwardRegV1(0)),
+    Cat(0.U(1.W), lateForwardRegV1(31, 1))
   )
   val reg_v1       = dinst.info.reg1
   val reg_v2       = dinst.info.reg2
@@ -301,6 +320,8 @@ class EXU(
   // WBU/memory-response path.
   lsuInfo.lateLoadData := ExtLoadData(io.dcache.lateReadData, reg1AddImm(1, 0), func3t)
   lsuInfo.dcacheStoreEpoch := io.dcache.storeEpoch
+  lsuInfo.useLateAddResult := hasLateLoadOperand && isAdd
+  lsuInfo.lateAddResult    := lateAddResult
 
   val snpc = dinst.info.staticNextPCOrCSRTarget
 
@@ -317,7 +338,10 @@ class EXU(
   //   )
   // )
 
-  val arithmeticResult = Mux(hasLateLoadOperand, lateAddResult, aluOut)
+  // Late ADD data crosses the EXU-to-LSU boundary in its dedicated lane.
+  // Only the wiring-only late bit operations still use the ordinary GPR
+  // writeback-data field here.
+  val arithmeticResult = Mux(isLateLoadAndi1 || isLateLoadSrli1, lateBitResult, aluOut)
   writeBackInfo.gpr.data := Mux(isTypArithmetic, arithmeticResult, dinst.info.preMuxWrBackData)
 
   // Fill in LSU stage
@@ -339,15 +363,22 @@ class EXU(
   // waits one cycle and receives the registered result from LSU instead.
   val isMExt = !isFmtI && func7t === "b0000001".U
   val useSingleCycleForward = isTypArithmetic && !isMExt && !isBExt && !hasLateLoadOperand
-  val exuForwardData = Mux(isTypArithmetic, alu.io.singleCycleResult, dinst.info.preMuxWrBackData)
+  val useLateBitForward = (isLateLoadAndi1 || isLateLoadSrli1) && exuResultValid && lateDataReadyFromLSU
+  val exuForwardData = Mux(
+    useLateBitForward,
+    lateBitForwardResult,
+    Mux(isTypArithmetic, alu.io.singleCycleResult, dinst.info.preMuxWrBackData)
+  )
   // Keep lateAddResult out of the generic M/D forwarding mux. Its compact
   // dedicated channel preserves same-cycle forwarding without another rd
   // comparison; sequential single issue supplies producer identity.
-  val exuForwardDataValid = !isMemOP && !hasLateLoadOperand && (!isTypArithmetic || useSingleCycleForward)
+  val exuForwardDataValid =
+    (!isMemOP && !hasLateLoadOperand && (!isTypArithmetic || useSingleCycleForward)) || useLateBitForward
   io.fwd := WrBackForwardInfo(io.in.valid, dinst, exuForwardDataValid, exuForwardData, csrWrEnable)
   io.lateAddFwd.valid :=
-    io.in.valid && dinst.info.rdWrEn && dinst.info.rd =/= 0.U && hasLateLoadOperand && exuResultValid
-  io.lateAddFwd.data := lateSimpleResult
+    io.in.valid && dinst.info.rdWrEn && dinst.info.rd =/= 0.U && hasLateLoadOperand && isAdd && exuResultValid &&
+      lateDataReadyFromLSU
+  io.lateAddFwd.data := lateAddForwardResult
   // A held late-load ADD must remain visible through generic forwarding so
   // dependent consumers stall, but it must never drive the special address-
   // generation bypass.  Keeping data fixed at the normal ALU output also

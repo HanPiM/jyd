@@ -159,20 +159,26 @@ class EXU(
   // older WBU instruction happens to target the same register. A miss keeps
   // the LSU match selected but not ready; the existing IDU/EXU payload
   // register then holds the consumer until its producer reaches WBU.
-  def resolveLateLoadOperand(late: Bool, normalData: UInt): (Bool, UInt) = {
+  def resolveLateLoadOperand(late: Bool, normalData: UInt): (Bool, UInt, Bool) = {
     val lsuMatch = late && io.lateLoadLSU.valid
     val wbuMatch = late && !lsuMatch && io.lateLoadWBU.valid
     val ready = !late || (lsuMatch && io.lateLoadLSU.dataValid) || (wbuMatch && io.lateLoadWBU.dataValid)
     val data = Mux(lsuMatch, io.lateLoadLSU.data, Mux(wbuMatch, io.lateLoadWBU.data, normalData))
-    (ready, data)
+    // A result completed from WBU is valid for the held consumer itself, but
+    // forwarding that consumer again in the same cycle creates a long
+    // memResp -> load extension -> arithmetic -> IDU path.  Keep track of the
+    // cache-hit-only case so a successor can wait for the registered result.
+    val readyFromLSU = !late || (lsuMatch && io.lateLoadLSU.dataValid)
+    (ready, data, readyFromLSU)
   }
 
-  val (lateRs1Ready, lateRegV1) =
+  val (lateRs1Ready, lateRegV1, lateRs1ReadyFromLSU) =
     resolveLateLoadOperand(dinst.info.lateLoadRs1, dinst.info.reg1)
-  val (lateRs2Ready, lateRegV2) =
+  val (lateRs2Ready, lateRegV2, lateRs2ReadyFromLSU) =
     resolveLateLoadOperand(dinst.info.lateLoadRs2, dinst.info.reg2)
   val hasLateLoadOperand = dinst.info.lateLoadRs1 || dinst.info.lateLoadRs2
   val lateDataReady = lateRs1Ready && lateRs2Ready
+  val lateDataReadyFromLSU = hasLateLoadOperand && lateRs1ReadyFromLSU && lateRs2ReadyFromLSU
 
   // Keep late load data out of the generic ALU and every control/address
   // path. The non-add cases are fixed-immediate hot paths and synthesize to
@@ -346,7 +352,7 @@ class EXU(
   // waits one cycle and receives the registered result from LSU instead.
   val isMExt = !isFmtI && func7t === "b0000001".U
   val useSingleCycleForward = isTypArithmetic && !isMExt && !isBExt && !hasLateLoadOperand
-  val useLateBitForward = (isLateLoadAndi1 || isLateLoadSrli1) && exuResultValid
+  val useLateBitForward = (isLateLoadAndi1 || isLateLoadSrli1) && exuResultValid && lateDataReadyFromLSU
   val exuForwardData = Mux(
     useLateBitForward,
     lateBitResult,
@@ -359,7 +365,8 @@ class EXU(
     (!isMemOP && !hasLateLoadOperand && (!isTypArithmetic || useSingleCycleForward)) || useLateBitForward
   io.fwd := WrBackForwardInfo(io.in.valid, dinst, exuForwardDataValid, exuForwardData, csrWrEnable)
   io.lateAddFwd.valid :=
-    io.in.valid && dinst.info.rdWrEn && dinst.info.rd =/= 0.U && hasLateLoadOperand && isAdd && exuResultValid
+    io.in.valid && dinst.info.rdWrEn && dinst.info.rd =/= 0.U && hasLateLoadOperand && isAdd && exuResultValid &&
+      lateDataReadyFromLSU
   io.lateAddFwd.data := lateAddResult
   // A held late-load ADD must remain visible through generic forwarding so
   // dependent consumers stall, but it must never drive the special address-
@@ -374,7 +381,7 @@ class EXU(
   // current load address/cacheability back into IDU ready; cache hit only
   // decides whether the already-issued consumer completes in the next cycle.
   val lateLoadWidthSupported =
-    func3t === "b000".U || func3t === "b001".U || func3t === "b010".U || func3t === "b100".U || func3t === "b101".U
+    func3t === "b010".U || func3t === "b100".U || func3t === "b101".U
   io.lateLoadProducer.valid := io.in.valid && isTypLoad && lateLoadWidthSupported
 
   val memWMask = GenMemWMask(reg1AddImm(1, 0), func3t)

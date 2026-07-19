@@ -383,8 +383,7 @@ class CPUCore(
   idu.io.reg1AddImmWbuRawInfo := wbuRawFwdInfo
 
   val lateLoadLSUWidthSupported =
-    lsu.io.in.bits.func3t === "b000".U || lsu.io.in.bits.func3t === "b001".U ||
-      lsu.io.in.bits.func3t === "b010".U || lsu.io.in.bits.func3t === "b100".U ||
+    lsu.io.in.bits.func3t === "b010".U || lsu.io.in.bits.func3t === "b100".U ||
       lsu.io.in.bits.func3t === "b101".U
   val lateLoadLSUValid = lsu.io.in.valid && lsu.io.in.bits.isLoad && lateLoadLSUWidthSupported
   exu.io.lateLoadLSU.valid := lateLoadLSUValid
@@ -396,8 +395,7 @@ class CPUCore(
   exu.io.lateLoadLSU.data := lsu.io.in.bits.lateLoadData
 
   val lateLoadWBUWidthSupported =
-    wbu.io.in.bits.lsuFunc3t === "b000".U || wbu.io.in.bits.lsuFunc3t === "b001".U ||
-      wbu.io.in.bits.lsuFunc3t === "b010".U || wbu.io.in.bits.lsuFunc3t === "b100".U ||
+    wbu.io.in.bits.lsuFunc3t === "b010".U || wbu.io.in.bits.lsuFunc3t === "b100".U ||
       wbu.io.in.bits.lsuFunc3t === "b101".U
   val lateLoadWBUValid = wbu.io.in.valid && wbu.io.in.bits.isLoad && lateLoadWBUWidthSupported
   exu.io.lateLoadWBU.valid := lateLoadWBUValid

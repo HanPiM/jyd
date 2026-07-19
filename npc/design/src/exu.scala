@@ -178,10 +178,11 @@ class EXU(
   // path. The non-add cases are fixed-immediate hot paths and synthesize to
   // a bit select or wiring shift rather than a second general ALU.
   val lateAddResult = lateRegV1 + lateRegV2
-  val isLateLoadAndi1 = hasLateLoadOperand && isTypArithmetic && isFmtI &&
-    func3t === "b111".U && dinst.info.imm === 1.U
-  val isLateLoadSrli1 = hasLateLoadOperand && isTypArithmetic && isFmtI &&
-    func3t === "b101".U && dinst.info.imm === 1.U
+  // IDU sets a late-load operand only for ADD/ADDI and the fixed ANDI 1 or
+  // SRLI 1 forms. Reuse that invariant here instead of repeating a 32-bit
+  // immediate comparison in the EXU-to-IDU ready/forwarding cone.
+  val isLateLoadAndi1 = hasLateLoadOperand && func3t === "b111".U
+  val isLateLoadSrli1 = hasLateLoadOperand && func3t === "b101".U
   val lateBitResult = Mux(
     isLateLoadAndi1,
     Cat(0.U(31.W), lateRegV1(0)),

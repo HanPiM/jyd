@@ -443,7 +443,7 @@ class IDU(
   val reg1AddImmBase = Mux(useLsuReg1AddImm, io.wrBackInfo.lsu.data(21, 0), nonLsuReg1AddImmBase)
   def genReg1AddImm(base: UInt): UInt = {
     val region = base(21, 20) + base(19)
-    "h80".U(8.W) ## 0.U(2.W) ## region ## 0.U(2.W) ## addAddrImm(base)
+    region ## 0.U(2.W) ## addAddrImm(base)
   }
   res.reg1AddImm := genReg1AddImm(reg1AddImmBase)
 

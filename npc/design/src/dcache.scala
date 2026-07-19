@@ -6,7 +6,8 @@ import jyd.{BlkMemGen2KB, DistMemGen512x8}
 
 class DCache extends Module {
   val io = IO(new Bundle {
-    val queryAddr = Input(UInt(32.W))
+    val queryIndex = Input(UInt(9.W))
+    val queryTag   = Input(UInt(7.W))
     val hit       = Output(Bool())
     val readData  = Output(UInt(32.W))
     val lateReadData = Output(UInt(32.W))
@@ -28,20 +29,18 @@ class DCache extends Module {
   // registered LSU payload; it is never consumed directly by the C1 adder.
   val lateDataMem = Seq.fill(4)(Module(new DistMemGen512x8))
 
-  val queryIndex = io.queryAddr(10, 2)
-  val queryTag   = io.queryAddr(17, 11)
   val tagEntry   = tagMem.io.dpo
 
-  tagMem.io.dpra := queryIndex
-  io.hit         := tagEntry(0) && tagEntry(7, 1) === queryTag
+  tagMem.io.dpra := io.queryIndex
+  io.hit         := tagEntry(0) && tagEntry(7, 1) === io.queryTag
 
   dataMem.io.clkb  := clock
   dataMem.io.enb   := true.B
-  dataMem.io.addrb := queryIndex
+  dataMem.io.addrb := io.queryIndex
   io.readData      := dataMem.io.doutb
 
   lateDataMem.foreach { bank =>
-    bank.io.dpra := queryIndex
+    bank.io.dpra := io.queryIndex
   }
   io.lateReadData := Cat(lateDataMem.reverse.map(_.io.dpo))
 
@@ -52,15 +51,15 @@ class DCache extends Module {
   tagMem.io.clk := clock
   val updateTagData = Cat(io.updateAddr(17, 11), 1.U(1.W))
   val storeTagValid = io.storeMask.andR || io.hit
-  val storeTagData  = Cat(queryTag, storeTagValid)
+  val storeTagData  = Cat(io.queryTag, storeTagValid)
   tagMem.io.we := io.storeUpdate || io.update
-  tagMem.io.a  := Mux(io.storeUpdate, queryIndex, io.updateAddr(10, 2))
+  tagMem.io.a  := Mux(io.storeUpdate, io.queryIndex, io.updateAddr(10, 2))
   tagMem.io.d  := Mux(io.storeUpdate, storeTagData, updateTagData)
 
   dataMem.io.clka  := clock
   val dataWrite = io.storeUpdate || io.update
   val dataWriteMask = Mux(io.storeUpdate, io.storeMask, Mux(io.update, io.updateMask, 0.U))
-  val dataWriteAddr = Mux(io.storeUpdate, queryIndex, io.updateAddr(10, 2))
+  val dataWriteAddr = Mux(io.storeUpdate, io.queryIndex, io.updateAddr(10, 2))
   val dataWriteData = Mux(io.storeUpdate, io.storeData, io.updateData)
   dataMem.io.ena   := dataWrite
   dataMem.io.wea   := dataWriteMask

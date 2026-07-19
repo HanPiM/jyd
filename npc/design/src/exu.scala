@@ -120,7 +120,8 @@ class EXU(
       val hit        = Input(Bool())
       val lateReadData = Input(Types.UWord)
       val storeEpoch = Input(Bool())
-      val queryAddr  = Output(Types.UWord)
+      val queryIndex = Output(UInt(9.W))
+      val queryTag   = Output(UInt(7.W))
       val storeUpdate = Output(Bool())
       val storeData   = Output(Types.UWord)
       val storeMask   = Output(UInt(4.W))
@@ -205,7 +206,7 @@ class EXU(
   val reg_v2       = dinst.info.reg2
   // val pcAddImm   = dinst.pc + dinst.info.imm
   val pcAddImm   = dinst.info.pcAddImm
-  val reg1AddImm = dinst.info.reg1AddImm
+  val reg1AddImm = "h80".U(8.W) ## 0.U(2.W) ## dinst.info.reg1AddImm
 
   // Branches/JAL use PC+imm, while a JALR BTB entry must learn the resolved
   // rs1+imm target.  The BTB stores only the same trimmed PC bits either way.
@@ -408,7 +409,8 @@ class EXU(
 
   val memWData = GenMemWData(reg1AddImm(1, 0), reg_v2)
 
-  io.dcache.queryAddr  := reg1AddImm
+  io.dcache.queryIndex := reg1AddImm(10, 2)
+  io.dcache.queryTag   := reg1AddImm(17, 11)
   val cacheableStore = isTypStore && reg1AddImm(21, 20) === "b01".U
   val cacheableStoreFire = memReqFire && cacheableStore
   // DCache resolves a narrow-store hit locally. Keep its asynchronous tag

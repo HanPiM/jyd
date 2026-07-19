@@ -298,7 +298,8 @@ class CPUCore(
   io.dram <> dataMemBus.io.out
   exu.io.memReq <> dataMemBus.io.exuMemReq
   wbu.io.memResp <> dataMemBus.io.memResp
-  dcache.io.queryAddr  := exu.io.dcache.queryAddr
+  dcache.io.queryIndex := exu.io.dcache.queryIndex
+  dcache.io.queryTag   := exu.io.dcache.queryTag
   exu.io.dcache.hit    := dcache.io.hit && p.enableDCache.B
   exu.io.dcache.lateReadData := dcache.io.lateReadData
   val dcacheStoreMutation = exu.io.dcache.storeUpdate && p.enableDCache.B

@@ -176,7 +176,10 @@ class DecodedInstInfo(implicit p : CPUParameters) extends InstMetaInfo with HasR
   val staticNextPCOrCSRTarget = Types.UWord
 
   val pcAddImm = Types.UWord
-  val reg1AddImm = Types.UWord
+  // JYD instruction and data addresses always have fixed bits [31:22] =
+  // 0x800. Carry only the dynamic low bits across the IDU/EXU boundary and
+  // reconstruct the architectural address locally in EXU.
+  val reg1AddImm = UInt(22.W)
 
   // A compact supported consumer may enter EXU before a load result is
   // available. EXU resolves these operands from the registered LSU/WBU

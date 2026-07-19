@@ -1,0 +1,116 @@
+Perf Counters Report
+Git commit: 5aaafb909485802bc572c4f00d7bbe16eff82e99
+
+Statistics:
+cycle and instruction counts:
+  total cycle count: 470547524
+  total instruction count: 380344384 (380M)
+  IPC: 0.8083
+  CPI: 1.2372
+excution time estimate:
+  Clk(Mhz)    Time(s)
+        50    9.41095
+       100    4.70548
+       200    2.35274
+       250    1.88219
+       280    1.68053
+Pipeline Performance Counter Statistics:
++-------+--------------+----------+-----------+--------------+---------+---------+
+| Stage | Backpressure |  Bubble  |    Fire   | Backpressure |  Bubble |   Fire  |
+|       |    Cycles    |  Cycles  |   Cycles  |       %      |    %    |    %    |
++-------+--------------+----------+-----------+--------------+---------+---------+
+|   IFU |     89793350 |        0 | 380754144 |      19.0827 |       0 | 80.9173 |
+|   IDU |     32232015 | 57834508 | 380480971 |       6.8499 | 12.2909 | 80.8592 |
+|   EXU |            0 | 90203110 | 380344384 |            0 | 19.1698 | 80.8302 |
+|   LSU |            0 | 90203110 | 380344384 |            0 | 19.1698 | 80.8302 |
++-------+--------------+----------+-----------+--------------+---------+---------+
+RAW Stall Performance Counter Statistics:
+total RAW conflict cycles: 332282407 (70.6161 %)
+total RAW stall cycles: 174558143 (37.0968 %)
+Legacy conflict counts in stall cycles:
++--------------+-----------+----------+-----------------+
+|    Reason    |   Cycles  |     %    |        %        |
+|              |           | (in tot) | (in all stalls) |
++--------------+-----------+----------+-----------------+
+| EXU conflict | 148190042 |  31.4931 |         84.8944 |
+| LSU conflict |  89806718 |  19.0856 |          51.448 |
+| WBU conflict |  73473921 |  15.6146 |         42.0914 |
++--------------+-----------+----------+-----------------+
+All conflict cycles. Per-source rows can overlap; only/multi-source rows are exclusive:
++-----------------------+-----------+----------+--------------------+
+|         Reason        |   Cycles  |     %    |          %         |
+|                       |           | (in tot) | (in all conflicts) |
++-----------------------+-----------+----------+--------------------+
+|          Any conflict | 332282407 |  70.6161 |                100 |
+|          EXU conflict | 274719039 |  58.3828 |            82.6764 |
+|          LSU conflict | 210580176 |  44.7522 |            63.3739 |
+|          WBU conflict | 189167320 |  40.2015 |            56.9297 |
+|     EXU only conflict |  53666530 |  11.4051 |            16.1509 |
+|     LSU only conflict |  26078634 |  5.54219 |            7.84833 |
+|     WBU only conflict |  10326160 |   2.1945 |            3.10765 |
+| Multi-source conflict | 242211083 |  51.4743 |            72.8931 |
++-----------------------+-----------+----------+--------------------+
+Real stall cycles. Per-source rows can overlap; only/multi-source rows are exclusive:
++-----------------------+-----------+----------+-----------------+
+|         Reason        |   Cycles  |     %    |        %        |
+|                       |           | (in tot) | (in all stalls) |
++-----------------------+-----------+----------+-----------------+
+|             Any stall | 174558143 |  37.0968 |             100 |
+|      EXU stall-source | 137428349 |  29.2061 |         78.7293 |
+|      LSU stall-source |  47886681 |  10.1768 |         27.4331 |
+|      WBU stall-source |         0 |        0 |               0 |
+| EXU only stall-source | 126671462 |    26.92 |         72.5669 |
+| LSU only stall-source |  37129794 |  7.89076 |         21.2707 |
+| WBU only stall-source |         0 |        0 |               0 |
+|    Multi-source stall |  10756887 |  2.28604 |         6.16235 |
++-----------------------+-----------+----------+-----------------+
+IDU Flush Performance Counter Statistics:
+total IDU flush cycles: 273172 (0.0580541 %)
++-------------+--------+-------------+------------------+
+|    Reason   |  Flush |   Flush %   |      Flush %     |
+|             | Cycles |   (in tot)  | (in all flushes) |
++-------------+--------+-------------+------------------+
+| BranchTaken | 269218 |   0.0572138 |          98.5526 |
+|        JALR |    282 | 5.99302e-05 |         0.103232 |
+|         JAL |   3664 | 0.000778667 |          1.34128 |
+|   Exception |      8 | 1.70015e-06 |       0.00292856 |
+|       Fence |      0 |           0 |                0 |
+| PredRecover |      0 |           0 |                0 |
+|     Unknown |      0 |           0 |                0 |
++-------------+--------+-------------+------------------+
+Branch Prediction Performance Counter Statistics:
+  total branch count: 10958991
+  total mispredict count: 136586
+  total accuracy count: 10822405
+  accuracy: 98.7537 %
+  mispredict rate: 1.24634 %
++-----------+----------+------------+----------+-------------+--------------+
+|    Type   |   Total  | Mispredict | Accuracy |   Count %   | Mispredict % |
+|           |   Count  |    Count   |     %    |   (in tot)  |   (in tot)   |
++-----------+----------+------------+----------+-------------+--------------+
+|    Branch | 10825829 |     134609 |  98.7566 |     98.7849 |       1.2283 |
+|       JAL |   133017 |       1832 |  98.6227 |     1.21377 |    0.0167169 |
+|      JALR |      141 |        141 |        0 |  0.00128661 |   0.00128661 |
+| Exception |        4 |          4 |        0 | 3.64997e-05 |  3.64997e-05 |
++-----------+----------+------------+----------+-------------+--------------+
+Optimization Direction Performance Counter Statistics:
++---------------+----------+
+|  M operation  |  Issued  |
++---------------+----------+
+|           mul | 10496004 |
+|          mulh |   128004 |
+|        mulhsu |        4 |
+|         mulhu |       18 |
+|           div |        4 |
+|          divu |        4 |
+|           rem |        4 |
+|          remu |        4 |
+| div/rem total |       16 |
++---------------+----------+
+  cacheable full-word stores: 21450238
++----------------------+----------+----------+------+
+| Dependency selection | rs1 only | rs2 only | both |
++----------------------+----------+----------+------+
+|   late-load ADD/ADDI | 57668883 |  5312000 |    0 |
+|   late-add successor | 26176000 |        0 |    0 |
++----------------------+----------+----------+------+

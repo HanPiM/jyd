@@ -1,0 +1,94 @@
+Perf Counters Report
+Git commit: d41aa7495b7b5a19f666ad627f998debb232b5b0
+
+Statistics:
+cycle and instruction counts:
+  total cycle count: 523156157
+  total instruction count: 380344412 (380M)
+  IPC: 0.7270
+  CPI: 1.3755
+excution time estimate:
+  Clk(Mhz)    Time(s)
+        50   10.46312
+       100    5.23156
+       200    2.61578
+       250    2.09262
+Pipeline Performance Counter Statistics:
++-------+--------------+-----------+-----------+--------------+---------+---------+
+| Stage | Backpressure |   Bubble  |    Fire   | Backpressure |  Bubble |   Fire  |
+|       |    Cycles    |   Cycles  |   Cycles  |       %      |    %    |    %    |
++-------+--------------+-----------+-----------+--------------+---------+---------+
+|   IFU |    142401955 |         0 | 380754172 |      27.2198 |       0 | 72.7802 |
+|   IDU |     42496474 | 100178654 | 380480999 |       8.1231 | 19.1489 |  72.728 |
+|   EXU |            0 | 142811715 | 380344412 |            0 | 27.2981 | 72.7019 |
+|   LSU |            0 | 142811715 | 380344412 |            0 | 27.2981 | 72.7019 |
++-------+--------------+-----------+-----------+--------------+---------+---------+
+RAW Stall Performance Counter Statistics:
+total RAW conflict cycles: 374616140 (71.6069 %)
+total RAW stall cycles: 190483740 (36.4105 %)
+Legacy conflict counts in stall cycles:
++--------------+-----------+----------+-----------------+
+|    Reason    |   Cycles  |     %    |        %        |
+|              |           | (in tot) | (in all stalls) |
++--------------+-----------+----------+-----------------+
+| EXU conflict | 101134752 |  19.3317 |         53.0936 |
+| LSU conflict | 142158747 |  27.1733 |         74.6304 |
+| WBU conflict |  84032128 |  16.0625 |         44.1151 |
++--------------+-----------+----------+-----------------+
+All conflict cycles. Per-source rows can overlap; only/multi-source rows are exclusive:
++-----------------------+-----------+----------+--------------------+
+|         Reason        |   Cycles  |     %    |          %         |
+|                       |           | (in tot) | (in all conflicts) |
++-----------------------+-----------+----------+--------------------+
+|          Any conflict | 374616140 |  71.6069 |                100 |
+|          EXU conflict | 274708626 |  52.5099 |            73.3307 |
+|          LSU conflict | 242063624 |  46.2699 |            64.6164 |
+|          WBU conflict | 178897053 |  34.1957 |            47.7548 |
+|     EXU only conflict |  74615968 |  14.2627 |             19.918 |
+|     LSU only conflict |  47429156 |  9.06597 |            12.6607 |
+|     WBU only conflict |  10558007 |  2.01814 |            2.81835 |
+| Multi-source conflict | 242013009 |  46.2602 |            64.6029 |
++-----------------------+-----------+----------+--------------------+
+Real stall cycles. Per-source rows can overlap; only/multi-source rows are exclusive:
++-----------------------+-----------+-----------+-----------------+
+|         Reason        |   Cycles  |     %     |        %        |
+|                       |           |  (in tot) | (in all stalls) |
++-----------------------+-----------+-----------+-----------------+
+|             Any stall | 190483740 |   36.4105 |             100 |
+|      EXU stall-source |  90373059 |   17.2746 |          47.444 |
+|      LSU stall-source | 100238707 |   19.1604 |         52.6232 |
+|      WBU stall-source |         0 |         0 |               0 |
+| EXU only stall-source |  90245033 |   17.2501 |         47.3768 |
+| LSU only stall-source | 100110681 |   19.1359 |          52.556 |
+| WBU only stall-source |         0 |         0 |               0 |
+|    Multi-source stall |    128026 | 0.0244719 |        0.067211 |
++-----------------------+-----------+-----------+-----------------+
+IDU Flush Performance Counter Statistics:
+total IDU flush cycles: 273172 (0.0522161 %)
++-------------+--------+-------------+------------------+
+|    Reason   |  Flush |   Flush %   |      Flush %     |
+|             | Cycles |   (in tot)  | (in all flushes) |
++-------------+--------+-------------+------------------+
+| BranchTaken | 269218 |   0.0514604 |          98.5526 |
+|        JALR |    282 | 5.39036e-05 |         0.103232 |
+|         JAL |   3664 | 0.000700364 |          1.34128 |
+|   Exception |      8 | 1.52918e-06 |       0.00292856 |
+|       Fence |      0 |           0 |                0 |
+| PredRecover |      0 |           0 |                0 |
+|     Unknown |      0 |           0 |                0 |
++-------------+--------+-------------+------------------+
+Branch Prediction Performance Counter Statistics:
+  total branch count: 10958992
+  total mispredict count: 136586
+  total accuracy count: 10822406
+  accuracy: 98.7537 %
+  mispredict rate: 1.24634 %
++-----------+----------+------------+----------+-------------+--------------+
+|    Type   |   Total  | Mispredict | Accuracy |   Count %   | Mispredict % |
+|           |   Count  |    Count   |     %    |   (in tot)  |   (in tot)   |
++-----------+----------+------------+----------+-------------+--------------+
+|    Branch | 10825830 |     134609 |  98.7566 |     98.7849 |       1.2283 |
+|       JAL |   133017 |       1832 |  98.6227 |     1.21377 |    0.0167169 |
+|      JALR |      141 |        141 |        0 |  0.00128661 |   0.00128661 |
+| Exception |        4 |          4 |        0 | 3.64997e-05 |  3.64997e-05 |
++-----------+----------+------------+----------+-------------+--------------+

@@ -178,16 +178,11 @@ class EXU(
   // path. The non-add cases are fixed-immediate hot paths and synthesize to
   // a bit select or wiring shift rather than a second general ALU.
   val lateAddResult = lateRegV1 + lateRegV2
-  val isLateLoadAndi1 = hasLateLoadOperand && isTypArithmetic && isFmtI &&
-    func3t === "b111".U && dinst.info.imm === 1.U
-  val isLateLoadSrli1 = hasLateLoadOperand && isTypArithmetic && isFmtI &&
-    func3t === "b101".U && dinst.info.imm === 1.U
-  val lateBitResult = Mux(
-    isLateLoadAndi1,
+  val lateSimpleResult = Mux(
+    func3t === "b111".U,
     Cat(0.U(31.W), lateRegV1(0)),
-    Cat(0.U(1.W), lateRegV1(31, 1))
+    Mux(func3t === "b101".U, Cat(0.U(1.W), lateRegV1(31, 1)), lateAddResult)
   )
-  val lateArithmeticResult = Mux(isLateLoadAndi1 || isLateLoadSrli1, lateBitResult, lateAddResult)
   val reg_v1       = dinst.info.reg1
   val reg_v2       = dinst.info.reg2
   // val pcAddImm   = dinst.pc + dinst.info.imm
@@ -322,7 +317,7 @@ class EXU(
   //   )
   // )
 
-  val arithmeticResult = Mux(hasLateLoadOperand, lateArithmeticResult, aluOut)
+  val arithmeticResult = Mux(hasLateLoadOperand, lateAddResult, aluOut)
   writeBackInfo.gpr.data := Mux(isTypArithmetic, arithmeticResult, dinst.info.preMuxWrBackData)
 
   // Fill in LSU stage
@@ -344,21 +339,15 @@ class EXU(
   // waits one cycle and receives the registered result from LSU instead.
   val isMExt = !isFmtI && func7t === "b0000001".U
   val useSingleCycleForward = isTypArithmetic && !isMExt && !isBExt && !hasLateLoadOperand
-  val useLateBitForward = (isLateLoadAndi1 || isLateLoadSrli1) && exuResultValid
-  val exuForwardData = Mux(
-    useLateBitForward,
-    lateBitResult,
-    Mux(isTypArithmetic, alu.io.singleCycleResult, dinst.info.preMuxWrBackData)
-  )
+  val exuForwardData = Mux(isTypArithmetic, alu.io.singleCycleResult, dinst.info.preMuxWrBackData)
   // Keep lateAddResult out of the generic M/D forwarding mux. Its compact
   // dedicated channel preserves same-cycle forwarding without another rd
   // comparison; sequential single issue supplies producer identity.
-  val exuForwardDataValid =
-    (!isMemOP && !hasLateLoadOperand && (!isTypArithmetic || useSingleCycleForward)) || useLateBitForward
+  val exuForwardDataValid = !isMemOP && !hasLateLoadOperand && (!isTypArithmetic || useSingleCycleForward)
   io.fwd := WrBackForwardInfo(io.in.valid, dinst, exuForwardDataValid, exuForwardData, csrWrEnable)
   io.lateAddFwd.valid :=
-    io.in.valid && dinst.info.rdWrEn && dinst.info.rd =/= 0.U && hasLateLoadOperand && isAdd && exuResultValid
-  io.lateAddFwd.data := lateAddResult
+    io.in.valid && dinst.info.rdWrEn && dinst.info.rd =/= 0.U && hasLateLoadOperand && exuResultValid
+  io.lateAddFwd.data := lateSimpleResult
   // A held late-load ADD must remain visible through generic forwarding so
   // dependent consumers stall, but it must never drive the special address-
   // generation bypass.  Keeping data fixed at the normal ALU output also

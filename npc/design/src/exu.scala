@@ -217,9 +217,8 @@ class EXU(
   alu_in.is_imm := isFmtI
   alu_in.func3t := func3t
   alu_in.func7t := func7t
-  val (isBExt, bExtOp) = BExtensionDecode(dinst.code)
+  val isBExt = dinst.info.bExtValid
   alu_in.bExtValid := isBExt
-  alu_in.bExtOp    := bExtOp
 
   val aluOut = alu.io.out.bits
 

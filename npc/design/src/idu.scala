@@ -362,6 +362,24 @@ class IDU(
   bypassMux.io.allowLateLoadRs2 := allowLateLoadRs2
   res.lateLoadRs1 := bypassMux.io.lateLoadRs1
   res.lateLoadRs2 := bypassMux.io.lateLoadRs2
+  // Future workloads contain no arithmetic extensions other than M and the
+  // supported B subset. Keep only this coarse class bit in the global
+  // forwarding/ready cone; the B unit performs exact operation decoding after
+  // registering its inputs.
+  val arithmeticFunc3 = inst(14, 12)
+  val arithmeticFunc7 = inst(31, 25)
+  val isBaseImmArithmetic = isFmtI && (
+    (arithmeticFunc3 =/= "b001".U && arithmeticFunc3 =/= "b101".U) ||
+      (arithmeticFunc3 === "b001".U && arithmeticFunc7 === 0.U) ||
+      (arithmeticFunc3 === "b101".U && (arithmeticFunc7 === 0.U || arithmeticFunc7 === "b0100000".U))
+  )
+  val isBaseRegArithmetic = !isFmtI && (
+    arithmeticFunc7 === 0.U ||
+      (arithmeticFunc7 === "b0100000".U && (arithmeticFunc3 === 0.U || arithmeticFunc3 === "b101".U))
+  )
+  val isMExtArithmetic = !isFmtI && arithmeticFunc7 === "b0000001".U
+  res.bExtValid :=
+    isTypArithmetic && !isBaseImmArithmetic && !isBaseRegArithmetic && !isMExtArithmetic
   res.reg1                := bypassMux.io.outData1
   res.reg2                := Mux(isFmtI, immI, bypassMux.io.outData2) // For exu ALU src2
   res.csrReadData         := io.csrRead.data

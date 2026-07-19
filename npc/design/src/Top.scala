@@ -232,11 +232,6 @@ class CPUCore(
   val wbu        = Module(new WBU)
   val dataMemBus = Module(new DataMemBusCombiner)
   val dcache     = Module(new DCache)
-  // Keep a physically independent copy of the ID/EX address index for the tag
-  // RAM cluster. This separates its fanout from the data RAM cluster without
-  // changing the pipeline boundary or architectural timing.
-  val tagQueryIndexReg = Reg(UInt(9.W))
-  dontTouch(tagQueryIndexReg)
 
   val resetPCProvider = Module(new CPUTop_ResetPCProvider)
   val INIT_PC         = resetPCProvider.io.resetPC
@@ -303,9 +298,8 @@ class CPUCore(
   io.dram <> dataMemBus.io.out
   exu.io.memReq <> dataMemBus.io.exuMemReq
   wbu.io.memResp <> dataMemBus.io.memResp
-  dcache.io.dataQueryIndex := exu.io.dcache.dataQueryIndex
-  dcache.io.tagQueryIndex  := tagQueryIndexReg
-  dcache.io.queryTag       := exu.io.dcache.queryTag
+  dcache.io.queryIndex := exu.io.dcache.queryIndex
+  dcache.io.queryTag   := exu.io.dcache.queryTag
   exu.io.dcache.hit    := dcache.io.hit && p.enableDCache.B
   exu.io.dcache.lateReadData := dcache.io.lateReadData
   val dcacheStoreMutation = exu.io.dcache.storeUpdate && p.enableDCache.B
@@ -364,13 +358,6 @@ class CPUCore(
   pipelineConnect(ifu.io.out, idu.io.in, idu.io.out, kill = activeRedirectValid)
   pipelineConnect(idu.io.out, exu.io.in, exu.io.out, kill = redirectNow)
   pipelineConnect(exu.io.out, lsu.io.in, lsu.io.out)
-
-  when(idu.io.out.ready) {
-    tagQueryIndexReg := idu.io.out.bits.info.reg1AddImm(10, 2)
-  }
-  when(exu.io.in.valid) {
-    assert(tagQueryIndexReg === exu.io.dcache.dataQueryIndex)
-  }
 
   idu.io.rvec <> gprs.io.read
   idu.io.csrRead <> csrs.io.read

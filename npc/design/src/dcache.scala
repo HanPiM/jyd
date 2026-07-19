@@ -6,9 +6,8 @@ import jyd.{BlkMemGen2KB, DistMemGen512x8}
 
 class DCache extends Module {
   val io = IO(new Bundle {
-    val dataQueryIndex = Input(UInt(9.W))
-    val tagQueryIndex  = Input(UInt(9.W))
-    val queryTag       = Input(UInt(7.W))
+    val queryIndex = Input(UInt(9.W))
+    val queryTag   = Input(UInt(7.W))
     val hit       = Output(Bool())
     val readData  = Output(UInt(32.W))
     val lateReadData = Output(UInt(32.W))
@@ -32,16 +31,16 @@ class DCache extends Module {
 
   val tagEntry   = tagMem.io.dpo
 
-  tagMem.io.dpra := io.tagQueryIndex
+  tagMem.io.dpra := io.queryIndex
   io.hit         := tagEntry(0) && tagEntry(7, 1) === io.queryTag
 
   dataMem.io.clkb  := clock
   dataMem.io.enb   := true.B
-  dataMem.io.addrb := io.dataQueryIndex
+  dataMem.io.addrb := io.queryIndex
   io.readData      := dataMem.io.doutb
 
   lateDataMem.foreach { bank =>
-    bank.io.dpra := io.dataQueryIndex
+    bank.io.dpra := io.queryIndex
   }
   io.lateReadData := Cat(lateDataMem.reverse.map(_.io.dpo))
 
@@ -54,13 +53,13 @@ class DCache extends Module {
   val storeTagValid = io.storeMask.andR || io.hit
   val storeTagData  = Cat(io.queryTag, storeTagValid)
   tagMem.io.we := io.storeUpdate || io.update
-  tagMem.io.a  := Mux(io.storeUpdate, io.tagQueryIndex, io.updateAddr(10, 2))
+  tagMem.io.a  := Mux(io.storeUpdate, io.queryIndex, io.updateAddr(10, 2))
   tagMem.io.d  := Mux(io.storeUpdate, storeTagData, updateTagData)
 
   dataMem.io.clka  := clock
   val dataWrite = io.storeUpdate || io.update
   val dataWriteMask = Mux(io.storeUpdate, io.storeMask, Mux(io.update, io.updateMask, 0.U))
-  val dataWriteAddr = Mux(io.storeUpdate, io.dataQueryIndex, io.updateAddr(10, 2))
+  val dataWriteAddr = Mux(io.storeUpdate, io.queryIndex, io.updateAddr(10, 2))
   val dataWriteData = Mux(io.storeUpdate, io.storeData, io.updateData)
   dataMem.io.ena   := dataWrite
   dataMem.io.wea   := dataWriteMask

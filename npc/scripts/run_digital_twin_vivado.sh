@@ -124,6 +124,29 @@ set expected_pack_dir [file normalize [lindex $argv 2]]
 
 open_project digital_twin.xpr
 set_param general.maxThreads $jobs
+
+# The generated Chisel file list may gain helper modules (for example inferred
+# memories) without a corresponding entry in the checked-in Vivado project.
+# Register every packaged RTL source before updating compile order so the
+# in-tree project always consumes the complete pack-fpga artifact.
+set known_project_files [dict create]
+foreach source_file [get_files -all] {
+  dict set known_project_files [file normalize $source_file] 1
+}
+set added_pack_sources 0
+foreach pack_subdir {cpu fpgawrap} {
+  foreach pattern {*.v *.sv} {
+    foreach source_file [glob -nocomplain -directory "${expected_pack_dir}/${pack_subdir}" $pattern] {
+      set resolved_file [file normalize $source_file]
+      if {![dict exists $known_project_files $resolved_file]} {
+        add_files -fileset sources_1 -norecurse $resolved_file
+        dict set known_project_files $resolved_file 1
+        incr added_pack_sources
+      }
+    }
+  }
+}
+puts "Added $added_pack_sources new pack-fpga source(s) to sources_1"
 update_compile_order -fileset sources_1
 puts "Vivado launch_runs jobs: $jobs"
 puts "Vivado general.maxThreads: [get_param general.maxThreads]"

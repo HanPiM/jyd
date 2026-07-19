@@ -108,8 +108,9 @@ static Phase phases[MAX_PHASES];
 static PcStat *pcs;
 static LoadPairStat *load_pairs;
 static uint64_t pair_table_full;
-static uint64_t btb16_miss, btb16_jalr_miss, btb32_jalr_miss;
-static BtbEnt btb16[16], btb16j[16], btb32j[32];
+static uint64_t btb16_miss, btb32_miss, btb16_jalr_miss,
+                btb32_jalr_miss;
+static BtbEnt btb16[16], btb32[32], btb16j[16], btb32j[32];
 static DCacheEnt current_dcache[DCACHE_LINES], proposed_dcache[DCACHE_LINES];
 static DCacheStat current_dcache_stat, proposed_dcache_stat;
 static PreviousLoad previous_load;
@@ -442,6 +443,7 @@ void riscv_profile_record(const Decode *s, word_t x, word_t rs1_before,
       q->taken++;
     }
     model(btb16, 16, s->pc, s->dnpc, k, taken, false, &btb16_miss);
+    model(btb32, 32, s->pc, s->dnpc, k, taken, false, &btb32_miss);
     model(btb16j, 16, s->pc, s->dnpc, k, taken, true, &btb16_jalr_miss);
     model(btb32j, 32, s->pc, s->dnpc, k, taken, true, &btb32_jalr_miss);
   }
@@ -614,9 +616,11 @@ void riscv_profile_finish(void) {
           "],\n  \"predictor_estimate\":{\"architectural_order\":true,"
           "\"note\":\"not a cycle-accurate model\","
           "\"btb16_no_jalr_misses\":%llu,"
+          "\"btb32_no_jalr_misses\":%llu,"
           "\"btb16_with_jalr_misses\":%llu,"
           "\"btb32_with_jalr_misses\":%llu},\n",
           (unsigned long long)btb16_miss,
+          (unsigned long long)btb32_miss,
           (unsigned long long)btb16_jalr_miss,
           (unsigned long long)btb32_jalr_miss);
 

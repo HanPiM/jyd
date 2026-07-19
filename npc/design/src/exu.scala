@@ -374,9 +374,11 @@ class EXU(
   val cacheableStore = isTypStore && reg1AddImm(21, 20) === "b01".U
   val cacheableStoreFire = memReqFire && cacheableStore
   val fullWordStore = memWMask === "b1111".U
-  val canUpdateCachedStore = fullWordStore || io.dcache.hit
-  io.dcache.invalidate := cacheableStoreFire && !canUpdateCachedStore
-  io.dcache.storeUpdate := cacheableStoreFire && canUpdateCachedStore
+  // Keep the store write-enable independent of the asynchronous tag lookup.
+  // Narrow stores are rare in this workload, so invalidate their line instead
+  // of extending the EXU address/tag path into every shadow-RAM write port.
+  io.dcache.invalidate := cacheableStoreFire && !fullWordStore
+  io.dcache.storeUpdate := cacheableStoreFire && fullWordStore
   io.dcache.storeData   := memWData
   io.dcache.storeMask   := memWMask
 

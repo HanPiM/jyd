@@ -1,8 +1,35 @@
 package cpu
 
 import chisel3._
-import chisel3.util.Cat
+import chisel3.experimental.IntParam
+import chisel3.util.{Cat, HasBlackBoxInline}
 import jyd.{BlkMemGen2KB, DistMemGen512x8}
+
+/** A Xilinx LUT1 configured as an identity buffer.
+  *
+  * RTL simulation uses the inline model, while FPGA packaging excludes that
+  * model so Vivado binds the instance to the LUT1 UNISIM primitive.
+  */
+class LateIndexIdentityLUT extends BlackBox(Map("INIT" -> IntParam(2))) with HasBlackBoxInline {
+  override def desiredName: String = "LUT1"
+  val io = IO(new Bundle {
+    val I0 = Input(Bool())
+    val O  = Output(Bool())
+  })
+
+  setInline(
+    "LUT1.sv",
+    """module LUT1 #(
+      |  parameter [1:0] INIT = 2'h0
+      |) (
+      |  input  wire I0,
+      |  output wire O
+      |);
+      |  assign O = INIT[I0];
+      |endmodule
+      |""".stripMargin
+  )
+}
 
 class DCache extends Module {
   val io = IO(new Bundle {
@@ -28,6 +55,7 @@ class DCache extends Module {
   // lookup for the narrow late-load path.  EXU captures this value in its
   // registered LSU payload; it is never consumed directly by the C1 adder.
   val lateDataMem = Seq.fill(4)(Module(new DistMemGen512x8))
+  val lateIndexBit0Buffer = Seq.fill(4)(Module(new LateIndexIdentityLUT))
 
   val tagEntry   = tagMem.io.dpo
 
@@ -39,8 +67,9 @@ class DCache extends Module {
   dataMem.io.addrb := io.queryIndex
   io.readData      := dataMem.io.doutb
 
-  lateDataMem.foreach { bank =>
-    bank.io.dpra := io.queryIndex
+  lateDataMem.zip(lateIndexBit0Buffer).foreach { case (bank, buffer) =>
+    buffer.io.I0 := io.queryIndex(0)
+    bank.io.dpra := Cat(io.queryIndex(8, 1), buffer.io.O)
   }
   io.lateReadData := Cat(lateDataMem.reverse.map(_.io.dpo))
 

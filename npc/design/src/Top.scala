@@ -399,24 +399,10 @@ class CPUCore(
       wbu.io.in.bits.lsuFunc3t === "b010".U || wbu.io.in.bits.lsuFunc3t === "b100".U ||
       wbu.io.in.bits.lsuFunc3t === "b101".U
   val lateLoadWBUValid = wbu.io.in.valid && wbu.io.in.bits.isLoad && lateLoadWBUWidthSupported
-  val lateLoadWBUData = ExtLoadData(wbu.io.memResp.bits, wbu.io.in.bits.lsuAddrOffset, wbu.io.in.bits.lsuFunc3t)
-  // A narrow miss used to put the memory response, byte/half extraction, sign
-  // extension, and the held consumer's late ADD in one cycle.  Word responses
-  // keep their direct path; narrow responses cross this local register before
-  // waking the consumer.  Ordinary load writeback is unchanged, so the extra
-  // cycle is paid only when a dependent late consumer is actually waiting.
-  val narrowLateLoadWBUResp = lateLoadWBUValid && !wbu.io.in.bits.lsuFunc3t(1) && wbu.io.memResp.valid
-  val delayedNarrowLateLoadValid = RegNext(narrowLateLoadWBUResp, false.B)
-  val delayedNarrowLateLoadData  = RegEnable(lateLoadWBUData, narrowLateLoadWBUResp)
-  val directLateLoadWBUValid     = lateLoadWBUValid && wbu.io.in.bits.lsuFunc3t(1)
-  exu.io.lateLoadWBU.valid := directLateLoadWBUValid || delayedNarrowLateLoadValid
-  exu.io.lateLoadWBU.dataValid :=
-    (directLateLoadWBUValid && wbu.io.memResp.valid) || delayedNarrowLateLoadValid
-  exu.io.lateLoadWBU.data := Mux(delayedNarrowLateLoadValid, delayedNarrowLateLoadData, lateLoadWBUData)
-
-  when(delayedNarrowLateLoadValid) {
-    assert(!directLateLoadWBUValid, "Delayed narrow and direct word late-load responses must not overlap")
-  }
+  exu.io.lateLoadWBU.valid := lateLoadWBUValid
+  exu.io.lateLoadWBU.dataValid := lateLoadWBUValid && wbu.io.memResp.valid
+  exu.io.lateLoadWBU.data :=
+    ExtLoadData(wbu.io.memResp.bits, wbu.io.in.bits.lsuAddrOffset, wbu.io.in.bits.lsuFunc3t)
 
   idu.io.pipelineFlush := activeRedirectValid
 

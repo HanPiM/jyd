@@ -72,7 +72,6 @@ typedef struct {
   uint64_t partial_store_total;
   uint64_t partial_store_hit_update;
   uint64_t partial_store_invalidate;
-  uint64_t partial_store_miss_preserve;
 } DCacheStat;
 typedef struct {
   uint32_t producer_pc, consumer_pc;
@@ -124,9 +123,8 @@ static uint64_t btb16_miss, btb32_miss, btb16_jalr_miss,
 static BtbEnt btb16[16], btb32[32], btb16j[16], btb32j[32],
     btb32_stored_jalr_not_predicted[32];
 static DCacheEnt current_dcache[DCACHE_LINES], rtl_dcache[DCACHE_LINES],
-    proposed_dcache[DCACHE_LINES], preserved_dcache[DCACHE_LINES];
-static DCacheStat current_dcache_stat, rtl_dcache_stat, proposed_dcache_stat,
-    preserved_dcache_stat;
+    proposed_dcache[DCACHE_LINES];
+static DCacheStat current_dcache_stat, rtl_dcache_stat, proposed_dcache_stat;
 static PreviousLoad previous_load, distance2_load;
 static uint64_t last_write[32];
 static uint8_t last_kind[32];
@@ -295,21 +293,6 @@ static void proposed_dcache_store(uint32_t addr, unsigned width) {
     proposed_dcache_stat.partial_store_total++;
     proposed_dcache_stat.partial_store_invalidate++;
     proposed_dcache[dcache_index(addr)].valid = 0;
-  }
-}
-
-static void preserved_dcache_store(uint32_t addr, unsigned width) {
-  if (!dcacheable(addr))
-    return;
-  if (width == W_WORD) {
-    preserved_dcache_stat.full_store_allocate++;
-    dcache_allocate(preserved_dcache, addr);
-  } else if (dcache_hit(preserved_dcache, addr)) {
-    preserved_dcache_stat.partial_store_total++;
-    preserved_dcache_stat.partial_store_hit_update++;
-  } else {
-    preserved_dcache_stat.partial_store_total++;
-    preserved_dcache_stat.partial_store_miss_preserve++;
   }
 }
 
@@ -614,8 +597,6 @@ void riscv_profile_record(const Decode *s, word_t x, word_t rs1_before,
       bool proposed_hit =
           dcache_load(proposed_dcache, &proposed_dcache_stat, addr, width,
                       proposed_eligible);
-      (void)dcache_load(preserved_dcache, &preserved_dcache_stat, addr, width,
-                        proposed_eligible);
       if (rd) {
         previous_load = (PreviousLoad){s->pc, rd, width, current_hit, rtl_hit,
                                        proposed_hit, 0, 1};
@@ -625,7 +606,6 @@ void riscv_profile_record(const Decode *s, word_t x, word_t rs1_before,
       current_dcache_store(addr, width);
       rtl_dcache_store(addr, width);
       proposed_dcache_store(addr, width);
-      preserved_dcache_store(addr, width);
       (void)rs2_before;
     }
   }
@@ -677,13 +657,11 @@ static void dcache_stat_json(FILE *f, const DCacheStat *stat) {
           "],\"full_store_allocate\":%llu,"
           "\"partial_store_total\":%llu,"
           "\"partial_store_hit_update\":%llu,"
-          "\"partial_store_invalidate\":%llu,"
-          "\"partial_store_miss_preserve\":%llu}",
+          "\"partial_store_invalidate\":%llu}",
           (unsigned long long)stat->full_store_allocate,
           (unsigned long long)stat->partial_store_total,
           (unsigned long long)stat->partial_store_hit_update,
-          (unsigned long long)stat->partial_store_invalidate,
-          (unsigned long long)stat->partial_store_miss_preserve);
+          (unsigned long long)stat->partial_store_invalidate);
 }
 
 void riscv_profile_finish(void) {
@@ -794,8 +772,6 @@ void riscv_profile_finish(void) {
   dcache_stat_json(f, &current_dcache_stat);
   fprintf(f, ",\"proposed\":");
   dcache_stat_json(f, &proposed_dcache_stat);
-  fprintf(f, ",\"partial_miss_preserve\":");
-  dcache_stat_json(f, &preserved_dcache_stat);
   fprintf(f, "},\n");
 
   fprintf(f,

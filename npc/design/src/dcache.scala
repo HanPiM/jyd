@@ -45,26 +45,22 @@ class DCache extends Module {
   io.lateReadData := Cat(lateDataMem.reverse.map(_.io.dpo))
 
   // A store wins over an older WBU refill/update. Full-word stores allocate a
-  // line. A narrow hit updates only the known bytes and leaves the matching tag
-  // untouched. A narrow miss leaves the whole shadow entry untouched: the
-  // write-through backing memory still receives the store, while preserving an
-  // unrelated line at the same direct-mapped index is both coherent and avoids
-  // feeding the asynchronous tag lookup back into the tag-memory write port.
+  // line. A narrow hit preserves it while a narrow miss leaves the queried tag
+  // invalid. Every store writes the tag port unconditionally, so the async hit
+  // only drives the valid data bit instead of the RAM write enable.
   tagMem.io.clk := clock
   val updateTagData = Cat(io.updateAddr(17, 11), 1.U(1.W))
-  val fullStore      = io.storeUpdate && io.storeMask.andR
-  val narrowStoreHit = io.storeUpdate && !io.storeMask.andR && io.hit
-  val storeTagData   = Cat(io.queryTag, true.B)
-  tagMem.io.we := fullStore || io.update
-  tagMem.io.a  := Mux(fullStore, io.queryIndex, io.updateAddr(10, 2))
-  tagMem.io.d  := Mux(fullStore, storeTagData, updateTagData)
+  val storeTagValid = io.storeMask.andR || io.hit
+  val storeTagData  = Cat(io.queryTag, storeTagValid)
+  tagMem.io.we := io.storeUpdate || io.update
+  tagMem.io.a  := Mux(io.storeUpdate, io.queryIndex, io.updateAddr(10, 2))
+  tagMem.io.d  := Mux(io.storeUpdate, storeTagData, updateTagData)
 
   dataMem.io.clka  := clock
-  val storeShadowWrite = fullStore || narrowStoreHit
-  val dataWrite = storeShadowWrite || io.update
-  val dataWriteMask = Mux(storeShadowWrite, io.storeMask, Mux(io.update, io.updateMask, 0.U))
-  val dataWriteAddr = Mux(storeShadowWrite, io.queryIndex, io.updateAddr(10, 2))
-  val dataWriteData = Mux(storeShadowWrite, io.storeData, io.updateData)
+  val dataWrite = io.storeUpdate || io.update
+  val dataWriteMask = Mux(io.storeUpdate, io.storeMask, Mux(io.update, io.updateMask, 0.U))
+  val dataWriteAddr = Mux(io.storeUpdate, io.queryIndex, io.updateAddr(10, 2))
+  val dataWriteData = Mux(io.storeUpdate, io.storeData, io.updateData)
   dataMem.io.ena   := dataWrite
   dataMem.io.wea   := dataWriteMask
   dataMem.io.addra := dataWriteAddr

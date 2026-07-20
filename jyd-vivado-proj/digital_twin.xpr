@@ -341,6 +341,13 @@
           <Attr Name="UsedIn" Val="simulation"/>
         </FileInfo>
       </File>
+      <File Path="$PSRCDIR/sources_1/imports/pack-fpga/cpu/updateStateMem_32x13.sv">
+        <FileInfo>
+          <Attr Name="UsedIn" Val="synthesis"/>
+          <Attr Name="UsedIn" Val="implementation"/>
+          <Attr Name="UsedIn" Val="simulation"/>
+        </FileInfo>
+      </File>
       <File Path="$PSRCDIR/sources_1/new/top.sv">
         <FileInfo>
           <Attr Name="UsedIn" Val="synthesis"/>
@@ -469,6 +476,7 @@
     <FileSet Name="div_gen_uradix2" Type="BlockSrcs" RelSrcDir="$PSRCDIR/div_gen_uradix2" RelGenDir="$PGENDIR/div_gen_uradix2">
       <File Path="$PSRCDIR/sources_1/ip/div_gen_uradix2/div_gen_uradix2.xci">
         <FileInfo>
+          <Attr Name="AutoDisabled" Val="1"/>
           <Attr Name="UsedIn" Val="synthesis"/>
           <Attr Name="UsedIn" Val="implementation"/>
           <Attr Name="UsedIn" Val="simulation"/>
@@ -566,7 +574,7 @@
         </Step>
         <Step Id="post_place_power_opt_design"/>
         <Step Id="phys_opt_design">
-          <Option Id="Directive">6</Option>
+          <Option Id="Directive">2</Option>
         </Step>
         <Step Id="route_design">
           <Option Id="Directive">0</Option>
@@ -713,7 +721,7 @@
       <Report Name="ROUTE_DESIGN.REPORT_METHODOLOGY" Enabled="1"/>
       <RQSFiles/>
     </Run>
-    <Run Id="impl_ExtraTimingOpt" Type="Ft2:EntireDesign" Part="xc7k325tffg900-2" ConstrsSet="constrs_1" Description="Includes alternate algorithms for timing-driven optimization" AutoIncrementalCheckpoint="false" WriteIncrSynthDcp="false" SynthRun="synth_1" IncludeInArchive="true" IsChild="false" GenFullBitstream="true" AutoIncrementalDir="$PSRCDIR/utils_1/imports/impl_1/impl_Explore/impl_Auto_1/impl_WLBlockPlacement/impl_NetDelay_high/impl_ExtraTimingOpt" LaunchOptions="-jobs 1 " AutoRQSDir="$PSRCDIR/utils_1/imports/impl_1/impl_Explore/impl_Auto_1/impl_WLBlockPlacement/impl_NetDelay_high/impl_ExtraTimingOpt" ParallelReportGen="true">
+    <Run Id="impl_ExtraTimingOpt" Type="Ft2:EntireDesign" Part="xc7k325tffg900-2" ConstrsSet="constrs_1" Description="Includes alternate algorithms for timing-driven optimization" AutoIncrementalCheckpoint="false" WriteIncrSynthDcp="false" SynthRun="synth_1" IncludeInArchive="true" IsChild="false" GenFullBitstream="true" AutoIncrementalDir="$PSRCDIR/utils_1/imports/impl_1/impl_Explore/impl_Auto_1/impl_WLBlockPlacement/impl_NetDelay_high/impl_ExtraTimingOpt" LaunchOptions="-jobs 16 " AutoRQSDir="$PSRCDIR/utils_1/imports/impl_1/impl_Explore/impl_Auto_1/impl_WLBlockPlacement/impl_NetDelay_high/impl_ExtraTimingOpt" ParallelReportGen="true">
       <Strategy Version="1" Minor="2">
         <StratHandle Name="Performance_ExtraTimingOpt" Flow="Vivado Implementation 2024"/>
         <Step Id="init_design"/>
@@ -729,7 +737,9 @@
         <Step Id="route_design">
           <Option Id="Directive">1</Option>
         </Step>
-        <Step Id="post_route_phys_opt_design"/>
+        <Step Id="post_route_phys_opt_design" EnableStepBool="1">
+          <Option Id="Directive">1</Option>
+        </Step>
         <Step Id="write_bitstream"/>
       </Strategy>
       <ReportStrategy Name="Vivado Implementation Default Reports" Flow="Vivado Implementation 2024"/>

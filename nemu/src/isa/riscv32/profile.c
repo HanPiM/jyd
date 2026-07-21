@@ -104,6 +104,10 @@ static uint64_t load_raw_current_hit[W_NR][K_NR];
 static uint64_t load_raw_proposed_hit[W_NR][K_NR];
 static uint64_t load_raw_incremental_hit[W_NR][K_NR];
 static uint64_t load_raw_lost_hit[W_NR][K_NR];
+static uint64_t load_m_raw[W_NR][M_NR][3];
+static uint64_t load_m_raw_eligible[W_NR][M_NR][3];
+static uint64_t load_m_raw_current_hit[W_NR][M_NR][3];
+static uint64_t load_m_raw_proposed_hit[W_NR][M_NR][3];
 /* Isolate masked partial-store updates from the already-retained narrow-load
  * eligibility change.  Distance 1 uses the exact restricted late-load
  * consumer forms; distance 2 is the generic LSU-cache forwarding opportunity.
@@ -404,7 +408,8 @@ static LoadPairStat *find_load_pair(uint32_t producer_pc, uint32_t consumer_pc,
   pair_table_full++;
   return NULL;
 }
-static void record_immediate_load_raw(uint32_t pc, unsigned consumer,
+static void record_immediate_load_raw(uint32_t pc, uint32_t x,
+                                      unsigned consumer,
                                       unsigned rs1, unsigned rs2, bool use1,
                                       bool use2, Phase *phase) {
   if (!previous_load.valid)
@@ -423,6 +428,18 @@ static void record_immediate_load_raw(uint32_t pc, unsigned consumer,
   bool proposed_hit = eligible && previous_load.proposed_hit;
   bool incremental_hit = proposed_hit && !current_hit;
   bool lost_hit = current_hit && !proposed_hit;
+
+  if (consumer == K_M) {
+    unsigned mop = mop_of(x);
+    unsigned source = source_mask - 1;
+    load_m_raw[width][mop][source]++;
+    if (eligible)
+      load_m_raw_eligible[width][mop][source]++;
+    if (current_hit)
+      load_m_raw_current_hit[width][mop][source]++;
+    if (proposed_hit)
+      load_m_raw_proposed_hit[width][mop][source]++;
+  }
 
   load_raw[width][consumer]++;
   load_raw_source[width][source_mask - 1]++;
@@ -509,7 +526,7 @@ void riscv_profile_record(const Decode *s, word_t x, word_t rs1_before,
                                     use1, use2);
   record_masked_store_update_saving(&distance2_load, 2, x, k, rs1, rs2,
                                     use1, use2);
-  record_immediate_load_raw(s->pc, k, rs1, rs2, use1, use2, p);
+  record_immediate_load_raw(s->pc, x, k, rs1, rs2, use1, use2, p);
 
   /* Multiplication is a permutation modulo 2^20. Workloads currently execute
    * within a <=4 MiB IROM window, so this dense cache is collision-free. */
@@ -627,6 +644,23 @@ static void matrix(FILE *f, uint64_t a[W_NR][K_NR]) {
       fputc(',', f);
     fputc('[', f);
     arr(f, a[i], K_NR);
+    fputc(']', f);
+  }
+  fputc(']', f);
+}
+static void load_m_cube(FILE *f, uint64_t a[W_NR][M_NR][3]) {
+  fputc('[', f);
+  for (unsigned width = 0; width < W_NR; width++) {
+    if (width)
+      fputc(',', f);
+    fputc('[', f);
+    for (unsigned mop = 0; mop < M_NR; mop++) {
+      if (mop)
+        fputc(',', f);
+      fputc('[', f);
+      arr(f, a[width][mop], 3);
+      fputc(']', f);
+    }
     fputc(']', f);
   }
   fputc(']', f);
@@ -862,6 +896,22 @@ void riscv_profile_finish(void) {
           (unsigned long long)proposed_bypass,
           (unsigned long long)incremental_bypass,
           (unsigned long long)lost_bypass, net_bypass, net_ms_280mhz);
+
+  fprintf(f,
+          "  \"load_m_raw_distance1\":{"
+          "\"width_order\":[\"byte\",\"half\",\"word\",\"other\"],"
+          "\"m_op_order\":[\"mul\",\"mulh\",\"mulhsu\",\"mulhu\","
+          "\"div\",\"divu\",\"rem\",\"remu\"],"
+          "\"source_order\":[\"rs1_only\",\"rs2_only\",\"both\"],"
+          "\"counts\":");
+  load_m_cube(f, load_m_raw);
+  fprintf(f, ",\"lsu_idu_eligible_counts\":");
+  load_m_cube(f, load_m_raw_eligible);
+  fprintf(f, ",\"current_hit_eligible_counts\":");
+  load_m_cube(f, load_m_raw_current_hit);
+  fprintf(f, ",\"proposed_hit_eligible_counts\":");
+  load_m_cube(f, load_m_raw_proposed_hit);
+  fprintf(f, "},\n");
 
   fprintf(f, "  \"phases_16m\":[");
   unsigned np = (total + PHASE_LEN - 1) / PHASE_LEN;

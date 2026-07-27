@@ -286,26 +286,29 @@ class EXU(
 
   val isFmtB = InstFmt.hasSame(dinst.info.fmt, InstFmt.branch)
 
-  val branchRegV1 = Mux(hasLateLoadOperand, lateRegV1, reg_v1)
-  val branchRegV2 = Mux(hasLateLoadOperand, lateRegV2, reg_v2)
-  val isEqual     = branchRegV1 === branchRegV2
-  val isLessThan  = branchRegV1.asSInt < branchRegV2.asSInt
-  val isLessThanU = branchRegV1 < branchRegV2
-
-  // val isEqual = dinst.info.isEqual
-  // val isLessThan = dinst.info.isLessThan
-  // val isLessThanU = dinst.info.isLessThanU
-
-  val takeBranch = Mux1H(
-    Seq(
-      dinst.info.is_beq  -> isEqual,
-      dinst.info.is_bne  -> !isEqual,
-      dinst.info.is_blt  -> isLessThan,
-      dinst.info.is_bge  -> !isLessThan,
-      dinst.info.is_bltu -> isLessThanU,
-      dinst.info.is_bgeu -> !isLessThanU
+  def compareBranch(lhs: UInt, rhs: UInt): Bool = {
+    val isEqual     = lhs === rhs
+    val isLessThan  = lhs.asSInt < rhs.asSInt
+    val isLessThanU = lhs < rhs
+    Mux1H(
+      Seq(
+        dinst.info.is_beq  -> isEqual,
+        dinst.info.is_bne  -> !isEqual,
+        dinst.info.is_blt  -> isLessThan,
+        dinst.info.is_bge  -> !isLessThan,
+        dinst.info.is_bltu -> isLessThanU,
+        dinst.info.is_bgeu -> !isLessThanU
+      )
     )
-  )
+  }
+
+  // Keep the ordinary branch comparator independent of late-load data.  The
+  // first implementation selected two 32-bit operands before one comparator,
+  // which put the late-load muxes on every branch redirect path.  Compare in
+  // parallel and select only the one-bit predicate instead.
+  val normalTakeBranch = compareBranch(reg_v1, reg_v2)
+  val lateTakeBranch   = compareBranch(lateRegV1, lateRegV2)
+  val takeBranch       = Mux(hasLateLoadOperand, lateTakeBranch, normalTakeBranch)
 
   // --- LSU input ---
   val lsuInfo = io.out.bits

@@ -41,14 +41,11 @@ object BTBParameters {
   // TODO: for contest use 14bit
   // NOW, for test large program, need 128KB, so 15bit
 
-  // Spread the index across the instruction-memory address to avoid the
-  // dominant conflict pairs in the contest workload. Keep every remaining
-  // address bit in the tag so this only changes placement, not aliasing.
-  def extractTag(addr: UInt): UInt = {
-    Cat(addr(16, 10), addr(8, 7), addr(3))
+  def extractTag(addr: UInt):   UInt = {
+    addr(16, 2 + INDEX_WIDTH)
   }
   def extractIndex(addr: UInt): UInt = {
-    Cat(addr(9), addr(6, 4), addr(2))
+    addr(2 + INDEX_WIDTH - 1, 2)
   }
 }
 

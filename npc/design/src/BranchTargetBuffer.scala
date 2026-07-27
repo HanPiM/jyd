@@ -41,11 +41,14 @@ object BTBParameters {
   // TODO: for contest use 14bit
   // NOW, for test large program, need 128KB, so 15bit
 
-  def extractTag(addr: UInt):   UInt = {
-    addr(16, 2 + INDEX_WIDTH)
+  // Spread the index across the instruction-memory address to avoid the
+  // dominant conflict pairs in the contest workload. Keep every remaining
+  // address bit in the tag so this only changes placement, not aliasing.
+  def extractTag(addr: UInt): UInt = {
+    Cat(addr(16, 10), addr(8, 7), addr(3))
   }
   def extractIndex(addr: UInt): UInt = {
-    addr(2 + INDEX_WIDTH - 1, 2)
+    Cat(addr(9), addr(6, 4), addr(2))
   }
 }
 
@@ -162,13 +165,7 @@ class BranchTargetBuffer extends Module {
   nextUpdateState.isBranch         := io.update.isBranch
   nextUpdateState.directionCounter := nextDirection
 
-  // A previously unseen not-taken conditional branch is already predicted
-  // correctly without a BTB entry. Do not let it evict a useful target at the
-  // same index; once the branch has an entry, keep training it normally.
-  val skipConflictingNotTakenBranch =
-    io.update.isBranch && !io.update.actualTaken && !entryMatches
-  val updateEn =
-    io.update.en && !reset.asBool && !skipConflictingNotTakenBranch
+  val updateEn      = io.update.en && !reset.asBool
   queryMem.io.a   := updateIndex.pad(5)
   queryMem.io.d   := nextEntry.asUInt
   queryMem.io.clk := clock

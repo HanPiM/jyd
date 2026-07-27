@@ -273,6 +273,21 @@ void OptimizationDirectionPerfCounter::dumpStatistics(std::ostream &os) {
                           << lateLoadAddCount[Rs2Only]
                           << lateLoadAddCount[BothRs]);
   dependencyTable.add_row(RowStream{}
+                          << "late-load branch total"
+                          << lateLoadBranchCount[Rs1Only]
+                          << lateLoadBranchCount[Rs2Only]
+                          << lateLoadBranchCount[BothRs]);
+  dependencyTable.add_row(RowStream{}
+                          << "late-load branch hit"
+                          << lateLoadBranchHit[Rs1Only]
+                          << lateLoadBranchHit[Rs2Only]
+                          << lateLoadBranchHit[BothRs]);
+  dependencyTable.add_row(RowStream{}
+                          << "late-load branch miss"
+                          << lateLoadBranchMiss[Rs1Only]
+                          << lateLoadBranchMiss[Rs2Only]
+                          << lateLoadBranchMiss[BothRs]);
+  dependencyTable.add_row(RowStream{}
                           << "late-add successor"
                           << lateAddSuccessorCount[LateAddRs1Only]
                           << lateAddSuccessorCount[LateAddRs2Only]

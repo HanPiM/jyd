@@ -353,6 +353,10 @@ struct OptimizationDirectionPerfCounter : public PerfCounterBase {
   size_t mOpCount[MOpNum] = {0};
   size_t cacheableFullWordStores = 0;
   size_t lateLoadAddCount[LateLoadUseNum] = {0};
+  size_t lateLoadBranchCount[LateLoadUseNum] = {0};
+  size_t lateLoadBranchHit[LateLoadUseNum] = {0};
+  size_t lateLoadBranchMiss[LateLoadUseNum] = {0};
+  size_t lateLoadBranchByFunct3[8] = {0};
   size_t lateAddSuccessorCount[LateAddUseNum] = {0};
 
   OptimizationDirectionPerfCounter() {

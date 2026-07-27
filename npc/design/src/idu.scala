@@ -369,8 +369,8 @@ class IDU(
   val isLateLoadAdd = isTypArithmetic && inst(14, 12) === 0.U && (isFmtI || inst(31, 25) === 0.U)
   val isLateLoadAndi1 = isTypArithmetic && isFmtI && inst(14, 12) === "b111".U && inst(31, 20) === 1.U
   val isLateLoadSrli1 = isTypArithmetic && isFmtI && inst(14, 12) === "b101".U && inst(31, 20) === 1.U
-  val allowLateLoadRs1 = isLateLoadAdd || isLateLoadAndi1 || isLateLoadSrli1
-  val allowLateLoadRs2 = isLateLoadAdd && !isFmtI
+  val allowLateLoadRs1 = isLateLoadAdd || isLateLoadAndi1 || isLateLoadSrli1 || isTypBranch
+  val allowLateLoadRs2 = (isLateLoadAdd && !isFmtI) || isTypBranch
   bypassMux.io.allowLateLoadRs1 := allowLateLoadRs1
   bypassMux.io.allowLateLoadRs2 := allowLateLoadRs2
   res.lateLoadRs1 := bypassMux.io.lateLoadRs1

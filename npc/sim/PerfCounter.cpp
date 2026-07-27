@@ -256,9 +256,19 @@ void OptimizationDirectionPerfCounter::update() {
     const bool lateRs1 = exu->io_in_bits_info_lateLoadRs1;
     const bool lateRs2 = exu->io_in_bits_info_lateLoadRs2;
     if (lateRs1 || lateRs2) {
-      lateLoadAddCount[lateRs1 && lateRs2
+      const auto use = lateRs1 && lateRs2
                            ? BothRs
-                           : (lateRs1 ? Rs1Only : Rs2Only)]++;
+                           : (lateRs1 ? Rs1Only : Rs2Only);
+      if (opcode == 0x63) {
+        lateLoadBranchCount[use]++;
+        lateLoadBranchByFunct3[func3]++;
+        if (exu->io_lateLoadLSU_dataValid)
+          lateLoadBranchHit[use]++;
+        else
+          lateLoadBranchMiss[use]++;
+      } else {
+        lateLoadAddCount[use]++;
+      }
     }
   }
 
@@ -443,6 +453,8 @@ void to_json(nlohmann::json &j, const OptimizationDirectionPerfCounter &c) {
                                    "div",  "divu", "rem",    "remu"};
   static const char *lateLoadNames[] = {"rs1_only", "rs2_only", "both"};
   static const char *lateAddNames[] = {"rs1_only", "rs2_only", "both"};
+  static const char *branchFunct3Names[] = {"beq", "bne", "reserved2", "reserved3",
+                                            "blt", "bge", "bltu", "bgeu"};
   j["ctrName"] = c.ctrName;
   for (int i = 0; i < OptimizationDirectionPerfCounter::MOpNum; i++) {
     j["m_ops"][mOpNames[i]] = c.mOpCount[i];
@@ -450,7 +462,19 @@ void to_json(nlohmann::json &j, const OptimizationDirectionPerfCounter &c) {
   j["cacheable_full_word_stores"] = c.cacheableFullWordStores;
   for (int i = 0; i < OptimizationDirectionPerfCounter::LateLoadUseNum; i++) {
     j["late_load_add"][lateLoadNames[i]] = c.lateLoadAddCount[i];
+    j["late_load_branch"]["operand"][lateLoadNames[i]] = {
+        {"total", c.lateLoadBranchCount[i]},
+        {"hit", c.lateLoadBranchHit[i]},
+        {"miss", c.lateLoadBranchMiss[i]},
+    };
   }
+  for (int i = 0; i < 8; i++)
+    j["late_load_branch"]["funct3"][branchFunct3Names[i]] =
+        c.lateLoadBranchByFunct3[i];
+  j["late_load_branch"]["hit_cycles"] =
+      c.lateLoadBranchHit[0] + c.lateLoadBranchHit[1] + c.lateLoadBranchHit[2];
+  j["late_load_branch"]["saved_cycles"] =
+      c.lateLoadBranchCount[0] + c.lateLoadBranchCount[1] + c.lateLoadBranchCount[2];
   for (int i = 0; i < OptimizationDirectionPerfCounter::LateAddUseNum; i++) {
     j["late_add_successor"][lateAddNames[i]] = c.lateAddSuccessorCount[i];
   }

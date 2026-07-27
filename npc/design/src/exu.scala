@@ -286,9 +286,11 @@ class EXU(
 
   val isFmtB = InstFmt.hasSame(dinst.info.fmt, InstFmt.branch)
 
-  val isEqual     = reg_v1 === reg_v2
-  val isLessThan  = reg_v1.asSInt < reg_v2.asSInt
-  val isLessThanU = reg_v1 < reg_v2
+  val branchRegV1 = Mux(hasLateLoadOperand, lateRegV1, reg_v1)
+  val branchRegV2 = Mux(hasLateLoadOperand, lateRegV2, reg_v2)
+  val isEqual     = branchRegV1 === branchRegV2
+  val isLessThan  = branchRegV1.asSInt < branchRegV2.asSInt
+  val isLessThanU = branchRegV1 < branchRegV2
 
   // val isEqual = dinst.info.isEqual
   // val isLessThan = dinst.info.isLessThan
@@ -358,7 +360,7 @@ class EXU(
   writeBackInfo.dcacheStoreEpoch := false.B
 
   val isMemOP        = isTypLoad || isTypStore
-  val exuResultValid = !isTypArithmetic || (alu.io.out.valid && (!hasLateLoadOperand || lateDataReady))
+  val exuResultValid = (!isTypArithmetic || alu.io.out.valid) && (!hasLateLoadOperand || lateDataReady)
   // Keep the same-cycle forwarding loop independent of the multi-cycle M/D/B
   // result mux.  A multi-cycle producer still advertises its destination while it is
   // in EXU, but its data remains unavailable to IDU; a dependent consumer
@@ -464,7 +466,12 @@ class EXU(
   io.isBranch    := isTypBranch
   io.branchTaken := takeBranch
   io.btbUpdateEn := isTypBranch || isTypJAL || isTypJALR
-  io.predWrong := (isFmtB && (takeBranch ^ dinst.predTake)) || io.in.bits.info.notBranchPredWrong
+  io.predWrong := exuResultValid && ((isFmtB && (takeBranch ^ dinst.predTake)) || io.in.bits.info.notBranchPredWrong)
+
+  when(io.in.valid && isTypBranch && hasLateLoadOperand && !lateDataReady) {
+    assert(!io.predWrong, "a late-load branch must not redirect before its operands are ready")
+    assert(!io.out.valid, "a late-load branch must not retire before its operands are ready")
+  }
 
   StageLogger(
     clock,

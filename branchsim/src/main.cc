@@ -7,11 +7,13 @@
 #include <cstdio>
 #include <functional>
 #include <memory>
+#include <string>
+#include <utility>
 #include <vector>
 
 namespace {
 
-constexpr const char *kCompressedTracePath = "../nemu/btrace_pack.bin.bz2";
+constexpr const char *kDefaultTracePath = "../nemu/btrace_pack.bin.bz2";
 constexpr size_t kDefaultBTBSize = 16;
 constexpr uint32_t kDefaultGHRBits = 10;
 constexpr uint32_t kDefaultLocalHistoryBits = 4;
@@ -253,17 +255,37 @@ struct AlgoConfig {
   update_t update;
 };
 
-btrace_pack_t open_compressed_pack() {
-  char command[512];
-  const int written =
-      std::snprintf(command, sizeof(command), "bzcat %s", kCompressedTracePath);
-  if (written <= 0 || static_cast<size_t>(written) >= sizeof(command)) {
-    std::fprintf(stderr, "failed to build bzcat command for %s\n",
-                 kCompressedTracePath);
-    return nullptr;
+std::string shell_quote(const std::string &value) {
+  std::string result = "'";
+  for (const char ch : value) {
+    result += ch == '\'' ? "'\\''" : std::string(1, ch);
   }
+  return result + "'";
+}
 
-  FILE *pipe = popen(command, "r");
+btrace_pack_t open_trace(const std::string &path) {
+  if (!path.ends_with(".bz2")) {
+    FILE *file = std::fopen(path.c_str(), "rb");
+    uint32_t count = 0;
+    if (file == nullptr || std::fread(&count, sizeof(count), 1, file) != 1 ||
+        std::fseek(file, 0, SEEK_END) != 0) {
+      if (file != nullptr)
+        std::fclose(file);
+      std::fprintf(stderr, "failed to read trace header from %s\n", path.c_str());
+      return nullptr;
+    }
+    const long size = std::ftell(file);
+    std::fclose(file);
+    const uint64_t expected = sizeof(count) + static_cast<uint64_t>(count) * sizeof(btrace_record_t);
+    if (size < 0 || static_cast<uint64_t>(size) != expected) {
+      std::fprintf(stderr, "invalid trace size for %s: got %ld, expected %llu\n",
+                   path.c_str(), size, static_cast<unsigned long long>(expected));
+      return nullptr;
+    }
+    return btrace_pack_open(path.c_str());
+  }
+  const std::string command = "bzip2 -dc -- " + shell_quote(path);
+  FILE *pipe = popen(command.c_str(), "r");
   if (pipe == nullptr) {
     std::perror("popen");
     return nullptr;
@@ -271,8 +293,7 @@ btrace_pack_t open_compressed_pack() {
 
   btrace_pack_t pack = btrace_pack_open_fp(pipe, 1);
   if (pack == nullptr) {
-    std::fprintf(stderr, "failed to open btrace pack stream from %s\n",
-                 kCompressedTracePath);
+    std::fprintf(stderr, "failed to open btrace pack stream from %s\n", path.c_str());
   }
   return pack;
 }
@@ -454,18 +475,11 @@ bool predict_btfn(const PredictContext &ctx) {
   return ctx.entry.valid && (ctx.entry.is_jal || ctx.entry.target < ctx.pc);
 }
 
-bool test_algo(const AlgoConfig &algo) {
-  btrace_pack_t pack = open_compressed_pack();
-  if (pack == nullptr) {
-    return false;
-  }
+struct AlgoRunner {
+  explicit AlgoRunner(AlgoConfig config)
+      : algo(std::move(config)), btb(algo.btb_size) {}
 
-  btrace_record_t record;
-  size_t total = 0;
-  size_t wrong = 0;
-  BTB btb(algo.btb_size);
-
-  while (btrace_pack_pick(pack, &record) != 0) {
+  void process(const btrace_record_t &record) {
     PredictContext ctx = {
         .pc = record.pc,
         .code = record.code,
@@ -474,20 +488,16 @@ bool test_algo(const AlgoConfig &algo) {
     };
     const bool predict_taken_flag = algo.predict_taken(ctx);
     const uint32_t prediction = choose_target(algo, ctx, predict_taken_flag);
-    if (prediction != record.nxt_pc) {
-      wrong++;
-    }
+    wrong += prediction != record.nxt_pc;
     total++;
     algo.update(ctx, record.nxt_pc != record.pc + 4, record.nxt_pc, btb);
   }
 
-  btrace_pack_close(pack);
-
-  const size_t correct = total - wrong;
-  std::printf("Total: %zu, Wrong: %zu, Correct: %zu, Accuracy: %.2f%%\n", total,
-              wrong, correct, static_cast<double>(correct) / total * 100.0);
-  return true;
-}
+  AlgoConfig algo;
+  BTB btb;
+  size_t total = 0;
+  size_t wrong = 0;
+};
 
 void print_algo_header(const AlgoConfig &algo) {
   std::printf("Testing %s algorithm: BTB size = %zu", algo.name, algo.btb_size);
@@ -515,9 +525,25 @@ void print_algo_header(const AlgoConfig &algo) {
 
 } // namespace
 
-int main() {
+int main(int argc, char **argv) {
+  std::string trace_path = kDefaultTracePath;
+  std::string json_path;
+  for (int i = 1; i < argc; i++) {
+    const std::string arg = argv[i];
+    if ((arg == "--trace" || arg == "--json") && i + 1 < argc) {
+      (arg == "--trace" ? trace_path : json_path) = argv[++i];
+    } else if (arg == "--help") {
+      std::printf("usage: %s [--trace FILE.bin[.bz2]] [--json FILE|-]\n", argv[0]);
+      return 0;
+    } else {
+      std::fprintf(stderr, "unknown or incomplete argument: %s\n", arg.c_str());
+      return 2;
+    }
+  }
+
   std::vector<AlgoConfig> algorithms;
-  for (size_t table_size : {kDefaultBTBSize, static_cast<size_t>(32)}) {
+  for (size_t table_size : {kDefaultBTBSize, static_cast<size_t>(32),
+                            static_cast<size_t>(64), static_cast<size_t>(128)}) {
     algorithms.push_back({
         .name = "BTFN",
         .btb_size = table_size,
@@ -537,10 +563,66 @@ int main() {
         kDefaultGHRBits));
   }
 
-  for (const auto &algo : algorithms) {
-    print_algo_header(algo);
-    if (!test_algo(algo)) {
+  std::vector<AlgoRunner> runners;
+  runners.reserve(algorithms.size());
+  for (auto &algo : algorithms) {
+    runners.emplace_back(std::move(algo));
+  }
+
+  btrace_pack_t pack = open_trace(trace_path);
+  if (pack == nullptr) {
+    std::fprintf(stderr, "failed to open trace %s\n", trace_path.c_str());
+    return 1;
+  }
+  btrace_record_t record;
+  while (btrace_pack_pick(pack, &record) != 0) {
+    for (auto &runner : runners) {
+      runner.process(record);
+    }
+  }
+  btrace_pack_close(pack);
+
+  if (json_path != "-") {
+    for (const auto &runner : runners) {
+      print_algo_header(runner.algo);
+      const size_t correct = runner.total - runner.wrong;
+      std::printf("Total: %zu, Wrong: %zu, Correct: %zu, Accuracy: %.2f%%\n",
+                  runner.total, runner.wrong, correct,
+                  static_cast<double>(correct) / runner.total * 100.0);
+    }
+  }
+
+  if (!json_path.empty()) {
+    FILE *json = json_path == "-" ? stdout : std::fopen(json_path.c_str(), "w");
+    if (json == nullptr) {
+      std::perror(json_path.c_str());
       return 1;
+    }
+    std::fprintf(json,
+                 "{\n  \"schema\":1,\n  \"trace\":\"%s\",\n  "
+                 "\"algorithms\":[\n",
+                 trace_path.c_str());
+    for (size_t i = 0; i < runners.size(); i++) {
+      const auto &runner = runners[i];
+      const double accuracy = runner.total == 0
+                                  ? 0.0
+                                  : static_cast<double>(runner.total - runner.wrong) /
+                                        runner.total;
+      std::fprintf(json,
+                   "    %s{\"name\":\"%s\",\"btb_size\":%zu,"
+                   "\"counter_table_size\":%zu,\"chooser_size\":%zu,"
+                   "\"ghr_bits\":%u,\"local_history_bits\":%u,"
+                   "\"local_history_table_size\":%zu,\"total\":%zu,"
+                   "\"wrong\":%zu,\"accuracy\":%.9f}",
+                   i ? ",\n    " : "", runner.algo.name, runner.algo.btb_size,
+                   runner.algo.counter_table_size, runner.algo.chooser_size,
+                   runner.algo.ghr_bits, runner.algo.local_history_bits,
+                   runner.algo.local_history_table_size, runner.total,
+                   runner.wrong, accuracy);
+    }
+    std::fprintf(json, "\n  ]\n}\n");
+    if (json != stdout) {
+      std::fclose(json);
     }
   }
 

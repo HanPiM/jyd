@@ -1,6 +1,8 @@
 #include "../public/btrace_pack.h"
 
+#include <algorithm>
 #include <bit>
+#include <array>
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
@@ -45,6 +47,43 @@ uint32_t get_j_imm(uint32_t code) {
 
 bool is_conditional_branch(uint32_t code) { return (code & 0x7f) == 0x63; }
 bool is_jal(uint32_t code) { return (code & 0x7f) == 0x6f; }
+bool is_jalr(uint32_t code) { return (code & 0x7f) == 0x67; }
+bool is_exact_ret(uint32_t code) { return code == 0x00008067; }
+
+enum class ControlKind : uint8_t {
+  Branch,
+  Jal,
+  Ret,
+  Jalr,
+  Count,
+};
+
+ControlKind get_control_kind(uint32_t code) {
+  if (is_conditional_branch(code))
+    return ControlKind::Branch;
+  if (is_jal(code))
+    return ControlKind::Jal;
+  if (is_exact_ret(code))
+    return ControlKind::Ret;
+  assert(is_jalr(code) && "branch trace contains a non-control instruction");
+  return ControlKind::Jalr;
+}
+
+const char *control_kind_name(ControlKind kind) {
+  switch (kind) {
+  case ControlKind::Branch:
+    return "branch";
+  case ControlKind::Jal:
+    return "jal";
+  case ControlKind::Ret:
+    return "ret";
+  case ControlKind::Jalr:
+    return "jalr_other";
+  case ControlKind::Count:
+    break;
+  }
+  return "invalid";
+}
 
 struct BTBEntry {
   uint32_t tag = 0;
@@ -499,6 +538,137 @@ struct AlgoRunner {
   size_t wrong = 0;
 };
 
+enum class RtlAllocationPolicy : uint8_t {
+  Always,
+  SkipConflictingNotTaken,
+};
+
+struct RtlBTBEntry {
+  uint32_t pc = 0;
+  uint32_t target = 0;
+  uint8_t direction_counter = 0;
+  bool valid = false;
+  bool is_jal = false;
+  bool is_branch = false;
+};
+
+struct RtlModelConfig {
+  std::string name;
+  size_t btb_size;
+  RtlAllocationPolicy allocation_policy;
+  std::vector<unsigned> index_bits;
+};
+
+struct RtlModelStats {
+  uint64_t total = 0;
+  uint64_t wrong = 0;
+  uint64_t direction_wrong = 0;
+  uint64_t target_wrong = 0;
+  uint64_t no_prediction = 0;
+  uint64_t skipped_not_taken_allocations = 0;
+  std::array<uint64_t, static_cast<size_t>(ControlKind::Count)> total_by_kind{};
+  std::array<uint64_t, static_cast<size_t>(ControlKind::Count)> wrong_by_kind{};
+};
+
+class RtlModelRunner {
+public:
+  explicit RtlModelRunner(RtlModelConfig config)
+      : config_(config), entries_(config.btb_size) {
+    assert(std::has_single_bit(config.btb_size));
+  }
+
+  void process(const btrace_record_t &record) {
+    const ControlKind kind = get_control_kind(record.code);
+    const size_t kind_index = static_cast<size_t>(kind);
+    const size_t index = get_index(record.pc);
+    const RtlBTBEntry old_entry = entries_[index];
+    const bool hit = old_entry.valid && old_entry.pc == record.pc;
+    const bool predicted_taken =
+        hit && (old_entry.is_jal ||
+                (old_entry.is_branch && old_entry.direction_counter >= 2));
+    const uint32_t predicted_pc =
+        predicted_taken ? old_entry.target : record.pc + 4;
+    const bool actual_taken =
+        kind != ControlKind::Branch || record.nxt_pc != record.pc + 4;
+    const bool wrong = predicted_pc != record.nxt_pc;
+
+    stats.total++;
+    stats.total_by_kind[kind_index]++;
+    if (wrong) {
+      stats.wrong++;
+      stats.wrong_by_kind[kind_index]++;
+      if (predicted_taken != actual_taken) {
+        stats.direction_wrong++;
+      } else if (predicted_taken) {
+        stats.target_wrong++;
+      } else {
+        stats.no_prediction++;
+      }
+    }
+
+    const bool incoming_is_branch = kind == ControlKind::Branch;
+    const bool incoming_is_jal =
+        kind == ControlKind::Jal || kind == ControlKind::Ret;
+    const bool matching_branch =
+        hit && old_entry.is_branch && incoming_is_branch;
+    const bool skip_allocation =
+        config_.allocation_policy ==
+            RtlAllocationPolicy::SkipConflictingNotTaken &&
+        incoming_is_branch && !actual_taken && !matching_branch;
+    if (skip_allocation) {
+      stats.skipped_not_taken_allocations++;
+      return;
+    }
+
+    uint8_t next_direction = 0;
+    if (incoming_is_branch) {
+      if (!matching_branch) {
+        next_direction = actual_taken ? 2 : 1;
+      } else if (actual_taken && old_entry.direction_counter != 3) {
+        next_direction = old_entry.direction_counter + 1;
+      } else if (!actual_taken && old_entry.direction_counter != 0) {
+        next_direction = old_entry.direction_counter - 1;
+      } else {
+        next_direction = old_entry.direction_counter;
+      }
+    }
+
+    const DecodedBranch decoded =
+        decode_branch(record.pc, record.code);
+    uint32_t stored_target = record.nxt_pc;
+    if (incoming_is_branch) {
+      assert(decoded.direct_target_valid);
+      stored_target = decoded.direct_target;
+    }
+    entries_[index] = {
+        .pc = record.pc,
+        .target = stored_target,
+        .direction_counter = next_direction,
+        .valid = true,
+        .is_jal = incoming_is_jal,
+        .is_branch = incoming_is_branch,
+    };
+  }
+
+  const RtlModelConfig &config() const { return config_; }
+  RtlModelStats stats;
+
+private:
+  size_t get_index(uint32_t pc) const {
+    if (!config_.index_bits.empty()) {
+      size_t result = 0;
+      for (size_t i = 0; i < config_.index_bits.size(); i++) {
+        result |= ((pc >> (2 + config_.index_bits[i])) & 1u) << i;
+      }
+      return result;
+    }
+    return (pc >> 2) & (entries_.size() - 1);
+  }
+
+  RtlModelConfig config_;
+  std::vector<RtlBTBEntry> entries_;
+};
+
 void print_algo_header(const AlgoConfig &algo) {
   std::printf("Testing %s algorithm: BTB size = %zu", algo.name, algo.btb_size);
   if (algo.counter_table_size != 0 && algo.ghr_bits == 0 &&
@@ -528,12 +698,21 @@ void print_algo_header(const AlgoConfig &algo) {
 int main(int argc, char **argv) {
   std::string trace_path = kDefaultTracePath;
   std::string json_path;
+  bool rtl_only = false;
+  bool rtl_index_search = false;
   for (int i = 1; i < argc; i++) {
     const std::string arg = argv[i];
     if ((arg == "--trace" || arg == "--json") && i + 1 < argc) {
       (arg == "--trace" ? trace_path : json_path) = argv[++i];
+    } else if (arg == "--rtl-only") {
+      rtl_only = true;
+    } else if (arg == "--rtl-index-search") {
+      rtl_index_search = true;
     } else if (arg == "--help") {
-      std::printf("usage: %s [--trace FILE.bin[.bz2]] [--json FILE|-]\n", argv[0]);
+      std::printf(
+          "usage: %s [--trace FILE.bin[.bz2]] [--json FILE|-] "
+          "[--rtl-only] [--rtl-index-search]\n",
+          argv[0]);
       return 0;
     } else {
       std::fprintf(stderr, "unknown or incomplete argument: %s\n", arg.c_str());
@@ -542,31 +721,104 @@ int main(int argc, char **argv) {
   }
 
   std::vector<AlgoConfig> algorithms;
-  for (size_t table_size : {kDefaultBTBSize, static_cast<size_t>(32),
-                            static_cast<size_t>(64), static_cast<size_t>(128)}) {
-    algorithms.push_back({
-        .name = "BTFN",
-        .btb_size = table_size,
-        .counter_table_size = 0,
-        .chooser_size = 0,
-        .ghr_bits = 0,
-        .predict_taken = predict_btfn,
-        .update = default_update,
-    });
-    algorithms.push_back(make_two_bit_algo(table_size, table_size));
-    algorithms.push_back(
-        make_gshare_algo(table_size, table_size, kDefaultGHRBits, true));
-    algorithms.push_back(
-        make_local_algo(table_size, table_size, kDefaultLocalHistoryBits, table_size));
-    algorithms.push_back(make_local_gshare_tournament_algo(
-        table_size, table_size, kDefaultLocalHistoryBits, table_size, table_size,
-        kDefaultGHRBits));
+  if (!rtl_only) {
+    for (size_t table_size : {kDefaultBTBSize, static_cast<size_t>(32),
+                              static_cast<size_t>(64),
+                              static_cast<size_t>(128)}) {
+      algorithms.push_back({
+          .name = "BTFN",
+          .btb_size = table_size,
+          .counter_table_size = 0,
+          .chooser_size = 0,
+          .ghr_bits = 0,
+          .predict_taken = predict_btfn,
+          .update = default_update,
+      });
+      algorithms.push_back(make_two_bit_algo(table_size, table_size));
+      algorithms.push_back(
+          make_gshare_algo(table_size, table_size, kDefaultGHRBits, true));
+      algorithms.push_back(make_local_algo(
+          table_size, table_size, kDefaultLocalHistoryBits, table_size));
+      algorithms.push_back(make_local_gshare_tournament_algo(
+          table_size, table_size, kDefaultLocalHistoryBits, table_size,
+          table_size, kDefaultGHRBits));
+    }
   }
 
   std::vector<AlgoRunner> runners;
   runners.reserve(algorithms.size());
   for (auto &algo : algorithms) {
     runners.emplace_back(std::move(algo));
+  }
+  std::vector<RtlModelRunner> rtl_runners;
+  rtl_runners.emplace_back(RtlModelConfig{
+      .name = "rtl-current",
+      .btb_size = 32,
+      .allocation_policy = RtlAllocationPolicy::Always,
+      .index_bits = {},
+  });
+  rtl_runners.emplace_back(RtlModelConfig{
+      .name = "rtl-skip-conflicting-not-taken",
+      .btb_size = 32,
+      .allocation_policy = RtlAllocationPolicy::SkipConflictingNotTaken,
+      .index_bits = {},
+  });
+  rtl_runners.emplace_back(RtlModelConfig{
+      .name = "rtl-current-capacity-64",
+      .btb_size = 64,
+      .allocation_policy = RtlAllocationPolicy::Always,
+      .index_bits = {},
+  });
+  rtl_runners.emplace_back(RtlModelConfig{
+      .name = "rtl-skip-conflicting-not-taken-capacity-64",
+      .btb_size = 64,
+      .allocation_policy = RtlAllocationPolicy::SkipConflictingNotTaken,
+      .index_bits = {},
+  });
+  rtl_runners.emplace_back(RtlModelConfig{
+      .name = "rtl-current-capacity-128",
+      .btb_size = 128,
+      .allocation_policy = RtlAllocationPolicy::Always,
+      .index_bits = {},
+  });
+  if (rtl_index_search) {
+    std::vector<std::vector<unsigned>> mappings;
+    for (unsigned replaced = 0; replaced < 5; replaced++) {
+      for (unsigned high = 5; high < 15; high++) {
+        std::vector<unsigned> bits = {0, 1, 2, 3, 4};
+        bits[replaced] = high;
+        std::sort(bits.begin(), bits.end());
+        mappings.push_back(std::move(bits));
+      }
+    }
+    for (unsigned first = 1; first <= 10; first++) {
+      mappings.push_back(
+          {first, first + 1, first + 2, first + 3, first + 4});
+    }
+    std::sort(mappings.begin(), mappings.end());
+    mappings.erase(std::unique(mappings.begin(), mappings.end()),
+                   mappings.end());
+    for (const auto &bits : mappings) {
+      std::string suffix;
+      for (const unsigned bit : bits) {
+        if (!suffix.empty())
+          suffix += "_";
+        suffix += std::to_string(bit);
+      }
+      rtl_runners.emplace_back(RtlModelConfig{
+          .name = "rtl-index-" + suffix,
+          .btb_size = 32,
+          .allocation_policy = RtlAllocationPolicy::Always,
+          .index_bits = bits,
+      });
+      rtl_runners.emplace_back(RtlModelConfig{
+          .name = "rtl-skip-not-taken-index-" + suffix,
+          .btb_size = 32,
+          .allocation_policy =
+              RtlAllocationPolicy::SkipConflictingNotTaken,
+          .index_bits = bits,
+      });
+    }
   }
 
   btrace_pack_t pack = open_trace(trace_path);
@@ -579,6 +831,9 @@ int main(int argc, char **argv) {
     for (auto &runner : runners) {
       runner.process(record);
     }
+    for (auto &runner : rtl_runners) {
+      runner.process(record);
+    }
   }
   btrace_pack_close(pack);
 
@@ -589,6 +844,17 @@ int main(int argc, char **argv) {
       std::printf("Total: %zu, Wrong: %zu, Correct: %zu, Accuracy: %.2f%%\n",
                   runner.total, runner.wrong, correct,
                   static_cast<double>(correct) / runner.total * 100.0);
+    }
+    for (const auto &runner : rtl_runners) {
+      const auto &stats = runner.stats;
+      std::printf("Testing %s: BTB size = %zu\n",
+                  runner.config().name.c_str(),
+                  runner.config().btb_size);
+      std::printf("Total: %llu, Wrong: %llu, Accuracy: %.2f%%\n",
+                  static_cast<unsigned long long>(stats.total),
+                  static_cast<unsigned long long>(stats.wrong),
+                  static_cast<double>(stats.total - stats.wrong) /
+                      static_cast<double>(stats.total) * 100.0);
     }
   }
 
@@ -619,6 +885,52 @@ int main(int argc, char **argv) {
                    runner.algo.ghr_bits, runner.algo.local_history_bits,
                    runner.algo.local_history_table_size, runner.total,
                    runner.wrong, accuracy);
+    }
+    std::fprintf(json, "\n  ],\n  \"rtl_models\":[\n");
+    for (size_t i = 0; i < rtl_runners.size(); i++) {
+      const auto &runner = rtl_runners[i];
+      const auto &stats = runner.stats;
+      std::fprintf(
+          json,
+          "    %s{\"name\":\"%s\",\"btb_size\":%zu,"
+          "\"allocation\":\"%s\",\"total\":%llu,\"wrong\":%llu,"
+          "\"accuracy\":%.9f,\"direction_wrong\":%llu,"
+          "\"target_wrong\":%llu,\"no_prediction\":%llu,"
+          "\"skipped_not_taken_allocations\":%llu",
+          i ? ",\n    " : "", runner.config().name.c_str(),
+          runner.config().btb_size,
+          runner.config().allocation_policy ==
+                  RtlAllocationPolicy::Always
+              ? "always"
+              : "skip_conflicting_not_taken",
+          static_cast<unsigned long long>(stats.total),
+          static_cast<unsigned long long>(stats.wrong),
+          stats.total == 0
+              ? 0.0
+              : static_cast<double>(stats.total - stats.wrong) /
+                    static_cast<double>(stats.total),
+          static_cast<unsigned long long>(stats.direction_wrong),
+          static_cast<unsigned long long>(stats.target_wrong),
+          static_cast<unsigned long long>(stats.no_prediction),
+          static_cast<unsigned long long>(
+              stats.skipped_not_taken_allocations));
+      std::fprintf(json, ",\"index_bits\":[");
+      for (size_t bit = 0; bit < runner.config().index_bits.size(); bit++) {
+        std::fprintf(json, "%s%u", bit ? "," : "",
+                     runner.config().index_bits[bit]);
+      }
+      std::fprintf(json, "],\"by_kind\":{");
+      for (size_t kind = 0;
+           kind < static_cast<size_t>(ControlKind::Count); kind++) {
+        std::fprintf(
+            json,
+            "%s\"%s\":{\"total\":%llu,\"wrong\":%llu}",
+            kind ? "," : "",
+            control_kind_name(static_cast<ControlKind>(kind)),
+            static_cast<unsigned long long>(stats.total_by_kind[kind]),
+            static_cast<unsigned long long>(stats.wrong_by_kind[kind]));
+      }
+      std::fprintf(json, "}}");
     }
     std::fprintf(json, "\n  ]\n}\n");
     if (json != stdout) {

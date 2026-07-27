@@ -59,6 +59,7 @@ typedef struct {
   uint64_t current_bypass, proposed_bypass, incremental_bypass, lost_bypass;
   uint64_t proposed_bypass_by_width[W_NR];
   uint64_t late_load_branch_eligible, late_load_branch_hit;
+  uint64_t rtl_btb32_miss, rtl_btb32_skip_not_taken_miss;
 } Phase;
 typedef struct {
   uint32_t tag, target;
@@ -143,13 +144,15 @@ static uint64_t pair_table_full;
 static uint64_t btb16_miss, btb32_miss, btb16_jalr_miss,
                 btb32_jalr_miss, btb32_stored_jalr_not_predicted_miss,
                 btb64_miss, btb128_miss;
+static uint64_t rtl_btb32_miss, rtl_btb32_skip_not_taken_miss;
 static uint64_t branch_total, branch_taken, branch_backward;
 static uint64_t branch_backward_taken, branch_backward_not_taken;
 static uint64_t branch_forward_taken, branch_forward_not_taken;
 static uint64_t branch_static_backward_miss, branch_static_not_taken_miss;
 static uint64_t branch_btb32_miss_backward_taken;
 static BtbEnt btb16[16], btb32[32], btb16j[16], btb32j[32],
-    btb32_stored_jalr_not_predicted[32], btb64[64], btb128[128];
+    btb32_stored_jalr_not_predicted[32], btb64[64], btb128[128],
+    rtl_btb32[32], rtl_btb32_skip_not_taken[32];
 static DCacheEnt current_dcache[DCACHE_LINES], rtl_dcache[DCACHE_LINES],
     proposed_dcache[DCACHE_LINES];
 static DCacheStat current_dcache_stat, rtl_dcache_stat, proposed_dcache_stat;
@@ -513,6 +516,42 @@ static void model_stored_jalr_not_predicted(BtbEnt *b, unsigned n, uint32_t pc,
   unsigned i = (pc >> 2) & (n - 1);
   b[i] = (BtbEnt){pc, target, 1, type, 2};
 }
+static bool model_rtl_btb32(BtbEnt *b, uint32_t pc, uint32_t target,
+                            uint32_t inst, unsigned type, bool taken,
+                            bool skip_conflicting_not_taken) {
+  unsigned i = (pc >> 2) & 31;
+  bool hit = b[i].valid && b[i].tag == pc;
+  bool predicted_taken =
+      hit && (b[i].type == K_JAL ||
+              (b[i].type == K_BRANCH && b[i].counter >= 2));
+  uint32_t predicted_pc = predicted_taken ? b[i].target : pc + 4;
+  bool wrong = predicted_pc != target;
+  bool incoming_branch = type == K_BRANCH;
+  bool incoming_jal = type == K_JAL || inst == 0x00008067;
+  bool matching_branch = hit && b[i].type == K_BRANCH && incoming_branch;
+
+  if (skip_conflicting_not_taken && incoming_branch && !taken &&
+      !matching_branch)
+    return wrong;
+
+  uint8_t next_direction = 0;
+  if (incoming_branch) {
+    if (!matching_branch)
+      next_direction = taken ? 2 : 1;
+    else if (taken && b[i].counter != 3)
+      next_direction = b[i].counter + 1;
+    else if (!taken && b[i].counter != 0)
+      next_direction = b[i].counter - 1;
+    else
+      next_direction = b[i].counter;
+  }
+
+  uint32_t stored_target =
+      incoming_branch ? pc + (uint32_t)branch_imm(inst) : target;
+  b[i] = (BtbEnt){pc, stored_target, 1,
+                  incoming_jal ? K_JAL : type, next_direction};
+  return wrong;
+}
 static LoadPairStat *find_load_pair(uint32_t producer_pc, uint32_t consumer_pc,
                                     unsigned width, unsigned consumer) {
   uint32_t h = producer_pc * 2654435761u ^ consumer_pc * 2246822519u ^
@@ -741,6 +780,14 @@ void riscv_profile_record(const Decode *s, word_t x, word_t rs1_before,
     model_stored_jalr_not_predicted(
         btb32_stored_jalr_not_predicted, 32, s->pc, s->dnpc, k, taken,
         &btb32_stored_jalr_not_predicted_miss);
+    bool rtl_current_wrong =
+        model_rtl_btb32(rtl_btb32, s->pc, s->dnpc, x, k, taken, false);
+    bool rtl_candidate_wrong = model_rtl_btb32(
+        rtl_btb32_skip_not_taken, s->pc, s->dnpc, x, k, taken, true);
+    rtl_btb32_miss += rtl_current_wrong;
+    rtl_btb32_skip_not_taken_miss += rtl_candidate_wrong;
+    p->rtl_btb32_miss += rtl_current_wrong;
+    p->rtl_btb32_skip_not_taken_miss += rtl_candidate_wrong;
     if (k == K_BRANCH && taken && btb32_miss != btb32_before && branch_imm(x) < 0)
       branch_btb32_miss_backward_taken++;
   }
@@ -997,6 +1044,10 @@ void riscv_profile_finish(void) {
           "\"btb32_stored_jalr_not_predicted_misses\":%llu,"
           "\"btb16_with_jalr_misses\":%llu,"
           "\"btb32_with_jalr_misses\":%llu,"
+          "\"rtl_btb32_misses\":%llu,"
+          "\"rtl_btb32_skip_conflicting_not_taken_misses\":%llu,"
+          "\"rtl_btb32_skip_conflicting_not_taken_saved_misses\":%lld,"
+          "\"rtl_btb32_skip_conflicting_not_taken_saved_cycles\":%lld,"
           "\"btb64_no_jalr_misses\":%llu,"
           "\"btb128_no_jalr_misses\":%llu},\n"
           "  \"branch_direction_probe\":{"
@@ -1012,6 +1063,12 @@ void riscv_profile_finish(void) {
           (unsigned long long)btb32_stored_jalr_not_predicted_miss,
           (unsigned long long)btb16_jalr_miss,
           (unsigned long long)btb32_jalr_miss,
+          (unsigned long long)rtl_btb32_miss,
+          (unsigned long long)rtl_btb32_skip_not_taken_miss,
+          (long long)rtl_btb32_miss -
+              (long long)rtl_btb32_skip_not_taken_miss,
+          3 * ((long long)rtl_btb32_miss -
+               (long long)rtl_btb32_skip_not_taken_miss),
           (unsigned long long)btb64_miss,
           (unsigned long long)btb128_miss,
           (unsigned long long)branch_total,
@@ -1209,7 +1266,11 @@ void riscv_profile_finish(void) {
             "\"late_load_branch_eligible\":%llu,"
             "\"late_load_branch_hit\":%llu,"
             "\"late_load_branch_hit_cycles\":%llu,"
-            "\"late_load_branch_saved_cycles\":%llu}",
+            "\"late_load_branch_saved_cycles\":%llu,"
+            "\"rtl_btb32_misses\":%llu,"
+            "\"rtl_btb32_skip_not_taken_misses\":%llu,"
+            "\"rtl_btb32_skip_not_taken_saved_misses\":%lld,"
+            "\"rtl_btb32_skip_not_taken_saved_cycles\":%lld}",
             i ? "," : "", (unsigned long long)phases[i].inst,
             (unsigned long long)phases[i].control,
             (unsigned long long)phases[i].taken,
@@ -1227,7 +1288,13 @@ void riscv_profile_finish(void) {
             (unsigned long long)phases[i].late_load_branch_eligible,
             (unsigned long long)phases[i].late_load_branch_hit,
             (unsigned long long)phases[i].late_load_branch_hit,
-            (unsigned long long)phases[i].late_load_branch_eligible);
+            (unsigned long long)phases[i].late_load_branch_eligible,
+            (unsigned long long)phases[i].rtl_btb32_miss,
+            (unsigned long long)phases[i].rtl_btb32_skip_not_taken_miss,
+            (long long)phases[i].rtl_btb32_miss -
+                (long long)phases[i].rtl_btb32_skip_not_taken_miss,
+            3 * ((long long)phases[i].rtl_btb32_miss -
+                 (long long)phases[i].rtl_btb32_skip_not_taken_miss));
   fprintf(f, "],\n  \"load_raw_top_pc_pairs\":[");
   qsort(load_pairs, PAIR_SLOTS, sizeof(*load_pairs), pair_cmp);
   for (unsigned i = 0, n = 0; i < PAIR_SLOTS && n < 64; i++)

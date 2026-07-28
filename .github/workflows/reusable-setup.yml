@@ -44,6 +44,7 @@ jobs:
       - name: Set environment variables
         id: set-env
         run: |
+          echo "AM_HOME=$GITHUB_WORKSPACE/abstract-machine" >> $GITHUB_ENV
           echo "JYD_AM_HOME=$GITHUB_WORKSPACE/abstract-machine" >> $GITHUB_ENV
 
           MAKEFLAGS="-j`nproc`"

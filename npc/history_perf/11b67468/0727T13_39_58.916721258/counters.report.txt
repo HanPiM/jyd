@@ -1,0 +1,125 @@
+Perf Counters Report
+Git commit: 11b67468b3f9d51ebece9fa796c07f3084a4052b
+
+Statistics:
+run completion:
+  partial run: yes
+  instruction limit: 400000000
+cycle and instruction counts:
+  total cycle count: 476208124
+  total instruction count: 400000000 (400M)
+  IPC: 0.8400
+  CPI: 1.1905
+excution time estimate:
+  Clk(Mhz)    Time(s)
+        50    9.52416
+       100    4.76208
+       200    2.38104
+       250    1.90483
+       280    1.70074
+Pipeline Performance Counter Statistics:
++-------+--------------+----------+-----------+--------------+---------+---------+
+| Stage | Backpressure |  Bubble  |    Fire   | Backpressure |  Bubble |   Fire  |
+|       |    Cycles    |  Cycles  |   Cycles  |       %      |    %    |    %    |
++-------+--------------+----------+-----------+--------------+---------+---------+
+|   IFU |     75786616 |        0 | 400421478 |      15.9146 |       0 | 84.0854 |
+|   IDU |     32254004 | 43813595 | 400140495 |      6.77309 | 9.20051 | 84.0264 |
+|   EXU |            0 | 76208091 | 400000003 |            0 | 16.0031 | 83.9969 |
+|   LSU |            0 | 76208092 | 400000002 |            0 | 16.0031 | 83.9969 |
++-------+--------------+----------+-----------+--------------+---------+---------+
+RAW Stall Performance Counter Statistics:
+total RAW conflict cycles: 330178537 (69.3349 %)
+total RAW stall cycles: 190819255 (40.0706 %)
+Legacy conflict counts in stall cycles:
++--------------+-----------+----------+-----------------+
+|    Reason    |   Cycles  |     %    |        %        |
+|              |           | (in tot) | (in all stalls) |
++--------------+-----------+----------+-----------------+
+| EXU conflict | 160335097 |  33.6691 |         84.0246 |
+| LSU conflict |  99093392 |  20.8088 |         51.9305 |
+| WBU conflict |  89902711 |  18.8789 |         47.1141 |
++--------------+-----------+----------+-----------------+
+All conflict cycles. Per-source rows can overlap; only/multi-source rows are exclusive:
++-----------------------+-----------+----------+--------------------+
+|         Reason        |   Cycles  |     %    |          %         |
+|                       |           | (in tot) | (in all conflicts) |
++-----------------------+-----------+----------+--------------------+
+|          Any conflict | 330178537 |  69.3349 |                100 |
+|          EXU conflict | 286641918 |  60.1926 |            86.8142 |
+|          LSU conflict | 201400183 |  42.2925 |            60.9974 |
+|          WBU conflict | 195164474 |   40.983 |            59.1088 |
+|     EXU only conflict |  46571385 |  9.77963 |            14.1049 |
+|     LSU only conflict |  20818398 |   4.3717 |            6.30519 |
+|     WBU only conflict |  10601102 |  2.22615 |            3.21072 |
+| Multi-source conflict | 252187652 |  52.9574 |            76.3792 |
++-----------------------+-----------+----------+--------------------+
+Real stall cycles. Per-source rows can overlap; only/multi-source rows are exclusive:
++-----------------------+-----------+----------+-----------------+
+|         Reason        |   Cycles  |     %    |        %        |
+|                       |           | (in tot) | (in all stalls) |
++-----------------------+-----------+----------+-----------------+
+|             Any stall | 190819255 |  40.0706 |             100 |
+|      EXU stall-source | 149571411 |  31.4088 |         78.3838 |
+|      LSU stall-source |  54065258 |  11.3533 |         28.3332 |
+|      WBU stall-source |         0 |        0 |               0 |
+| EXU only stall-source | 136753997 |  28.7173 |         71.6668 |
+| LSU only stall-source |  41247844 |  8.66173 |         21.6162 |
+| WBU only stall-source |         0 |        0 |               0 |
+|    Multi-source stall |  12817414 |  2.69156 |         6.71704 |
++-----------------------+-----------+----------+-----------------+
+IDU Flush Performance Counter Statistics:
+total IDU flush cycles: 280982 (0.059004 %)
++-------------+--------+-------------+------------------+
+|    Reason   |  Flush |   Flush %   |      Flush %     |
+|             | Cycles |   (in tot)  | (in all flushes) |
++-------------+--------+-------------+------------------+
+| BranchTaken | 277194 |   0.0582086 |          98.6519 |
+|        JALR |    220 | 4.61983e-05 |        0.0782968 |
+|         JAL |   3568 | 0.000749252 |          1.26983 |
+|   Exception |      0 |           0 |                0 |
+|       Fence |      0 |           0 |                0 |
+| PredRecover |      0 |           0 |                0 |
+|     Unknown |      0 |           0 |                0 |
++-------------+--------+-------------+------------------+
+Branch Prediction Performance Counter Statistics:
+  total branch count: 13019530
+  total mispredict count: 140491
+  total accuracy count: 12879039
+  accuracy: 98.9209 %
+  mispredict rate: 1.07908 %
++-----------+----------+------------+----------+-------------+--------------+
+|    Type   |   Total  | Mispredict | Accuracy |   Count %   | Mispredict % |
+|           |   Count  |    Count   |     %    |   (in tot)  |   (in tot)   |
++-----------+----------+------------+----------+-------------+--------------+
+|    Branch | 12884385 |     138597 |  98.9243 |      98.962 |      1.06453 |
+|       JAL |   135024 |       1784 |  98.6788 |     1.03709 |    0.0137025 |
+|      JALR |      121 |        110 |  9.09091 | 0.000929373 |  0.000844885 |
+| Exception |        0 |          0 |      nan |           0 |            0 |
++-----------+----------+------------+----------+-------------+--------------+
+DCache Cacheable Load Performance Counter Statistics:
+  definition: EXU-issued cacheable loads; hit is the dcacheHit captured for that EXU-to-LSU payload
+  accesses: 120395030
+  hits: 107635284
+  misses: 12759746
+  hit rate: 89.4018%
+Optimization Direction Performance Counter Statistics:
++---------------+----------+
+|  M operation  |  Issued  |
++---------------+----------+
+|           mul | 10498004 |
+|          mulh |   130004 |
+|        mulhsu |        4 |
+|         mulhu |       10 |
+|           div |        4 |
+|          divu |        4 |
+|           rem |        4 |
+|          remu |        4 |
+| div/rem total |       16 |
++---------------+----------+
+  cacheable full-word stores: 22487858
++----------------------+----------+----------+------+
+| Dependency selection | rs1 only | rs2 only | both |
++----------------------+----------+----------+------+
+|   late-load ADD/ADDI | 61807749 |  5314000 |    0 |
+|   late-add successor | 26633382 | 21827865 |    0 |
++----------------------+----------+----------+------+

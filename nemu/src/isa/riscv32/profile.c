@@ -9,6 +9,8 @@
 #define PC_SLOTS (1u << 20)
 #define PAIR_SLOTS (1u << 16)
 #define DCACHE_LINES 512
+#define DCACHE_PROBE_MAX_ENTRIES 4096
+#define ENABLE_CAPACITY_PROBES 0
 
 enum Kind {
   K_ALU,
@@ -56,6 +58,8 @@ typedef struct {
   uint64_t inst, control, taken, load, store, raw;
   uint64_t current_bypass, proposed_bypass, incremental_bypass, lost_bypass;
   uint64_t proposed_bypass_by_width[W_NR];
+  uint64_t late_load_branch_eligible, late_load_branch_hit;
+  uint64_t rtl_btb32_miss, rtl_btb32_skip_not_taken_miss;
 } Phase;
 typedef struct {
   uint32_t tag, target;
@@ -74,15 +78,26 @@ typedef struct {
   uint64_t partial_store_invalidate;
 } DCacheStat;
 typedef struct {
+  uint32_t tag;
+  uint8_t valid, lru;
+} AssocDCacheEnt;
+typedef struct {
+  unsigned sets, ways;
+  AssocDCacheEnt entries[DCACHE_PROBE_MAX_ENTRIES];
+  DCacheStat stat;
+} AssocDCache;
+typedef struct {
   uint32_t producer_pc, consumer_pc;
   uint64_t count, eligible, current_hit, proposed_hit;
   uint64_t incremental_hit, lost_hit;
+  uint64_t assoc_hit[3];
   uint64_t source[3];
   uint8_t width, consumer, used;
 } LoadPairStat;
 typedef struct {
   uint32_t pc;
-  uint8_t rd, width, current_hit, rtl_hit, proposed_hit, d1_state_diff, valid;
+  uint8_t rd, width, current_hit, rtl_hit, proposed_hit, assoc_hit[3];
+  uint8_t d1_state_diff, valid;
 } PreviousLoad;
 
 static const char *kind_names[] = {
@@ -104,6 +119,14 @@ static uint64_t load_raw_current_hit[W_NR][K_NR];
 static uint64_t load_raw_proposed_hit[W_NR][K_NR];
 static uint64_t load_raw_incremental_hit[W_NR][K_NR];
 static uint64_t load_raw_lost_hit[W_NR][K_NR];
+static uint64_t load_m_raw[W_NR][M_NR][3];
+static uint64_t load_m_raw_eligible[W_NR][M_NR][3];
+static uint64_t load_m_raw_current_hit[W_NR][M_NR][3];
+static uint64_t load_m_raw_proposed_hit[W_NR][M_NR][3];
+static uint64_t load_branch_raw[W_NR][8][3];
+static uint64_t load_branch_eligible[W_NR][8][3];
+static uint64_t load_branch_current_hit[W_NR][8][3];
+static uint64_t load_branch_proposed_hit[W_NR][8][3];
 /* Isolate masked partial-store updates from the already-retained narrow-load
  * eligibility change.  Distance 1 uses the exact restricted late-load
  * consumer forms; distance 2 is the generic LSU-cache forwarding opportunity.
@@ -119,18 +142,40 @@ static PcStat *pcs;
 static LoadPairStat *load_pairs;
 static uint64_t pair_table_full;
 static uint64_t btb16_miss, btb32_miss, btb16_jalr_miss,
-                btb32_jalr_miss, btb32_stored_jalr_not_predicted_miss;
+                btb32_jalr_miss, btb32_stored_jalr_not_predicted_miss,
+                btb64_miss, btb128_miss;
+static uint64_t rtl_btb32_miss, rtl_btb32_skip_not_taken_miss;
+static uint64_t branch_total, branch_taken, branch_backward;
+static uint64_t branch_backward_taken, branch_backward_not_taken;
+static uint64_t branch_forward_taken, branch_forward_not_taken;
+static uint64_t branch_static_backward_miss, branch_static_not_taken_miss;
+static uint64_t branch_btb32_miss_backward_taken;
 static BtbEnt btb16[16], btb32[32], btb16j[16], btb32j[32],
-    btb32_stored_jalr_not_predicted[32];
+    btb32_stored_jalr_not_predicted[32], btb64[64], btb128[128],
+    rtl_btb32[32], rtl_btb32_skip_not_taken[32];
 static DCacheEnt current_dcache[DCACHE_LINES], rtl_dcache[DCACHE_LINES],
     proposed_dcache[DCACHE_LINES];
 static DCacheStat current_dcache_stat, rtl_dcache_stat, proposed_dcache_stat;
+static AssocDCache dcache_2way = {.sets = 256, .ways = 2};
+static AssocDCache dcache_4way = {.sets = 128, .ways = 4};
+static AssocDCache dcache_8way = {.sets = 64, .ways = 8};
+#if ENABLE_CAPACITY_PROBES
+static AssocDCache dcache_1024 = {.sets = 1024, .ways = 1};
+static AssocDCache dcache_2048 = {.sets = 2048, .ways = 1};
+static AssocDCache dcache_4096 = {.sets = 4096, .ways = 1};
+#endif
 static PreviousLoad previous_load, distance2_load;
 static uint64_t last_write[32];
 static uint8_t last_kind[32];
 static uint8_t previous_miss_consumer_rd;
 static uint8_t masked_baseline_miss_consumer_rd;
 static uint8_t masked_candidate_miss_consumer_rd;
+
+static int32_t branch_imm(uint32_t x) {
+  uint32_t imm = ((x >> 31) << 12) | (((x >> 7) & 1) << 11) |
+                 (((x >> 25) & 0x3f) << 5) | (((x >> 8) & 0xf) << 1);
+  return (int32_t)(imm << 19) >> 19;
+}
 
 void riscv_profile_set_output(const char *path) {
   out_path = path;
@@ -296,6 +341,95 @@ static void proposed_dcache_store(uint32_t addr, unsigned width) {
   }
 }
 
+static unsigned assoc_set(const AssocDCache *cache, uint32_t addr) {
+  return (addr >> 2) % cache->sets;
+}
+static uint32_t assoc_tag(const AssocDCache *cache, uint32_t addr) {
+  return (addr >> 2) / cache->sets;
+}
+static AssocDCacheEnt *assoc_entry(AssocDCache *cache, unsigned set,
+                                   unsigned way) {
+  return &cache->entries[set * cache->ways + way];
+}
+static AssocDCacheEnt *assoc_find(AssocDCache *cache, uint32_t addr) {
+  unsigned set = assoc_set(cache, addr);
+  uint32_t tag = assoc_tag(cache, addr);
+  for (unsigned way = 0; way < cache->ways; way++) {
+    AssocDCacheEnt *entry = assoc_entry(cache, set, way);
+    if (entry->valid && entry->tag == tag)
+      return entry;
+  }
+  return NULL;
+}
+static AssocDCacheEnt *assoc_victim(AssocDCache *cache, uint32_t addr) {
+  unsigned set = assoc_set(cache, addr);
+  AssocDCacheEnt *victim = assoc_entry(cache, set, 0);
+  for (unsigned way = 0; way < cache->ways; way++) {
+    AssocDCacheEnt *entry = assoc_entry(cache, set, way);
+    if (!entry->valid)
+      return entry;
+    if (entry->lru > victim->lru)
+      victim = entry;
+  }
+  return victim;
+}
+static void assoc_touch(AssocDCache *cache, uint32_t addr,
+                        AssocDCacheEnt *selected) {
+  unsigned set = assoc_set(cache, addr);
+  unsigned old_lru = selected->lru;
+  for (unsigned way = 0; way < cache->ways; way++) {
+    AssocDCacheEnt *entry = assoc_entry(cache, set, way);
+    if (entry != selected && entry->valid && entry->lru < old_lru)
+      entry->lru++;
+  }
+  selected->lru = 0;
+}
+static void assoc_allocate(AssocDCache *cache, uint32_t addr) {
+  AssocDCacheEnt *entry = assoc_find(cache, addr);
+  if (!entry)
+    entry = assoc_victim(cache, addr);
+  entry->valid = 1;
+  entry->tag = assoc_tag(cache, addr);
+  assoc_touch(cache, addr, entry);
+}
+static bool assoc_load(AssocDCache *cache, uint32_t addr, unsigned width,
+                       bool eligible) {
+  if (!eligible)
+    return false;
+  cache->stat.load_access[width]++;
+  AssocDCacheEnt *entry = assoc_find(cache, addr);
+  if (entry) {
+    cache->stat.load_hit[width]++;
+    assoc_touch(cache, addr, entry);
+    return true;
+  }
+  cache->stat.load_miss[width]++;
+  assoc_allocate(cache, addr);
+  return false;
+}
+static void assoc_store(AssocDCache *cache, uint32_t addr, unsigned width) {
+  if (!dcacheable(addr))
+    return;
+  AssocDCacheEnt *entry = assoc_find(cache, addr);
+  if (width == W_WORD) {
+    cache->stat.full_store_allocate++;
+    assoc_allocate(cache, addr);
+  } else {
+    cache->stat.partial_store_total++;
+    if (entry) {
+      cache->stat.partial_store_hit_update++;
+      assoc_touch(cache, addr, entry);
+    } else {
+      cache->stat.partial_store_invalidate++;
+      /* A partial miss cannot allocate unknown bytes.  In a set-associative
+       * shadow it invalidates only the replacement way, preserving other
+       * ways instead of pessimistically flushing the whole set. */
+      entry = assoc_victim(cache, addr);
+      entry->valid = 0;
+    }
+  }
+}
+
 static bool late_load_source_eligible(uint32_t x, unsigned source_mask) {
   unsigned op = x & 0x7f, f3 = (x >> 12) & 7, f7 = x >> 25;
   uint32_t imm12 = x >> 20;
@@ -382,6 +516,42 @@ static void model_stored_jalr_not_predicted(BtbEnt *b, unsigned n, uint32_t pc,
   unsigned i = (pc >> 2) & (n - 1);
   b[i] = (BtbEnt){pc, target, 1, type, 2};
 }
+static bool model_rtl_btb32(BtbEnt *b, uint32_t pc, uint32_t target,
+                            uint32_t inst, unsigned type, bool taken,
+                            bool skip_conflicting_not_taken) {
+  unsigned i = (pc >> 2) & 31;
+  bool hit = b[i].valid && b[i].tag == pc;
+  bool predicted_taken =
+      hit && (b[i].type == K_JAL ||
+              (b[i].type == K_BRANCH && b[i].counter >= 2));
+  uint32_t predicted_pc = predicted_taken ? b[i].target : pc + 4;
+  bool wrong = predicted_pc != target;
+  bool incoming_branch = type == K_BRANCH;
+  bool incoming_jal = type == K_JAL || inst == 0x00008067;
+  bool matching_branch = hit && b[i].type == K_BRANCH && incoming_branch;
+
+  if (skip_conflicting_not_taken && incoming_branch && !taken &&
+      !matching_branch)
+    return wrong;
+
+  uint8_t next_direction = 0;
+  if (incoming_branch) {
+    if (!matching_branch)
+      next_direction = taken ? 2 : 1;
+    else if (taken && b[i].counter != 3)
+      next_direction = b[i].counter + 1;
+    else if (!taken && b[i].counter != 0)
+      next_direction = b[i].counter - 1;
+    else
+      next_direction = b[i].counter;
+  }
+
+  uint32_t stored_target =
+      incoming_branch ? pc + (uint32_t)branch_imm(inst) : target;
+  b[i] = (BtbEnt){pc, stored_target, 1,
+                  incoming_jal ? K_JAL : type, next_direction};
+  return wrong;
+}
 static LoadPairStat *find_load_pair(uint32_t producer_pc, uint32_t consumer_pc,
                                     unsigned width, unsigned consumer) {
   uint32_t h = producer_pc * 2654435761u ^ consumer_pc * 2246822519u ^
@@ -404,7 +574,8 @@ static LoadPairStat *find_load_pair(uint32_t producer_pc, uint32_t consumer_pc,
   pair_table_full++;
   return NULL;
 }
-static void record_immediate_load_raw(uint32_t pc, unsigned consumer,
+static void record_immediate_load_raw(uint32_t pc, uint32_t x,
+                                      unsigned consumer,
                                       unsigned rs1, unsigned rs2, bool use1,
                                       bool use2, Phase *phase) {
   if (!previous_load.valid)
@@ -423,6 +594,33 @@ static void record_immediate_load_raw(uint32_t pc, unsigned consumer,
   bool proposed_hit = eligible && previous_load.proposed_hit;
   bool incremental_hit = proposed_hit && !current_hit;
   bool lost_hit = current_hit && !proposed_hit;
+
+  if (consumer == K_M) {
+    unsigned mop = mop_of(x);
+    unsigned source = source_mask - 1;
+    load_m_raw[width][mop][source]++;
+    if (eligible)
+      load_m_raw_eligible[width][mop][source]++;
+    if (current_hit)
+      load_m_raw_current_hit[width][mop][source]++;
+    if (proposed_hit)
+      load_m_raw_proposed_hit[width][mop][source]++;
+  }
+  if (consumer == K_BRANCH) {
+    unsigned branch_type = (x >> 12) & 7;
+    unsigned source = source_mask - 1;
+    load_branch_raw[width][branch_type][source]++;
+    if (eligible)
+      load_branch_eligible[width][branch_type][source]++;
+    if (eligible)
+      phase->late_load_branch_eligible++;
+    if (current_hit)
+      load_branch_current_hit[width][branch_type][source]++;
+    if (proposed_hit)
+      load_branch_proposed_hit[width][branch_type][source]++;
+    if (proposed_hit)
+      phase->late_load_branch_hit++;
+  }
 
   load_raw[width][consumer]++;
   load_raw_source[width][source_mask - 1]++;
@@ -457,6 +655,9 @@ static void record_immediate_load_raw(uint32_t pc, unsigned consumer,
     pair->current_hit++;
   if (proposed_hit)
     pair->proposed_hit++;
+  for (unsigned probe = 0; probe < 3; probe++)
+    if (previous_load.assoc_hit[probe])
+      pair->assoc_hit[probe]++;
   if (incremental_hit)
     pair->incremental_hit++;
   if (lost_hit)
@@ -509,7 +710,7 @@ void riscv_profile_record(const Decode *s, word_t x, word_t rs1_before,
                                     use1, use2);
   record_masked_store_update_saving(&distance2_load, 2, x, k, rs1, rs2,
                                     use1, use2);
-  record_immediate_load_raw(s->pc, k, rs1, rs2, use1, use2, p);
+  record_immediate_load_raw(s->pc, x, k, rs1, rs2, use1, use2, p);
 
   /* Multiplication is a permutation modulo 2^20. Workloads currently execute
    * within a <=4 MiB IROM window, so this dense cache is collision-free. */
@@ -553,13 +754,42 @@ void riscv_profile_record(const Decode *s, word_t x, word_t rs1_before,
       p->taken++;
       q->taken++;
     }
+    if (k == K_BRANCH) {
+      int32_t imm = branch_imm(x);
+      bool backward = imm < 0;
+      branch_total++;
+      branch_taken += taken;
+      branch_backward += backward;
+      if (backward)
+        branch_backward_taken += taken, branch_backward_not_taken += !taken;
+      else
+        branch_forward_taken += taken, branch_forward_not_taken += !taken;
+      /* A static backward-taken predictor is the useful targetless probe:
+       * it predicts the common loop direction without requiring BTB state.
+       * The not-taken probe is the lower-bound direction-only comparator. */
+      branch_static_backward_miss += (backward != taken);
+      branch_static_not_taken_miss += taken;
+    }
+    uint64_t btb32_before = btb32_miss;
     model(btb16, 16, s->pc, s->dnpc, k, taken, false, &btb16_miss);
     model(btb32, 32, s->pc, s->dnpc, k, taken, false, &btb32_miss);
+    model(btb64, 64, s->pc, s->dnpc, k, taken, false, &btb64_miss);
+    model(btb128, 128, s->pc, s->dnpc, k, taken, false, &btb128_miss);
     model(btb16j, 16, s->pc, s->dnpc, k, taken, true, &btb16_jalr_miss);
     model(btb32j, 32, s->pc, s->dnpc, k, taken, true, &btb32_jalr_miss);
     model_stored_jalr_not_predicted(
         btb32_stored_jalr_not_predicted, 32, s->pc, s->dnpc, k, taken,
         &btb32_stored_jalr_not_predicted_miss);
+    bool rtl_current_wrong =
+        model_rtl_btb32(rtl_btb32, s->pc, s->dnpc, x, k, taken, false);
+    bool rtl_candidate_wrong = model_rtl_btb32(
+        rtl_btb32_skip_not_taken, s->pc, s->dnpc, x, k, taken, true);
+    rtl_btb32_miss += rtl_current_wrong;
+    rtl_btb32_skip_not_taken_miss += rtl_candidate_wrong;
+    p->rtl_btb32_miss += rtl_current_wrong;
+    p->rtl_btb32_skip_not_taken_miss += rtl_candidate_wrong;
+    if (k == K_BRANCH && taken && btb32_miss != btb32_before && branch_imm(x) < 0)
+      branch_btb32_miss_backward_taken++;
   }
   if (k == K_JALR) {
     jalr_rd[rd == 0 ? 0 : rd == 1 ? 1 : 2]++;
@@ -597,15 +827,33 @@ void riscv_profile_record(const Decode *s, word_t x, word_t rs1_before,
       bool proposed_hit =
           dcache_load(proposed_dcache, &proposed_dcache_stat, addr, width,
                       proposed_eligible);
+      bool assoc_hit[3] = {
+          assoc_load(&dcache_2way, addr, width, proposed_eligible),
+          assoc_load(&dcache_4way, addr, width, proposed_eligible),
+          assoc_load(&dcache_8way, addr, width, proposed_eligible)};
+#if ENABLE_CAPACITY_PROBES
+      assoc_load(&dcache_1024, addr, width, proposed_eligible);
+      assoc_load(&dcache_2048, addr, width, proposed_eligible);
+      assoc_load(&dcache_4096, addr, width, proposed_eligible);
+#endif
       if (rd) {
         previous_load = (PreviousLoad){s->pc, rd, width, current_hit, rtl_hit,
-                                       proposed_hit, 0, 1};
+                                       proposed_hit, {assoc_hit[0], assoc_hit[1],
+                                                       assoc_hit[2]}, 0, 1};
       }
     } else {
       p->store++;
-      current_dcache_store(addr, width);
-      rtl_dcache_store(addr, width);
-      proposed_dcache_store(addr, width);
+    current_dcache_store(addr, width);
+    rtl_dcache_store(addr, width);
+    proposed_dcache_store(addr, width);
+    assoc_store(&dcache_2way, addr, width);
+    assoc_store(&dcache_4way, addr, width);
+    assoc_store(&dcache_8way, addr, width);
+#if ENABLE_CAPACITY_PROBES
+    assoc_store(&dcache_1024, addr, width);
+    assoc_store(&dcache_2048, addr, width);
+    assoc_store(&dcache_4096, addr, width);
+#endif
       (void)rs2_before;
     }
   }
@@ -627,6 +875,40 @@ static void matrix(FILE *f, uint64_t a[W_NR][K_NR]) {
       fputc(',', f);
     fputc('[', f);
     arr(f, a[i], K_NR);
+    fputc(']', f);
+  }
+  fputc(']', f);
+}
+static void load_m_cube(FILE *f, uint64_t a[W_NR][M_NR][3]) {
+  fputc('[', f);
+  for (unsigned width = 0; width < W_NR; width++) {
+    if (width)
+      fputc(',', f);
+    fputc('[', f);
+    for (unsigned mop = 0; mop < M_NR; mop++) {
+      if (mop)
+        fputc(',', f);
+      fputc('[', f);
+      arr(f, a[width][mop], 3);
+      fputc(']', f);
+    }
+    fputc(']', f);
+  }
+  fputc(']', f);
+}
+static void load_branch_cube(FILE *f, uint64_t a[W_NR][8][3]) {
+  fputc('[', f);
+  for (unsigned width = 0; width < W_NR; width++) {
+    if (width)
+      fputc(',', f);
+    fputc('[', f);
+    for (unsigned branch = 0; branch < 8; branch++) {
+      if (branch)
+        fputc(',', f);
+      fputc('[', f);
+      arr(f, a[width][branch], 3);
+      fputc(']', f);
+    }
     fputc(']', f);
   }
   fputc(']', f);
@@ -662,6 +944,12 @@ static void dcache_stat_json(FILE *f, const DCacheStat *stat) {
           (unsigned long long)stat->partial_store_total,
           (unsigned long long)stat->partial_store_hit_update,
           (unsigned long long)stat->partial_store_invalidate);
+}
+static uint64_t dcache_miss_sum(const DCacheStat *stat) {
+  uint64_t total_miss = 0;
+  for (unsigned width = 0; width < W_NR; width++)
+    total_miss += stat->load_miss[width];
+  return total_miss;
 }
 
 void riscv_profile_finish(void) {
@@ -755,12 +1043,44 @@ void riscv_profile_finish(void) {
           "\"btb32_no_jalr_misses\":%llu,"
           "\"btb32_stored_jalr_not_predicted_misses\":%llu,"
           "\"btb16_with_jalr_misses\":%llu,"
-          "\"btb32_with_jalr_misses\":%llu},\n",
+          "\"btb32_with_jalr_misses\":%llu,"
+          "\"rtl_btb32_misses\":%llu,"
+          "\"rtl_btb32_skip_conflicting_not_taken_misses\":%llu,"
+          "\"rtl_btb32_skip_conflicting_not_taken_saved_misses\":%lld,"
+          "\"rtl_btb32_skip_conflicting_not_taken_saved_cycles\":%lld,"
+          "\"btb64_no_jalr_misses\":%llu,"
+          "\"btb128_no_jalr_misses\":%llu},\n"
+          "  \"branch_direction_probe\":{"
+          "\"conditional_total\":%llu,\"taken\":%llu,"
+          "\"backward\":%llu,\"backward_taken\":%llu,"
+          "\"backward_not_taken\":%llu,\"forward_taken\":%llu,"
+          "\"forward_not_taken\":%llu,"
+          "\"static_backward_taken_misses\":%llu,"
+          "\"static_not_taken_misses\":%llu,"
+          "\"btb32_miss_backward_taken\":%llu},\n",
           (unsigned long long)btb16_miss,
           (unsigned long long)btb32_miss,
           (unsigned long long)btb32_stored_jalr_not_predicted_miss,
           (unsigned long long)btb16_jalr_miss,
-          (unsigned long long)btb32_jalr_miss);
+          (unsigned long long)btb32_jalr_miss,
+          (unsigned long long)rtl_btb32_miss,
+          (unsigned long long)rtl_btb32_skip_not_taken_miss,
+          (long long)rtl_btb32_miss -
+              (long long)rtl_btb32_skip_not_taken_miss,
+          3 * ((long long)rtl_btb32_miss -
+               (long long)rtl_btb32_skip_not_taken_miss),
+          (unsigned long long)btb64_miss,
+          (unsigned long long)btb128_miss,
+          (unsigned long long)branch_total,
+          (unsigned long long)branch_taken,
+          (unsigned long long)branch_backward,
+          (unsigned long long)branch_backward_taken,
+          (unsigned long long)branch_backward_not_taken,
+          (unsigned long long)branch_forward_taken,
+          (unsigned long long)branch_forward_not_taken,
+          (unsigned long long)branch_static_backward_miss,
+          (unsigned long long)branch_static_not_taken_miss,
+          (unsigned long long)branch_btb32_miss_backward_taken);
 
   fprintf(f,
           "  \"dcache_models\":{\"architectural_order\":true,"
@@ -772,7 +1092,44 @@ void riscv_profile_finish(void) {
   dcache_stat_json(f, &current_dcache_stat);
   fprintf(f, ",\"proposed\":");
   dcache_stat_json(f, &proposed_dcache_stat);
-  fprintf(f, "},\n");
+  uint64_t proposed_misses = dcache_miss_sum(&proposed_dcache_stat);
+  fprintf(f,
+          ",\"associativity_probes\":{"
+          "\"model\":\"all aligned cacheable loads, full-word allocate, "
+          "partial-hit update, partial-miss invalidate one way\","
+          "\"direct_1way_512_misses\":%llu,"
+          "\"2way_256\":{\"stats\":",
+          (unsigned long long)proposed_misses);
+  dcache_stat_json(f, &dcache_2way.stat);
+  fprintf(f, ",\"miss_reduction_vs_direct\":%lld},\"4way_128\":{\"stats\":",
+          (long long)proposed_misses -
+              (long long)dcache_miss_sum(&dcache_2way.stat));
+  dcache_stat_json(f, &dcache_4way.stat);
+  fprintf(f, ",\"miss_reduction_vs_direct\":%lld},\"8way_64\":{\"stats\":",
+          (long long)proposed_misses -
+              (long long)dcache_miss_sum(&dcache_4way.stat));
+  dcache_stat_json(f, &dcache_8way.stat);
+  fprintf(f, ",\"miss_reduction_vs_direct\":%lld}",
+          (long long)proposed_misses -
+              (long long)dcache_miss_sum(&dcache_8way.stat));
+#if ENABLE_CAPACITY_PROBES
+  fprintf(f, ",\"capacity_2x_1024_lines\":{\"stats\":");
+  dcache_stat_json(f, &dcache_1024.stat);
+  fprintf(f, ",\"miss_reduction_vs_direct\":%lld},\"capacity_4x_2048_lines\":{\"stats\":",
+          (long long)proposed_misses -
+              (long long)dcache_miss_sum(&dcache_1024.stat));
+  dcache_stat_json(f, &dcache_2048.stat);
+  fprintf(f, ",\"miss_reduction_vs_direct\":%lld},\"capacity_8x_4096_lines\":{\"stats\":",
+          (long long)proposed_misses -
+              (long long)dcache_miss_sum(&dcache_2048.stat));
+  dcache_stat_json(f, &dcache_4096.stat);
+  fprintf(f, ",\"miss_reduction_vs_direct\":%lld}}},\n",
+          (long long)proposed_misses -
+              (long long)dcache_miss_sum(&dcache_4096.stat));
+#else
+  fprintf(f, "}},\n");
+#endif
+  /* Close dcache_models before the independent load/RAW sections below. */
 
   fprintf(f,
           "  \"partial_store_hit_update_isolated\":{"
@@ -863,6 +1220,38 @@ void riscv_profile_finish(void) {
           (unsigned long long)incremental_bypass,
           (unsigned long long)lost_bypass, net_bypass, net_ms_280mhz);
 
+  fprintf(f,
+          "  \"load_m_raw_distance1\":{"
+          "\"width_order\":[\"byte\",\"half\",\"word\",\"other\"],"
+          "\"m_op_order\":[\"mul\",\"mulh\",\"mulhsu\",\"mulhu\","
+          "\"div\",\"divu\",\"rem\",\"remu\"],"
+          "\"source_order\":[\"rs1_only\",\"rs2_only\",\"both\"],"
+          "\"counts\":");
+  load_m_cube(f, load_m_raw);
+  fprintf(f, ",\"lsu_idu_eligible_counts\":");
+  load_m_cube(f, load_m_raw_eligible);
+  fprintf(f, ",\"current_hit_eligible_counts\":");
+  load_m_cube(f, load_m_raw_current_hit);
+  fprintf(f, ",\"proposed_hit_eligible_counts\":");
+  load_m_cube(f, load_m_raw_proposed_hit);
+  fprintf(f, "},\n");
+
+  fprintf(f,
+          "  \"load_branch_raw_distance1\":{"
+          "\"width_order\":[\"byte\",\"half\",\"word\",\"other\"],"
+          "\"branch_funct3_order\":[\"beq\",\"bne\",\"reserved2\","
+          "\"reserved3\",\"blt\",\"bge\",\"bltu\",\"bgeu\"],"
+          "\"source_order\":[\"rs1_only\",\"rs2_only\",\"both\"],"
+          "\"counts\":");
+  load_branch_cube(f, load_branch_raw);
+  fprintf(f, ",\"eligible_counts\":");
+  load_branch_cube(f, load_branch_eligible);
+  fprintf(f, ",\"current_hit_counts\":");
+  load_branch_cube(f, load_branch_current_hit);
+  fprintf(f, ",\"proposed_hit_counts\":");
+  load_branch_cube(f, load_branch_proposed_hit);
+  fprintf(f, "},\n");
+
   fprintf(f, "  \"phases_16m\":[");
   unsigned np = (total + PHASE_LEN - 1) / PHASE_LEN;
   for (unsigned i = 0; i < np; i++)
@@ -873,7 +1262,15 @@ void riscv_profile_finish(void) {
             "\"proposed_bypass_byte\":%llu,"
             "\"proposed_bypass_half\":%llu,"
             "\"proposed_bypass_narrow\":%llu,"
-            "\"incremental_bypass\":%llu,\"lost_bypass\":%llu}",
+            "\"incremental_bypass\":%llu,\"lost_bypass\":%llu,"
+            "\"late_load_branch_eligible\":%llu,"
+            "\"late_load_branch_hit\":%llu,"
+            "\"late_load_branch_hit_cycles\":%llu,"
+            "\"late_load_branch_saved_cycles\":%llu,"
+            "\"rtl_btb32_misses\":%llu,"
+            "\"rtl_btb32_skip_not_taken_misses\":%llu,"
+            "\"rtl_btb32_skip_not_taken_saved_misses\":%lld,"
+            "\"rtl_btb32_skip_not_taken_saved_cycles\":%lld}",
             i ? "," : "", (unsigned long long)phases[i].inst,
             (unsigned long long)phases[i].control,
             (unsigned long long)phases[i].taken,
@@ -887,7 +1284,17 @@ void riscv_profile_finish(void) {
             (unsigned long long)(phases[i].proposed_bypass_by_width[W_BYTE] +
                                  phases[i].proposed_bypass_by_width[W_HALF]),
             (unsigned long long)phases[i].incremental_bypass,
-            (unsigned long long)phases[i].lost_bypass);
+            (unsigned long long)phases[i].lost_bypass,
+            (unsigned long long)phases[i].late_load_branch_eligible,
+            (unsigned long long)phases[i].late_load_branch_hit,
+            (unsigned long long)phases[i].late_load_branch_hit,
+            (unsigned long long)phases[i].late_load_branch_eligible,
+            (unsigned long long)phases[i].rtl_btb32_miss,
+            (unsigned long long)phases[i].rtl_btb32_skip_not_taken_miss,
+            (long long)phases[i].rtl_btb32_miss -
+                (long long)phases[i].rtl_btb32_skip_not_taken_miss,
+            3 * ((long long)phases[i].rtl_btb32_miss -
+                 (long long)phases[i].rtl_btb32_skip_not_taken_miss));
   fprintf(f, "],\n  \"load_raw_top_pc_pairs\":[");
   qsort(load_pairs, PAIR_SLOTS, sizeof(*load_pairs), pair_cmp);
   for (unsigned i = 0, n = 0; i < PAIR_SLOTS && n < 64; i++)
@@ -899,6 +1306,8 @@ void riscv_profile_finish(void) {
               "\"consumer\":\"%s\",\"count\":%llu,\"eligible\":%llu,"
               "\"current_hit\":%llu,\"proposed_hit\":%llu,"
               "\"incremental_hit\":%llu,\"lost_hit\":%llu,"
+              "\"assoc_2way_hit\":%llu,\"assoc_4way_hit\":%llu,"
+              "\"assoc_8way_hit\":%llu,"
               "\"source_rs1_rs2_both\":[%llu,%llu,%llu]}",
               n++ ? "," : "", pair->producer_pc, pair->consumer_pc,
               width_names[pair->width], kind_names[pair->consumer],
@@ -908,6 +1317,9 @@ void riscv_profile_finish(void) {
               (unsigned long long)pair->proposed_hit,
               (unsigned long long)pair->incremental_hit,
               (unsigned long long)pair->lost_hit,
+              (unsigned long long)pair->assoc_hit[0],
+              (unsigned long long)pair->assoc_hit[1],
+              (unsigned long long)pair->assoc_hit[2],
               (unsigned long long)pair->source[0],
               (unsigned long long)pair->source[1],
               (unsigned long long)pair->source[2]);

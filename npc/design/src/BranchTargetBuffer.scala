@@ -162,7 +162,7 @@ class BranchTargetBuffer extends Module {
   nextUpdateState.isBranch         := io.update.isBranch
   nextUpdateState.directionCounter := nextDirection
 
-  val updateEn = io.update.en && !reset.asBool
+  val updateEn      = io.update.en && !reset.asBool
   queryMem.io.a   := updateIndex.pad(5)
   queryMem.io.d   := nextEntry.asUInt
   queryMem.io.clk := clock

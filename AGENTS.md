@@ -4,10 +4,10 @@
 This repository is a multi-project hardware/software workbench. The main active modules are:
 
 - `npc/`: Chisel CPU design, generated Verilog, and simulator sources (`design/src`, `sim/`, `scripts/`).
-- `nemu/`: reference emulator in C/C++ (`src/`, `include/`, `configs/`).
+- `nemu/`: reference emulator in C/C++ (`src/`, `include/`, `configs/`); its RV32 target supports the F extension through Berkeley SoftFloat.
 - `abstract-machine/`: runtime, libraries, and platform build rules for bare-metal programs.
 - `jyd-vivado-proj/`: Vivado digital twin project, constraints, IP configurations, and FPGA flow scripts.
-- `sdb/`, `cachesim/`, `branchsim/`: shared support libraries used by NEMU/NPC.
+- `sdb/`, `cachesim/`, `branchsim/`: shared support libraries used by NEMU/NPC. The shared sdb difftest path carries and compares RISC-V FPRs and `fcsr`, and its register dump and instruction ring buffer understand floating-point state.
 - `patch/`: patch series applied in CI, especially for `ysyxSoC`.
 
 Treat `build/`, `out/`, generated Verilog, and cache directories as disposable outputs.
@@ -20,6 +20,7 @@ Treat `build/`, `out/`, generated Verilog, and cache directories as disposable o
 - `make -C am-kernels/tests/cpu-tests run ARCH=riscv32-jyd ALL=add`: build and run a CPU test on the selected platform. Prefer `ARCH=riscv32-jyd` over `riscv32e-npc` when validating changes.
 - `make -C npc reformat` / `make -C npc checkformat`: apply or verify Scala formatting.
 - `make -C nemu menuconfig` then `make -C nemu`: configure and build NEMU.
+- `make -C nemu/tools/gen-inst`: regenerate instruction semantics used by NEMU. F instruction patterns and semantics are generated here; do not hand-write generated instruction patterns in NEMU.
 - `make -C abstract-machine ARCH=riscv32-jyd`: build an AM image for a target architecture.
 - `./npc/scripts/run_digital_twin_vivado.sh [impl|write_bitstream|bitstream] [--jobs N]`: run `make -C npc pack-fpga`, replace `jyd-vivado-proj/digital_twin.srcs/sources_1/imports/pack-fpga`, then run the in-tree Vivado `digital_twin` project to implementation or bitstream. `JOBS`/`--jobs` controls Vivado `launch_runs -jobs` and `general.maxThreads`.
 
@@ -38,6 +39,11 @@ For C/C++ in `nemu/`, `sdb/`, and AM libraries, match the current file’s brace
 Run the narrowest relevant check before opening a PR. For CPU behavior changes, use `make -C am-kernels/tests/cpu-tests run ARCH=<target> ALL=<case>`. Supported targets in this repo include `riscv32-jyd`, `riscv32e-npc`, and `riscv32e-ysyxsoc`; prefer `ARCH=riscv32-jyd` unless you specifically need another target. `ALL` should match a test name in that directory such as `add`; if `ALL=<case>` is omitted, the command runs all cases by default.
 
 After a change, start with `ALL=add` as the most basic smoke test, then decide whether broader coverage is needed. Common follow-up cases are `load-store` for memory access, `switch` and `if-else` for branch behavior, and `recursion` for function-call handling.
+
+If you modify floating-point execution, FPR/`fcsr` state, floating-point CSRs, generated F instruction semantics, SoftFloat integration, or floating-point difftest/debug support, run the complete RV32 F architecture suite:
+- `make -C ../riscv-arch-test-am-jyd ARCH=riscv32-nemu run TEST_ISA=F`
+
+The suite currently contains 78 tests. Also rebuild the NEMU shared reference and run an NPC difftest smoke test when changing the floating-point state ABI shared by NEMU, NPC, and sdb.
 
 For `npc`, pair CPU tests with `make -C npc verilog` and `make -C npc verilog-lint`, then use `make -C npc sim IMG=<image>` when runtime confirmation is needed. `make -C npc verilog-lint` may report `-PINCONNECTEMPTY` warnings; these can be ignored even if Verilator exits nonzero because warnings are treated as fatal. The checked-in `npc` `test` target is not the maintained validation path.
 
@@ -64,7 +70,7 @@ Platform device differences matter here:
 - `riscv32e-npc` expects a CLINT mapping at `AddrSpace.CLINT` (`0x02000000` range); AM/RT-Thread timer code reads `0x02000048/0x0200004c`, so removing CLINT from the `npc` SoC will hang `rt-thread`.
 - `riscv32-jyd` intentionally does not implement CLINT. Its JYD-specific peripherals only decode low address bits for some devices, so CLINT behavior must not be inferred from the JYD platform.
 
-For emulator/runtime changes, rebuild the affected module and run the local workload you changed. CI validates `npc/**`, `patch/**`, and `.github/**`, so changes there should be kept green.
+For emulator/runtime changes, rebuild the affected module and run the local workload you changed. NEMU fetches a fixed Berkeley SoftFloat revision through `nemu/tools/softfloat`; keep that revision pinned and build it with the RISC-V specialization. Changes under `nemu/tools/gen-inst/repo` belong to the separate gen-inst repository and must be committed and pushed there. CI validates `npc/**`, `patch/**`, and `.github/**`, so changes there should be kept green.
 
 ## Optimization Experiment Documentation
 

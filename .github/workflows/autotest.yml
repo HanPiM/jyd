@@ -64,7 +64,7 @@ jobs:
             args: ""
             precompile: true
           - dir: riscv-tests-am
-            args: "TEST_ISA=I"
+            args: "TEST_ISA=i"
             precompile: true
           - dir: riscv-arch-test-am-jyd
             args: 'TEST_ISA="I M Zicsr"'

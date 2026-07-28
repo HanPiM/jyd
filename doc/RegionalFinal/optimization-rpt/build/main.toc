@@ -1,0 +1,11 @@
+\contentsline {section}{\numberline {1}报告说明}{2}{section.1}%
+\contentsline {section}{\numberline {2}整体优化思路}{2}{section.2}%
+\contentsline {section}{\numberline {3}主要优化内容}{2}{section.3}%
+\contentsline {subsection}{\numberline {3.1}早期性能优化}{2}{subsection.3.1}%
+\contentsline {subsection}{\numberline {3.2}基于西北赛区样例的后续优化}{3}{subsection.3.2}%
+\contentsline {subsection}{\numberline {3.3}性能结果}{6}{subsection.3.3}%
+\contentsline {subsection}{\numberline {3.4}西北赛区样例结果}{6}{subsection.3.4}%
+\contentsline {subsection}{\numberline {3.5}性能与 WNS 走向}{7}{subsection.3.5}%
+\contentsline {section}{\numberline {4}验证与取舍}{8}{section.4}%
+\contentsline {section}{\numberline {5}总结}{8}{section.5}%
+\contentsline {section}{\numberline {A}关键优化提交索引}{9}{section.A}%

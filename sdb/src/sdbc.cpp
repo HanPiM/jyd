@@ -38,6 +38,16 @@ void sdb_destroy_debuger(sdb_debuger dbg){
 #define _DBG (assert(dbg!=NULL),(*((sdb::debuger*)dbg)))
 using namespace sdb;
 
+void sdb_set_fp_state_snapshoter(sdb_debuger dbg, sdb_fp_state_snapshoter shotfp){
+	if (shotfp) {
+		_DBG.set_fp_state_snapshoter([shotfp](riscv_fp_state& state){
+			shotfp(&state);
+		});
+	} else {
+		_DBG.set_fp_state_snapshoter(nullptr);
+	}
+}
+
 static bool enable_ftrace=false;
 
 void sdb_enable_entrace(sdb_debuger dbg, int flags){

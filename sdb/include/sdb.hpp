@@ -9,6 +9,7 @@
 #include <sstream>
 
 #include "cmd.hpp"
+#include "difftest.h"
 
 namespace sdb {
 
@@ -30,6 +31,7 @@ namespace sdb {
 	using mem_loader=std::function<uint8_t*(paddr_t addr,size_t n)>;
 	// impl should fill reg_snapshot_t with current register values 
 	using reg_snapshoter=std::function<void(reg_snapshot_t&)>;
+	using fp_state_snapshoter=std::function<void(riscv_fp_state&)>;
 	using inst_fetcher=std::function<vlen_inst_code(paddr_t pc)>;
 
 
@@ -70,7 +72,7 @@ namespace sdb {
 		}
 	};
 	struct expr_t{
-		using get_reg_by_name_f=std::function<std::optional<word_t>(std::string_view)>;
+		using get_reg_by_name_f=std::function<std::optional<uint64_t>(std::string_view)>;
 		std::string raw;
 		expr_t(){}
 		expr_t(std::string_view s):raw(s){}
@@ -85,6 +87,7 @@ namespace sdb {
 		reg_snapshot_view regs;
 		vlen_inst_view inst;
 		std::span<std::string_view> reg_names;
+		const riscv_fp_state* fp_state;
 		mem_loader loadmem;
 		expr_t::get_reg_by_name_f get_reg;
 		auto eval(const expr_t& e)const{
@@ -196,10 +199,12 @@ private:
 	mem_loader _loadmem;
 
 	reg_snapshoter _shot_reg;
+	fp_state_snapshoter _shot_fp_state;
 	std::vector<std::string_view> _reg_names;
 	reg_snapshot_t _reg_snap;
+	riscv_fp_state _fp_state{};
 
-	std::optional<word_t> _get_reg_from_name(std::string_view);
+	std::optional<uint64_t> _get_reg_from_name(std::string_view);
 
 	vlen_inst_code _current_inst;
 	inst_fetcher _fetch_inst;
@@ -258,10 +263,12 @@ public:
 	_INITIAL_PC(init_pc),_MEMARY_BASE(mem_base),_IMG_SIZE(img_size){
 		_state.pc=init_pc;
 		_reg_snap.resize(_reg_names.size());
+		_shot_reg(_reg_snap);
 		_init_cmd_table();
 	}
 
 	void add_trace(trace_handler_ptr th);
+	void set_fp_state_snapshoter(fp_state_snapshoter shotter);
 
 	inline const cpu_state& state()const{return _state;}
 	inline cpu_state& state(){return _state;}

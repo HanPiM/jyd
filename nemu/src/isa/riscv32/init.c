@@ -31,6 +31,8 @@ static void restart() {
   cpu.pc = RESET_VECTOR;
   /* The zero register is always 0. */
   cpu.gpr[0] = 0;
+  memset(cpu.fpr, 0, sizeof(cpu.fpr));
+  cpu.fcsr = 0;
 }
 
 void init_isa() {

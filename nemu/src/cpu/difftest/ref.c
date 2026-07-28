@@ -38,6 +38,18 @@ __EXPORT void difftest_regcpy(void *dut, bool direction) {
 	}
 }
 
+__EXPORT void difftest_fp_regcpy(riscv_fp_state *state, bool direction) {
+	_Static_assert(sizeof(state->fpr[0]) == sizeof(cpu.fpr[0]),
+	               "NEMU and difftest FPR sizes must match");
+	if (direction == DIFFTEST_TO_REF) {
+		memcpy(cpu.fpr, state->fpr, sizeof(cpu.fpr));
+		cpu.fcsr = state->fcsr & 0xff;
+	} else {
+		memcpy(state->fpr, cpu.fpr, sizeof(cpu.fpr));
+		state->fcsr = cpu.fcsr;
+	}
+}
+
 __EXPORT void difftest_exec(uint64_t n) {
 	cpu_exec(n);
 }

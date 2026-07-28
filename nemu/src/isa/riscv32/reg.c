@@ -28,6 +28,12 @@ void isa_reg_display() {
 	for(int i = 0; i < NR_REGS; i++) {
 		printf("%s:\t0x%08x\t%u\n", regs[i], cpu.gpr[i], cpu.gpr[i]);
 	}
+	printf("floating-point registers:\n");
+	for (int i = 0; i < 32; i++) {
+		printf("f%-2d:\t0x%016" PRIx64 "%016" PRIx64 "\n",
+		       i, cpu.fpr[i].v[1], cpu.fpr[i].v[0]);
+	}
+	printf("fcsr:\t0x%08x\n", cpu.fcsr);
 }
 
 word_t isa_reg_str2val(const char *s, bool *success) {
@@ -40,6 +46,18 @@ word_t isa_reg_str2val(const char *s, bool *success) {
 		if(strcmp(s, regs[i]) == 0) {
 			*success = true;
 			return cpu.gpr[i];
+		}
+	}
+	if (strcmp(s, "fcsr") == 0) {
+		*success = true;
+		return cpu.fcsr;
+	}
+	if (s[0] == 'f' && s[1] >= '0' && s[1] <= '9') {
+		char *end = NULL;
+		long index = strtol(s + 1, &end, 10);
+		if (*end == '\0' && index >= 0 && index < 32) {
+			*success = true;
+			return cpu.fpr[index].v[0];
 		}
 	}
 	return 0;

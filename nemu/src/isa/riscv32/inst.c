@@ -30,6 +30,7 @@
 #include <itrace_pack.h>
 
 #include "memory/paddr.h"
+#include "memory/vaddr.h"
 #include <encoding.out.h>
 #include <profile.h>
 
@@ -144,6 +145,19 @@ static int decode_exec(Decode *s) {
 		matched = true;
 	}
 
+  if (IS_INST(FMV_W_X)) {
+    cpu.fpr[rd].v[0] = UINT64_C(0xffffffff00000000) | R(rs1);
+    cpu.fpr[rd].v[1] = UINT64_MAX;
+    matched = true;
+  }
+
+  if (IS_INST(FSW)) {
+    word_t rs2 = BITS(inst, 24, 20);
+    word_t imm = SEXT((BITS(inst, 31, 25) << 5) | BITS(inst, 11, 7), 12);
+    vaddr_write(R(rs1) + imm, 4, cpu.fpr[rs2].v[0]);
+    matched = true;
+  }
+
   if (IS_INST(EBREAK)) {
     NEMUTRAP(s->pc, R(10)); // R(10) is $a0
     matched = true;
@@ -191,6 +205,24 @@ word_t _handle_csr_rw(word_t csr, word_t src1, bool is_write) {
     return old;                                                                \
   }
   word_t old;
+  if (csr == CSR_FFLAGS) {
+    old = cpu.fcsr & 0x1f;
+    if (is_write)
+      cpu.fcsr = (cpu.fcsr & ~0x1f) | (src1 & 0x1f);
+    return old;
+  }
+  if (csr == CSR_FRM) {
+    old = (cpu.fcsr >> 5) & 0x7;
+    if (is_write)
+      cpu.fcsr = (cpu.fcsr & ~0xe0) | ((src1 & 0x7) << 5);
+    return old;
+  }
+  if (csr == CSR_FCSR) {
+    old = cpu.fcsr;
+    if (is_write)
+      cpu.fcsr = src1 & 0xff;
+    return old;
+  }
   switch (csr) {
     _CASE(MCAUSE);
     _CASE(MEPC);

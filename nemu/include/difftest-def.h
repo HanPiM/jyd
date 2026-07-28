@@ -19,9 +19,9 @@
 #include <stdint.h>
 #include <macro.h>
 #include <generated/autoconf.h>
+#include <difftest.h>
 
 #define __EXPORT __attribute__((visibility("default")))
-enum { DIFFTEST_TO_DUT, DIFFTEST_TO_REF };
 
 #if defined(CONFIG_ISA_x86)
 # define DIFFTEST_REG_SIZE (sizeof(uint32_t) * 9) // GPRs + pc

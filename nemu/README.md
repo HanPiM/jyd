@@ -10,7 +10,7 @@ The main features of NEMU include
   * register/memory examination
   * expression evaluation without the support of symbols
   * watch point
-  * differential testing with reference design (e.g. QEMU)
+  * differential testing with reference designs, including RISC-V floating-point registers and `fcsr`
   * snapshot
 * CPU core with support of most common used instructions
   * x86
@@ -19,7 +19,7 @@ The main features of NEMU include
   * mips32
     * CP1 floating point instructions are not supported
   * riscv32
-    * only RV32IM
+    * RV32IMF; F arithmetic uses Berkeley SoftFloat
   * riscv64
     * only RV64IM
 * memory

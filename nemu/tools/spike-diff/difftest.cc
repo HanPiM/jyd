@@ -41,6 +41,9 @@ struct diff_context_t {
   word_t pc;
 };
 
+static_assert(sizeof(difftest_freg_t) == sizeof(freg_t),
+              "Spike and difftest FPR sizes must match");
+
 static sim_t* s = NULL;
 static processor_t *p = NULL;
 static state_t *state = NULL;
@@ -92,6 +95,25 @@ __EXPORT void difftest_regcpy(void* dut, bool direction) {
     s->diff_set_regs(dut);
   } else {
     s->diff_get_regs(dut);
+  }
+}
+
+__EXPORT void difftest_fp_regcpy(riscv_fp_state *ctx, bool direction) {
+  if (direction == DIFFTEST_TO_REF) {
+    for (int i = 0; i < NFPR; i++) {
+      freg_t value = {ctx->fpr[i].v[0], ctx->fpr[i].v[1]};
+      state->FPR.write(i, value);
+    }
+    if (p->get_csr(CSR_FCSR) != ctx->fcsr) {
+      p->put_csr(CSR_FCSR, ctx->fcsr);
+    }
+  } else {
+    for (int i = 0; i < NFPR; i++) {
+      auto value = state->FPR[i];
+      ctx->fpr[i].v[0] = value.v[0];
+      ctx->fpr[i].v[1] = value.v[1];
+    }
+    ctx->fcsr = p->get_csr(CSR_FCSR);
   }
 }
 

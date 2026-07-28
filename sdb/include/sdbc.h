@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 #include <stddef.h>
+#include "difftest.h"
 
 #ifdef __cplusplus
 extern "C"{
@@ -44,6 +45,7 @@ typedef uint8_t*(*sdb_mem_loader)(sdb_paddr_t addr, size_t nbyte);
 // reg_snapshot has enough size for all registers + extra
 // never write out of register range!!!!
 typedef void(*sdb_reg_snapshoter)(uint32_t* reg_snapshot);
+typedef void(*sdb_fp_state_snapshoter)(riscv_fp_state* fp_state);
 
 typedef sdbc_vlen_inst(*sdb_inst_fetcher)(sdb_paddr_t pc);
 typedef void(*sdb_disasmsembler)(char* str, int size, uint64_t pc, uint8_t* code, int nbyte);
@@ -65,6 +67,7 @@ sdb_debuger sdb_create_debuger(
 );
 
 void sdb_destroy_debuger(sdb_debuger dbg);
+void sdb_set_fp_state_snapshoter(sdb_debuger dbg, sdb_fp_state_snapshoter shotfp);
 
 void sdb_enable_entrace(sdb_debuger dbg, int flags);
 

@@ -30,6 +30,7 @@
 #include <itrace_pack.h>
 
 #include "memory/paddr.h"
+#include "memory/vaddr.h"
 #include <encoding.out.h>
 #include <profile.h>
 
@@ -50,9 +51,33 @@ itrace_pack_t g_mtrace_pack;
 btrace_pack_t g_btrace_pack;
 
 // generate in out.cc
-int execute_instruction(word_t instruction, word_t *pc, word_t *regs);
+int execute_instruction(word_t instruction, word_t *pc, word_t *regs,
+                        uint64_t *fregs, word_t *fcsr);
 
 uint64_t g_nbranches;
+
+static word_t g_csr_MCAUSE, g_csr_MEPC, g_csr_MTVAL;
+static word_t g_csr_MVENDORID = 0x79737978;
+static word_t g_csr_MARCHID = 25100261;
+static word_t g_csr_MSTATUS = 0x1800;
+static word_t g_csr_MSCRATCH = 0x1800;
+
+bool riscv_fp_enabled(void) {
+  return BITS(g_csr_MSTATUS, 14, 13) != 0;
+}
+
+void riscv_fp_mark_dirty(void) {
+  g_csr_MSTATUS = (g_csr_MSTATUS & ~(3u << 13)) | (3u << 13);
+}
+
+word_t riscv_raise_illegal_instruction(word_t instruction, word_t pc) {
+  g_csr_MEPC = pc;
+  g_csr_MCAUSE = CAUSE_ILLEGAL_INSTRUCTION;
+  g_csr_MTVAL = instruction;
+  // TODO: update the complete mstatus trap-entry stack when privilege modes
+  // are modeled.
+  return isa_raise_intr(CAUSE_ILLEGAL_INSTRUCTION, pc);
+}
 
 static int decode_exec(Decode *s) {
   s->dnpc = s->snpc;
@@ -73,13 +98,19 @@ static int decode_exec(Decode *s) {
 #define IS_INST(name) (((inst & MASK_##name) == MATCH_##name) && (!matched))
 #define _NOCHK_IS_INST(name) ((inst & MASK_##name) == MATCH_##name)
 
-  bool local_system_inst =
+  bool local_csr_inst =
       _NOCHK_IS_INST(CSRRW) || _NOCHK_IS_INST(CSRRS) ||
-      _NOCHK_IS_INST(EBREAK) || _NOCHK_IS_INST(ECALL) ||
+      _NOCHK_IS_INST(CSRRC) || _NOCHK_IS_INST(CSRRWI) ||
+      _NOCHK_IS_INST(CSRRSI) || _NOCHK_IS_INST(CSRRCI);
+  bool local_system_inst =
+      local_csr_inst || _NOCHK_IS_INST(EBREAK) || _NOCHK_IS_INST(ECALL) ||
       _NOCHK_IS_INST(MRET) || inst == 0x100f;
 
   word_t tmp = s->pc;
-  bool matched = !local_system_inst && (execute_instruction(inst, &tmp, cpu.gpr) == 0);
+  bool matched =
+      !local_system_inst &&
+      (execute_instruction(inst, &tmp, cpu.gpr, &cpu.fpr[0].v[0],
+                           &cpu.fcsr) == 0);
   if (matched)
     s->dnpc = tmp;
 
@@ -96,6 +127,13 @@ static int decode_exec(Decode *s) {
       btrace_record_t record = {.pc = s->pc, .code = inst, .nxt_pc = s->dnpc};
       btrace_pack_add(g_btrace_pack, &record);
     }
+  }
+
+  bool fp_csr = csr_addr == CSR_FFLAGS || csr_addr == CSR_FRM ||
+                csr_addr == CSR_FCSR;
+  if (!matched && local_csr_inst && fp_csr && !riscv_fp_enabled()) {
+    s->dnpc = riscv_raise_illegal_instruction(inst, s->pc);
+    matched = true;
   }
 
   if (IS_INST(CSRRW)) {
@@ -176,10 +214,6 @@ static int decode_exec(Decode *s) {
 extern word_t g_csr_MTVEC;
 
 word_t _handle_csr_rw(word_t csr, word_t src1, bool is_write) {
-  static word_t g_csr_MCAUSE = 0, g_csr_MEPC = 0, g_csr_MVENDORID = 0x79737978,
-                g_csr_MARCHID = 25100261, g_csr_MSTATUS = 0x1800;
-	static word_t g_csr_MSCRATCH = 0x1800;
-
   // printf("csr " #csr_name " %s : old=%08X
   // new=%08X\n",is_write?"write":"read",
   // (uint32_t)old,(uint32_t)(is_write?src1:old));
@@ -191,9 +225,34 @@ word_t _handle_csr_rw(word_t csr, word_t src1, bool is_write) {
     return old;                                                                \
   }
   word_t old;
+  if (csr == CSR_FFLAGS) {
+    old = cpu.fcsr & 0x1f;
+    if (is_write) {
+      cpu.fcsr = (cpu.fcsr & ~0x1f) | (src1 & 0x1f);
+      riscv_fp_mark_dirty();
+    }
+    return old;
+  }
+  if (csr == CSR_FRM) {
+    old = (cpu.fcsr >> 5) & 0x7;
+    if (is_write) {
+      cpu.fcsr = (cpu.fcsr & ~0xe0) | ((src1 & 0x7) << 5);
+      riscv_fp_mark_dirty();
+    }
+    return old;
+  }
+  if (csr == CSR_FCSR) {
+    old = cpu.fcsr;
+    if (is_write) {
+      cpu.fcsr = src1 & 0xff;
+      riscv_fp_mark_dirty();
+    }
+    return old;
+  }
   switch (csr) {
     _CASE(MCAUSE);
     _CASE(MEPC);
+    _CASE(MTVAL);
     _CASE(MSTATUS);
     _CASE(MTVEC);
     _CASE(MVENDORID);

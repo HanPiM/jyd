@@ -41,9 +41,16 @@ trace_context debuger::_make_trace_ctx(){
 		_reg_snap,
 		_current_inst,
 		_reg_names,
+		_shot_fp_state ? &_fp_state : nullptr,
 		_loadmem,
 		bind_front(&debuger::_get_reg_from_name,this),
 	};
+}
+
+void debuger::set_fp_state_snapshoter(fp_state_snapshoter shotter) {
+	_shot_fp_state = std::move(shotter);
+	if (_shot_fp_state)
+		_shot_fp_state(_fp_state);
 }
 
 void debuger::add_trace(trace_handler_ptr h){
@@ -129,6 +136,8 @@ void debuger::_step_one(){
 	_state.last_pc= _state.pc;
 	_state.pc = _exec(1);
 	_shot_reg(_reg_snap);
+	if (_shot_fp_state)
+		_shot_fp_state(_fp_state);
 }
 
 void debuger::cmd_si(size_t n){
@@ -175,6 +184,15 @@ void debuger::dump_reg(){
 			_print("\n");
 		}
 	}
+	if (_shot_fp_state) {
+		_print(ANSI_FG_YELLOW "==== floating-point register ====\n" ANSI_NONE);
+		for (size_t i = 0; i < 32; i++) {
+			auto &v = _fp_state.fpr[i];
+			_print(ANSI_FG_BLUE "f{:<2}" ANSI_NONE ": 0x{:016x}{:016x}{}",
+			       i, v.v[1], v.v[0], (i + 1) % 2 == 0 ? "\n" : "  ");
+		}
+		_print(ANSI_FG_BLUE "fcsr" ANSI_NONE ": 0x{:08x}\n", _fp_state.fcsr);
+	}
 }
 
 void debuger::cmd_info(string_view s){
@@ -185,14 +203,30 @@ void debuger::cmd_info(string_view s){
 	else return _error("Unknown info command {}", s);	
 }
 
-optional<word_t> debuger::_get_reg_from_name(string_view name){
+optional<uint64_t> debuger::_get_reg_from_name(string_view name){
 	if(name=="pc"){
 		return _state.pc;
 	}
 	auto it=ranges::find(_reg_names,name);
-	if(it==_reg_names.end())return nullopt;
-	auto idx=it-_reg_names.begin();
-	return _reg_snap[idx];
+	if(it!=_reg_names.end()){
+		auto idx=it-_reg_names.begin();
+		return _reg_snap[idx];
+	}
+	if (_shot_fp_state) {
+		if (name == "fcsr")
+			return _fp_state.fcsr;
+		if (name.size() >= 2 && name[0] == 'f') {
+			size_t index = 0;
+			for (char c : name.substr(1)) {
+				if (c < '0' || c > '9')
+					return nullopt;
+				index = index * 10 + c - '0';
+			}
+			if (index < 32)
+				return _fp_state.fpr[index].v[0];
+		}
+	}
+	return nullopt;
 }
 void debuger::cmd_p(expr_t e){
 	_print("{}\n", e.eval(

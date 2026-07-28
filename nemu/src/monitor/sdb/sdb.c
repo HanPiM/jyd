@@ -110,6 +110,12 @@ uint8_t* wrap_mem_loader(sdb_paddr_t addr, size_t nbyte){
 void wrap_shotreg(uint32_t* reg_snapshot){
 	memcpy(reg_snapshot, cpu.gpr, sizeof(cpu.gpr));
 }
+void wrap_shotfp(riscv_fp_state* fp_state){
+	_Static_assert(sizeof(fp_state->fpr[0]) == sizeof(cpu.fpr[0]),
+	               "NEMU and difftest FPR sizes must match");
+	memcpy(fp_state->fpr, cpu.fpr, sizeof(cpu.fpr));
+	fp_state->fcsr = cpu.fcsr;
+}
 sdbc_vlen_inst wrap_fetch_inst(sdb_paddr_t pc){
 	sdbc_vlen_inst	inst_code;
 	inst_code.data=(uint8_t*)guest_to_host(pc);
@@ -143,6 +149,7 @@ void init_sdb() {
 		 	regs, 32, 
 			wrap_fetch_inst);
 	assert(dbg);
+	sdb_set_fp_state_snapshoter(dbg, wrap_shotfp);
 	_sdb_inited=true;
 	uint32_t flags=0;
 #ifdef CONFIG_ITRACE

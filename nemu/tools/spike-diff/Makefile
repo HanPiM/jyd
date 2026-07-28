@@ -32,9 +32,20 @@ $(REPO_MAKEFILE):
 SPIKE = $(REPO_BUILD_PATH)/spike
 $(REPO_BITMANIP_STAMP): $(REPO_MAKEFILE) Makefile
 	sed -i -e '/riscv_insn_ext_b) \\/d' $(abspath $(REPO_PATH))/riscv/riscv.mk.in
+	sed -i -e '/riscv_insn_ext_f) \\/d' $(abspath $(REPO_PATH))/riscv/riscv.mk.in
+	sed -i -e '/riscv_insn_ext_d) \\/d' $(abspath $(REPO_PATH))/riscv/riscv.mk.in
 	sed -i -e '/riscv_insn_ext_m) \\/a\\t$$(riscv_insn_ext_b) \\' $(abspath $(REPO_PATH))/riscv/riscv.mk.in
+	sed -i -e '/riscv_insn_ext_m) \\/a\\t$$(riscv_insn_ext_f) \\' $(abspath $(REPO_PATH))/riscv/riscv.mk.in
+	sed -i -e '/riscv_insn_ext_m) \\/a\\t$$(riscv_insn_ext_d) \\' $(abspath $(REPO_PATH))/riscv/riscv.mk.in
+	sed -i -e '/^softfloat_c_srcs = dummy_for_pa.c$$/d' $(abspath $(REPO_PATH))/softfloat/softfloat.mk.in
 	sed -i -e '/riscv_insn_ext_b) \\/d' $(REPO_BUILD_PATH)/riscv.mk
+	sed -i -e '/riscv_insn_ext_f) \\/d' $(REPO_BUILD_PATH)/riscv.mk
+	sed -i -e '/riscv_insn_ext_d) \\/d' $(REPO_BUILD_PATH)/riscv.mk
 	sed -i -e '/riscv_insn_ext_m) \\/a\\t$$(riscv_insn_ext_b) \\' $(REPO_BUILD_PATH)/riscv.mk
+	sed -i -e '/riscv_insn_ext_m) \\/a\\t$$(riscv_insn_ext_f) \\' $(REPO_BUILD_PATH)/riscv.mk
+	sed -i -e '/riscv_insn_ext_m) \\/a\\t$$(riscv_insn_ext_d) \\' $(REPO_BUILD_PATH)/riscv.mk
+	sed -i -e '/^softfloat_c_srcs = dummy_for_pa.c$$/d' $(REPO_BUILD_PATH)/softfloat.mk
+	rm -f $(REPO_BUILD_PATH)/libsoftfloat.a
 	rm -f $(REPO_BUILD_PATH)/insn_list.h
 	touch $@
 
@@ -49,6 +60,7 @@ $(shell mkdir -p $(BUILD_DIR))
 inc_dependencies = fesvr riscv disasm customext fdt softfloat spike_main spike_dasm build
 INC_PATH  = -I$(REPO_PATH) $(addprefix -I$(REPO_PATH)/, $(inc_dependencies))
 INC_PATH += -I$(JYD_NEMU_HOME)/include
+INC_PATH += -I$(JYD_NEMU_HOME)/../sdb/include
 lib_dependencies = libspike_main.a libriscv.a libdisasm.a libsoftfloat.a libfesvr.a libfdt.a
 INC_LIBS  = $(addprefix $(REPO_PATH)/build/, $(lib_dependencies))
 

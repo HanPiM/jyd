@@ -20,6 +20,6 @@ SRCS  = $(shell find src/ -name "*.c")
 
 SHARE = 1
 CFLAGS += -DJYD_NEMU_HOME=\"$(JYD_NEMU_HOME)\" -DCONFIG_ISA_$(GUEST_ISA)
-INC_PATH += $(JYD_NEMU_HOME)/include
+INC_PATH += $(JYD_NEMU_HOME)/include $(JYD_NEMU_HOME)/../sdb/include
 
 include $(JYD_NEMU_HOME)/scripts/build.mk

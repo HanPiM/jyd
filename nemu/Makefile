@@ -100,6 +100,14 @@ CXXSRC += $(shell find $(abspath ../branchsim/public) -name "*.cpp" -or -name "*
 INC_PATH += $(abspath ./tools/gen-inst/build)
 CXXSRC += $(shell find ./tools/gen-inst/build -name "*.cc")
 
+# Berkeley SoftFloat
+SOFTFLOAT_LIB := $(abspath ./tools/softfloat/repo/build/Linux-x86_64-GCC/softfloat.a)
+INC_PATH += $(abspath ./tools/softfloat/repo/source/include)
+ARCHIVES += $(SOFTFLOAT_LIB)
+$(SOFTFLOAT_LIB): $(JYD_NEMU_HOME)/tools/softfloat/Makefile
+	$(MAKE) -C $(JYD_NEMU_HOME)/tools/softfloat
+src/isa/riscv32/softfloat.cc: $(SOFTFLOAT_LIB)
+
 ifdef CONFIG_TARGET_AM
 include $(JYD_AM_HOME)/Makefile
 LINKAGE += $(ARCHIVES)

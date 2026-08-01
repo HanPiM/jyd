@@ -6,7 +6,7 @@ import chisel3.util._
 import common_def._
 
 object BExtensionOp extends ChiselEnum {
-  val clz, ctz, cpop, clmul, orcB, xperm4, ror, pack = Value
+  val clz, ctz, cpop, clmul, clmulh, orcB, xperm4, ror, pack = Value
 }
 
 class BExtensionInput extends Bundle {
@@ -19,9 +19,10 @@ class BExtensionInput extends Bundle {
 
 /** Low-throughput iterative implementation of the selected scalar B instructions.
   *
-  * Every operation spends 32 cycles in the busy state.  The result is always
-  * registered before it becomes visible on the output, keeping the iterative
-  * datapath out of the EXU-to-LSU combinational result path.
+  * Short B operations are decoded in ALU and stay on its single-cycle path.
+  * This unit is reserved for operations whose current implementation is
+  * iterative; their result is registered before it becomes visible on the
+  * output, keeping the iterative datapath out of the EXU-to-LSU path.
   */
 class BExtensionUnit extends Module {
   val io = IO(new Bundle {
@@ -36,9 +37,9 @@ class BExtensionUnit extends Module {
   val state     = RegInit(State.idle)
   val opReg     = Reg(BExtensionOp())
   val sourceA   = Reg(Types.UWord)
-  val workA     = Reg(Types.UWord)
+  val workA     = Reg(UInt(64.W))
   val workB     = Reg(Types.UWord)
-  val accum     = Reg(Types.UWord)
+  val accum     = Reg(UInt(64.W))
   val count     = Reg(UInt(6.W))
   val rorRemain = Reg(UInt(5.W))
   val found     = Reg(Bool())
@@ -68,24 +69,29 @@ class BExtensionUnit extends Module {
     io.in.bits.isImm && io.in.bits.func3t === "b001".U && io.in.bits.func7t === "b0110000".U && immLow5 === 2.U
   val isClmul =
     !io.in.bits.isImm && io.in.bits.func3t === "b001".U && io.in.bits.func7t === "b0000101".U
+  val isClmulh =
+    !io.in.bits.isImm && io.in.bits.func3t === "b011".U && io.in.bits.func7t === "b0000101".U
   val isOrcB =
     io.in.bits.isImm && io.in.bits.func3t === "b101".U && io.in.bits.func7t === "b0010100".U && immLow5 === 7.U
   val isXperm4 =
     !io.in.bits.isImm && io.in.bits.func3t === "b010".U && io.in.bits.func7t === "b0010100".U
   val isRor =
     !io.in.bits.isImm && io.in.bits.func3t === "b101".U && io.in.bits.func7t === "b0110000".U
+  val isRori =
+    io.in.bits.isImm && io.in.bits.func3t === "b101".U && io.in.bits.func7t === "b0110000".U
   val isPack =
     !io.in.bits.isImm && io.in.bits.func3t === "b100".U && io.in.bits.func7t === "b0000100".U
-  val decodedValid = isClz || isCtz || isCpop || isClmul || isOrcB || isXperm4 || isRor || isPack
+  val decodedValid = isClz || isCtz || isCpop || isClmul || isClmulh || isOrcB || isXperm4 || isRor || isRori || isPack
   val decodedOp = MuxCase(
     BExtensionOp.clz,
     Seq(
       isCtz    -> BExtensionOp.ctz,
       isCpop   -> BExtensionOp.cpop,
       isClmul  -> BExtensionOp.clmul,
+      isClmulh -> BExtensionOp.clmulh,
       isOrcB   -> BExtensionOp.orcB,
       isXperm4 -> BExtensionOp.xperm4,
-      isRor    -> BExtensionOp.ror,
+      (isRor || isRori) -> BExtensionOp.ror,
       isPack   -> BExtensionOp.pack
     )
   )
@@ -116,6 +122,13 @@ class BExtensionUnit extends Module {
       nextCount := count + workA(0)
     }
     is(BExtensionOp.clmul) {
+      nextWorkA := workA << 1
+      nextWorkB := workB >> 1
+      when(workB(0)) {
+        nextAccum := accum ^ workA
+      }
+    }
+    is(BExtensionOp.clmulh) {
       nextWorkA := workA << 1
       nextWorkB := workB >> 1
       when(workB(0)) {
@@ -174,8 +187,13 @@ class BExtensionUnit extends Module {
       found := nextFound
       when(iteration === 31.U) {
         val countResult = Cat(0.U(26.W), nextCount)
+        val clmulResult = Mux(opReg === BExtensionOp.clmulh, nextAccum(63, 32), nextAccum(31, 0))
         val isCountOp = opReg === BExtensionOp.clz || opReg === BExtensionOp.ctz || opReg === BExtensionOp.cpop
-        resultReg := Mux(opReg === BExtensionOp.ror, nextWorkA, Mux(isCountOp, countResult, nextAccum))
+        resultReg := Mux(
+          opReg === BExtensionOp.ror,
+          nextWorkA(31, 0),
+          Mux(isCountOp, countResult, Mux(opReg === BExtensionOp.clmul || opReg === BExtensionOp.clmulh, clmulResult, nextAccum(31, 0)))
+        )
         state     := State.done
       }.otherwise {
         iteration := iteration + 1.U

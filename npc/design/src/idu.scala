@@ -375,25 +375,22 @@ class IDU(
   bypassMux.io.allowLateLoadRs2 := allowLateLoadRs2
   res.lateLoadRs1 := bypassMux.io.lateLoadRs1
   res.lateLoadRs2 := bypassMux.io.lateLoadRs2
-  // Future workloads contain no arithmetic extensions other than M and the
-  // supported B subset. Keep only this coarse class bit in the global
-  // forwarding/ready cone; the B unit performs exact operation decoding after
-  // registering its inputs.
+  // Only operations that still use the iterative B unit assert bExtValid.
+  // Short B operations are evaluated by the ordinary ALU path so they retain
+  // same-cycle forwarding and do not inherit the old universal 32-cycle cost.
   val arithmeticFunc3 = inst(14, 12)
   val arithmeticFunc7 = inst(31, 25)
-  val isBaseImmArithmetic = isFmtI && (
-    (arithmeticFunc3 =/= "b001".U && arithmeticFunc3 =/= "b101".U) ||
-      (arithmeticFunc3 === "b001".U && arithmeticFunc7 === 0.U) ||
-      (arithmeticFunc3 === "b101".U && (arithmeticFunc7 === 0.U || arithmeticFunc7 === "b0100000".U))
-  )
-  val isBaseRegArithmetic = !isFmtI && (
-    arithmeticFunc7 === 0.U ||
-      (arithmeticFunc7 === "b0100000".U && (arithmeticFunc3 === 0.U || arithmeticFunc3 === "b101".U)) ||
-      (arithmeticFunc7 === "b0000100".U && arithmeticFunc3 === "b100".U)
-  )
   val isMExtArithmetic = !isFmtI && arithmeticFunc7 === "b0000001".U
-  res.bExtValid :=
-    isTypArithmetic && !isBaseImmArithmetic && !isBaseRegArithmetic && !isMExtArithmetic
+  val bImmLow5 = inst(24, 20)
+  val isBCount = isFmtI && arithmeticFunc3 === "b001".U && arithmeticFunc7 === "b0110000".U &&
+    (bImmLow5 === 0.U || bImmLow5 === 1.U || bImmLow5 === 2.U)
+  val isBClmul = !isFmtI && arithmeticFunc7 === "b0000101".U &&
+    (arithmeticFunc3 === "b001".U || arithmeticFunc3 === "b011".U)
+  val isBOrcB = isFmtI && arithmeticFunc3 === "b101".U && arithmeticFunc7 === "b0010100".U && bImmLow5 === 7.U
+  val isBXperm4 = !isFmtI && arithmeticFunc7 === "b0010100".U && arithmeticFunc3 === "b010".U
+  val isBRor = arithmeticFunc7 === "b0110000".U && arithmeticFunc3 === "b101".U
+  val isIterativeB = isBCount || isBClmul || isBOrcB || isBXperm4 || isBRor
+  res.bExtValid := isTypArithmetic && !isMExtArithmetic && isIterativeB
   res.reg1                := bypassMux.io.outData1
   res.reg2                := Mux(isFmtI, immI, bypassMux.io.outData2) // For exu ALU src2
   res.csrReadData         := io.csrRead.data

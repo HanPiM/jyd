@@ -339,7 +339,7 @@ class ALU extends Module {
   val isPack = !inbits.is_imm && inbits.func3t === "b100".U && inbits.func7t === "b0000100".U
   val packResult = Cat(src2(15, 0), src1(15, 0))
 
-  val aluResult = MuxLookup(inbits.func3t, defaultRes)(
+  val baseAluResult = MuxLookup(inbits.func3t, defaultRes)(
     Seq(
       0.U -> add_sub_res,                        // 000: add/sub/addi
       1.U -> lShiftResult,                       // 001: sll/slli
@@ -349,6 +349,35 @@ class ALU extends Module {
       5.U -> rShiftResult,                       // 101: srl/srli/sra/srai
       6.U -> logic_or,                           // 110: or/ori
       7.U -> logic_and                           // 111: and/andi
+    )
+  )
+
+  val isSh1Add = !inbits.is_imm && inbits.func7t === "b0010000".U && inbits.func3t === "b010".U
+  val isSh2Add = !inbits.is_imm && inbits.func7t === "b0010000".U && inbits.func3t === "b100".U
+  val isSh3Add = !inbits.is_imm && inbits.func7t === "b0010000".U && inbits.func3t === "b110".U
+  val isSextB = inbits.is_imm && inbits.func7t === "b0110000".U && inbits.func3t === "b001".U && src2(4, 0) === 4.U
+  val isSextH = inbits.is_imm && inbits.func7t === "b0110000".U && inbits.func3t === "b001".U && src2(4, 0) === 5.U
+  val isMinu = !inbits.is_imm && inbits.func7t === "b0000101".U && inbits.func3t === "b101".U
+  val isBext = inbits.func7t === "b0100100".U && inbits.func3t === "b101".U
+
+  val sh1AddResult = src2 + (src1 << 1)
+  val sh2AddResult = src2 + (src1 << 2)
+  val sh3AddResult = src2 + (src1 << 3)
+  val sextBResult = Cat(Fill(24, src1(7)), src1(7, 0))
+  val sextHResult = Cat(Fill(16, src1(15)), src1(15, 0))
+  val minuResult = Mux(src1 < src2, src1, src2)
+  val bextResult = Cat(0.U(31.W), (src1 >> src2(4, 0))(0))
+
+  val aluResult = MuxCase(
+    baseAluResult,
+    Seq(
+      isSh1Add -> sh1AddResult,
+      isSh2Add -> sh2AddResult,
+      isSh3Add -> sh3AddResult,
+      isSextB  -> sextBResult,
+      isSextH  -> sextHResult,
+      isMinu   -> minuResult,
+      isBext   -> bextResult
     )
   )
   io.singleCycleResult := aluResult

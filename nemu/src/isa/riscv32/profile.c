@@ -40,10 +40,31 @@ enum BOp {
   B_CLZ,
   B_CTZ,
   B_CPOP,
+  B_SEXTB,
+  B_SEXTH,
   B_CLMUL,
+  B_CLMULR,
+  B_CLMULH,
   B_ORCB,
+  B_REV8,
+  B_ANDN,
+  B_ORN,
+  B_XNOR,
+  B_MIN,
+  B_MAX,
+  B_MINU,
+  B_MAXU,
+  B_SH1ADD,
+  B_SH2ADD,
+  B_SH3ADD,
+  B_BSET,
+  B_BCLR,
+  B_BINV,
+  B_BEXT,
   B_XPERM4,
+  B_ROL,
   B_ROR,
+  B_RORI,
   B_PACK,
   B_OTHER,
   B_NR
@@ -205,8 +226,13 @@ static unsigned kind_of(uint32_t x) {
   if (op == 0x33 && f7 == 0x04 && ((x >> 12) & 7) == 4)
     return K_B;
   bool b_register =
-      op == 0x33 && (f7 == 0x05 || f7 == 0x30 || f7 == 0x24 ||
-                     f7 == 0x14 || f7 == 0x34);
+      op == 0x33 &&
+      ((f7 == 0x05 && f3 >= 4) || (f7 == 0x10 && (f3 == 2 || f3 == 4 || f3 == 6)) ||
+       (f7 == 0x20 && (f3 == 4 || f3 == 6 || f3 == 7)) ||
+       (f7 == 0x30 && (f3 == 1 || f3 == 5)) ||
+       (f7 == 0x24 && (f3 == 1 || f3 == 5)) ||
+       (f7 == 0x14 && (f3 == 1 || f3 == 2)) ||
+       (f7 == 0x34 && f3 == 1));
   bool b_immediate =
       op == 0x13 && (f3 == 1 || f3 == 5) &&
       (f7 == 0x05 || f7 == 0x30 || f7 == 0x24 || f7 == 0x14 ||
@@ -228,16 +254,57 @@ static unsigned bop_of(uint32_t x) {
       return B_CTZ;
     if (rs2 == 2)
       return B_CPOP;
+    if (rs2 == 4)
+      return B_SEXTB;
+    if (rs2 == 5)
+      return B_SEXTH;
   }
   if (op == 0x33 && f7 == 0x05 && f3 == 1)
     return B_CLMUL;
+  if (op == 0x33 && f7 == 0x05 && f3 == 2)
+    return B_CLMULR;
+  if (op == 0x33 && f7 == 0x05 && f3 == 3)
+    return B_CLMULH;
   if (op == 0x13 && f3 == 5 && f7 == 0x14 && rs2 == 7)
     return B_ORCB;
+  if (op == 0x13 && f3 == 5 && f7 == 0x34 && rs2 == 24)
+    return B_REV8;
+  if (op == 0x33 && f7 == 0x20 && f3 == 4)
+    return B_XNOR;
+  if (op == 0x33 && f7 == 0x20 && f3 == 6)
+    return B_ORN;
+  if (op == 0x33 && f7 == 0x20 && f3 == 7)
+    return B_ANDN;
+  if (op == 0x33 && f7 == 0x05 && f3 == 4)
+    return B_MIN;
+  if (op == 0x33 && f7 == 0x05 && f3 == 5)
+    return B_MAX;
+  if (op == 0x33 && f7 == 0x05 && f3 == 6)
+    return B_MINU;
+  if (op == 0x33 && f7 == 0x05 && f3 == 7)
+    return B_MAXU;
+  if (op == 0x33 && f7 == 0x10 && f3 == 2)
+    return B_SH1ADD;
+  if (op == 0x33 && f7 == 0x10 && f3 == 4)
+    return B_SH2ADD;
+  if (op == 0x33 && f7 == 0x10 && f3 == 6)
+    return B_SH3ADD;
+  if ((op == 0x33 || op == 0x13) && f7 == 0x14 && f3 == 1)
+    return B_BSET;
+  if ((op == 0x33 || op == 0x13) && f7 == 0x24 && f3 == 1)
+    return B_BCLR;
+  if ((op == 0x33 || op == 0x13) && f7 == 0x34 && f3 == 1)
+    return B_BINV;
+  if ((op == 0x33 || op == 0x13) && f7 == 0x24 && f3 == 5)
+    return B_BEXT;
   if (op == 0x33 && f7 == 0x14 && f3 == 2)
     return B_XPERM4;
-  if ((op == 0x33 && f7 == 0x30 && f3 == 5) ||
-      (op == 0x13 && f7 == 0x30 && f3 == 5))
+  if (op == 0x33 && f7 == 0x30 && f3 == 1)
+    return B_ROL;
+  if (op == 0x33 && f7 == 0x30 && f3 == 5)
     return B_ROR;
+  if (op == 0x13 && f7 == 0x30 && f3 == 5)
+    return B_RORI;
   if (op == 0x33 && f7 == 0x04 && f3 == 4)
     return B_PACK;
   return B_OTHER;
@@ -999,8 +1066,12 @@ void riscv_profile_finish(void) {
   fprintf(f,
           "],\n  \"m_special_operands\":{\"divide_by_zero\":%llu,"
           "\"signed_overflow\":%llu},"
-          "\n  \"b_ops_order\":[\"clz\",\"ctz\",\"cpop\",\"clmul\","
-          "\"orc.b\",\"xperm4\",\"ror\",\"pack\",\"other\"],\n  \"b_ops\":[",
+          "\n  \"b_ops_order\":[\"clz\",\"ctz\",\"cpop\",\"sext.b\","
+          "\"sext.h\",\"clmul\",\"clmulr\",\"clmulh\",\"orc.b\","
+          "\"rev8\",\"andn\",\"orn\",\"xnor\",\"min\",\"max\","
+          "\"minu\",\"maxu\",\"sh1add\",\"sh2add\",\"sh3add\","
+          "\"bset\",\"bclr\",\"binv\",\"bext\",\"xperm4\",\"rol\","
+          "\"ror\",\"rori\",\"pack\",\"other\"],\n  \"b_ops\":[",
           (unsigned long long)m_divide_by_zero,
           (unsigned long long)m_signed_overflow);
   arr(f, bops, B_NR);

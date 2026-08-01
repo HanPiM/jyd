@@ -124,4 +124,33 @@ foreach bit_file $bit_candidates {
   file copy -force $bit_file [file join $report_dir [file tail $bit_file]]
 }
 
+# open_run impl_1 reports the routed checkpoint, which is intentionally kept
+# as the pre-post-route reference.  When post-route physopt ran, report the
+# final checkpoint separately so CI and local inspection do not mistake the
+# pre-physopt WNS for the accepted result.
+set postroute_checkpoint [file join $project_dir digital_twin.runs impl_1 top_postroute_physopt.dcp]
+if {[file exists $postroute_checkpoint]} {
+  close_design
+  puts "Opening post-route physopt checkpoint: $postroute_checkpoint"
+  if {[catch {open_checkpoint $postroute_checkpoint} postroute_open_err]} {
+    fail "open_checkpoint post-route physopt checkpoint failed: $postroute_open_err"
+  }
+
+  set postroute_rpt_file [file join $report_dir "top_timing_summary_postroute_physopted.rpt"]
+  set postroute_pb_file [file join $report_dir "top_timing_summary_postroute_physopted.pb"]
+  set postroute_rpx_file [file join $report_dir "top_timing_summary_postroute_physopted.rpx"]
+  puts "Writing post-route physopt timing summary to $postroute_rpt_file"
+  if {[catch {
+    report_timing_summary \
+      -max_paths 10 \
+      -report_unconstrained \
+      -file $postroute_rpt_file \
+      -pb $postroute_pb_file \
+      -rpx $postroute_rpx_file \
+      -warn_on_violation
+  } postroute_report_err]} {
+    fail "post-route physopt report_timing_summary failed: $postroute_report_err"
+  }
+}
+
 exit 0

@@ -8,8 +8,10 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
-REPORT_NAME = "top_timing_summary_routed.rpt"
-DEFAULT_REPORT_PATH = Path("digital_twin.runs") / "impl_1" / REPORT_NAME
+POSTROUTE_REPORT_NAME = "top_timing_summary_postroute_physopted.rpt"
+ROUTED_REPORT_NAME = "top_timing_summary_routed.rpt"
+REPORT_NAMES = (POSTROUTE_REPORT_NAME, ROUTED_REPORT_NAME)
+DEFAULT_REPORT_PATH = Path("digital_twin.runs") / "impl_1" / POSTROUTE_REPORT_NAME
 SLACK_RE = re.compile(r"^Slack(?: \((?P<status>[^)]+)\))?\s*:\s*(?P<value>-?\d+(?:\.\d+)?)ns\b")
 FIELD_RE = re.compile(r"^\s{2}(?P<name>[A-Za-z][A-Za-z ]+):\s+(?P<value>.+?)\s*$")
 FROM_CLOCK_RE = re.compile(r"^From Clock:\s+(?P<clock>.+?)\s*$")
@@ -29,7 +31,11 @@ class TimingPath:
 
 def resolve_report_path(path: Path) -> Path:
     if path.is_dir():
-        return path / REPORT_NAME
+        for report_name in REPORT_NAMES:
+            report_path = path / report_name
+            if report_path.is_file():
+                return report_path
+        return path / POSTROUTE_REPORT_NAME
     return path
 
 
@@ -150,13 +156,16 @@ def positive_int(value: str) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Extract the worst setup/WNS timing violations from a routed Vivado timing report."
+        description="Extract the worst setup/WNS timing violations from the final Vivado timing report."
     )
     parser.add_argument(
         "path",
         nargs="?",
         default=str(DEFAULT_REPORT_PATH),
-        help=f"Result directory or {REPORT_NAME} path. Defaults to {DEFAULT_REPORT_PATH}.",
+        help=(
+            "Result directory or timing report path. Directories prefer the post-route physopt report "
+            f"({POSTROUTE_REPORT_NAME}) and fall back to {ROUTED_REPORT_NAME}. Defaults to {DEFAULT_REPORT_PATH}."
+        ),
     )
     parser.add_argument("-n", "--limit", type=positive_int, help="Number of worst violations to print. Defaults to 10.")
     parser.add_argument(

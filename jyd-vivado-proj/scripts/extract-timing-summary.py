@@ -6,14 +6,20 @@ import sys
 from pathlib import Path
 
 
-REPORT_NAME = "top_timing_summary_routed.rpt"
-DEFAULT_REPORT_PATH = Path("digital_twin.runs") / "impl_1" / REPORT_NAME
+POSTROUTE_REPORT_NAME = "top_timing_summary_postroute_physopted.rpt"
+ROUTED_REPORT_NAME = "top_timing_summary_routed.rpt"
+REPORT_NAMES = (POSTROUTE_REPORT_NAME, ROUTED_REPORT_NAME)
+DEFAULT_REPORT_PATH = Path("digital_twin.runs") / "impl_1" / POSTROUTE_REPORT_NAME
 TITLE_MARKER = "| Design Timing Summary"
 
 
 def resolve_report_path(path: Path) -> Path:
     if path.is_dir():
-        return path / REPORT_NAME
+        for report_name in REPORT_NAMES:
+            report_path = path / report_name
+            if report_path.is_file():
+                return report_path
+        return path / POSTROUTE_REPORT_NAME
     return path
 
 
@@ -49,13 +55,16 @@ def extract_design_timing_summary(text: str) -> str:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Extract the Design Timing Summary section from a routed Vivado timing report."
+        description="Extract the Design Timing Summary section from the final Vivado timing report."
     )
     parser.add_argument(
         "path",
         nargs="?",
         default=str(DEFAULT_REPORT_PATH),
-        help=f"Result directory or {REPORT_NAME} path. Defaults to {DEFAULT_REPORT_PATH}.",
+        help=(
+            "Result directory or timing report path. Directories prefer the post-route physopt report "
+            f"({POSTROUTE_REPORT_NAME}) and fall back to {ROUTED_REPORT_NAME}. Defaults to {DEFAULT_REPORT_PATH}."
+        ),
     )
     args = parser.parse_args(argv)
 

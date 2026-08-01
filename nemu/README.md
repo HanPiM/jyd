@@ -20,6 +20,23 @@ The main features of NEMU include
     * CP1 floating point instructions are not supported
   * riscv32
     * RV32IMF; F arithmetic uses Berkeley SoftFloat
+    * B bit-manipulation support is generated through `tools/gen-inst` and
+      currently covers `Zba`, `Zbb`, `Zbc`, `Zbs`, `Zbkb`, `Zbkc`, and `Zbkx`.
+      The supported RV32 instructions are:
+      * `Zba`: `sh1add`, `sh2add`, `sh3add`
+      * `Zbb`: `andn`, `clz`, `cpop`, `ctz`, `max`, `maxu`, `min`, `minu`,
+        `orc.b`, `orn`, `rev8`, `rol`, `ror`, `rori`, `sext.b`, `sext.h`,
+        `xnor`, `zext.h`
+      * `Zbc`: `clmul`, `clmulh`, `clmulr`
+      * `Zbs`: `bclr`, `bclri`, `bext`, `bexti`, `binv`, `binvi`, `bset`,
+        `bseti`
+      * `Zbkb`: `andn`, `brev8`, `orn`, `pack`, `packh`, `rev8`, `rol`, `ror`,
+        `rori`, `unzip`, `xnor`, `zip`
+      * `Zbkc`: `clmul`, `clmulh`
+      * `Zbkx`: `xperm4`, `xperm8`
+    * These 48 instructions have passed the RV32 NEMU compatibility tests in
+      `../riscv-arch-test-am-jyd`. This describes the NEMU reference model;
+      it does not imply that the NPC RTL implements every listed extension.
   * riscv64
     * only RV64IM
 * memory

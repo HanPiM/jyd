@@ -394,7 +394,10 @@ class IDU(
   val isBRor = arithmeticFunc7 === "b0110000".U && arithmeticFunc3 === "b101".U
   val isIterativeB = isBCount || isBClmul || isBOrcB || isBXperm4 || isBRor
   res.bExtValid := isTypArithmetic && !isMExtArithmetic && isIterativeB
-  res.reg1                := bypassMux.io.outData1
+  // Loads consume rs1 only through the dedicated registered address payload
+  // below.  Keeping cache-forwarded data out of the unused generic ALU
+  // payload avoids a wide IDU payload mux/self-loop on the critical path.
+  res.reg1                := Mux(isTypLoad, 0.U, bypassMux.io.outData1)
   res.reg2                := Mux(isFmtI, immI, bypassMux.io.outData2) // For exu ALU src2
   res.csrReadData         := io.csrRead.data
 

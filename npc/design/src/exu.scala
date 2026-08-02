@@ -187,20 +187,21 @@ class EXU(
   val lateForwardRegV1 = Mux(dinst.info.lateLoadRs1, io.lateLoadLSU.data, dinst.info.reg1)
   val lateForwardRegV2 = Mux(dinst.info.lateLoadRs2, io.lateLoadLSU.data, dinst.info.reg2)
   val lateAddForwardResult = lateForwardRegV1 + lateForwardRegV2
-  // IDU sets a late-load operand only for ADD/ADDI and the fixed ANDI 1 or
-  // SRLI 1 forms. Reuse that invariant here instead of repeating a 32-bit
+  // IDU sets a late-load operand only for ADD/ADDI and the fixed ANDI 1,
+  // SRLI 1, or ZEXT.H forms. Reuse that invariant here instead of repeating a 32-bit
   // immediate comparison in the EXU-to-IDU ready/forwarding cone.
   val isLateLoadAndi1 = hasLateLoadOperand && func3t === "b111".U
   val isLateLoadSrli1 = hasLateLoadOperand && func3t === "b101".U
+  val isLateLoadZextH = hasLateLoadOperand && func3t === "b100".U
   val lateBitResult = Mux(
     isLateLoadAndi1,
     Cat(0.U(31.W), lateRegV1(0)),
-    Cat(0.U(1.W), lateRegV1(31, 1))
+    Mux(isLateLoadZextH, Cat(0.U(16.W), lateRegV1(15, 0)), Cat(0.U(1.W), lateRegV1(31, 1)))
   )
   val lateBitForwardResult = Mux(
     isLateLoadAndi1,
     Cat(0.U(31.W), lateForwardRegV1(0)),
-    Cat(0.U(1.W), lateForwardRegV1(31, 1))
+    Mux(isLateLoadZextH, Cat(0.U(16.W), lateForwardRegV1(15, 0)), Cat(0.U(1.W), lateForwardRegV1(31, 1)))
   )
   val reg_v1       = dinst.info.reg1
   val reg_v2       = dinst.info.reg2
@@ -343,7 +344,7 @@ class EXU(
   // Late ADD data crosses the EXU-to-LSU boundary in its dedicated lane.
   // Only the wiring-only late bit operations still use the ordinary GPR
   // writeback-data field here.
-  val arithmeticResult = Mux(isLateLoadAndi1 || isLateLoadSrli1, lateBitResult, aluOut)
+  val arithmeticResult = Mux(isLateLoadAndi1 || isLateLoadSrli1 || isLateLoadZextH, lateBitResult, aluOut)
   writeBackInfo.gpr.data := Mux(isTypArithmetic, arithmeticResult, dinst.info.preMuxWrBackData)
 
   // Fill in LSU stage
@@ -365,7 +366,8 @@ class EXU(
   // waits one cycle and receives the registered result from LSU instead.
   val isMExt = !isFmtI && func7t === "b0000001".U
   val useSingleCycleForward = isTypArithmetic && !isMExt && !isBExt && !hasLateLoadOperand
-  val useLateBitForward = (isLateLoadAndi1 || isLateLoadSrli1) && exuResultValid && lateDataReadyFromLSU
+  val useLateBitForward =
+    (isLateLoadAndi1 || isLateLoadSrli1 || isLateLoadZextH) && exuResultValid && lateDataReadyFromLSU
   val exuForwardData = Mux(
     useLateBitForward,
     lateBitForwardResult,

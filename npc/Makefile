@@ -121,6 +121,10 @@ CXXFLAGS += -Wno-unknown-warning-option
 # when use perf tool, frame pointer is needed
 # CXXFLAGS += -fno-omit-frame-pointer
 
+# The checked-in dependency archives are built as non-PIC static libraries.
+# Modern host toolchains default to PIE, which cannot link those archives.
+LDFLAGS += -no-pie
+
 # LDFLAGS += -fuse-ld=mold
 
 MOLD_EXISTS := $(shell command -v mold 2> /dev/null)

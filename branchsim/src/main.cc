@@ -786,6 +786,12 @@ int main(int argc, char **argv) {
       .allocation_policy = RtlAllocationPolicy::Always,
       .index_bits = {},
   });
+  rtl_runners.emplace_back(RtlModelConfig{
+      .name = "rtl-skip-conflicting-not-taken-capacity-128",
+      .btb_size = 128,
+      .allocation_policy = RtlAllocationPolicy::SkipConflictingNotTaken,
+      .index_bits = {},
+  });
   if (rtl_index_search) {
     std::vector<std::vector<unsigned>> mappings;
     for (unsigned replaced = 0; replaced < 5; replaced++) {

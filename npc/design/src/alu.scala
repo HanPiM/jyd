@@ -133,8 +133,6 @@ class Multiplier extends Module {
 
   val isFastReg     = Reg(Bool())
   val resultReg     = Reg(Types.UWord)
-  val shortcutValidReg = RegInit(false.B)
-  val shortcutResultReg = Reg(Types.UWord)
   val slowValidPipe = RegInit(0.U(MultiplierConfig.latency.W))
   val fastValidPipe = RegInit(0.U(MultiplierConfig.fastLatency.W))
   val multiplier    = Module(new mult_gen_0)
@@ -149,18 +147,6 @@ class Multiplier extends Module {
   val aExt = Cat(signedModeA && io.in.bits.src1(31), io.in.bits.src1)
   val bExt = Cat(signedModeB && io.in.bits.src2(31), io.in.bits.src2)
 
-  val src1IsPowerOfTwo = io.in.bits.src1.orR && ((io.in.bits.src1 & (io.in.bits.src1 - 1.U)) === 0.U)
-  val src2IsPowerOfTwo = io.in.bits.src2.orR && ((io.in.bits.src2 & (io.in.bits.src2 - 1.U)) === 0.U)
-  val shortcutInputValid = inputFunc3t === 0.U &&
-    (!io.in.bits.src1.orR || !io.in.bits.src2.orR || src1IsPowerOfTwo || src2IsPowerOfTwo)
-  val shortcutShift = Mux(src1IsPowerOfTwo, PriorityEncoder(io.in.bits.src1), PriorityEncoder(io.in.bits.src2))
-  val shortcutOperand = Mux(src1IsPowerOfTwo, io.in.bits.src2, io.in.bits.src1)
-  val shortcutResult = Mux(
-    !io.in.bits.src1.orR || !io.in.bits.src2.orR,
-    0.U,
-    shortcutOperand << shortcutShift
-  )
-
   multiplier.io.CLK := clock
   multiplier.io.A   := aExt
   multiplier.io.B   := bExt
@@ -169,14 +155,12 @@ class Multiplier extends Module {
   fastMultiplier.io.B   := io.in.bits.src2
 
   val product = multiplier.io.P
-  val dspResult = Mux(isFastReg, fastMultiplier.io.P, product(63, 32))
-  val dspResultValid = Mux(
+  val result = Mux(isFastReg, fastMultiplier.io.P, product(63, 32))
+  val resultValid = Mux(
     isFastReg,
     fastValidPipe(MultiplierConfig.fastLatency - 1),
     slowValidPipe(MultiplierConfig.latency - 1)
   )
-  val result = Mux(shortcutValidReg, shortcutResultReg, dspResult)
-  val resultValid = shortcutValidReg || dspResultValid
 
   io.in.ready  := state === State.idle
   io.out.valid := (state === State.done) || ((state === State.busy) && resultValid)
@@ -186,10 +170,8 @@ class Multiplier extends Module {
     is(State.idle) {
       when(io.in.fire) {
         isFastReg := io.in.bits.func3t === 0.U
-        shortcutValidReg := shortcutInputValid
-        shortcutResultReg := shortcutResult
-        slowValidPipe := Mux(io.in.bits.func3t === 0.U || shortcutInputValid, 0.U, 1.U)
-        fastValidPipe := Mux(io.in.bits.func3t === 0.U && !shortcutInputValid, 1.U, 0.U)
+        slowValidPipe := Mux(io.in.bits.func3t === 0.U, 0.U, 1.U)
+        fastValidPipe := Mux(io.in.bits.func3t === 0.U, 1.U, 0.U)
         state := State.busy
       }
     }
@@ -197,7 +179,6 @@ class Multiplier extends Module {
       slowValidPipe := slowValidPipe << 1
       fastValidPipe := fastValidPipe << 1
       when(resultValid) {
-        shortcutValidReg := false.B
         when(io.out.ready) {
           state := State.idle
         }.otherwise {

@@ -122,18 +122,16 @@ class BExtensionUnit extends Module {
       nextCount := count + workA(0)
     }
     is(BExtensionOp.clmul) {
-      nextWorkA := workA << 1
-      nextWorkB := workB >> 1
-      when(workB(0)) {
-        nextAccum := accum ^ workA
-      }
+      val shiftedWorkA = (workA << 1)(63, 0)
+      nextWorkA := workA << 2
+      nextWorkB := workB >> 2
+      nextAccum := accum ^ Mux(workB(0), workA, 0.U) ^ Mux(workB(1), shiftedWorkA, 0.U)
     }
     is(BExtensionOp.clmulh) {
-      nextWorkA := workA << 1
-      nextWorkB := workB >> 1
-      when(workB(0)) {
-        nextAccum := accum ^ workA
-      }
+      val shiftedWorkA = (workA << 1)(63, 0)
+      nextWorkA := workA << 2
+      nextWorkB := workB >> 2
+      nextAccum := accum ^ Mux(workB(0), workA, 0.U) ^ Mux(workB(1), shiftedWorkA, 0.U)
     }
     is(BExtensionOp.orcB) {
       when(iteration < 4.U) {
@@ -185,7 +183,8 @@ class BExtensionUnit extends Module {
       count := nextCount
       rorRemain := nextRorRemain
       found := nextFound
-      when(iteration === 31.U) {
+      val isClmulOp = opReg === BExtensionOp.clmul || opReg === BExtensionOp.clmulh
+      when(iteration === 31.U || (isClmulOp && iteration === 15.U)) {
         val countResult = Cat(0.U(26.W), nextCount)
         val clmulResult = Mux(opReg === BExtensionOp.clmulh, nextAccum(63, 32), nextAccum(31, 0))
         val isCountOp = opReg === BExtensionOp.clz || opReg === BExtensionOp.ctz || opReg === BExtensionOp.cpop

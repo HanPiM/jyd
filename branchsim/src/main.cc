@@ -544,6 +544,8 @@ struct AlgoRunner {
 enum class RtlAllocationPolicy : uint8_t {
   Always,
   SkipConflictingNotTaken,
+  ProtectJalFromBranches,
+  SecondChanceJal,
 };
 
 struct RtlBTBEntry {
@@ -553,6 +555,7 @@ struct RtlBTBEntry {
   bool valid = false;
   bool is_jal = false;
   bool is_branch = false;
+  bool jal_protected = false;
 };
 
 struct RtlModelConfig {
@@ -560,6 +563,8 @@ struct RtlModelConfig {
   size_t btb_size;
   RtlAllocationPolicy allocation_policy;
   std::vector<unsigned> index_bits;
+  size_t direction_table_size = 0;
+  unsigned ghr_bits = 0;
 };
 
 struct RtlModelStats {
@@ -576,7 +581,8 @@ struct RtlModelStats {
 class RtlModelRunner {
 public:
   explicit RtlModelRunner(RtlModelConfig config)
-      : config_(config), entries_(config.btb_size) {
+      : config_(config), entries_(config.btb_size),
+        direction_counters_(config.direction_table_size, 1) {
     assert(std::has_single_bit(config.btb_size));
   }
 
@@ -586,9 +592,12 @@ public:
     const size_t index = get_index(record.pc);
     const RtlBTBEntry old_entry = entries_[index];
     const bool hit = old_entry.valid && old_entry.pc == record.pc;
+    const bool branch_direction =
+        config_.direction_table_size == 0
+            ? old_entry.direction_counter >= 2
+            : direction_counters_[get_direction_index(record.pc)] >= 2;
     const bool predicted_taken =
-        hit && (old_entry.is_jal ||
-                (old_entry.is_branch && old_entry.direction_counter >= 2));
+        hit && (old_entry.is_jal || (old_entry.is_branch && branch_direction));
     const uint32_t predicted_pc =
         predicted_taken ? old_entry.target : record.pc + 4;
     const bool actual_taken =
@@ -614,12 +623,37 @@ public:
         kind == ControlKind::Jal || kind == ControlKind::Ret;
     const bool matching_branch =
         hit && old_entry.is_branch && incoming_is_branch;
-    const bool skip_allocation =
-        config_.allocation_policy ==
-            RtlAllocationPolicy::SkipConflictingNotTaken &&
+    if (incoming_is_branch && config_.direction_table_size != 0) {
+      uint8_t &counter = direction_counters_[get_direction_index(record.pc)];
+      if (actual_taken && counter != 3) {
+        counter++;
+      } else if (!actual_taken && counter != 0) {
+        counter--;
+      }
+      if (config_.ghr_bits != 0) {
+        const uint32_t mask = config_.ghr_bits >= 32
+                                  ? ~0u
+                                  : (1u << config_.ghr_bits) - 1;
+        ghr_ = ((ghr_ << 1) | static_cast<uint32_t>(actual_taken)) & mask;
+      }
+    }
+    const bool skip_conflicting_not_taken =
+        config_.allocation_policy != RtlAllocationPolicy::Always &&
         incoming_is_branch && !actual_taken && !matching_branch;
+    const bool protect_jal =
+        config_.allocation_policy == RtlAllocationPolicy::ProtectJalFromBranches &&
+        incoming_is_branch && !hit && old_entry.valid && old_entry.is_jal;
+    const bool give_jal_second_chance =
+        config_.allocation_policy == RtlAllocationPolicy::SecondChanceJal &&
+        incoming_is_branch && !hit && old_entry.valid && old_entry.is_jal &&
+        old_entry.jal_protected;
+    const bool skip_allocation =
+        skip_conflicting_not_taken || protect_jal || give_jal_second_chance;
     if (skip_allocation) {
       stats.skipped_not_taken_allocations++;
+      if (give_jal_second_chance) {
+        entries_[index].jal_protected = false;
+      }
       return;
     }
 
@@ -650,6 +684,7 @@ public:
         .valid = true,
         .is_jal = incoming_is_jal,
         .is_branch = incoming_is_branch,
+        .jal_protected = incoming_is_jal,
     };
   }
 
@@ -657,6 +692,11 @@ public:
   RtlModelStats stats;
 
 private:
+  size_t get_direction_index(uint32_t pc) const {
+    const uint32_t history = config_.ghr_bits == 0 ? 0 : ghr_;
+    return ((pc >> 2) ^ history) % config_.direction_table_size;
+  }
+
   size_t get_index(uint32_t pc) const {
     if (!config_.index_bits.empty()) {
       size_t result = 0;
@@ -670,6 +710,8 @@ private:
 
   RtlModelConfig config_;
   std::vector<RtlBTBEntry> entries_;
+  std::vector<uint8_t> direction_counters_;
+  uint32_t ghr_ = 0;
 };
 
 void print_algo_header(const AlgoConfig &algo) {
@@ -782,6 +824,41 @@ int main(int argc, char **argv) {
       .allocation_policy = RtlAllocationPolicy::SkipConflictingNotTaken,
       .index_bits = {},
   });
+  rtl_runners.emplace_back(RtlModelConfig{
+      .name = "rtl-protect-jal-from-branches-capacity-64",
+      .btb_size = 64,
+      .allocation_policy = RtlAllocationPolicy::ProtectJalFromBranches,
+      .index_bits = {},
+  });
+  rtl_runners.emplace_back(RtlModelConfig{
+      .name = "rtl-second-chance-jal-capacity-64",
+      .btb_size = 64,
+      .allocation_policy = RtlAllocationPolicy::SecondChanceJal,
+      .index_bits = {},
+  });
+  for (size_t direction_table_size : {32u, 64u, 128u, 256u}) {
+    rtl_runners.emplace_back(RtlModelConfig{
+        .name = "rtl-independent-bimodal-" +
+                std::to_string(direction_table_size) + "-capacity-64",
+        .btb_size = 64,
+        .allocation_policy =
+            RtlAllocationPolicy::SkipConflictingNotTaken,
+        .index_bits = {},
+        .direction_table_size = direction_table_size,
+    });
+  }
+  for (size_t direction_table_size : {32u, 64u, 128u, 256u}) {
+    rtl_runners.emplace_back(RtlModelConfig{
+        .name = "rtl-independent-gshare-" +
+                std::to_string(direction_table_size) + "-capacity-64",
+        .btb_size = 64,
+        .allocation_policy =
+            RtlAllocationPolicy::SkipConflictingNotTaken,
+        .index_bits = {},
+        .direction_table_size = direction_table_size,
+        .ghr_bits = 10,
+    });
+  }
   rtl_runners.emplace_back(RtlModelConfig{
       .name = "rtl-current-capacity-128",
       .btb_size = 128,
@@ -912,10 +989,15 @@ int main(int argc, char **argv) {
           "\"skipped_not_taken_allocations\":%llu",
           i ? ",\n    " : "", runner.config().name.c_str(),
           runner.config().btb_size,
-          runner.config().allocation_policy ==
-                  RtlAllocationPolicy::Always
+          runner.config().allocation_policy == RtlAllocationPolicy::Always
               ? "always"
-              : "skip_conflicting_not_taken",
+              : runner.config().allocation_policy ==
+                        RtlAllocationPolicy::SkipConflictingNotTaken
+                    ? "skip_conflicting_not_taken"
+                    : runner.config().allocation_policy ==
+                              RtlAllocationPolicy::ProtectJalFromBranches
+                          ? "protect_jal_from_branches"
+                          : "second_chance_jal",
           static_cast<unsigned long long>(stats.total),
           static_cast<unsigned long long>(stats.wrong),
           stats.total == 0

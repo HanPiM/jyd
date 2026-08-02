@@ -80,52 +80,6 @@ class BTBUpdateState extends Bundle {
   val directionCounter = UInt(2.W)
 }
 
-object JALSidecarParameters {
-  val ENTRY_NUM   = 8
-  val INDEX_WIDTH = log2Ceil(ENTRY_NUM)
-  val TAG_WIDTH   = 15 - INDEX_WIDTH
-}
-
-class JALSidecarEntry extends Bundle {
-  val tag    = UInt(JALSidecarParameters.TAG_WIDTH.W)
-  val target = new BTBTarget()
-}
-
-class JALTargetSidecar extends Module {
-  val io = IO(new Bundle {
-    val query = new Bundle {
-      val addr   = Input(Types.UWord)
-      val hit    = Output(Bool())
-      val target = Output(Types.UWord)
-    }
-    val update = new Bundle {
-      val en     = Input(Bool())
-      val addr   = Input(Types.UWord)
-      val target = Input(Types.UWord)
-    }
-  })
-
-  val entries   = Mem(JALSidecarParameters.ENTRY_NUM, new JALSidecarEntry)
-  val validMask = RegInit(0.U(JALSidecarParameters.ENTRY_NUM.W))
-
-  val queryIndex = io.query.addr(2 + JALSidecarParameters.INDEX_WIDTH - 1, 2)
-  val queryTag   = io.query.addr(16, 2 + JALSidecarParameters.INDEX_WIDTH)
-  val queryEntry = entries(queryIndex)
-
-  io.query.hit    := validMask(queryIndex) && queryEntry.tag === queryTag
-  io.query.target := queryEntry.target.get
-
-  val updateIndex = io.update.addr(2 + JALSidecarParameters.INDEX_WIDTH - 1, 2)
-  val updateEntry = Wire(new JALSidecarEntry)
-  updateEntry.tag    := io.update.addr(16, 2 + JALSidecarParameters.INDEX_WIDTH)
-  updateEntry.target := BTBTarget(io.update.target)
-
-  when(io.update.en && !reset.asBool) {
-    entries.write(updateIndex, updateEntry)
-    validMask := validMask | UIntToOH(updateIndex, JALSidecarParameters.ENTRY_NUM)
-  }
-}
-
 class BranchTargetBuffer extends Module {
   val io = IO(new Bundle {
     val query  = new Bundle {

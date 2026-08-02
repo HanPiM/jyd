@@ -374,6 +374,10 @@ struct OptimizationDirectionPerfCounter : public PerfCounterBase {
   size_t cacheableFullWordStores = 0;
   size_t lateLoadAddCount[LateLoadUseNum] = {0};
   size_t lateAddSuccessorCount[LateAddUseNum] = {0};
+  size_t lateLoadAddrCandidate[3] = {0};
+  size_t lateLoadAddrHit[3] = {0};
+  bool lateLoadAddrPending = false;
+  int lateLoadAddrPendingKind = 0;
 
   OptimizationDirectionPerfCounter() {
     ctrName = "OptimizationDirectionPerfCounter";

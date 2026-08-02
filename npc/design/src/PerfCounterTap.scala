@@ -23,6 +23,9 @@ class RAWStallPerfTap(
     val bypassNeedStall = Input(Bool())
     val reg1AddImmEXUStall = Input(Bool())
     val reg1AddImmWBUStall = Input(Bool())
+    val needReg1AddImm = Input(Bool())
+    val lateLoadProducer = Input(new LateLoadProducerInfo)
+    val dcacheFwd = Input(new DCacheForwardInfo)
 
     val isConflictEXU = Output(Bool())
     val isConflictLSU = Output(Bool())
@@ -47,6 +50,8 @@ class RAWStallPerfTap(
     val actualReg1AddImmEXUStall = Output(Bool())
     val actualReg1AddImmWBUStall = Output(Bool())
     val stalledInst = Output(UInt(32.W))
+    val lateLoadAddrCandidate = Output(Bool())
+    val lateLoadAddrHit = Output(Bool())
   })
 
   private def hasConflict(rs: UInt, wrBack: WrBackForwardInfo): Bool =
@@ -81,6 +86,12 @@ class RAWStallPerfTap(
   io.actualReg1AddImmEXUStall := io.instValid && io.reg1AddImmEXUStall
   io.actualReg1AddImmWBUStall := io.instValid && io.reg1AddImmWBUStall
   io.stalledInst := io.inst
+  val addrExuConflict = hasConflict(io.rs1, io.wrBackInfo.exu)
+  io.lateLoadAddrCandidate :=
+    io.instValid && io.needReg1AddImm && addrExuConflict && io.lateLoadProducer.valid
+  io.lateLoadAddrHit :=
+    io.instValid && io.needReg1AddImm && !addrExuConflict &&
+      SingleByPassMux.conflict(io.rs1, io.dcacheFwd.addr, io.dcacheFwd.valid)
 
   Seq(
     io.isConflictEXU,
@@ -101,6 +112,8 @@ class RAWStallPerfTap(
     io.actualBypassStall,
     io.actualReg1AddImmEXUStall,
     io.actualReg1AddImmWBUStall,
-    io.stalledInst
+    io.stalledInst,
+    io.lateLoadAddrCandidate,
+    io.lateLoadAddrHit
   ).foreach(dontTouch(_))
 }

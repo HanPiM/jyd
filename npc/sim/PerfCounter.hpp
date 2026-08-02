@@ -370,7 +370,6 @@ struct OptimizationDirectionPerfCounter : public PerfCounterBase {
   size_t mulOperandOne = 0;
   size_t mulOperandPowerOfTwo = 0;
   size_t mulBothUnsigned16 = 0;
-  size_t coreMarkCRCClmulhCount = 0;
   size_t cacheableFullWordStores = 0;
   size_t lateLoadAddCount[LateLoadUseNum] = {0};
   size_t lateAddSuccessorCount[LateAddUseNum] = {0};

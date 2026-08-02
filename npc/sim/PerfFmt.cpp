@@ -281,7 +281,6 @@ void OptimizationDirectionPerfCounter::dumpStatistics(std::ostream &os) {
   os << "  mul operand fast-path coverage (overlapping): zero=" << mulOperandZero
      << " one=" << mulOperandOne << " power-of-two=" << mulOperandPowerOfTwo
      << " both-u16=" << mulBothUnsigned16 << "\n";
-  os << "  CoreMark CRC clmulh(rs2=0x14002): " << coreMarkCRCClmulhCount << "\n";
 
   os << "  cacheable full-word stores: " << cacheableFullWordStores << "\n";
   Table dependencyTable;

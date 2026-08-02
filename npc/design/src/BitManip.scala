@@ -82,10 +82,6 @@ class BExtensionUnit extends Module {
   val isPack =
     !io.in.bits.isImm && io.in.bits.func3t === "b100".U && io.in.bits.func7t === "b0000100".U
   val decodedValid = isClz || isCtz || isCpop || isClmul || isClmulh || isOrcB || isXperm4 || isRor || isRori || isPack
-  val isCoreMarkCRCClmulh = isClmulh && io.in.bits.src2 === "h00014002".U
-  val clmulhSource = Cat(0.U(32.W), io.in.bits.src1)
-  val coreMarkCRCClmulhResult =
-    ((clmulhSource << 1) ^ (clmulhSource << 14) ^ (clmulhSource << 16))(63, 32)
   val decodedOp = MuxCase(
     BExtensionOp.clz,
     Seq(
@@ -181,12 +177,7 @@ class BExtensionUnit extends Module {
         rorRemain := io.in.bits.src2(4, 0)
         found     := false.B
         iteration := 0.U
-        when(isCoreMarkCRCClmulh) {
-          resultReg := coreMarkCRCClmulhResult
-          state := State.done
-        }.otherwise {
-          state := State.busy
-        }
+        state     := State.busy
       }
     }
     is(State.busy) {

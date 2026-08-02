@@ -121,12 +121,19 @@ class BExtensionUnit extends Module {
       nextWorkA := workA >> 1
       nextCount := count + workA(0)
     }
-    is(BExtensionOp.clmul, BExtensionOp.clmulh) {
-      val skipZeroQuad = workB(3, 0) === 0.U
+    is(BExtensionOp.clmul) {
       val skipZeroPair = workB(1, 0) === 0.U
-      nextWorkA := Mux(skipZeroQuad, workA << 4, Mux(skipZeroPair, workA << 2, workA << 1))
-      nextWorkB := Mux(skipZeroQuad, workB >> 4, Mux(skipZeroPair, workB >> 2, workB >> 1))
-      when(workB(0)) {
+      nextWorkA := Mux(skipZeroPair, workA << 2, workA << 1)
+      nextWorkB := Mux(skipZeroPair, workB >> 2, workB >> 1)
+      when(!skipZeroPair && workB(0)) {
+        nextAccum := accum ^ workA
+      }
+    }
+    is(BExtensionOp.clmulh) {
+      val skipZeroPair = workB(1, 0) === 0.U
+      nextWorkA := Mux(skipZeroPair, workA << 2, workA << 1)
+      nextWorkB := Mux(skipZeroPair, workB >> 2, workB >> 1)
+      when(!skipZeroPair && workB(0)) {
         nextAccum := accum ^ workA
       }
     }

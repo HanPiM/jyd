@@ -289,6 +289,10 @@ void OptimizationDirectionPerfCounter::update() {
         mulBothUnsigned16 += lhs <= 0xffff && rhs <= 0xffff;
       }
     }
+    if (opcode == 0x33 && func7 == 0x05 && func3 == 0x03 &&
+        exu->io_in_bits_info_reg2 == 0x00014002) {
+      coreMarkCRCClmulhCount++;
+    }
 
     const bool lateRs1 = exu->io_in_bits_info_lateLoadRs1;
     const bool lateRs2 = exu->io_in_bits_info_lateLoadRs2;

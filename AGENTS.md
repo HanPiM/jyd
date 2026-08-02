@@ -70,6 +70,30 @@ Platform device differences matter here:
 - `riscv32e-npc` expects a CLINT mapping at `AddrSpace.CLINT` (`0x02000000` range); AM/RT-Thread timer code reads `0x02000048/0x0200004c`, so removing CLINT from the `npc` SoC will hang `rt-thread`.
 - `riscv32-jyd` intentionally does not implement CLINT. Its JYD-specific peripherals only decode low address bits for some devices, so CLINT behavior must not be inferred from the JYD platform.
 
+## Temporary Data, Archives, and Isolated Worktrees
+
+Use `/srv/data/jyd` as the persistent host-local storage root for JYD temporary
+files, experiment records, caches, and isolated runs. Do not use `/tmp` for new
+JYD data unless a system or CI environment explicitly requires it.
+
+- `/srv/data/jyd/tmp/`: short-lived scratch files and disposable build copies.
+- `/srv/data/jyd/archive/`: retained logs, reports, checkpoints, and experiment artifacts.
+- `/srv/data/jyd/worktrees/`: Git worktrees used for isolated JYD work.
+- `/srv/data/jyd/cache/`: ccache, coursier, and other reusable build caches.
+- `/srv/data/jyd/cache/ccache/`: the active ccache store for Codex builds.
+- `/srv/data/jyd/tmp/ccache/`: ccache's temporary-file directory.
+
+Local scripts use `JYD_DATA_ROOT` with a default of `/srv/data/jyd`; set it in
+CI or another host to relocate the whole layout. The project Codex config
+sets `JYD_DATA_ROOT`, `CCACHE_DIR`, `CCACHE_TEMPDIR`, and `TMPDIR` for every
+spawned build subprocess. `TMPDIR` is inherited by make, compilers, ccache,
+Mill, Vivado, and their descendants, so do not set `TMPDIR=/tmp` for JYD
+work. Use `/srv/data/jyd/tmp` instead; only system or CI environments that
+explicitly require `/tmp` may override it. Existing script-specific variables
+such as `BENCH_ROOT` remain explicit overrides when needed. Historical `/tmp`
+paths in old optimization notes are records of past runs and should not be
+rewritten.
+
 For emulator/runtime changes, rebuild the affected module and run the local workload you changed. NEMU fetches a fixed Berkeley SoftFloat revision through `nemu/tools/softfloat`; keep that revision pinned and build it with the RISC-V specialization. Changes under `nemu/tools/gen-inst/repo` belong to the separate gen-inst repository and must be committed and pushed there. CI validates `npc/**`, `patch/**`, and `.github/**`, so changes there should be kept green.
 
 ## Optimization Experiment Documentation

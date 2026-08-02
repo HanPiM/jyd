@@ -162,13 +162,7 @@ class BranchTargetBuffer extends Module {
   nextUpdateState.isBranch         := io.update.isBranch
   nextUpdateState.directionCounter := nextDirection
 
-  // A previously unseen not-taken conditional branch is already predicted
-  // correctly without a BTB entry. Do not let it evict a useful target at the
-  // same index; once the branch has an entry, keep training it normally.
-  val skipConflictingNotTakenBranch =
-    io.update.isBranch && !io.update.actualTaken && !entryMatches
-  val updateEn =
-    io.update.en && !reset.asBool && !skipConflictingNotTakenBranch
+  val updateEn      = io.update.en && !reset.asBool
   queryMem.io.a   := updateIndex.pad(5)
   queryMem.io.d   := nextEntry.asUInt
   queryMem.io.clk := clock

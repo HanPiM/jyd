@@ -112,18 +112,28 @@ class BranchTargetBuffer extends Module {
   val queryMem       = Module(new DistMemGen32x32)
   val updateStateMem = Mem(BTBParameters.ENTRY_NUM, new BTBUpdateState)
   val validMask      = RegInit(0.U(BTBParameters.ENTRY_NUM.W))
+  val directionMem   = Mem(BTBParameters.ENTRY_NUM, UInt(2.W))
+  val directionValidMask = RegInit(0.U(BTBParameters.ENTRY_NUM.W))
+  val globalHistory      = RegInit(0.U(BTBParameters.INDEX_WIDTH.W))
 
   // Query logic
   val queryTag   = BTBParameters.extractTag(io.query.addr)
   val queryIndex = BTBParameters.extractIndex(io.query.addr)
   queryMem.io.dpra := queryIndex.pad(6)
   val queryEntry = queryMem.io.dpo.asTypeOf(new BTBEntry)
+  val directionQueryHistory = Mux(
+    io.update.en && io.update.isBranch,
+    Cat(globalHistory(BTBParameters.INDEX_WIDTH - 2, 0), io.update.actualTaken),
+    globalHistory
+  )
+  val directionQueryIndex = queryIndex ^ directionQueryHistory
+  val directionQuery      = directionMem(directionQueryIndex)
 
   io.query.hit    := validMask(queryIndex) && queryEntry.valid && (queryEntry.tag === queryTag)
   io.query.target := queryEntry.target.get
   io.query.isJAL  := queryEntry.isJAL
   io.query.isBranch := queryEntry.isBranch
-  io.query.directionTaken := queryEntry.directionCounter(1)
+  io.query.directionTaken := directionValidMask(directionQueryIndex) && directionQuery(1)
   io.query.isBackward := queryEntry.isBackward
 
   // Update logic
@@ -131,6 +141,10 @@ class BranchTargetBuffer extends Module {
   val updateIndex    = BTBParameters.extractIndex(io.update.addr)
   val oldUpdateState = updateStateMem(updateIndex)
   val oldDirection   = oldUpdateState.directionCounter
+  val directionUpdateIndex = updateIndex ^ globalHistory
+  val oldIndependentDirection = directionMem(directionUpdateIndex)
+  val independentDirectionValid = directionValidMask(directionUpdateIndex)
+  val nextIndependentDirection = WireDefault(0.U(2.W))
   val entryMatches   = validMask(updateIndex) && oldUpdateState.tag === updateTag && oldUpdateState.isBranch
   val nextDirection = WireDefault(0.U(2.W))
 
@@ -144,6 +158,16 @@ class BranchTargetBuffer extends Module {
     }.otherwise {
       nextDirection := oldDirection
     }
+  }
+
+  when(!independentDirectionValid) {
+    nextIndependentDirection := Mux(io.update.actualTaken, 2.U, 1.U)
+  }.elsewhen(io.update.actualTaken && oldIndependentDirection =/= 3.U) {
+    nextIndependentDirection := oldIndependentDirection + 1.U
+  }.elsewhen(!io.update.actualTaken && oldIndependentDirection =/= 0.U) {
+    nextIndependentDirection := oldIndependentDirection - 1.U
+  }.otherwise {
+    nextIndependentDirection := oldIndependentDirection
   }
 
   val nextEntry = Wire(new BTBEntry)
@@ -176,5 +200,12 @@ class BranchTargetBuffer extends Module {
   when(updateEn) {
     validMask := validMask | UIntToOH(updateIndex, BTBParameters.ENTRY_NUM)
     updateStateMem.write(updateIndex, nextUpdateState)
+  }
+
+
+  when(io.update.en && io.update.isBranch && !reset.asBool) {
+    directionMem.write(directionUpdateIndex, nextIndependentDirection)
+    directionValidMask := directionValidMask | UIntToOH(directionUpdateIndex, BTBParameters.ENTRY_NUM)
+    globalHistory := Cat(globalHistory(BTBParameters.INDEX_WIDTH - 2, 0), io.update.actualTaken)
   }
 }

@@ -97,6 +97,7 @@ class EXU(
     val in          = Flipped(Decoupled(new DecodedInst))
     val jmpHappen   = Output(Bool())
     val isJAL       = Output(Bool())
+    val isDirectJAL = Output(Bool())
     val isBranch    = Output(Bool())
     val branchTaken = Output(Bool())
     val btbUpdateEn = Output(Bool())
@@ -461,6 +462,7 @@ class EXU(
   // Reuse the existing unconditional-entry bit for direct JAL and the exact
   // return encoding that IDU can validate without an address-add dependency.
   io.isJAL       := isTypJAL || dinst.code === "h00008067".U
+  io.isDirectJAL := isTypJAL
   io.isBranch    := isTypBranch
   io.branchTaken := takeBranch
   io.btbUpdateEn := isTypBranch || isTypJAL || isTypJALR

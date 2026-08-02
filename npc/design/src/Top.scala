@@ -243,11 +243,13 @@ class CPUCore(
   val pcFeedToIFU = Wire(Types.UWord)
 
   val btb = Module(new BranchTargetBuffer)
+  val jalSidecar = Module(new JALTargetSidecar)
   val bp  = Module(new BranchPredictor)
   // A pending redirect is a registered PC mailbox. Query prediction state
   // with the address actually presented to IFU, not the speculative pcReg
   // hidden behind the mailbox.
   btb.io.query.addr       := pcFeedToIFU
+  jalSidecar.io.query.addr := pcFeedToIFU
   bp.io.pc                := pcFeedToIFU
   bp.io.historyHit        := btb.io.query.hit
   bp.io.historyTarget     := btb.io.query.target
@@ -266,9 +268,16 @@ class CPUCore(
   btb.io.update.actualTaken := RegNext(exu.io.branchTaken)
   btb.io.update.isBackward := RegNext(exu.io.branchBackward)
 
-  nxtPredictedPC := bp.io.pred.pc
+  jalSidecar.io.update.en     := RegNext(exu.io.out.valid && exu.io.isDirectJAL)
+  jalSidecar.io.update.addr   := RegNext(exu.io.pc)
+  jalSidecar.io.update.target := RegNext(exu.io.branchTarget)
 
-  ifu.io.predNext := bp.io.pred
+  val predictedPC = Mux(jalSidecar.io.query.hit, jalSidecar.io.query.target, bp.io.pred.pc)
+  nxtPredictedPC := predictedPC
+
+  ifu.io.predNext.hit  := jalSidecar.io.query.hit || bp.io.pred.hit
+  ifu.io.predNext.pc   := predictedPC
+  ifu.io.predNext.take := jalSidecar.io.query.hit || bp.io.pred.take
 
   redirectNow         := exu.io.in.valid && exu.io.predWrong
   redirectNowTarget   := exu.io.nxtPC

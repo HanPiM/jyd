@@ -308,21 +308,7 @@ void OptimizationDirectionPerfCounter::update() {
   }
 
   const auto *idu = GetIDU();
-  const auto *rawTap = idu->perfCounterLayer->rawStallPerfTap;
-  const uint32_t stalledInst = rawTap->io_stalledInst;
-  const uint32_t stalledOpcode = stalledInst & 0x7f;
-  const int addrKind = stalledOpcode == 0x03 ? 0 : (stalledOpcode == 0x23 ? 1 : 2);
-  if (rawTap->io_lateLoadAddrCandidate) {
-    lateLoadAddrCandidate[addrKind]++;
-    lateLoadAddrPending = true;
-    lateLoadAddrPendingKind = addrKind;
-  }
-  if (lateLoadAddrPending && rawTap->io_lateLoadAddrHit) {
-    lateLoadAddrHit[lateLoadAddrPendingKind]++;
-    lateLoadAddrPending = false;
-  }
   if (idu->io_out_valid && idu->io_out_ready) {
-    lateLoadAddrPending = false;
     const bool lateAddRs1 = idu->bypassMux->lateAddSelect;
     const bool lateAddRs2 = idu->bypassMux->lateAddSelect_1;
     if (lateAddRs1 || lateAddRs2) {

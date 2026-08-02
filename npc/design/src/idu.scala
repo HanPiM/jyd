@@ -369,7 +369,7 @@ class IDU(
   val isLateLoadAdd = isTypArithmetic && inst(14, 12) === 0.U && (isFmtI || inst(31, 25) === 0.U)
   val isLateLoadAndi1 = isTypArithmetic && isFmtI && inst(14, 12) === "b111".U && inst(31, 20) === 1.U
   val isLateLoadSrli1 = isTypArithmetic && isFmtI && inst(14, 12) === "b101".U && inst(31, 20) === 1.U
-  val allowLateLoadRs1 = isLateLoadAdd || isLateLoadAndi1 || isLateLoadSrli1 || isTypLoad
+  val allowLateLoadRs1 = isLateLoadAdd || isLateLoadAndi1 || isLateLoadSrli1
   val allowLateLoadRs2 = isLateLoadAdd && !isFmtI
   bypassMux.io.allowLateLoadRs1 := allowLateLoadRs1
   bypassMux.io.allowLateLoadRs2 := allowLateLoadRs2
@@ -398,8 +398,7 @@ class IDU(
   val reg1AddImmExuConflict =
     SingleByPassMux.conflict(res.rs1, io.wrBackInfo.exu.addr, io.wrBackInfo.exu.enWr)
   val exuReg1AddImmBypass = reg1AddImmExuConflict && io.exuAddFwd.valid
-  val needStallReg1AddImmFromEXU =
-    needReg1AddImm && reg1AddImmExuConflict && !exuReg1AddImmBypass && !bypassMux.io.lateLoadRs1
+  val needStallReg1AddImmFromEXU = needReg1AddImm && reg1AddImmExuConflict && !exuReg1AddImmBypass
   val needStallReg1AddImmFromWBU =
     needReg1AddImm &&
       SingleByPassMux.conflict(res.rs1, io.wrBackInfo.wbu.addr, io.wrBackInfo.wbu.enWr) &&
@@ -419,9 +418,6 @@ class IDU(
     rawStallPerfTap.io.bypassNeedStall := bypassMux.io.needStall
     rawStallPerfTap.io.reg1AddImmEXUStall := needStallReg1AddImmFromEXU
     rawStallPerfTap.io.reg1AddImmWBUStall := needStallReg1AddImmFromWBU
-    rawStallPerfTap.io.needReg1AddImm := needReg1AddImm
-    rawStallPerfTap.io.lateLoadProducer := io.lateLoadProducer
-    rawStallPerfTap.io.dcacheFwd := io.dcacheFwd
   }
 
   // res.snpc       := io.in.bits.pc + 4.U

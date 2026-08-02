@@ -298,17 +298,6 @@ void OptimizationDirectionPerfCounter::dumpStatistics(std::ostream &os) {
                           << lateAddSuccessorCount[LateAddRs2Only]
                           << lateAddSuccessorCount[LateAddBothRs]);
   _PrintTable(dependencyTable, os);
-  Table addrDependencyTable;
-  addrDependencyTable.add_row({"Late-load address dependency", "load", "store", "JALR"});
-  addrDependencyTable.add_row(RowStream{} << "candidates"
-                                          << lateLoadAddrCandidate[0]
-                                          << lateLoadAddrCandidate[1]
-                                          << lateLoadAddrCandidate[2]);
-  addrDependencyTable.add_row(RowStream{} << "DCache-hit data available"
-                                          << lateLoadAddrHit[0]
-                                          << lateLoadAddrHit[1]
-                                          << lateLoadAddrHit[2]);
-  _PrintTable(addrDependencyTable, os);
 }
 
 void AXI4CounterBase::dumpStatistics(std::ostream &os) {

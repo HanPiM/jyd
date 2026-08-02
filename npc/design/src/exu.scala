@@ -206,11 +206,7 @@ class EXU(
   val reg_v2       = dinst.info.reg2
   // val pcAddImm   = dinst.pc + dinst.info.imm
   val pcAddImm   = dinst.info.pcAddImm
-  val precomputedReg1AddImm = "h80".U(8.W) ## 0.U(2.W) ## dinst.info.reg1AddImm
-  val lateAddrRegion = lateRegV1(21, 20) + lateRegV1(19)
-  val lateAddrLow = lateRegV1(17, 0) + dinst.info.imm(17, 0)
-  val lateReg1AddImm = "h80".U(8.W) ## 0.U(2.W) ## lateAddrRegion ## 0.U(2.W) ## lateAddrLow
-  val reg1AddImm = Mux(dinst.info.lateLoadRs1 && isTypLoad, lateReg1AddImm, precomputedReg1AddImm)
+  val reg1AddImm = "h80".U(8.W) ## 0.U(2.W) ## dinst.info.reg1AddImm
 
   // Branches/JAL use PC+imm, while a JALR BTB entry must learn the resolved
   // rs1+imm target.  The BTB stores only the same trimmed PC bits either way.
@@ -423,7 +419,7 @@ class EXU(
   io.dcache.storeData   := memWData
   io.dcache.storeMask   := memWMask
 
-  io.memReq.valid      := needMemReq && io.in.valid && lateDataReady && io.out.ready
+  io.memReq.valid      := needMemReq && io.in.valid && io.out.ready
   io.memReq.bits.addr  := reg1AddImm
   io.memReq.bits.size  := func3t(1, 0)
   io.memReq.bits.wen   := isTypStore

@@ -299,13 +299,13 @@ class DistMemGen512x8 extends BlackBox with HasBlackBoxInline {
   )
 }
 
-/** Simulation model for the 32 x 32-bit Vivado simple dual-port distributed-memory IP. */
+/** Simulation model for the 64 x 32-bit Vivado simple dual-port distributed-memory IP. */
 class DistMemGen32x32 extends BlackBox with HasBlackBoxInline {
   override def desiredName: String = "dist_mem_gen_32x32"
   val io = IO(new Bundle {
-    val a    = Input(UInt(5.W))
+    val a    = Input(UInt(6.W))
     val d    = Input(UInt(32.W))
-    val dpra = Input(UInt(5.W))
+    val dpra = Input(UInt(6.W))
     val clk  = Input(Clock())
     val we   = Input(Bool())
     val dpo  = Output(UInt(32.W))
@@ -314,14 +314,14 @@ class DistMemGen32x32 extends BlackBox with HasBlackBoxInline {
   setInline(
     "dist_mem_gen_32x32.sv",
     """module dist_mem_gen_32x32 (
-      |  input  wire [4:0]  a,
+      |  input  wire [5:0]  a,
       |  input  wire [31:0] d,
-      |  input  wire [4:0]  dpra,
+      |  input  wire [5:0]  dpra,
       |  input  wire        clk,
       |  input  wire        we,
       |  output wire [31:0] dpo
       |);
-      |  reg [31:0] mem [0:31];
+      |  reg [31:0] mem [0:63];
       |
       |  always @(posedge clk) begin
       |    if (we) mem[a] <= d;

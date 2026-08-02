@@ -7,7 +7,7 @@ import common_def._
 import jyd.DistMemGen32x32
 
 object BTBParameters {
-  val ENTRY_NUM   = 32
+  val ENTRY_NUM   = 64
   val INDEX_WIDTH = log2Ceil(ENTRY_NUM)
   val TAG_WIDTH   = 15 - INDEX_WIDTH
 
@@ -62,10 +62,9 @@ object BTBTarget {
 }
 
 class BTBEntry extends Bundle {
-  // The physical query memory is 32 bits wide.  A 32-entry BTB needs one
-  // fewer tag bit than the former 16-entry organization, so keep the spare
-  // bit explicit instead of changing the IP or the target encoding.
-  val reserved = Bool()
+  // The physical query memory is 32 bits wide.  Keep the bits freed by the
+  // wider index explicit instead of changing the target encoding.
+  val reserved = UInt(2.W)
   val valid  = Bool()
   val isJAL  = Bool()
   val isBranch = Bool()
@@ -117,7 +116,7 @@ class BranchTargetBuffer extends Module {
   // Query logic
   val queryTag   = BTBParameters.extractTag(io.query.addr)
   val queryIndex = BTBParameters.extractIndex(io.query.addr)
-  queryMem.io.dpra := queryIndex.pad(5)
+  queryMem.io.dpra := queryIndex.pad(6)
   val queryEntry = queryMem.io.dpo.asTypeOf(new BTBEntry)
 
   io.query.hit    := validMask(queryIndex) && queryEntry.valid && (queryEntry.tag === queryTag)
@@ -148,7 +147,7 @@ class BranchTargetBuffer extends Module {
   }
 
   val nextEntry = Wire(new BTBEntry)
-  nextEntry.reserved         := false.B
+  nextEntry.reserved         := 0.U
   nextEntry.valid            := true.B
   nextEntry.tag              := updateTag
   nextEntry.target           := BTBTarget(io.update.target)
@@ -169,7 +168,7 @@ class BranchTargetBuffer extends Module {
     io.update.isBranch && !io.update.actualTaken && !entryMatches
   val updateEn =
     io.update.en && !reset.asBool && !skipConflictingNotTakenBranch
-  queryMem.io.a   := updateIndex.pad(5)
+  queryMem.io.a   := updateIndex.pad(6)
   queryMem.io.d   := nextEntry.asUInt
   queryMem.io.clk := clock
   queryMem.io.we  := updateEn

@@ -49,7 +49,12 @@
 #  include <sys/types.h>
 #else
 /* Include the standard compiler builtin headers we use functionality from. */
-#  include <limits.h>
+#  if defined(__riscv) && !defined(__ISA_NATIVE__)
+/* The available RV32 cross sysroot has no glibc ilp32 limits.h. */
+#    define CHAR_BIT __CHAR_BIT__
+#  else
+#    include <limits.h>
+#  endif
 #  include <stdint.h>
 #  include <stdbool.h>
 #  include <float.h>
@@ -697,7 +702,9 @@ COMPILER_RT_ABI si_int __ctzsi2(si_int a) {
 typedef int si_int;
 typedef long long di_int;
 typedef unsigned su_int;
+#ifndef CHAR_BIT
 #define CHAR_BIT __CHAR_BIT__
+#endif
 
 
 si_int __ctzdi2(di_int a) {

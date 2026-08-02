@@ -3,7 +3,7 @@
 #include <klib-macros.h>
 #include <stdarg.h>
 #include <stdbool.h>
-#include <stdio.h>
+/* This file provides the freestanding stdio API; do not require host stdio. */
 
 #if !defined(__ISA_NATIVE__) || defined(__NATIVE_USE_KLIB__)
 

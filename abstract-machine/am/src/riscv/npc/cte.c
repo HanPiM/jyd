@@ -1,6 +1,7 @@
 #include <am.h>
 #include <riscv/riscv.h>
 #include <klib.h>
+#include <klib-macros.h>
 
 static Context* (*user_handler)(Event, Context*) = NULL;
 
@@ -9,19 +10,19 @@ Context* __am_irq_handle(Context *c) {
     Event ev = {0};
     switch (c->mcause) {
 			case 11: {
-				if(c->GPR1==-1) {
-					ev.event = EVENT_YIELD;
-					c->mepc += 4;
-				} else {
-				 	assert(0);	
-				}
+					if(c->GPR1==-1) {
+						ev.event = EVENT_YIELD;
+						c->mepc += 4;
+					} else {
+						panic("unexpected machine ecall");
+					}
 				break;
 			}
       default: ev.event = EVENT_ERROR; break;
     }
 
     c = user_handler(ev, c);
-    assert(c != NULL);
+    panic_on(c == NULL, "event handler returned a null context");
   }
 
   return c;

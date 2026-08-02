@@ -1,0 +1,11 @@
+# AM Berkeley SoftFloat library
+
+This AM library fetches Berkeley SoftFloat commit
+`a0c6494cdc11865811dec815d5c0049fba9d82a8` on first use and builds it for the
+selected RISC-V `-march`/`-mabi`. The checkout under `repo/` and all build
+outputs are ignored.
+
+Consumers add `softfloat` to AM's `LIBS`. The result is a normal archive;
+SoftFloat keeps operations in separate object files and the AM ABI adapter is
+compiled with `-ffunction-sections`. Together with AM's `--gc-sections` link,
+only referenced floating-point operations are retained in the final image.

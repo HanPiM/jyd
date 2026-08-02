@@ -1,7 +1,7 @@
 #include <am.h>
 #include <nemu.h>
 #include <stdint.h>
-#include <stdio.h>
+/* No host stdio is needed by this device implementation. */
 static uint64_t _am_start_time;
 
 static uint64_t get_us_time(){

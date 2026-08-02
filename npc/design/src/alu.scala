@@ -360,9 +360,12 @@ class ALU extends Module {
 
   val isAdd = ((~isOpAlt) || inbits.is_imm) //&& (~inbits.func3t(1))
 
-  val addResult = src1 + src2
-  val add_sub_res = Mux(isAdd, addResult, src1 - src2)
-  io.addResult := addResult
+  // Share one carry chain between ADD and SUB.  The dedicated address-forward
+  // output is valid only for ADD/ADDI, so it can reuse the selected result
+  // instead of keeping a second unconditional src1 + src2 cone alive.
+  val addSubSrc2 = Mux(isAdd, src2, ~src2)
+  val add_sub_res = src1 + addSubSrc2 + !isAdd
+  io.addResult := add_sub_res
 
   val sltu_res = src1 < src2
   val slt_res = s_src1 < s_src2

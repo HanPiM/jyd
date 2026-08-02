@@ -40,8 +40,9 @@ class DividerInput extends Bundle {
 }
 
 object MultiplierConfig {
-  val latency     = 4
-  val fastLatency = 3
+  val latency       = 4
+  val fastLatency   = 3
+  val narrowLatency = 2
 }
 
 class mult_gen_0 extends BlackBox with HasBlackBoxInline {
@@ -120,6 +121,44 @@ class mult_gen_mul32_fast extends BlackBox with HasBlackBoxInline {
   )
 }
 
+/** Two-stage low-word multiplier used only when both unsigned operands fit in 16 bits. */
+class mult_gen_mul16_fast extends BlackBox with HasBlackBoxInline {
+  val io = IO(new Bundle {
+    val CLK = Input(Clock())
+    val A   = Input(UInt(16.W))
+    val B   = Input(UInt(16.W))
+    val P   = Output(UInt(32.W))
+  })
+
+  setInline(
+    "mult_gen_mul16_fast.sv",
+    s"""module mult_gen_mul16_fast(
+      |  input         CLK,
+      |  input  [15:0] A,
+      |  input  [15:0] B,
+      |  output [31:0] P
+      |);
+      |  reg [31:0] pipe [0:${MultiplierConfig.narrowLatency - 1}];
+      |  integer i;
+      |  wire [31:0] product = A * B;
+      |
+      |  initial begin
+      |    for (i = 0; i < ${MultiplierConfig.narrowLatency}; i = i + 1)
+      |      pipe[i] = 32'd0;
+      |  end
+      |
+      |  always @(posedge CLK) begin
+      |    pipe[0] <= product;
+      |    for (i = 1; i < ${MultiplierConfig.narrowLatency}; i = i + 1)
+      |      pipe[i] <= pipe[i - 1];
+      |  end
+      |
+      |  assign P = pipe[${MultiplierConfig.narrowLatency - 1}];
+      |endmodule
+      |""".stripMargin
+  )
+}
+
 class Multiplier extends Module {
   val io = IO(new Bundle {
     val in  = Flipped(Decoupled(new MultiplierInput))
@@ -131,12 +170,15 @@ class Multiplier extends Module {
   }
   val state = RegInit(State.idle)
 
-  val isFastReg     = Reg(Bool())
-  val resultReg     = Reg(Types.UWord)
-  val slowValidPipe = RegInit(0.U(MultiplierConfig.latency.W))
-  val fastValidPipe = RegInit(0.U(MultiplierConfig.fastLatency.W))
-  val multiplier    = Module(new mult_gen_0)
+  val isFastReg       = Reg(Bool())
+  val isNarrowFastReg = Reg(Bool())
+  val resultReg       = Reg(Types.UWord)
+  val slowValidPipe   = RegInit(0.U(MultiplierConfig.latency.W))
+  val fastValidPipe   = RegInit(0.U(MultiplierConfig.fastLatency.W))
+  val narrowValidPipe = RegInit(0.U(MultiplierConfig.narrowLatency.W))
+  val multiplier      = Module(new mult_gen_0)
   val fastMultiplier = Module(new mult_gen_mul32_fast)
+  val narrowMultiplier = Module(new mult_gen_mul16_fast)
 
   val inputFunc3t = io.in.bits.func3t
   val inputIsMulh = inputFunc3t === 1.U
@@ -153,13 +195,16 @@ class Multiplier extends Module {
   fastMultiplier.io.CLK := clock
   fastMultiplier.io.A   := io.in.bits.src1
   fastMultiplier.io.B   := io.in.bits.src2
+  narrowMultiplier.io.CLK := clock
+  narrowMultiplier.io.A   := io.in.bits.src1(15, 0)
+  narrowMultiplier.io.B   := io.in.bits.src2(15, 0)
 
   val product = multiplier.io.P
-  val result = Mux(isFastReg, fastMultiplier.io.P, product(63, 32))
+  val result = Mux(isNarrowFastReg, narrowMultiplier.io.P, Mux(isFastReg, fastMultiplier.io.P, product(63, 32)))
   val resultValid = Mux(
-    isFastReg,
-    fastValidPipe(MultiplierConfig.fastLatency - 1),
-    slowValidPipe(MultiplierConfig.latency - 1)
+    isNarrowFastReg,
+    narrowValidPipe(MultiplierConfig.narrowLatency - 1),
+    Mux(isFastReg, fastValidPipe(MultiplierConfig.fastLatency - 1), slowValidPipe(MultiplierConfig.latency - 1))
   )
 
   io.in.ready  := state === State.idle
@@ -169,15 +214,20 @@ class Multiplier extends Module {
   switch(state) {
     is(State.idle) {
       when(io.in.fire) {
-        isFastReg := io.in.bits.func3t === 0.U
-        slowValidPipe := Mux(io.in.bits.func3t === 0.U, 0.U, 1.U)
-        fastValidPipe := Mux(io.in.bits.func3t === 0.U, 1.U, 0.U)
+        val isMul = io.in.bits.func3t === 0.U
+        val isNarrowFast = isMul && io.in.bits.src1(31, 16) === 0.U && io.in.bits.src2(31, 16) === 0.U
+        isFastReg := isMul
+        isNarrowFastReg := isNarrowFast
+        slowValidPipe := Mux(isMul, 0.U, 1.U)
+        fastValidPipe := Mux(isMul, 1.U, 0.U)
+        narrowValidPipe := Mux(isNarrowFast, 1.U, 0.U)
         state := State.busy
       }
     }
     is(State.busy) {
       slowValidPipe := slowValidPipe << 1
       fastValidPipe := fastValidPipe << 1
+      narrowValidPipe := narrowValidPipe << 1
       when(resultValid) {
         when(io.out.ready) {
           state := State.idle

@@ -185,14 +185,16 @@ class BExtensionUnit extends Module {
       count := nextCount
       rorRemain := nextRorRemain
       found := nextFound
-      when(iteration === 31.U) {
+      val isClmulOp = opReg === BExtensionOp.clmul || opReg === BExtensionOp.clmulh
+      val clmulFinished = isClmulOp && nextWorkB === 0.U
+      when(iteration === 31.U || clmulFinished) {
         val countResult = Cat(0.U(26.W), nextCount)
         val clmulResult = Mux(opReg === BExtensionOp.clmulh, nextAccum(63, 32), nextAccum(31, 0))
         val isCountOp = opReg === BExtensionOp.clz || opReg === BExtensionOp.ctz || opReg === BExtensionOp.cpop
         resultReg := Mux(
           opReg === BExtensionOp.ror,
           nextWorkA(31, 0),
-          Mux(isCountOp, countResult, Mux(opReg === BExtensionOp.clmul || opReg === BExtensionOp.clmulh, clmulResult, nextAccum(31, 0)))
+          Mux(isCountOp, countResult, Mux(isClmulOp, clmulResult, nextAccum(31, 0)))
         )
         state     := State.done
       }.otherwise {

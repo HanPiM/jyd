@@ -91,6 +91,7 @@ void RAWStallPerfCounter::update() {
   const bool isStallOnlyLSU = hIsStallOnlyLSU.get();
   const bool isStallOnlyWBU = hIsStallOnlyWBU.get();
   const bool isIDUStall = hIsIDUStall.get();
+  const bool actualStall = hActualStall.get();
 
   if (isAnyConflict) {
     cycAnyConflict++;
@@ -146,6 +147,24 @@ void RAWStallPerfCounter::update() {
       cycConflictWBU++;
     }
   }
+  if (actualStall) {
+    cycActualStall++;
+    cycActualBypassStall += hActualBypassStall.get();
+    cycActualReg1AddImmEXUStall += hActualReg1AddImmEXUStall.get();
+    cycActualReg1AddImmWBUStall += hActualReg1AddImmWBUStall.get();
+    const uint32_t inst = hStalledInst.get();
+    const unsigned bucket = (inst & 0x7f) | (((inst >> 12) & 7) << 7);
+    actualStallByOpcodeFunc3[bucket]++;
+    if (isStallEXU) {
+      cycActualEXUStall++;
+      actualEXUStallByOpcodeFunc3[bucket]++;
+    }
+    if (isStallLSU) {
+      cycActualLSUStall++;
+      actualLSUStallByOpcodeFunc3[bucket]++;
+    }
+    cycActualWBUStall += isStallWBU;
+  }
 }
 void RAWStallPerfCounter::bind() {
   hIsAnyConflict = &GetIDU()->perfCounterLayer->rawStallPerfTap->io_isAnyConflict;
@@ -169,6 +188,13 @@ void RAWStallPerfCounter::bind() {
   hIsStallOnlyWBU =
       &GetIDU()->perfCounterLayer->rawStallPerfTap->io_isNeedStallOnlyWBU;
   hIsIDUStall = &GetIDU()->perfCounterLayer->rawStallPerfTap->io_isAnyStall;
+  hActualStall = &GetIDU()->perfCounterLayer->rawStallPerfTap->io_actualStall;
+  hActualBypassStall = &GetIDU()->perfCounterLayer->rawStallPerfTap->io_actualBypassStall;
+  hActualReg1AddImmEXUStall =
+      &GetIDU()->perfCounterLayer->rawStallPerfTap->io_actualReg1AddImmEXUStall;
+  hActualReg1AddImmWBUStall =
+      &GetIDU()->perfCounterLayer->rawStallPerfTap->io_actualReg1AddImmWBUStall;
+  hStalledInst = &GetIDU()->perfCounterLayer->rawStallPerfTap->io_stalledInst;
 }
 IDUFlushPerfCounter::IDUFlushReason IDUFlushPerfCounter::getCurReason() const {
   auto &exu = *GetEXU();
@@ -251,6 +277,17 @@ void OptimizationDirectionPerfCounter::update() {
     const uint32_t func7 = (inst >> 25) & 0x7f;
     if (opcode == 0x33 && func7 == 0x01) {
       mOpCount[func3]++;
+      if (func3 == 0) {
+        const uint32_t lhs = exu->io_in_bits_info_reg1;
+        const uint32_t rhs = exu->io_in_bits_info_reg2;
+        mulOperandZero += lhs == 0 || rhs == 0;
+        mulOperandOne += lhs == 1 || rhs == 1;
+        const auto isPowerOfTwo = [](uint32_t value) {
+          return value != 0 && (value & (value - 1)) == 0;
+        };
+        mulOperandPowerOfTwo += isPowerOfTwo(lhs) || isPowerOfTwo(rhs);
+        mulBothUnsigned16 += lhs <= 0xffff && rhs <= 0xffff;
+      }
     }
 
     const bool lateRs1 = exu->io_in_bits_info_lateLoadRs1;

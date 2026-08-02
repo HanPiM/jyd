@@ -17,6 +17,12 @@ class RAWStallPerfTap(
     val rs2 = Input(p.GPRAddr)
 
     val wrBackInfo = Input(new WrBackInfoGroup)
+    val inst = Input(UInt(32.W))
+    val instValid = Input(Bool())
+    val actualNeedStall = Input(Bool())
+    val bypassNeedStall = Input(Bool())
+    val reg1AddImmEXUStall = Input(Bool())
+    val reg1AddImmWBUStall = Input(Bool())
 
     val isConflictEXU = Output(Bool())
     val isConflictLSU = Output(Bool())
@@ -35,6 +41,12 @@ class RAWStallPerfTap(
     val isNeedStallOnlyEXU = Output(Bool())
     val isNeedStallOnlyLSU = Output(Bool())
     val isNeedStallOnlyWBU = Output(Bool())
+
+    val actualStall = Output(Bool())
+    val actualBypassStall = Output(Bool())
+    val actualReg1AddImmEXUStall = Output(Bool())
+    val actualReg1AddImmWBUStall = Output(Bool())
+    val stalledInst = Output(UInt(32.W))
   })
 
   private def hasConflict(rs: UInt, wrBack: WrBackForwardInfo): Bool =
@@ -64,6 +76,12 @@ class RAWStallPerfTap(
   io.isNeedStallOnlyLSU := io.isNeedStallLSU && !io.isNeedStallEXU && !io.isNeedStallWBU
   io.isNeedStallOnlyWBU := io.isNeedStallWBU && !io.isNeedStallEXU && !io.isNeedStallLSU
 
+  io.actualStall := io.instValid && io.actualNeedStall
+  io.actualBypassStall := io.instValid && io.bypassNeedStall
+  io.actualReg1AddImmEXUStall := io.instValid && io.reg1AddImmEXUStall
+  io.actualReg1AddImmWBUStall := io.instValid && io.reg1AddImmWBUStall
+  io.stalledInst := io.inst
+
   Seq(
     io.isConflictEXU,
     io.isConflictLSU,
@@ -78,6 +96,11 @@ class RAWStallPerfTap(
     io.isAnyStall,
     io.isNeedStallOnlyEXU,
     io.isNeedStallOnlyLSU,
-    io.isNeedStallOnlyWBU
+    io.isNeedStallOnlyWBU,
+    io.actualStall,
+    io.actualBypassStall,
+    io.actualReg1AddImmEXUStall,
+    io.actualReg1AddImmWBUStall,
+    io.stalledInst
   ).foreach(dontTouch(_))
 }

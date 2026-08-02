@@ -254,6 +254,11 @@ struct RAWStallPerfCounter : public PerfCounterBase {
   SignalHandle hIsStallOnlyLSU;
   SignalHandle hIsStallOnlyWBU;
   SignalHandle hIsIDUStall;
+  SignalHandle hActualStall;
+  SignalHandle hActualBypassStall;
+  SignalHandle hActualReg1AddImmEXUStall;
+  SignalHandle hActualReg1AddImmWBUStall;
+  SignalHandle hStalledInst;
 
   size_t cycAnyConflict = 0;
   size_t cycAllConflictEXU = 0;
@@ -273,6 +278,16 @@ struct RAWStallPerfCounter : public PerfCounterBase {
   size_t cycStallOnlyEXU = 0;
   size_t cycStallOnlyLSU = 0;
   size_t cycStallOnlyWBU = 0;
+  size_t cycActualStall = 0;
+  size_t cycActualBypassStall = 0;
+  size_t cycActualReg1AddImmEXUStall = 0;
+  size_t cycActualReg1AddImmWBUStall = 0;
+  size_t cycActualEXUStall = 0;
+  size_t cycActualLSUStall = 0;
+  size_t cycActualWBUStall = 0;
+  size_t actualStallByOpcodeFunc3[1024] = {0};
+  size_t actualEXUStallByOpcodeFunc3[1024] = {0};
+  size_t actualLSUStallByOpcodeFunc3[1024] = {0};
 
   RAWStallPerfCounter() { ctrName = "RAWStallPerfCounter"; }
 
@@ -351,6 +366,10 @@ struct OptimizationDirectionPerfCounter : public PerfCounterBase {
   enum LateAddUse { LateAddRs1Only, LateAddRs2Only, LateAddBothRs, LateAddUseNum };
 
   size_t mOpCount[MOpNum] = {0};
+  size_t mulOperandZero = 0;
+  size_t mulOperandOne = 0;
+  size_t mulOperandPowerOfTwo = 0;
+  size_t mulBothUnsigned16 = 0;
   size_t cacheableFullWordStores = 0;
   size_t lateLoadAddCount[LateLoadUseNum] = {0};
   size_t lateAddSuccessorCount[LateAddUseNum] = {0};

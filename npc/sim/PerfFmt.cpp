@@ -103,6 +103,22 @@ void RAWStallPerfCounter::dumpStatistics(std::ostream &os) {
      << " %)\n";
   os << "total RAW stall cycles: " << cycIDUStall << " (" << stallPerc
      << " %)\n";
+  os << "actual IDU dependency stall cycles: " << cycActualStall << "\n"
+     << "  generic bypass: " << cycActualBypassStall << "\n"
+     << "  address rs1 from EXU: " << cycActualReg1AddImmEXUStall << "\n"
+     << "  address rs1 from WBU: " << cycActualReg1AddImmWBUStall << "\n"
+     << "  intersects unavailable EXU/LSU/WBU producer: " << cycActualEXUStall
+     << "/" << cycActualLSUStall << "/" << cycActualWBUStall << "\n";
+  std::vector<std::pair<size_t, unsigned>> hot;
+  for (unsigned i = 0; i < 1024; ++i)
+    if (actualStallByOpcodeFunc3[i]) hot.emplace_back(actualStallByOpcodeFunc3[i], i);
+  std::sort(hot.rbegin(), hot.rend());
+  os << "  hottest stalled opcode/funct3 buckets:\n";
+  for (size_t i = 0; i < std::min<size_t>(hot.size(), 12); ++i)
+    os << fmt::format("    opcode=0x{:02x} funct3={} cycles={} exu={} lsu={}\n",
+                      hot[i].second & 0x7f, hot[i].second >> 7, hot[i].first,
+                      actualEXUStallByOpcodeFunc3[hot[i].second],
+                      actualLSUStallByOpcodeFunc3[hot[i].second]);
 
   os << "Legacy conflict counts in stall cycles:\n";
   Table legacyTable;
@@ -262,6 +278,9 @@ void OptimizationDirectionPerfCounter::dumpStatistics(std::ostream &os) {
                              mOpCount[Remu];
   mTable.add_row(RowStream{} << "div/rem total" << divideTotal);
   _PrintTable(mTable, os);
+  os << "  mul operand fast-path coverage (overlapping): zero=" << mulOperandZero
+     << " one=" << mulOperandOne << " power-of-two=" << mulOperandPowerOfTwo
+     << " both-u16=" << mulBothUnsigned16 << "\n";
 
   os << "  cacheable full-word stores: " << cacheableFullWordStores << "\n";
   Table dependencyTable;

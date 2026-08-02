@@ -740,6 +740,8 @@ int main(int argc, char **argv) {
       algorithms.push_back(make_two_bit_algo(table_size, table_size));
       algorithms.push_back(
           make_gshare_algo(table_size, table_size, kDefaultGHRBits, true));
+      algorithms.push_back(
+          make_gshare_algo(table_size, table_size, kDefaultGHRBits, false));
       algorithms.push_back(make_local_algo(
           table_size, table_size, kDefaultLocalHistoryBits, table_size, true));
       algorithms.push_back(make_local_algo(

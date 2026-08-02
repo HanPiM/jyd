@@ -412,6 +412,12 @@ class IDU(
     rawStallPerfTap.io.rs1        := res.rs1
     rawStallPerfTap.io.rs2        := res.rs2
     rawStallPerfTap.io.wrBackInfo := io.wrBackInfo
+    rawStallPerfTap.io.inst := inst
+    rawStallPerfTap.io.instValid := io.in.valid
+    rawStallPerfTap.io.actualNeedStall := needStall
+    rawStallPerfTap.io.bypassNeedStall := bypassMux.io.needStall
+    rawStallPerfTap.io.reg1AddImmEXUStall := needStallReg1AddImmFromEXU
+    rawStallPerfTap.io.reg1AddImmWBUStall := needStallReg1AddImmFromWBU
   }
 
   // res.snpc       := io.in.bits.pc + 4.U

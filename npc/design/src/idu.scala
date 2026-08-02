@@ -362,7 +362,10 @@ class IDU(
   bypassMux.io.dcacheFwd := io.dcacheFwd
   bypassMux.io.lateLoadProducer := io.lateLoadProducer
   bypassMux.io.lateAddFwd       := io.lateAddFwd
-  bypassMux.io.allowCacheRs1 := !needReg1AddImm
+  // A dependent load may consume the producer's registered LSU DCache-hit
+  // data here. The resulting address crosses the existing IDU/EXU payload
+  // register before it drives the next DCache lookup.
+  bypassMux.io.allowCacheRs1 := !needReg1AddImm || isTypLoad
   // Only compact dedicated results may consume a load whose hit/miss is not
   // known in IDU. The fixed-immediate forms cover the hot xibei bit-extraction
   // loop without placing a general AND or barrel shifter in the late path.
@@ -398,11 +401,14 @@ class IDU(
   val reg1AddImmExuConflict =
     SingleByPassMux.conflict(res.rs1, io.wrBackInfo.exu.addr, io.wrBackInfo.exu.enWr)
   val exuReg1AddImmBypass = reg1AddImmExuConflict && io.exuAddFwd.valid
+  val dcacheReg1AddImmBypass =
+    isTypLoad && !reg1AddImmExuConflict &&
+      SingleByPassMux.conflict(res.rs1, io.dcacheFwd.addr, io.dcacheFwd.valid)
   val needStallReg1AddImmFromEXU = needReg1AddImm && reg1AddImmExuConflict && !exuReg1AddImmBypass
   val needStallReg1AddImmFromWBU =
     needReg1AddImm &&
       SingleByPassMux.conflict(res.rs1, io.wrBackInfo.wbu.addr, io.wrBackInfo.wbu.enWr) &&
-      !io.reg1AddImmWbuRawInfo.dataValid
+      !io.reg1AddImmWbuRawInfo.dataValid && !dcacheReg1AddImmBypass
   // val needStallReg1AddImmFromEXU = false.B
 
   val needStall = bypassMux.io.needStall || needStallReg1AddImmFromEXU || needStallReg1AddImmFromWBU
@@ -437,9 +443,9 @@ class IDU(
     SingleByPassMux.conflict(res.rs1, io.wrBackInfo.wbu.addr, io.wrBackInfo.wbu.enWr) &&
       io.reg1AddImmWbuRawInfo.dataValid
   val nonExuReg1AddImmBase = Mux(
-    wbuReg1AddImmBypass,
-    io.reg1AddImmWbuRawInfo.data,
-    io.rvec.data(0)(21, 0)
+    dcacheReg1AddImmBypass,
+    io.dcacheFwd.data(21, 0),
+    Mux(wbuReg1AddImmBypass, io.reg1AddImmWbuRawInfo.data, io.rvec.data(0)(21, 0))
   )
   val nonLsuReg1AddImmBase = Mux(exuReg1AddImmBypass, io.exuAddFwd.data, nonExuReg1AddImmBase)
   val useLsuReg1AddImm = !exuReg1AddImmBypass && lsuReg1AddImmBypass

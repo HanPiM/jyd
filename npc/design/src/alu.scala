@@ -41,7 +41,7 @@ class DividerInput extends Bundle {
 
 object MultiplierConfig {
   val latency     = 4
-  val fastLatency = 3
+  val fastLatency = 2
 }
 
 class mult_gen_0 extends BlackBox with HasBlackBoxInline {

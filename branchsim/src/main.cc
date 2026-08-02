@@ -439,26 +439,29 @@ AlgoConfig make_gshare_algo(size_t btb_size, size_t pht_size, uint32_t ghr_bits,
 }
 
 AlgoConfig make_local_algo(size_t btb_size, size_t lht_size,
-                           uint32_t local_history_bits, size_t local_pht_size) {
+                           uint32_t local_history_bits, size_t local_pht_size,
+                           bool direct_branch_target) {
   auto predictor = std::make_shared<LocalPredictor>(lht_size, local_history_bits,
                                                     local_pht_size);
   return {
-      .name = "local + direct branch target",
+      .name = direct_branch_target ? "local + direct branch target" : "local",
       .btb_size = btb_size,
       .counter_table_size = local_pht_size,
       .chooser_size = 0,
       .ghr_bits = 0,
       .local_history_bits = local_history_bits,
       .local_history_table_size = lht_size,
-      .direct_branch_target = true,
-      .direct_jal_target = true,
+      .direct_branch_target = direct_branch_target,
+      .direct_jal_target = direct_branch_target,
       .predict_taken =
-          [predictor](const PredictContext &ctx) {
+          [predictor, direct_branch_target](const PredictContext &ctx) {
             if (ctx.decoded.is_jal) {
-              return true;
+              return direct_branch_target || (ctx.entry.valid && ctx.entry.is_jal);
             }
             if (ctx.decoded.is_conditional) {
-              return predictor->predict_taken(ctx.pc);
+              return direct_branch_target
+                         ? predictor->predict_taken(ctx.pc)
+                         : ctx.entry.valid && predictor->predict_taken(ctx.pc);
             }
             return ctx.entry.valid;
           },
@@ -738,7 +741,9 @@ int main(int argc, char **argv) {
       algorithms.push_back(
           make_gshare_algo(table_size, table_size, kDefaultGHRBits, true));
       algorithms.push_back(make_local_algo(
-          table_size, table_size, kDefaultLocalHistoryBits, table_size));
+          table_size, table_size, kDefaultLocalHistoryBits, table_size, true));
+      algorithms.push_back(make_local_algo(
+          table_size, table_size, kDefaultLocalHistoryBits, table_size, false));
       algorithms.push_back(make_local_gshare_tournament_algo(
           table_size, table_size, kDefaultLocalHistoryBits, table_size,
           table_size, kDefaultGHRBits));

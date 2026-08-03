@@ -31,6 +31,8 @@
 
 #include <getopt.h>
 #include <poll.h>
+#include <signal.h>
+#include <termios.h>
 #include <unistd.h>
 #include <vector>
 
@@ -169,7 +171,50 @@ extern "C" void uart_putch(char ch) {
   skip_difftest_ref();
 }
 
+static struct termios uart_saved_termios;
+static bool uart_termios_active = false;
+
+static void uart_restore_terminal() {
+  if (uart_termios_active) {
+    tcsetattr(STDIN_FILENO, TCSANOW, &uart_saved_termios);
+    uart_termios_active = false;
+  }
+}
+
+static void uart_terminal_signal_handler(int signal_number) {
+  uart_restore_terminal();
+  signal(signal_number, SIG_DFL);
+  raise(signal_number);
+}
+
+static void uart_enable_character_input() {
+  if (uart_termios_active || !isatty(STDIN_FILENO)) {
+    return;
+  }
+
+  struct termios termios = {};
+  if (tcgetattr(STDIN_FILENO, &uart_saved_termios) != 0) {
+    return;
+  }
+
+  termios = uart_saved_termios;
+  termios.c_lflag &= ~(ICANON | ECHO);
+  termios.c_cc[VMIN] = 0;
+  termios.c_cc[VTIME] = 0;
+  if (tcsetattr(STDIN_FILENO, TCSANOW, &termios) != 0) {
+    return;
+  }
+
+  uart_termios_active = true;
+  atexit(uart_restore_terminal);
+  signal(SIGINT, uart_terminal_signal_handler);
+  signal(SIGTERM, uart_terminal_signal_handler);
+  signal(SIGHUP, uart_terminal_signal_handler);
+}
+
 extern "C" void uart_try_getch(int *out_0) {
+  uart_enable_character_input();
+
   struct pollfd stdin_poll = {
       .fd = STDIN_FILENO,
       .events = POLLIN,

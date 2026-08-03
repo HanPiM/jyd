@@ -63,7 +63,7 @@ char try_getch() { return *(volatile uint8_t *)(SERIAL_PORT + 0x00); }
 
 void halt(int code) {
 	uint32_t cnt = *MMIO_CNT_REG;
-	_update_seg(cnt / 50000u); // 50 MHz tick counter -> ms
+	_update_seg(cnt);
 	*MMIO_LED_REG = (code == 0) ? LED_MAGIC_SHAPE_CORRECT : LED_MAGIC_SHAPE_WRONG;
 
   asm volatile("mv a0, %0; ebreak" : : "r"(code));

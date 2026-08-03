@@ -116,7 +116,7 @@ class AXI4LiteUARTMasterIO extends Bundle {
   * 9600-baud line rate from perturbing the CoreMark counter unless the queue
   * actually fills.
   */
-class SimpleBusFPGAUART(txDepth: Int = 2048) extends Module {
+class SimpleBusFPGAUART(txDepth: Int = 8) extends Module {
   val io = IO(new Bundle {
     val bus = SimpleBusIO.Slave
     val axi = new AXI4LiteUARTMasterIO
@@ -127,6 +127,9 @@ class SimpleBusFPGAUART(txDepth: Int = 2048) extends Module {
   val txQueue = Module(new Queue(UInt(8.W), txDepth))
   val isWrite = io.bus.req_valid && io.bus.wen
   val isRead  = io.bus.req_valid && !io.bus.wen
+  // The CPU's MMIO path aligns byte requests, so status aliases occupy the
+  // next word (UART+4..+15), while UART+0 remains the byte data register.
+  val isStatus = io.bus.addr(3, 2).orR
 
   object State extends ChiselEnum {
     val idle, txStatusAR, txStatusR, txWriteAWW, txWriteB, rxStatusAR, rxStatusR, rxDataAR, rxDataR = Value
@@ -136,20 +139,25 @@ class SimpleBusFPGAUART(txDepth: Int = 2048) extends Module {
   val wSent  = RegInit(false.B)
 
   val canTakeRead = state === State.idle
-  io.bus.req_ready := Mux(io.bus.wen, txQueue.io.enq.ready, canTakeRead)
+  io.bus.req_ready := Mux(isStatus, true.B, Mux(io.bus.wen, txQueue.io.enq.ready, canTakeRead))
 
-  val writeFire = isWrite && io.bus.req_ready
-  val readFire  = isRead && io.bus.req_ready
+  val writeFire = isWrite && io.bus.req_ready && !isStatus
+  val readFire  = isRead && io.bus.req_ready && !isStatus
+  val statusReadFire = isRead && io.bus.req_ready && isStatus
   txQueue.io.enq.valid := writeFire
   txQueue.io.enq.bits  := io.bus.wdata(7, 0)
   txQueue.io.deq.ready := false.B
 
   val writeRespPipe0 = RegNext(writeFire, false.B)
   val writeResp       = RegNext(writeRespPipe0, false.B)
+  val statusRespPipe0 = RegNext(statusReadFire, false.B)
+  val statusResp       = RegNext(statusRespPipe0, false.B)
+  val statusPipe0      = RegEnable(Cat(0.U(30.W), state === State.idle, txQueue.io.enq.ready), statusReadFire)
+  val statusReg        = RegNext(statusPipe0)
   val readResp        = WireDefault(false.B)
   val readData        = WireDefault(0.U(32.W))
-  io.bus.resp_valid := writeResp || readResp
-  io.bus.rdata      := readData
+  io.bus.resp_valid := writeResp || statusResp || readResp
+  io.bus.rdata      := Mux(statusResp, statusReg, readData)
 
   io.axi.awaddr  := 4.U
   io.axi.awvalid := false.B

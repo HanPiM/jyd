@@ -58,6 +58,7 @@ void putch(char ch) {
   }
   *(volatile uint8_t *)(SERIAL_PORT + 0x00) = ch;
 }
+
 char try_getch() { return *(volatile uint8_t *)(SERIAL_PORT + 0x00); }
 
 void halt(int code) {

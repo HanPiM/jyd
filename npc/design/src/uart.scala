@@ -87,6 +87,162 @@ class SimpleBusUART extends Module {
   io.rdata      := Mux(readRespReg, respDataReg, 0.U(32.W))
 }
 
+class AXI4LiteUARTMasterIO extends Bundle {
+  val awaddr  = Output(UInt(4.W))
+  val awvalid = Output(Bool())
+  val awready = Input(Bool())
+  val wdata   = Output(UInt(32.W))
+  val wstrb   = Output(UInt(4.W))
+  val wvalid  = Output(Bool())
+  val wready  = Input(Bool())
+  val bresp   = Input(UInt(2.W))
+  val bvalid  = Input(Bool())
+  val bready  = Output(Bool())
+  val araddr  = Output(UInt(4.W))
+  val arvalid = Output(Bool())
+  val arready = Input(Bool())
+  val rdata   = Input(UInt(32.W))
+  val rresp   = Input(UInt(2.W))
+  val rvalid  = Input(Bool())
+  val rready  = Output(Bool())
+}
+
+/** FPGA implementation of the legacy JYD byte-wide UART register.
+  *
+  * Software still reads and writes one byte at 0x802000a0. The backing AXI
+  * UART Lite uses separate RX/TX/status registers, so this adapter translates
+  * the accesses and drains a deep transmit queue in the background. Keeping
+  * writes at the same two-cycle latency as the simulation UART prevents the
+  * 9600-baud line rate from perturbing the CoreMark counter unless the queue
+  * actually fills.
+  */
+class SimpleBusFPGAUART(txDepth: Int = 2048) extends Module {
+  val io = IO(new Bundle {
+    val bus = SimpleBusIO.Slave
+    val axi = new AXI4LiteUARTMasterIO
+  })
+
+  io.bus.dontCareResp()
+
+  val txQueue = Module(new Queue(UInt(8.W), txDepth))
+  val isWrite = io.bus.req_valid && io.bus.wen
+  val isRead  = io.bus.req_valid && !io.bus.wen
+
+  object State extends ChiselEnum {
+    val idle, txStatusAR, txStatusR, txWriteAWW, txWriteB, rxStatusAR, rxStatusR, rxDataAR, rxDataR = Value
+  }
+  val state  = RegInit(State.idle)
+  val awSent = RegInit(false.B)
+  val wSent  = RegInit(false.B)
+
+  val canTakeRead = state === State.idle
+  io.bus.req_ready := Mux(io.bus.wen, txQueue.io.enq.ready, canTakeRead)
+
+  val writeFire = isWrite && io.bus.req_ready
+  val readFire  = isRead && io.bus.req_ready
+  txQueue.io.enq.valid := writeFire
+  txQueue.io.enq.bits  := io.bus.wdata(7, 0)
+  txQueue.io.deq.ready := false.B
+
+  val writeRespPipe0 = RegNext(writeFire, false.B)
+  val writeResp       = RegNext(writeRespPipe0, false.B)
+  val readResp        = WireDefault(false.B)
+  val readData        = WireDefault(0.U(32.W))
+  io.bus.resp_valid := writeResp || readResp
+  io.bus.rdata      := readData
+
+  io.axi.awaddr  := 4.U
+  io.axi.awvalid := false.B
+  io.axi.wdata   := txQueue.io.deq.bits
+  io.axi.wstrb   := "b0001".U
+  io.axi.wvalid  := false.B
+  io.axi.bready  := false.B
+  io.axi.araddr  := 8.U
+  io.axi.arvalid := false.B
+  io.axi.rready  := false.B
+
+  switch(state) {
+    is(State.idle) {
+      when(readFire) {
+        state := State.rxStatusAR
+      }.elsewhen(txQueue.io.deq.valid) {
+        state := State.txStatusAR
+      }
+    }
+    is(State.txStatusAR) {
+      io.axi.araddr  := 8.U
+      io.axi.arvalid := true.B
+      when(io.axi.arready) { state := State.txStatusR }
+    }
+    is(State.txStatusR) {
+      io.axi.rready := true.B
+      when(io.axi.rvalid) {
+        when(io.axi.rdata(3)) {
+          state := State.txStatusAR
+        }.otherwise {
+          awSent := false.B
+          wSent  := false.B
+          state  := State.txWriteAWW
+        }
+      }
+    }
+    is(State.txWriteAWW) {
+      io.axi.awaddr  := 4.U
+      io.axi.awvalid := !awSent
+      io.axi.wdata   := txQueue.io.deq.bits
+      io.axi.wstrb   := "b0001".U
+      io.axi.wvalid  := !wSent
+      when(io.axi.awvalid && io.axi.awready) { awSent := true.B }
+      when(io.axi.wvalid && io.axi.wready) { wSent := true.B }
+      when((awSent || io.axi.awready) && (wSent || io.axi.wready)) { state := State.txWriteB }
+    }
+    is(State.txWriteB) {
+      io.axi.bready := true.B
+      when(io.axi.bvalid) {
+        txQueue.io.deq.ready := true.B
+        state                := State.idle
+      }
+    }
+    is(State.rxStatusAR) {
+      io.axi.araddr  := 8.U
+      io.axi.arvalid := true.B
+      when(io.axi.arready) { state := State.rxStatusR }
+    }
+    is(State.rxStatusR) {
+      io.axi.rready := true.B
+      when(io.axi.rvalid) {
+        when(io.axi.rdata(0)) {
+          state := State.rxDataAR
+        }.otherwise {
+          readResp := true.B
+          readData := "hff".U
+          state    := State.idle
+        }
+      }
+    }
+    is(State.rxDataAR) {
+      io.axi.araddr  := 0.U
+      io.axi.arvalid := true.B
+      when(io.axi.arready) { state := State.rxDataR }
+    }
+    is(State.rxDataR) {
+      io.axi.rready := true.B
+      when(io.axi.rvalid) {
+        readResp := true.B
+        readData := io.axi.rdata(7, 0)
+        state    := State.idle
+      }
+    }
+  }
+
+  when(io.axi.rvalid && io.axi.rready) {
+    assert(io.axi.rresp === 0.U, "AXI UART Lite read failed")
+  }
+  when(io.axi.bvalid && io.axi.bready) {
+    assert(io.axi.bresp === 0.U, "AXI UART Lite write failed")
+  }
+}
+
 class UARTUnit extends Module {
   val io = IO(AXI4IO.Slave)
 

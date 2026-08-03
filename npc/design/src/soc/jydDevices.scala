@@ -356,6 +356,47 @@ class JYDFPGACounterBlackBox extends BlackBox {
   })
 }
 
+/** JYD-owned 50 MHz elapsed-tick counter for the packaged FPGA top.
+  *
+  * This intentionally retains the contest counter's start/stop and Gray-code
+  * CDC shape, but exposes raw 50 MHz ticks instead of dividing them to
+  * milliseconds in hardware.
+  */
+class JYDFPGATickCounter extends Module {
+  val io = IO(new Bundle {
+    val clk_50Mhz = Input(Clock())
+    val rst       = Input(Bool())
+    val enable    = Input(Bool())
+    val ticks     = Output(UInt(32.W))
+  })
+
+  val (enableSync1, enableSync2, tickGray) = withClockAndReset(io.clk_50Mhz, io.rst) {
+    val enableSync1 = RegNext(io.enable, false.B)
+    val enableSync2 = RegNext(enableSync1, false.B)
+    val ticks       = RegInit(0.U(32.W))
+
+    when(enableSync2) {
+      ticks := ticks + 1.U
+    }
+
+    (enableSync1, enableSync2, ticks ^ (ticks >> 1))
+  }
+
+  // Keep both synchronizer stages visible to implementation and constraints.
+  dontTouch(enableSync1)
+  dontTouch(enableSync2)
+  val tickGraySync1 = RegNext(tickGray, 0.U)
+  val tickGraySync2 = RegNext(tickGraySync1, 0.U)
+  dontTouch(tickGraySync1)
+  dontTouch(tickGraySync2)
+
+  var tickBinary = tickGraySync2
+  for (shift <- Seq(1, 2, 4, 8, 16)) {
+    tickBinary = tickBinary ^ (tickBinary >> shift)
+  }
+  io.ticks := tickBinary
+}
+
 class SimpleBusFPGAROM(sizeInByte: Int, baseAddr: BigInt) extends Module {
   val io = IO(SimpleBusIO.Slave)
   io.dontCareResp()
@@ -408,16 +449,15 @@ class SimpleBusFPGACounter extends Module {
   io.bus.dontCareResp()
   io.bus.req_ready := true.B
 
-  val counter = Module(new JYDFPGACounterBlackBox)
+  val counter = Module(new JYDFPGATickCounter)
   val doReq   = io.bus.req_valid && io.bus.req_ready
 
-  counter.io.cpu_clk        := clock
-  counter.io.cnt_clk        := io.clk_50Mhz
-  counter.io.rst            := io.rst
-  counter.io.cnt_enable_cpu := io.cntEnable
+  counter.io.clk_50Mhz := io.clk_50Mhz
+  counter.io.rst       := io.rst
+  counter.io.enable    := io.cntEnable
 
   val respValidReg  = RegNext(RegNext(doReq, false.B), false.B)
-  val respDataPipe0 = RegEnable(counter.io.perip_rdata, doReq)
+  val respDataPipe0 = RegEnable(counter.io.ticks, doReq)
   val respDataReg   = RegNext(respDataPipe0)
   io.bus.resp_valid := respValidReg
   io.bus.rdata      := respDataReg
@@ -545,17 +585,15 @@ class JYDFPGATop(val resetPC: UInt = "h80000000".U) extends Module with HasJYDCP
   val clk_50Mhz = IO(Input(Clock()))
   val led       = IO(Output(UInt(32.W)))
   val seg       = IO(Output(UInt(32.W)))
+  val uart      = IO(new AXI4LiteUARTMasterIO)
 
   val irom     = Module(new SimpleBusFPGAROM(JYDSoCConfig.iromSizeInByte, JYDSoCConfig.iromBaseAddr))
   val dram     = Module(new SimpleBusFPGAMem(JYDSoCConfig.dramSizeInByte, JYDSoCConfig.dramBaseAddr))
   val ledReg = Module(new SimpleBusOneWordRWDevice())
   val segReg = Module(new SimpleBusOneWordRWDevice())
   val cnt      = Module(new SimpleBusFPGACounter)
-  val perip    = Module(new JYDPeripheralBridge(hasUART = false))
-  val dummyUART = Wire(SimpleBusIO.Slave)
-
-  dummyUART.dontCareReq()
-  dummyUART.dontCareResp()
+  val uartAdapter = Module(new SimpleBusFPGAUART)
+  val perip       = Module(new JYDPeripheralBridge)
 
   cpu.io.io.irom <> irom.io
   cpu.io.io.dram <> perip.io.cpu
@@ -564,7 +602,8 @@ class JYDFPGATop(val resetPC: UInt = "h80000000".U) extends Module with HasJYDCP
   perip.io.led <> ledReg.io.bus
   perip.io.seg <> segReg.io.bus
   perip.io.cnt <> cnt.io.bus
-  perip.io.uart <> dummyUART
+  perip.io.uart <> uartAdapter.io.bus
+  uart <> uartAdapter.io.axi
 
   cnt.io.clk_50Mhz := clk_50Mhz
   cnt.io.rst       := reset.asBool

@@ -36,3 +36,51 @@ logs. The script also checks the retained fallback divider XCI's configured
 clocks-per-division, latency, and `TREADY` interface before simulation, even
 when the generated CPU is using the iterative RTL divider instead of binding
 that IP.
+
+The smoke test is only meaningful for a COE image that writes a `0x37xxxxxx`
+value to SEG. Long-running images such as the 10000-iteration CoreMark COE do
+not use that completion convention and should be validated with a bitstream and
+direct UART capture instead of waiting for full RTL simulation.
+
+### FPGA UART output
+
+The packaged FPGA top keeps the software UART register at `0x802000a0`, but
+implements it with an AXI UART Lite IP clocked at 50 MHz through an AXI clock
+converter. The physical port is 9600 baud, 8 data bits, no parity, and one stop
+bit. The simulation build continues to use the inline `SimpleBusUART` model;
+the Vivado-only adapter and IP products are selected by `pack-fpga` packaging.
+
+The old top-level LED/SEG serial protocol controller is no longer instantiated.
+LED and SEG remain connected to the board display outputs, while the physical
+UART carries program output directly. For unattended capture, use the sibling
+`submit-bits` client after generating a bitstream:
+
+```sh
+cd /home/hanpi/gitclone/submit-bits
+.venv/bin/python -m jyd_client.cli capture \
+  /home/hanpi/gitclone/jyd/jyd-vivado-proj/digital_twin.runs/impl_1/top.bit \
+  --skip-login --first-byte-timeout 60 --duration 20
+```
+
+The serial connection is armed before programming. The first timeout covers
+programs that produce no output during their initial computation; the capture
+window starts only when the first decoded payload byte arrives.
+
+A timeout before the first byte is reported as a failed sample. When exploring
+a bitstream with negative setup slack, keep the bitstream hash fixed and retry
+on more than one board: a later successful run does not erase an earlier
+no-output sample, and an intermittently starting image is not a stable release.
+
+### FPGA CoreMark timer
+
+The packaged top uses the JYD-owned `JYDFPGATickCounter`, not the contest
+`counter.sv` instance. Both use the 50 MHz board clock, start/stop commands at
+`0x80200050`, and a Gray-coded crossing back to the CPU. The JYD counter differs
+by returning the raw 32-bit 50 MHz tick count; it does not divide to one
+millisecond in hardware. The contest source is retained in the project but is
+not instantiated.
+
+Standalone CoreMark reads the raw register directly and converts with
+`COREMARK_TICKS_PER_SEC=50000000`. AM's general JYD timer backend converts the
+same ticks to microseconds for other programs. A 32-bit raw counter wraps after
+about 85.9 seconds, so the benchmark interval must remain below that limit.

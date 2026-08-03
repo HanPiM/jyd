@@ -13,10 +13,13 @@ set ip_names [list \
   blk_mem_gen_2KB \
   blk_mem_gen_dram \
   blk_mem_gen_irom \
+  jyd_axi_clock_converter \
+  jyd_axi_uartlite \
   dist_mem_gen_32x32 \
   dist_mem_gen_512x8 \
   div_gen_uradix2 \
   mult_gen_0 \
+  mult_gen_mul16_fast \
   mult_gen_mul32_fast]
 
 set copied_sources "$work_dir/digital_twin.srcs/sources_1"

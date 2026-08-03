@@ -26,7 +26,12 @@ if ! command -v "$vivado_bin" >/dev/null 2>&1; then
   exit 2
 fi
 
-work_dir=$(mktemp -d "${TMPDIR:-/tmp}/jyd-xsim-seg37.XXXXXX")
+jyd_data_root="${JYD_DATA_ROOT:-/srv/data/jyd}"
+# TMPDIR is inherited by Vivado and child tools. Under Codex keep it under
+# /srv/data/jyd/tmp; /tmp can trigger cache/temp write denials.
+run_root="${TMPDIR:-$jyd_data_root/archive}"
+mkdir -p -- "$run_root"
+work_dir=$(mktemp -d "$run_root/jyd-xsim-seg37.XXXXXX")
 echo "SEG37_WORK_DIR=$work_dir"
 echo "SEG37_COE_DIR=$coe_dir"
 echo "SEG37_DIV_IMPLEMENTATION=rtl-iterative retained_fallback_ip=div_gen_uradix2"
@@ -91,11 +96,15 @@ xvhdl --work xil_defaultlib "${ip_vhdl[@]}" >xvhdl.log 2>&1
 xvlog --sv --work xil_defaultlib \
   "${ip_verilog[@]}" "${rtl_sources[@]}" tb_seg37.sv \
   "$repo_root/jyd-vivado-proj/digital_twin.srcs/sources_1/new/counter.sv" \
+  "$repo_root/jyd-vivado-proj/digital_twin.srcs/sources_1/new/jyd_uart_subsystem.sv" \
   "$vivado_root/data/verilog/src/glbl.v" >xvlog.log 2>&1
 xelab -a --debug typical --snapshot tb_seg37 \
   xil_defaultlib.tb_seg37 xil_defaultlib.glbl \
   -L xil_defaultlib -L blk_mem_gen_v8_4_9 -L dist_mem_gen_v8_0_15 \
   -L mult_gen_v12_0_22 -L div_gen_v5_1_23 -L xpm \
+  -L axi_clock_converter_v2_1_32 -L axi_uartlite_v2_0_37 \
+  -L axi_infrastructure_v1_1_0 -L axi_lite_ipif_v3_0_4 \
+  -L lib_srl_fifo_v1_0_4 -L lib_cdc_v1_0_3 \
   -L unisims_ver -L unimacro_ver -L secureip >xelab.log 2>&1
 
 set +e

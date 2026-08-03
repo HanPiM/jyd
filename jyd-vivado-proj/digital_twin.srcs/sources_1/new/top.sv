@@ -33,18 +33,11 @@ module top(
     wire w_clk_50Mhz, cpu_clk;
     wire w_clk_rst;
 
-    wire [3:0] uart_awaddr;
-    wire uart_awvalid, uart_awready;
-    wire [31:0] uart_wdata;
-    wire [3:0] uart_wstrb;
-    wire uart_wvalid, uart_wready;
-    wire [1:0] uart_bresp;
-    wire uart_bvalid, uart_bready;
-    wire [3:0] uart_araddr;
-    wire uart_arvalid, uart_arready;
-    wire [31:0] uart_rdata;
-    wire [1:0] uart_rresp;
-    wire uart_rvalid, uart_rready;
+    wire uart_tx_push;
+    wire [7:0] uart_tx_data;
+    wire [7:0] uart_rx_data;
+    wire uart_rx_empty;
+    wire uart_rx_pop;
 
     mypll pll_inst(
         .clk_in1_p(i_sys_clk_p),
@@ -58,23 +51,11 @@ module top(
         .cpu_clk(cpu_clk),
         .uart_clk(w_clk_50Mhz),
         .resetn(w_clk_rst),
-        .s_axi_awaddr(uart_awaddr),
-        .s_axi_awvalid(uart_awvalid),
-        .s_axi_awready(uart_awready),
-        .s_axi_wdata(uart_wdata),
-        .s_axi_wstrb(uart_wstrb),
-        .s_axi_wvalid(uart_wvalid),
-        .s_axi_wready(uart_wready),
-        .s_axi_bresp(uart_bresp),
-        .s_axi_bvalid(uart_bvalid),
-        .s_axi_bready(uart_bready),
-        .s_axi_araddr(uart_araddr),
-        .s_axi_arvalid(uart_arvalid),
-        .s_axi_arready(uart_arready),
-        .s_axi_rdata(uart_rdata),
-        .s_axi_rresp(uart_rresp),
-        .s_axi_rvalid(uart_rvalid),
-        .s_axi_rready(uart_rready),
+        .tx_push(uart_tx_push),
+        .tx_data(uart_tx_data),
+        .rx_data(uart_rx_data),
+        .rx_empty(uart_rx_empty),
+        .rx_pop(uart_rx_pop),
         .uart_rx(i_uart_rx),
         .uart_tx(o_uart_tx)
     );
@@ -83,23 +64,11 @@ module top(
         .w_cpu_clk(cpu_clk),
         .w_clk_50Mhz(w_clk_50Mhz),
         .w_clk_rst(~w_clk_rst),
-        .uart_awaddr(uart_awaddr),
-        .uart_awvalid(uart_awvalid),
-        .uart_awready(uart_awready),
-        .uart_wdata(uart_wdata),
-        .uart_wstrb(uart_wstrb),
-        .uart_wvalid(uart_wvalid),
-        .uart_wready(uart_wready),
-        .uart_bresp(uart_bresp),
-        .uart_bvalid(uart_bvalid),
-        .uart_bready(uart_bready),
-        .uart_araddr(uart_araddr),
-        .uart_arvalid(uart_arvalid),
-        .uart_arready(uart_arready),
-        .uart_rdata(uart_rdata),
-        .uart_rresp(uart_rresp),
-        .uart_rvalid(uart_rvalid),
-        .uart_rready(uart_rready),
+        .uartTxPush(uart_tx_push),
+        .uartTxData(uart_tx_data),
+        .uartRxData(uart_rx_data),
+        .uartRxEmpty(uart_rx_empty),
+        .uartRxPop(uart_rx_pop),
         .virtual_led(virtual_led),
         .virtual_seg(virtual_seg)
     );

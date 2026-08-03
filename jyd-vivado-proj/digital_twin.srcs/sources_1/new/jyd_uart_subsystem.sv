@@ -158,12 +158,14 @@ module jyd_uart_subsystem (
     reg aw_sent = 1'b0;
     reg w_sent = 1'b0;
     reg [7:0] rx_poll_divider = 8'd0;
+    reg just_popped = 1'b0;
 
     assign m_axi_awaddr = 4'h4;
     assign m_axi_wdata = {24'd0, tx_fifo_data};
     assign m_axi_wstrb = 4'b0001;
     assign m_axi_bready = (state == TX_WRITE_B);
-    assign m_axi_araddr = (state == RX_STATUS_AR || state == RX_STATUS_R) ? 4'h8 : 4'h0;
+    assign m_axi_araddr =
+    (state == TX_STATUS_AR || state == TX_STATUS_R || state == RX_STATUS_AR || state == RX_STATUS_R) ? 4'h8 : 4'h0;
     assign m_axi_awvalid = (state == TX_WRITE_AW_W) && !aw_sent;
     assign m_axi_wvalid = (state == TX_WRITE_AW_W) && !w_sent;
     assign m_axi_arvalid = (state == TX_STATUS_AR) || (state == RX_STATUS_AR) || (state == RX_DATA_AR);
@@ -178,12 +180,19 @@ module jyd_uart_subsystem (
             rx_push <= 1'b0;
             rx_push_data <= 8'd0;
             rx_poll_divider <= 8'd0;
+            just_popped <= 1'b0;
         end else begin
             tx_pop <= 1'b0;
             rx_push <= 1'b0;
             case (state)
                 IDLE: begin
-                    if (!tx_empty)
+                    // tx_pop is registered, so the FIFO pop lands one cycle
+                    // after TX_WRITE_B and rd_empty updates one cycle later
+                    // still.  Skipping the TX check for one cycle after a pop
+                    // prevents a spurious TX sequence that would transmit the
+                    // stale output of the just-emptied FIFO.
+                    just_popped <= 1'b0;
+                    if (!tx_empty && !just_popped)
                         state <= TX_STATUS_AR;
                     else if (!rx_full && rx_poll_divider == 8'hff) begin
                         rx_poll_divider <= 8'd0;
@@ -214,6 +223,7 @@ module jyd_uart_subsystem (
                     if (m_axi_bresp != 2'b00)
                         $error("JYD UART Lite TX write failed");
                     tx_pop <= 1'b1;
+                    just_popped <= 1'b1;
                     state <= IDLE;
                 end
                 RX_STATUS_AR: if (m_axi_arready) state <= RX_STATUS_R;

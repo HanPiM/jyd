@@ -45,12 +45,10 @@ class BExtensionUnit extends Module {
   val found     = Reg(Bool())
   val iteration = Reg(UInt(5.W))
   val resultReg = Reg(Types.UWord)
-  val crcClmulhFast = Reg(Bool())
-  val crcClmulhResult = Reg(UInt(16.W))
 
   io.in.ready  := state === State.idle
   io.out.valid := state === State.done
-  io.out.bits  := Mux(crcClmulhFast, Cat(0.U(16.W), crcClmulhResult), resultReg)
+  io.out.bits  := resultReg
 
   val nextWorkA = WireDefault(workA)
   val nextWorkB = WireDefault(workB)
@@ -171,7 +169,6 @@ class BExtensionUnit extends Module {
       when(io.in.fire) {
         assert(decodedValid, "unsupported arithmetic encoding entered BExtensionUnit")
         opReg     := decodedOp
-        crcClmulhFast := isClmulh && io.in.bits.src2 === "h00014002".U
         sourceA   := io.in.bits.src1
         workA     := io.in.bits.src1
         workB     := io.in.bits.src2
@@ -180,7 +177,7 @@ class BExtensionUnit extends Module {
         rorRemain := io.in.bits.src2(4, 0)
         found     := false.B
         iteration := 0.U
-        state := State.busy
+        state     := State.busy
       }
     }
     is(State.busy) {
@@ -192,15 +189,7 @@ class BExtensionUnit extends Module {
       found := nextFound
       val isClmulOp = opReg === BExtensionOp.clmul || opReg === BExtensionOp.clmulh
       val clmulFinished = isClmulOp && nextWorkB === 0.U
-      when(crcClmulhFast) {
-        crcClmulhResult := Cat(
-          sourceA(31),
-          sourceA(30),
-          sourceA(31, 19) ^ sourceA(29, 17),
-          sourceA(31) ^ sourceA(18) ^ sourceA(16)
-        )
-        state := State.done
-      }.elsewhen(iteration === 31.U || clmulFinished) {
+      when(iteration === 31.U || clmulFinished) {
         val countResult = Cat(0.U(26.W), nextCount)
         val clmulResult = Mux(opReg === BExtensionOp.clmulh, nextAccum(63, 32), nextAccum(31, 0))
         val isCountOp = opReg === BExtensionOp.clz || opReg === BExtensionOp.ctz || opReg === BExtensionOp.cpop
@@ -209,7 +198,7 @@ class BExtensionUnit extends Module {
           nextWorkA(31, 0),
           Mux(isCountOp, countResult, Mux(isClmulOp, clmulResult, nextAccum(31, 0)))
         )
-        state := State.done
+        state     := State.done
       }.otherwise {
         iteration := iteration + 1.U
       }

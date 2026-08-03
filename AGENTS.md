@@ -83,6 +83,18 @@ JYD data unless a system or CI environment explicitly requires it.
 - `/srv/data/jyd/cache/ccache/`: the active ccache store for Codex builds.
 - `/srv/data/jyd/tmp/ccache/`: ccache's temporary-file directory.
 
+Create and prepare new optimization worktrees with
+`./npc/scripts/create-opt-worktree.sh` (from the main repo or any worktree)
+instead of issuing the setup commands one by one. It creates the worktree
+under `/srv/data/jyd/worktrees/`, symlinks the local ignored dependencies
+(`am-kernels`, `npc/deps`, CoreMark build outputs, `rt-thread-am`), makes
+`../riscv-arch-test-am-jyd` resolve from the worktree's parent, installs the
+NEMU difftest reference (`.config` plus
+`nemu/build/riscv32-nemu-interpreter-so`) from a proven source, and imports
+the formal CoreMark COE pair into `cur_coe/` with SHA-256 verification.
+Example: `./npc/scripts/create-opt-worktree.sh --commit ced5558
+--name my-exp --branch opt-my-exp`. Run it with `--help` for all options.
+
 Local scripts use `JYD_DATA_ROOT` with a default of `/srv/data/jyd`; set it in
 CI or another host to relocate the whole layout. The project Codex config
 sets `JYD_DATA_ROOT`, `CCACHE_DIR`, `CCACHE_TEMPDIR`, and `TMPDIR` for every

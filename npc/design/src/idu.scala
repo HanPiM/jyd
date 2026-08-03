@@ -393,8 +393,15 @@ class IDU(
   val isBXperm4 = !isFmtI && arithmeticFunc7 === "b0010100".U && arithmeticFunc3 === "b010".U
   val isBRor = arithmeticFunc7 === "b0110000".U && arithmeticFunc3 === "b101".U
   val isIterativeB = isBCount || isBClmul || isBOrcB || isBXperm4 || isBRor
+  val isBShiftAdd = !isFmtI && arithmeticFunc7 === "b0010000".U &&
+    (arithmeticFunc3 === "b010".U || arithmeticFunc3 === "b100".U || arithmeticFunc3 === "b110".U)
+  val isBSext = isFmtI && arithmeticFunc7 === "b0110000".U && arithmeticFunc3 === "b001".U &&
+    (bImmLow5 === 4.U || bImmLow5 === 5.U)
+  val isBMinu = !isFmtI && arithmeticFunc7 === "b0000101".U && arithmeticFunc3 === "b101".U
+  val isBBext = arithmeticFunc7 === "b0100100".U && arithmeticFunc3 === "b101".U
   res.bExtValid := isTypArithmetic && !isMExtArithmetic && isIterativeB
   res.aluIsSub  := !isFmtI && inst(30)
+  res.aluUseSpecialResult := isTypArithmetic && (isBShiftAdd || isBSext || isBMinu || isBBext)
   // Loads consume rs1 only through the dedicated registered address payload
   // below.  Keeping cache-forwarded data out of the unused generic ALU
   // payload avoids a wide IDU payload mux/self-loop on the critical path.

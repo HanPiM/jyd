@@ -342,6 +342,7 @@ class ALU extends Module {
     val in        = Flipped(Decoupled(new ALUInput))
     val out       = Decoupled(Types.UWord)
     val addResult = Output(Types.UWord)
+    val baseResult = Output(Types.UWord)
     val singleCycleResult = Output(Types.UWord)
   })
 
@@ -407,6 +408,7 @@ class ALU extends Module {
       7.U -> logic_and                           // 111: and/andi
     )
   )
+  io.baseResult := baseAluResult
 
   val isSh1Add = !inbits.is_imm && inbits.func7t === "b0010000".U && inbits.func3t === "b010".U
   val isSh2Add = !inbits.is_imm && inbits.func7t === "b0010000".U && inbits.func3t === "b100".U

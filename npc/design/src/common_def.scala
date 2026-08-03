@@ -196,6 +196,10 @@ class DecodedInstInfo(implicit p : CPUParameters) extends InstMetaInfo with HasR
   // the instruction-code bus does not drive the carry chain directly.
   val aluIsSub = Bool()
 
+  // Short B operations select the extended ALU result. Ordinary RV32I
+  // forwarding can otherwise use the base result without crossing that mux.
+  val aluUseSpecialResult = Bool()
+
   val isECall = Bool()
   val isMRet  = Bool()
 

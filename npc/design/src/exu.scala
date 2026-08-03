@@ -370,7 +370,11 @@ class EXU(
   val exuForwardData = Mux(
     useLateBitForward,
     lateBitForwardResult,
-    Mux(isTypArithmetic, alu.io.singleCycleResult, dinst.info.preMuxWrBackData)
+    Mux(
+      isTypArithmetic,
+      Mux(dinst.info.aluUseSpecialResult, alu.io.singleCycleResult, alu.io.baseResult),
+      dinst.info.preMuxWrBackData
+    )
   )
   // Keep lateAddResult out of the generic M/D forwarding mux. Its compact
   // dedicated channel preserves same-cycle forwarding without another rd

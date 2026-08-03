@@ -4,14 +4,15 @@ set -euo pipefail
 
 usage() {
   cat <<'EOF'
-Usage: run_digital_twin_vivado.sh [impl|write_bitstream|bitstream] [--jobs N] [--skip-pack] [--skip-vivado]
+Usage: run_digital_twin_vivado.sh [impl|write_bitstream|bitstream] [--jobs N] [--ip-jobs N] [--skip-pack] [--skip-vivado]
 
 Build npc pack-fpga, replace the Vivado project's imported pack-fpga directory,
 then run the digital_twin Vivado project to impl or write_bitstream.
 
 Environment:
   VIVADO                Vivado executable to use. Defaults to "vivado".
-  JOBS                  Vivado jobs and max threads. Defaults to nproc.
+  JOBS                  Vivado top-level jobs and max threads. Defaults to nproc.
+  IP_JOBS               IP/OOC run concurrency and max threads. Defaults to 1.
 EOF
 }
 
@@ -19,6 +20,7 @@ mode=impl
 skip_pack=0
 skip_vivado=0
 jobs="${JOBS:-$(nproc 2>/dev/null || echo 4)}"
+ip_jobs=""
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
@@ -36,6 +38,14 @@ while [ "$#" -gt 0 ]; do
         exit 2
       fi
       jobs="$2"
+      shift 2
+      ;;
+    --ip-jobs)
+      if [ "$#" -lt 2 ]; then
+        echo "Missing value for --ip-jobs" >&2
+        exit 2
+      fi
+      ip_jobs="$2"
       shift 2
       ;;
     --skip-pack)
@@ -62,6 +72,13 @@ if ! [[ "$jobs" =~ ^[1-9][0-9]*$ ]]; then
   echo "JOBS/--jobs must be a positive integer: $jobs" >&2
   exit 2
 fi
+if [ -z "$ip_jobs" ]; then
+  ip_jobs="${IP_JOBS:-1}"
+fi
+if ! [[ "$ip_jobs" =~ ^[1-9][0-9]*$ ]]; then
+  echo "--ip-jobs must be a positive integer: $ip_jobs" >&2
+  exit 2
+fi
 
 script_dir=$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 npc_dir=$(CDPATH= cd -- "$script_dir/.." && pwd)
@@ -80,6 +97,17 @@ fi
 
 if [ ! -f "$vivado_project" ]; then
   echo "Vivado project file does not exist: $vivado_project" >&2
+  exit 1
+fi
+
+# A second flow can otherwise overlap the first flow's project-manager and
+# OOC child processes. Besides corrupting run state, that can exhaust memory
+# even when either flow is safe by itself. GUI runs do not take this lock, so
+# also keep the explicit run-status checks in the Tcl flow below.
+lock_file="$vivado_proj_home/.digital_twin_vivado_flow.lock"
+exec 9>"$lock_file"
+if ! flock -n 9; then
+  echo "Another scripted Vivado flow is already active for: $vivado_proj_home" >&2
   exit 1
 fi
 
@@ -115,15 +143,27 @@ tcl_file=$(mktemp "${TMPDIR:-/tmp}/digital_twin_flow.XXXXXX.tcl")
 trap 'rm -f "$tcl_file"' EXIT
 
 cat >"$tcl_file" <<'EOF'
-if {$argc != 3} {
-  error "Expected Tcl args: <mode> <jobs> <expected-pack-fpga-dir>"
+if {$argc != 4} {
+  error "Expected Tcl args: <mode> <jobs> <ip-jobs> <expected-pack-fpga-dir>"
 }
 set mode [lindex $argv 0]
 set jobs [lindex $argv 1]
-set expected_pack_dir [file normalize [lindex $argv 2]]
+set ip_jobs [lindex $argv 2]
+set expected_pack_dir [file normalize [lindex $argv 3]]
 
 open_project digital_twin.xpr
-set_param general.maxThreads $jobs
+set_param general.maxThreads $ip_jobs
+
+set active_runs [list]
+foreach run_obj [get_runs] {
+  set run_status [get_property STATUS $run_obj]
+  if {[string match -nocase {running*} $run_status] || [string match -nocase {queued*} $run_status]} {
+    lappend active_runs "[get_property NAME $run_obj] ($run_status)"
+  }
+}
+if {[llength $active_runs] > 0} {
+  error "Vivado project has active or stale-running run metadata; resolve it before starting another flow: $active_runs"
+}
 
 # The generated Chisel file list may gain helper modules (for example inferred
 # memories) without a corresponding entry in the checked-in Vivado project.
@@ -149,7 +189,7 @@ foreach pack_subdir {cpu fpgawrap} {
 puts "Added $added_pack_sources new pack-fpga source(s) to sources_1"
 update_compile_order -fileset sources_1
 puts "Vivado launch_runs jobs: $jobs"
-puts "Vivado general.maxThreads: [get_param general.maxThreads]"
+puts "Vivado IP/OOC max threads: [get_param general.maxThreads]"
 
 set pack_file_count 0
 foreach source_file [get_files -all] {
@@ -205,15 +245,42 @@ if {$configured_freq_error_mhz > 0.001} {
 puts "Resetting and regenerating [llength $project_ips] project IP output products"
 reset_target all $project_ips
 generate_target all $project_ips
-set checkpoint_ips [list]
+set checkpoint_ip_files [list]
 foreach ip_obj $project_ips {
-  if {[get_property GENERATE_SYNTH_CHECKPOINT $ip_obj]} {
-    lappend checkpoint_ips $ip_obj
+  set ip_name [get_property NAME $ip_obj]
+  set ip_files [get_files -quiet -all "*/${ip_name}.xci"]
+  if {[llength $ip_files] != 1} {
+    error "Expected one XCI for $ip_name, got [llength $ip_files]"
+  }
+  set ip_file [lindex $ip_files 0]
+  if {[get_property GENERATE_SYNTH_CHECKPOINT $ip_file]} {
+    lappend checkpoint_ip_files $ip_file
   }
 }
-puts "Rebuilding [llength $checkpoint_ips] project IP synthesis checkpoints"
-if {[llength $checkpoint_ips] > 0} {
-  synth_ip -force $checkpoint_ips
+puts "Rebuilding [llength $checkpoint_ip_files] project IP synthesis checkpoints with at most $ip_jobs concurrent run(s)"
+set checkpoint_runs [list]
+foreach ip_file $checkpoint_ip_files {
+  set ip_name [file rootname [file tail $ip_file]]
+  set run_name "${ip_name}_synth_1"
+  if {[llength [get_runs -quiet $run_name]] == 0} {
+    create_ip_run $ip_file
+  }
+  lappend checkpoint_runs [get_runs $run_name]
+}
+if {[llength $checkpoint_runs] > 0} {
+  reset_run $checkpoint_runs
+  launch_runs $checkpoint_runs -jobs $ip_jobs
+  wait_on_run $checkpoint_runs
+  foreach run_obj $checkpoint_runs {
+    set run_name [get_property NAME $run_obj]
+    set run_status [get_property STATUS $run_obj]
+    set run_progress [get_property PROGRESS $run_obj]
+    puts "$run_name STATUS: $run_status"
+    puts "$run_name PROGRESS: $run_progress"
+    if {$run_progress ne "100%" || [string match -nocase {*failed*} $run_status]} {
+      error "$run_name did not finish successfully"
+    }
+  }
 }
 set locked_ips_after_generate [list]
 foreach ip_obj $project_ips {
@@ -224,6 +291,9 @@ foreach ip_obj $project_ips {
 if {[llength $locked_ips_after_generate] > 0} {
   error "Project IPs became locked/stale while regenerating output products: $locked_ips_after_generate"
 }
+
+set_param general.maxThreads $jobs
+puts "Vivado top synthesis/implementation max threads: [get_param general.maxThreads]"
 
 if {[llength [get_runs synth_1]] == 0} {
   error "Vivado run synth_1 was not found"
@@ -349,7 +419,7 @@ ip_config_hash() {
 # manifest across the entire process so such a run is always rejected.
 ip_config_hash_before=$(ip_config_hash)
 set +e
-"$vivado_bin" -mode batch -source "$tcl_file" -tclargs "$mode" "$jobs" "$pack_dst"
+"$vivado_bin" -mode batch -source "$tcl_file" -tclargs "$mode" "$jobs" "$ip_jobs" "$pack_dst"
 vivado_status=$?
 set -e
 ip_config_hash_after=$(ip_config_hash)

@@ -500,6 +500,19 @@
         <Option Name="UseBlackboxStub" Val="1"/>
       </Config>
     </FileSet>
+    <FileSet Name="mult_gen_mul16_fast" Type="BlockSrcs" RelSrcDir="$PSRCDIR/mult_gen_mul16_fast" RelGenDir="$PGENDIR/mult_gen_mul16_fast">
+      <File Path="$PSRCDIR/sources_1/ip/mult_gen_mul16_fast/mult_gen_mul16_fast.xci">
+        <FileInfo>
+          <Attr Name="UsedIn" Val="synthesis"/>
+          <Attr Name="UsedIn" Val="implementation"/>
+          <Attr Name="UsedIn" Val="simulation"/>
+        </FileInfo>
+      </File>
+      <Config>
+        <Option Name="TopModule" Val="mult_gen_mul16_fast"/>
+        <Option Name="UseBlackboxStub" Val="1"/>
+      </Config>
+    </FileSet>
   </FileSets>
   <Simulators>
     <Simulator Name="XSim">

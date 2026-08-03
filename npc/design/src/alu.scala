@@ -7,6 +7,7 @@ import busfsm._
 
 class ALUInput extends Bundle {
   val is_imm    = Bool()
+  val isSub     = Bool()
   val func3t    = UInt(3.W)
   val func7t    = UInt(7.W)
   val bExtValid = Bool()
@@ -358,13 +359,11 @@ class ALU extends Module {
 
   val isOpAlt = inbits.func7t(5)
 
-  val isAdd = ((~isOpAlt) || inbits.is_imm) //&& (~inbits.func3t(1))
-
   // Share one carry chain between ADD and SUB.  The dedicated address-forward
   // output is valid only for ADD/ADDI, so it can reuse the selected result
   // instead of keeping a second unconditional src1 + src2 cone alive.
-  val addSubSrc2 = Mux(isAdd, src2, ~src2)
-  val add_sub_res = src1 + addSubSrc2 + !isAdd
+  val addSubSrc2 = Mux(inbits.isSub, ~src2, src2)
+  val add_sub_res = src1 + addSubSrc2 + inbits.isSub
   io.addResult := add_sub_res
 
   val sltu_res = src1 < src2

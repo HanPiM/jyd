@@ -192,6 +192,10 @@ class DecodedInstInfo(implicit p : CPUParameters) extends InstMetaInfo with HasR
   // the B unit has registered its compact input fields.
   val bExtValid = Bool()
 
+  // Predecode the ALU add/sub carry polarity before the IDU/EXU register so
+  // the instruction-code bus does not drive the carry chain directly.
+  val aluIsSub = Bool()
+
   val isECall = Bool()
   val isMRet  = Bool()
 

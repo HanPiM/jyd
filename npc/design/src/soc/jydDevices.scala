@@ -585,12 +585,7 @@ class JYDFPGATop(val resetPC: UInt = "h80000000".U) extends Module with HasJYDCP
   val clk_50Mhz = IO(Input(Clock()))
   val led       = IO(Output(UInt(32.W)))
   val seg       = IO(Output(UInt(32.W)))
-  val uartTxPush  = IO(Output(Bool()))
-  val uartTxData  = IO(Output(UInt(8.W)))
-  val uartTxFull  = IO(Input(Bool()))
-  val uartRxData  = IO(Input(UInt(8.W)))
-  val uartRxEmpty = IO(Input(Bool()))
-  val uartRxPop   = IO(Output(Bool()))
+  val uart      = IO(new AXI4LiteUARTMasterIO)
 
   val irom     = Module(new SimpleBusFPGAROM(JYDSoCConfig.iromSizeInByte, JYDSoCConfig.iromBaseAddr))
   val dram     = Module(new SimpleBusFPGAMem(JYDSoCConfig.dramSizeInByte, JYDSoCConfig.dramBaseAddr))
@@ -608,12 +603,7 @@ class JYDFPGATop(val resetPC: UInt = "h80000000".U) extends Module with HasJYDCP
   perip.io.seg <> segReg.io.bus
   perip.io.cnt <> cnt.io.bus
   perip.io.uart <> uartAdapter.io.bus
-  uartTxPush  := uartAdapter.io.txPush
-  uartTxData  := uartAdapter.io.txData
-  uartAdapter.io.txFull  := uartTxFull
-  uartAdapter.io.rxData  := uartRxData
-  uartAdapter.io.rxEmpty := uartRxEmpty
-  uartRxPop   := uartAdapter.io.rxPop
+  uart <> uartAdapter.io.axi
 
   cnt.io.clk_50Mhz := clk_50Mhz
   cnt.io.rst       := reset.asBool

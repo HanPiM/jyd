@@ -22,20 +22,3 @@ set_property ASYNC_REG TRUE [get_cells -hier -regexp \
   {.*student_top_inst/mytop/cnt/counter/(enableSync1|enableSync2)_reg$}]
 set_property ASYNC_REG TRUE [get_cells -hier -regexp \
   {.*student_top_inst/mytop/cnt/counter/tickGraySync[12]_reg\[[0-9]+\]$}]
-
-# The UART subsystem exchanges bytes solely through its two asynchronous FIFOs.
-# Their Gray-pointer synchronizers (and the TX FIFO's dual-port RAM read) are
-# intentional CPU/50 MHz CDC paths.  Do not mark the entire clocks asynchronous:
-# the SEG output remains a separately reviewable crossing.
-set_false_path \
-  -from [get_cells -hier -regexp {.*uart_subsystem_inst/tx_fifo/.*}] \
-  -to   [get_clocks clk_out1_mypll]
-set_false_path \
-  -from [get_cells -hier -regexp {.*uart_subsystem_inst/tx_fifo/.*}] \
-  -to   [get_clocks clk_out2_mypll]
-set_false_path \
-  -from [get_cells -hier -regexp {.*uart_subsystem_inst/rx_fifo/.*}] \
-  -to   [get_clocks clk_out2_mypll]
-set_false_path \
-  -from [get_cells -hier -regexp {.*uart_subsystem_inst/rx_fifo/.*}] \
-  -to   [get_clocks clk_out1_mypll]

@@ -1,0 +1,145 @@
+Perf Counters Report
+Git commit: d4a33fb21d14a7fdb9a78b59e6604a4843e871f2
+
+Statistics:
+run completion:
+  partial run: yes
+  instruction limit: 16000000
+cycle and instruction counts:
+  total cycle count: 21464225
+  total instruction count: 16000000 (16M)
+  IPC: 0.7454
+  CPI: 1.3415
+excution time estimate:
+  Clk(Mhz)    Time(s)
+        50    0.42928
+       100    0.21464
+       200    0.10732
+       250    0.08586
+       280    0.07666
+Pipeline Performance Counter Statistics:
++-------+--------------+---------+----------+--------------+---------+---------+
+| Stage | Backpressure |  Bubble |   Fire   | Backpressure |  Bubble |   Fire  |
+|       |    Cycles    |  Cycles |  Cycles  |       %      |    %    |    %    |
++-------+--------------+---------+----------+--------------+---------+---------+
+|   IFU |      4502259 |       0 | 16961936 |      20.9757 |       0 | 79.0243 |
+|   IDU |      2531957 | 2619425 | 16312813 |      11.7962 | 12.2037 | 76.0001 |
+|   EXU |            0 | 5464193 | 16000002 |            0 | 25.4572 | 74.5428 |
+|   LSU |            0 | 5464193 | 16000002 |            0 | 25.4572 | 74.5428 |
++-------+--------------+---------+----------+--------------+---------+---------+
+RAW Stall Performance Counter Statistics:
+total RAW conflict cycles: 10843121 (50.5172 %)
+total RAW stall cycles: 4188269 (19.5128 %)
+actual IDU dependency stall cycles: 2723512
+  generic bypass: 2345148
+  address rs1 from EXU: 440993
+  address rs1 from WBU: 389912
+  intersects unavailable EXU/LSU/WBU producer: 2337535/7618/0
+  hottest stalled opcode/funct3 buckets:
+    opcode=0x33 funct3=0 cycles=822920 exu=822879 lsu=41
+    opcode=0x63 funct3=0 cycles=474763 exu=473820 lsu=943
+    opcode=0x63 funct3=1 cycles=386662 exu=384895 lsu=1767
+    opcode=0x03 funct3=2 cycles=365087 exu=0 lsu=0
+    opcode=0x03 funct3=4 cycles=242172 exu=242172 lsu=0
+    opcode=0x03 funct3=1 cycles=200336 exu=187107 lsu=0
+    opcode=0x33 funct3=4 cycles=130025 exu=130025 lsu=0
+    opcode=0x23 funct3=2 cycles=84970 exu=84958 lsu=1
+    opcode=0x03 funct3=0 cycles=11623 exu=11623 lsu=0
+    opcode=0x13 funct3=5 cycles=4859 exu=0 lsu=4859
+    opcode=0x13 funct3=1 cycles=40 exu=40 lsu=0
+    opcode=0x23 funct3=1 cycles=35 exu=0 lsu=0
+Legacy conflict counts in stall cycles:
++--------------+---------+----------+-----------------+
+|    Reason    |  Cycles |     %    |        %        |
+|              |         | (in tot) | (in all stalls) |
++--------------+---------+----------+-----------------+
+| EXU conflict | 2362239 |  11.0055 |         56.4013 |
+| LSU conflict | 2079503 |  9.68823 |         49.6507 |
+| WBU conflict |  371030 |   1.7286 |         8.85879 |
++--------------+---------+----------+-----------------+
+All conflict cycles. Per-source rows can overlap; only/multi-source rows are exclusive:
++-----------------------+----------+----------+--------------------+
+|         Reason        |  Cycles  |     %    |          %         |
+|                       |          | (in tot) | (in all conflicts) |
++-----------------------+----------+----------+--------------------+
+|          Any conflict | 10843121 |  50.5172 |                100 |
+|          EXU conflict |  3891042 |   18.128 |            35.8849 |
+|          LSU conflict |  4732076 |  22.0463 |            43.6413 |
+|          WBU conflict |  3752168 |   17.481 |            34.6041 |
+|     EXU only conflict |  2700319 |  12.5806 |            24.9035 |
+|     LSU only conflict |  4084422 |   19.029 |            37.6683 |
+|     WBU only conflict |  2824122 |  13.1573 |            26.0453 |
+| Multi-source conflict |  1234258 |   5.7503 |            11.3829 |
++-----------------------+----------+----------+--------------------+
+Real stall cycles. Per-source rows can overlap; only/multi-source rows are exclusive:
++-----------------------+---------+-------------+-----------------+
+|         Reason        |  Cycles |      %      |        %        |
+|                       |         |   (in tot)  | (in all stalls) |
++-----------------------+---------+-------------+-----------------+
+|             Any stall | 4188269 |     19.5128 |             100 |
+|      EXU stall-source | 2350614 |     10.9513 |         56.1238 |
+|      LSU stall-source | 1837660 |      8.5615 |         43.8764 |
+|      WBU stall-source |       0 |           0 |               0 |
+| EXU only stall-source | 2350609 |     10.9513 |         56.1236 |
+| LSU only stall-source | 1837655 |     8.56148 |         43.8762 |
+| WBU only stall-source |       0 |           0 |               0 |
+|    Multi-source stall |       5 | 2.32946e-05 |     0.000119381 |
++-----------------------+---------+-------------+-----------------+
+IDU Flush Performance Counter Statistics:
+total IDU flush cycles: 649122 (3.0242 %)
++-------------+--------+----------+------------------+
+|    Reason   |  Flush |  Flush % |      Flush %     |
+|             | Cycles | (in tot) | (in all flushes) |
++-------------+--------+----------+------------------+
+| BranchTaken | 566026 |  2.63707 |          87.1987 |
+|        JALR |  50408 | 0.234847 |          7.76557 |
+|         JAL |  32688 | 0.152291 |          5.03573 |
+|   Exception |      0 |        0 |                0 |
+|       Fence |      0 |        0 |                0 |
+| PredRecover |      0 |        0 |                0 |
+|     Unknown |      0 |        0 |                0 |
++-------------+--------+----------+------------------+
+Branch Prediction Performance Counter Statistics:
+  total branch count: 3709070
+  total mispredict count: 324561
+  total accuracy count: 3384509
+  accuracy: 91.2495 %
+  mispredict rate: 8.75047 %
++-----------+---------+------------+----------+----------+--------------+
+|    Type   |  Total  | Mispredict | Accuracy |  Count % | Mispredict % |
+|           |  Count  |    Count   |     %    | (in tot) |   (in tot)   |
++-----------+---------+------------+----------+----------+--------------+
+|    Branch | 3351330 |     283013 |  91.5552 |   90.355 |       7.6303 |
+|       JAL |  264002 |      16344 |  93.8091 |  7.11774 |      0.44065 |
+|      JALR |   93738 |      25204 |  73.1123 |  2.52726 |     0.679523 |
+| Exception |       0 |          0 |      nan |        0 |            0 |
++-----------+---------+------------+----------+----------+--------------+
+DCache Cacheable Load Performance Counter Statistics:
+  definition: EXU-issued cacheable loads; hit is the dcacheHit captured for that EXU-to-LSU payload
+  accesses: 3437571
+  hits: 3425557
+  misses: 12014
+  hit rate: 99.6505%
+Optimization Direction Performance Counter Statistics:
++---------------+--------+
+|  M operation  | Issued |
++---------------+--------+
+|           mul | 597473 |
+|          mulh |      0 |
+|        mulhsu |      0 |
+|         mulhu |      0 |
+|           div |      0 |
+|          divu |      4 |
+|           rem |     81 |
+|          remu |      0 |
+| div/rem total |     85 |
++---------------+--------+
+  mul operand fast-path coverage (overlapping): zero=11575 one=13670 power-of-two=78380 both-u16=565025
+  CoreMark CRC clmulh(rs2=0x14002): 36832
+  cacheable full-word stores: 820456
++----------------------+----------+----------+------+
+| Dependency selection | rs1 only | rs2 only | both |
++----------------------+----------+----------+------+
+|   late-load ADD/ADDI |    13020 |        0 |    0 |
+|   late-add successor |       59 |        0 |    0 |
++----------------------+----------+----------+------+

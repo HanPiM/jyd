@@ -35,6 +35,7 @@ module top(
 
     wire uart_tx_push;
     wire [7:0] uart_tx_data;
+    wire uart_tx_full;
     wire [7:0] uart_rx_data;
     wire uart_rx_empty;
     wire uart_rx_pop;
@@ -53,6 +54,7 @@ module top(
         .resetn(w_clk_rst),
         .tx_push(uart_tx_push),
         .tx_data(uart_tx_data),
+        .tx_full(uart_tx_full),
         .rx_data(uart_rx_data),
         .rx_empty(uart_rx_empty),
         .rx_pop(uart_rx_pop),
@@ -66,6 +68,7 @@ module top(
         .w_clk_rst(~w_clk_rst),
         .uartTxPush(uart_tx_push),
         .uartTxData(uart_tx_data),
+        .uartTxFull(uart_tx_full),
         .uartRxData(uart_rx_data),
         .uartRxEmpty(uart_rx_empty),
         .uartRxPop(uart_rx_pop),

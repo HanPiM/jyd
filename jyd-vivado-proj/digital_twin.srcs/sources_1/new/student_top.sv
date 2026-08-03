@@ -31,6 +31,7 @@ module student_top#(
     input                                       w_clk_rst     ,
     output                                      uartTxPush    ,
     output [7:0]                                uartTxData    ,
+    input                                       uartTxFull    ,
     input  [7:0]                                uartRxData    ,
     input                                       uartRxEmpty   ,
     output                                      uartRxPop     ,
@@ -72,6 +73,7 @@ module student_top#(
         .seg      (seg_wdata),
         .uartTxPush(uartTxPush),
         .uartTxData(uartTxData),
+        .uartTxFull(uartTxFull),
         .uartRxData(uartRxData),
         .uartRxEmpty(uartRxEmpty),
         .uartRxPop(uartRxPop)

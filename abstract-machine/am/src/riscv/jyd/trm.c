@@ -13,6 +13,8 @@ static const char mainargs[MAINARGS_MAX_LEN] =
 
 extern char _my_ext_serial_port;
 #define SERIAL_PORT ((uintptr_t)(&_my_ext_serial_port))
+#define SERIAL_STATUS_PORT (SERIAL_PORT + 4)
+#define UART_TX_READY 0x01u
 
 extern uint32_t CNT_REG[];
 extern uint32_t LED_REG[];
@@ -51,7 +53,12 @@ static void _update_seg(uint32_t v){
 	*MMIO_SEG_REG = _tobcd(v);
 }
 
-void putch(char ch) { *(uint8_t *)(SERIAL_PORT + 0x00) = ch; }
+void putch(char ch) {
+  while (!(*(volatile uint8_t *)SERIAL_STATUS_PORT & UART_TX_READY)) {
+  }
+  *(volatile uint8_t *)(SERIAL_PORT + 0x00) = ch;
+}
+
 char try_getch() { return *(volatile uint8_t *)(SERIAL_PORT + 0x00); }
 
 void halt(int code) {
@@ -65,6 +72,8 @@ void halt(int code) {
 }
 
 void _trm_init() {
+	// Keep this before the benchmark timer: it is a visible UART/IP smoke mark.
+	putstr("[JYD] UART ready\n");
 	_start_cnt();
   int ret = main(mainargs);
 	_stop_cnt();

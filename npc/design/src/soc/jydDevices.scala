@@ -587,6 +587,7 @@ class JYDFPGATop(val resetPC: UInt = "h80000000".U) extends Module with HasJYDCP
   val seg       = IO(Output(UInt(32.W)))
   val uartTxPush  = IO(Output(Bool()))
   val uartTxData  = IO(Output(UInt(8.W)))
+  val uartTxFull  = IO(Input(Bool()))
   val uartRxData  = IO(Input(UInt(8.W)))
   val uartRxEmpty = IO(Input(Bool()))
   val uartRxPop   = IO(Output(Bool()))
@@ -609,6 +610,7 @@ class JYDFPGATop(val resetPC: UInt = "h80000000".U) extends Module with HasJYDCP
   perip.io.uart <> uartAdapter.io.bus
   uartTxPush  := uartAdapter.io.txPush
   uartTxData  := uartAdapter.io.txData
+  uartAdapter.io.txFull  := uartTxFull
   uartAdapter.io.rxData  := uartRxData
   uartAdapter.io.rxEmpty := uartRxEmpty
   uartRxPop   := uartAdapter.io.rxPop

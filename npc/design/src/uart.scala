@@ -69,6 +69,7 @@ class SimpleBusUART extends Module {
   val doReq   = io.req_valid && io.req_ready
   val doWrite = doReq && io.wen
   val doRead  = doReq && !io.wen
+  val isStatus = io.addr(3, 2).orR
 
   val uartToStdOut = Module(new UARTToStdOut)
   uartToStdOut.io.clock  := clock
@@ -77,12 +78,15 @@ class SimpleBusUART extends Module {
 
   val uartTryGetCh = Module(new UARTTryGetCh)
   uartTryGetCh.io.clock  := clock
-  uartTryGetCh.io.enable := doRead
+  uartTryGetCh.io.enable := doRead && !isStatus
 
   val respValidReg = RegNext(RegNext(doReq, false.B), false.B)
   val readRespPipe0 = RegNext(doRead, false.B)
   val readRespReg  = RegNext(readRespPipe0, false.B)
-  val respDataReg  = RegEnable(uartTryGetCh.io.chData, readRespPipe0)
+  val statusReadPipe0 = RegNext(doRead && isStatus, false.B)
+  // Simulation has no TX queue.  Keep bit0 asserted on reads so the AM UART
+  // status poll cannot stall even when the byte address is aligned upstream.
+  val respDataReg = RegEnable(Mux(statusReadPipe0, 1.U(32.W), uartTryGetCh.io.chData | 1.U), readRespPipe0)
   io.resp_valid := respValidReg
   io.rdata      := Mux(readRespReg, respDataReg, 0.U(32.W))
 }
@@ -120,6 +124,7 @@ class SimpleBusFPGAUART extends Module {
     val bus     = SimpleBusIO.Slave
     val txPush  = Output(Bool())
     val txData  = Output(UInt(8.W))
+    val txFull  = Input(Bool())
     val rxData  = Input(UInt(8.W))
     val rxEmpty = Input(Bool())
     val rxPop   = Output(Bool())
@@ -128,9 +133,11 @@ class SimpleBusFPGAUART extends Module {
   io.bus.dontCareResp()
   io.bus.req_ready := true.B
 
-  val doReq   = io.bus.req_valid && io.bus.req_ready
-  val doWrite = doReq && io.bus.wen
-  val doRead  = doReq && !io.bus.wen
+  val doReq    = io.bus.req_valid && io.bus.req_ready
+  val isStatus = io.bus.addr(3, 2).orR
+  val doWrite  = doReq && io.bus.wen && !isStatus
+  val doRead   = doReq && !io.bus.wen && !isStatus
+  val doStatus = doReq && !io.bus.wen && isStatus
 
   io.txPush := doWrite
   io.txData := io.bus.wdata(7, 0)
@@ -143,9 +150,14 @@ class SimpleBusFPGAUART extends Module {
   val readDataReg   = RegNext(readDataPipe0)
   val readRespPipe0 = RegNext(doRead, false.B)
   val readRespReg   = RegNext(readRespPipe0, false.B)
+  // UART+4..+15 are status aliases: bit0 is TX-ready, bit1 is RX-ready.
+  // The CPU's MMIO path aligns byte requests, so status uses a word offset.
+  val statusPipe0 = RegEnable(Cat(0.U(30.W), !io.rxEmpty, !io.txFull), doStatus)
+  val statusReg   = RegNext(statusPipe0)
+  val statusResp  = RegNext(RegNext(doStatus, false.B), false.B)
 
   io.bus.resp_valid := RegNext(RegNext(doReq, false.B), false.B)
-  io.bus.rdata      := Mux(readRespReg, readDataReg, 0.U(32.W))
+  io.bus.rdata      := Mux(statusResp, statusReg, Mux(readRespReg, readDataReg, 0.U(32.W)))
 }
 
 class UARTUnit extends Module {

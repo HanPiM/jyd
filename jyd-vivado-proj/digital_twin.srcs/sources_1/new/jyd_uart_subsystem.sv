@@ -88,13 +88,14 @@ module jyd_uart_subsystem (
     input  wire       resetn,
     input  wire       tx_push,
     input  wire [7:0] tx_data,
+    output wire       tx_full,
     output wire [7:0] rx_data,
     output wire       rx_empty,
     input  wire       rx_pop,
     input  wire       uart_rx,
     output wire       uart_tx
 );
-    wire       tx_full;
+    wire       tx_fifo_full;
     wire       tx_empty;
     wire [7:0] tx_fifo_data;
     reg        tx_pop;
@@ -102,10 +103,10 @@ module jyd_uart_subsystem (
     reg        rx_push;
     reg [7:0]  rx_push_data;
 
-    // CoreMark's validated report is 639 bytes.  1024 bytes preserves the
-    // whole burst even if the 9600-baud transmitter has not drained anything.
-    jyd_async_byte_fifo #(.ADDR_BITS(10)) tx_fifo (
-        .wr_clk(cpu_clk), .wr_resetn(resetn), .wr_en(tx_push), .wr_data(tx_data), .wr_full(tx_full),
+    // The CPU polls tx_full through UART+1 before each byte write, so this
+    // compact FIFO only absorbs AXI UARTLite service latency.
+    jyd_async_byte_fifo #(.ADDR_BITS(3)) tx_fifo (
+        .wr_clk(cpu_clk), .wr_resetn(resetn), .wr_en(tx_push), .wr_data(tx_data), .wr_full(tx_fifo_full),
         .rd_clk(uart_clk), .rd_resetn(resetn), .rd_en(tx_pop), .rd_data(tx_fifo_data), .rd_empty(tx_empty)
     );
     jyd_async_byte_fifo #(.ADDR_BITS(4)) rx_fifo (
@@ -115,10 +116,12 @@ module jyd_uart_subsystem (
 
 `ifndef SYNTHESIS
     always @(posedge cpu_clk) begin
-        if (resetn && tx_push && tx_full)
+        if (resetn && tx_push && tx_fifo_full)
             $error("JYD UART TX FIFO overflow: CoreMark-capacity contract violated");
     end
 `endif
+
+    assign tx_full = tx_fifo_full;
 
     wire [3:0]  m_axi_awaddr;
     wire        m_axi_awvalid;

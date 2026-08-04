@@ -372,7 +372,6 @@ class CPUCore(
   pipelineConnect(exu.io.out, lsu.io.in, lsu.io.out)
 
   idu.io.rvec <> gprs.io.read
-  idu.io.committedX1Trimmed := gprs.io.x1Trimmed
   idu.io.csrRead <> csrs.io.read
   idu.io.csrJmpTarget.mepc  := csrs.io.mepc
   idu.io.csrJmpTarget.mtvec := csrs.io.mtvec

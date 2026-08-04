@@ -370,10 +370,14 @@ class IDU(
   val allowLateLoadRs1 = isLateLoadAndi1 || isLateLoadSrli1
   bypassMux.io.allowLateLoadRs1 := allowLateLoadRs1
   bypassMux.io.allowLateLoadRs2 := false.B
+  val arithmeticFunc3 = inst(14, 12)
+  val arithmeticFunc7 = inst(31, 25)
+  val isMExtArithmetic = !isFmtI && arithmeticFunc7 === "b0000001".U
   // These consumers either complete combinationally or capture operands in
   // their execution unit on the first fire. Address and store-data consumers
   // use the same narrow post-register token rather than a wide IDU bypass.
-  bypassMux.io.allowPrevExuFwdRs1 := isTypArithmetic || isTypBranch || isTypSys || needReg1AddImm
+  bypassMux.io.allowPrevExuFwdRs1 :=
+    (isTypArithmetic && !isMExtArithmetic) || isTypBranch || isTypSys || needReg1AddImm
   bypassMux.io.allowPrevExuFwdRs2 := isTypArithmetic || isTypBranch || isTypStore
   res.lateLoadRs1 := bypassMux.io.lateLoadRs1
   res.lateLoadRs2 := bypassMux.io.lateLoadRs2
@@ -382,9 +386,6 @@ class IDU(
   // Only operations that still use the iterative B unit assert bExtValid.
   // Short B operations are evaluated by the ordinary ALU path so they retain
   // same-cycle forwarding and do not inherit the old universal 32-cycle cost.
-  val arithmeticFunc3 = inst(14, 12)
-  val arithmeticFunc7 = inst(31, 25)
-  val isMExtArithmetic = !isFmtI && arithmeticFunc7 === "b0000001".U
   val bImmLow5 = inst(24, 20)
   val isBCount = isFmtI && arithmeticFunc3 === "b001".U && arithmeticFunc7 === "b0110000".U &&
     (bImmLow5 === 0.U || bImmLow5 === 1.U || bImmLow5 === 2.U)

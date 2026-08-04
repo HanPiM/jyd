@@ -32,3 +32,12 @@ add_cells_to_pblock [get_pblocks p_exu_operands] \
   [get_cells -quiet -hier -regexp {.*payloadReg_4_info_reg[12]_reg\[[0-9]+\]$}]
 resize_pblock [get_pblocks p_exu_operands] -add {SLICE_X98Y98:SLICE_X119Y119}
 set_property IS_SOFT true [get_pblocks p_exu_operands]
+
+# Keep the branch prediction lookup and its IFU response mailbox in the west
+# side region they naturally occupy. This avoids the observed X102 -> X85 ->
+# X106 redirect/prediction detour without constraining the rest of the IFU.
+create_pblock p_ifu_prediction
+add_cells_to_pblock [get_pblocks p_ifu_prediction] \
+  [get_cells -quiet -hier -regexp {.*student_top_inst/mytop/cpu/(btb|bp)/.*|.*student_top_inst/mytop/cpu/ifu/predNextReg_.*}]
+resize_pblock [get_pblocks p_ifu_prediction] -add {SLICE_X82Y100:SLICE_X108Y118}
+set_property IS_SOFT true [get_pblocks p_ifu_prediction]

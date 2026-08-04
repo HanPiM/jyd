@@ -4,10 +4,13 @@ set -euo pipefail
 
 usage() {
   cat <<'EOF'
-Usage: run_digital_twin_vivado.sh [impl|write_bitstream|bitstream] [--jobs N] [--ip-jobs N] [--skip-pack] [--skip-vivado]
+Usage: run_digital_twin_vivado.sh [impl|write_bitstream|bitstream] [--jobs N] [--ip-jobs N] [--reset-runs] [--skip-pack] [--skip-vivado]
 
 Build npc pack-fpga, replace the Vivado project's imported pack-fpga directory,
 then run the digital_twin Vivado project to impl or write_bitstream.
+
+By default, completed Vivado run steps are reused and only stale or missing
+steps are run. Pass --reset-runs for a clean synth_1 and impl_1 rebuild.
 
 Environment:
   VIVADO                Vivado executable to use. Defaults to "vivado".
@@ -19,6 +22,7 @@ EOF
 mode=impl
 skip_pack=0
 skip_vivado=0
+reset_runs=0
 jobs="${JOBS:-$(nproc 2>/dev/null || echo 4)}"
 ip_jobs=""
 
@@ -47,6 +51,10 @@ while [ "$#" -gt 0 ]; do
       fi
       ip_jobs="$2"
       shift 2
+      ;;
+    --reset-runs)
+      reset_runs=1
+      shift
       ;;
     --skip-pack)
       skip_pack=1
@@ -143,13 +151,17 @@ tcl_file=$(mktemp "${TMPDIR:-/tmp}/digital_twin_flow.XXXXXX.tcl")
 trap 'rm -f "$tcl_file"' EXIT
 
 cat >"$tcl_file" <<'EOF'
-if {$argc != 4} {
-  error "Expected Tcl args: <mode> <jobs> <ip-jobs> <expected-pack-fpga-dir>"
+if {$argc != 5} {
+  error "Expected Tcl args: <mode> <jobs> <ip-jobs> <expected-pack-fpga-dir> <reset-runs>"
 }
 set mode [lindex $argv 0]
 set jobs [lindex $argv 1]
 set ip_jobs [lindex $argv 2]
 set expected_pack_dir [file normalize [lindex $argv 3]]
+set reset_runs [lindex $argv 4]
+if {$reset_runs ni {0 1}} {
+  error "reset-runs must be 0 or 1, got: $reset_runs"
+}
 
 open_project digital_twin.xpr
 set_param general.maxThreads $ip_jobs
@@ -339,7 +351,13 @@ if {[lsearch -exact [list_property $synth_run] AUTO_INCREMENTAL_CHECKPOINT] >= 0
   set_property AUTO_INCREMENTAL_CHECKPOINT 0 $synth_run
 }
 
-reset_run synth_1
+if {$reset_runs} {
+  # Resetting synthesis also invalidates and resets the dependent impl_1 run.
+  puts "Resetting synth_1 and dependent impl_1 for a clean rebuild"
+  reset_run synth_1
+} else {
+  puts "Reusing completed synth_1/impl_1 steps; Vivado will run only stale or missing steps"
+}
 
 launch_runs synth_1 -jobs $jobs
 wait_on_run synth_1
@@ -419,7 +437,7 @@ ip_config_hash() {
 # manifest across the entire process so such a run is always rejected.
 ip_config_hash_before=$(ip_config_hash)
 set +e
-"$vivado_bin" -mode batch -source "$tcl_file" -tclargs "$mode" "$jobs" "$ip_jobs" "$pack_dst"
+"$vivado_bin" -mode batch -source "$tcl_file" -tclargs "$mode" "$jobs" "$ip_jobs" "$pack_dst" "$reset_runs"
 vivado_status=$?
 set -e
 ip_config_hash_after=$(ip_config_hash)

@@ -42,3 +42,11 @@ set_property ASYNC_REG TRUE [get_cells -hier -regexp \
   {.*uart_subsystem_inst/tx_fifo/(wr_gray_rd|rd_gray_wr)_sync[12]_reg\[[0-9]+\]$}]
 set_property ASYNC_REG TRUE [get_cells -hier -regexp \
   {.*uart_subsystem_inst/rx_fifo/(wr_gray_rd|rd_gray_wr)_sync[12]_reg\[[0-9]+\]$}]
+# Keep the ID/EX operand banks near their naturally clustered placement.  This
+# is intentionally soft so implementation can move registers when congestion
+# or other critical paths require it.
+create_pblock p_exu_operands
+add_cells_to_pblock [get_pblocks p_exu_operands] \
+  [get_cells -quiet -hier -regexp {.*payloadReg_4_info_reg[12]_reg\[[0-9]+\]$}]
+resize_pblock [get_pblocks p_exu_operands] -add {SLICE_X98Y98:SLICE_X119Y119}
+set_property IS_SOFT true [get_pblocks p_exu_operands]

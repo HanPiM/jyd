@@ -22,8 +22,6 @@ class LSUInput(
   // ordinary writeback-data mux.
   val useLateAddResult = Bool()
   val lateAddResult    = Types.UWord
-  val useIterativeBResult = Bool()
-  val iterativeBResult    = Types.UWord
   val exuWriteBack = new WriteBackInfo
 }
 
@@ -32,11 +30,7 @@ object ExtractFwdInfoFromLSU {
     implicit p: CPUParameters
   ): WrBackForwardInfo = {
     val wrBack = info.bits.exuWriteBack
-    val gprData = Mux(
-      info.bits.useIterativeBResult,
-      info.bits.iterativeBResult,
-      Mux(info.bits.useLateAddResult, info.bits.lateAddResult, wrBack.gpr.data)
-    )
+    val gprData = Mux(info.bits.useLateAddResult, info.bits.lateAddResult, wrBack.gpr.data)
 
     val out = Wire(new WrBackForwardInfo)
     out.addr      := wrBack.gpr.addr
@@ -125,11 +119,8 @@ class LSU(
   outWriteBackInfo.csr_ecallflag := activeReq.exuWriteBack.csr_ecallflag
   outWriteBackInfo.gpr.addr      := activeReq.exuWriteBack.gpr.addr
   outWriteBackInfo.gpr.en        := activeReq.exuWriteBack.gpr.en
-  outWriteBackInfo.gpr.data := Mux(
-    activeReq.useIterativeBResult,
-    activeReq.iterativeBResult,
+  outWriteBackInfo.gpr.data :=
     Mux(activeReq.useLateAddResult, activeReq.lateAddResult, activeReq.exuWriteBack.gpr.data)
-  )
   outWriteBackInfo.isLoad        := activeReq.isLoad
   outWriteBackInfo.isMemOp       := isMemOp
   outWriteBackInfo.lsuResult     := io.dcacheReadData

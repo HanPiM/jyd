@@ -330,8 +330,6 @@ class EXU(
   lsuInfo.dcacheStoreEpoch := io.dcache.storeEpoch
   lsuInfo.useLateAddResult := hasLateLoadOperand && isAdd
   lsuInfo.lateAddResult    := lateAddResult
-  lsuInfo.useIterativeBResult := isBExt
-  lsuInfo.iterativeBResult    := alu.io.iterativeBResult
 
   val snpc = dinst.info.staticNextPCOrCSRTarget
   io.staticTarget := snpc
@@ -353,8 +351,7 @@ class EXU(
   // Only the wiring-only late bit operations still use the ordinary GPR
   // writeback-data field here.
   val arithmeticResult = Mux(isLateLoadAndi1 || isLateLoadSrli1, lateBitResult, aluOut)
-  writeBackInfo.gpr.data :=
-    Mux(isTypArithmetic, Mux(isBExt, 0.U, arithmeticResult), dinst.info.preMuxWrBackData)
+  writeBackInfo.gpr.data := Mux(isTypArithmetic, arithmeticResult, dinst.info.preMuxWrBackData)
 
   // Fill in LSU stage
   writeBackInfo.isLoad        := false.B

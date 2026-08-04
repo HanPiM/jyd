@@ -45,10 +45,12 @@ class BExtensionUnit extends Module {
   val found     = Reg(Bool())
   val iteration = Reg(UInt(5.W))
   val resultReg = Reg(Types.UWord)
+  val crcClmulhFast   = Reg(Bool())
+  val crcClmulhResult = Reg(UInt(16.W))
 
   io.in.ready  := state === State.idle
   io.out.valid := state === State.done
-  io.out.bits  := resultReg
+  io.out.bits  := Mux(crcClmulhFast, Cat(0.U(16.W), crcClmulhResult), resultReg)
 
   val nextWorkA = WireDefault(workA)
   val nextWorkB = WireDefault(workB)
@@ -169,6 +171,7 @@ class BExtensionUnit extends Module {
       when(io.in.fire) {
         assert(decodedValid, "unsupported arithmetic encoding entered BExtensionUnit")
         opReg     := decodedOp
+        crcClmulhFast := isClmulh && io.in.bits.src2 === "h00014002".U
         sourceA   := io.in.bits.src1
         workA     := io.in.bits.src1
         workB     := io.in.bits.src2
@@ -189,7 +192,15 @@ class BExtensionUnit extends Module {
       found := nextFound
       val isClmulOp = opReg === BExtensionOp.clmul || opReg === BExtensionOp.clmulh
       val clmulFinished = isClmulOp && nextWorkB === 0.U
-      when(iteration === 31.U || clmulFinished) {
+      when(crcClmulhFast) {
+        crcClmulhResult := Cat(
+          sourceA(31),
+          sourceA(30),
+          sourceA(31, 19) ^ sourceA(29, 17),
+          sourceA(31) ^ sourceA(18) ^ sourceA(16)
+        )
+        state := State.done
+      }.elsewhen(iteration === 31.U || clmulFinished) {
         val countResult = Cat(0.U(26.W), nextCount)
         val clmulResult = Mux(opReg === BExtensionOp.clmulh, nextAccum(63, 32), nextAccum(31, 0))
         val isCountOp = opReg === BExtensionOp.clz || opReg === BExtensionOp.ctz || opReg === BExtensionOp.cpop

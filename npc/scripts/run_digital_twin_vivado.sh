@@ -370,13 +370,19 @@ if {$reset_runs} {
   puts "Resetting synth_1 and dependent impl_1 for a clean rebuild"
   reset_run synth_1
   launch_runs synth_1 -jobs $jobs
+} elseif {$mode eq "impl"} {
+  # Routine RTL iterations reuse IP/OOC output products, but the top-level
+  # checkpoint must always be rebuilt from the freshly packaged sources.
+  puts "Resetting top-level synth_1 and dependent impl_1; reusing IP/OOC checkpoints"
+  reset_run synth_1
+  launch_runs synth_1 -jobs $jobs
 } else {
   set synth_status [get_property STATUS $synth_run]
   set synth_progress [get_property PROGRESS $synth_run]
   if {$synth_progress ne "100%" || ![string match -nocase {*Complete*} $synth_status]} {
     error "synth_1 is not complete; rerun with --reset-runs: status=$synth_status progress=$synth_progress"
   }
-  puts "Reusing completed synth_1 checkpoint; impl_1 will be rerun"
+  puts "Reusing completed synth_1 checkpoint for bitstream continuation"
 }
 
 wait_on_run synth_1
@@ -413,9 +419,6 @@ if {$cpu_period_error_ns > 0.0005} {
 close_design
 
 if {$mode eq "impl"} {
-  if {!$reset_runs} {
-    reset_run impl_1
-  }
   launch_runs impl_1 -jobs $jobs
 } elseif {$mode eq "write_bitstream"} {
   launch_runs impl_1 -to_step write_bitstream -jobs $jobs

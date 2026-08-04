@@ -19,7 +19,7 @@ module jyd_async_byte_fifo #(
 );
     localparam integer PTR_BITS = ADDR_BITS + 1;
 
-    (* ram_style = "distributed" *) reg [7:0] memory [0:(1 << ADDR_BITS) - 1];
+    (* ram_style = "block" *) reg [7:0] memory [0:(1 << ADDR_BITS) - 1];
     reg [PTR_BITS-1:0] wr_bin = {PTR_BITS{1'b0}};
     reg [PTR_BITS-1:0] wr_gray = {PTR_BITS{1'b0}};
     reg [PTR_BITS-1:0] rd_bin = {PTR_BITS{1'b0}};

@@ -159,9 +159,10 @@ module jyd_uart_subsystem (
     reg w_sent = 1'b0;
     reg [7:0] rx_poll_divider = 8'd0;
     reg just_popped = 1'b0;
+    reg [7:0] tx_byte = 8'd0;
 
     assign m_axi_awaddr = 4'h4;
-    assign m_axi_wdata = {24'd0, tx_fifo_data};
+    assign m_axi_wdata = {24'd0, tx_byte};
     assign m_axi_wstrb = 4'b0001;
     assign m_axi_bready = (state == TX_WRITE_B);
     assign m_axi_araddr =
@@ -192,8 +193,15 @@ module jyd_uart_subsystem (
                     // prevents a spurious TX sequence that would transmit the
                     // stale output of the just-emptied FIFO.
                     just_popped <= 1'b0;
-                    if (!tx_empty && !just_popped)
+                    if (!tx_empty && !just_popped) begin
+                        // Latch the FIFO byte here: the AXI status poll and
+                        // write handshake below take many cycles, during which
+                        // the CPU-side writer may wrap the FIFO and overwrite
+                        // the slot this byte is read from.  A live read would
+                        // then transmit a stale/duplicated byte.
+                        tx_byte <= tx_fifo_data;
                         state <= TX_STATUS_AR;
+                    end
                     else if (!rx_full && rx_poll_divider == 8'hff) begin
                         rx_poll_divider <= 8'd0;
                         state <= RX_STATUS_AR;

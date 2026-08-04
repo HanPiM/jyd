@@ -23,19 +23,22 @@ set_property ASYNC_REG TRUE [get_cells -hier -regexp \
 set_property ASYNC_REG TRUE [get_cells -hier -regexp \
   {.*student_top_inst/mytop/cnt/counter/tickGraySync[12]_reg\[[0-9]+\]$}]
 
-# The UART subsystem exchanges bytes solely through its two asynchronous FIFOs.
-# Their Gray-pointer synchronizers (and the TX FIFO's dual-port RAM read) are
-# intentional CPU/50 MHz CDC paths.  Do not mark the entire clocks asynchronous:
-# the SEG output remains a separately reviewable crossing.
+# Cut only the Gray-pointer transfers into the first synchronizer stages. Keep
+# FIFO-local synchronous paths and unrelated CPU/50 MHz crossings timed.
 set_false_path \
-  -from [get_cells -hier -regexp {.*uart_subsystem_inst/tx_fifo/.*}] \
-  -to   [get_clocks clk_out1_mypll]
+  -from [get_cells -hier -regexp {.*uart_subsystem_inst/tx_fifo/wr_gray_reg\[[0-9]+\]$}] \
+  -to   [get_cells -hier -regexp {.*uart_subsystem_inst/tx_fifo/wr_gray_rd_sync1_reg\[[0-9]+\]$}]
 set_false_path \
-  -from [get_cells -hier -regexp {.*uart_subsystem_inst/tx_fifo/.*}] \
-  -to   [get_clocks clk_out2_mypll]
+  -from [get_cells -hier -regexp {.*uart_subsystem_inst/tx_fifo/rd_gray_reg\[[0-9]+\]$}] \
+  -to   [get_cells -hier -regexp {.*uart_subsystem_inst/tx_fifo/rd_gray_wr_sync1_reg\[[0-9]+\]$}]
 set_false_path \
-  -from [get_cells -hier -regexp {.*uart_subsystem_inst/rx_fifo/.*}] \
-  -to   [get_clocks clk_out2_mypll]
+  -from [get_cells -hier -regexp {.*uart_subsystem_inst/rx_fifo/wr_gray_reg\[[0-9]+\]$}] \
+  -to   [get_cells -hier -regexp {.*uart_subsystem_inst/rx_fifo/wr_gray_rd_sync1_reg\[[0-9]+\]$}]
 set_false_path \
-  -from [get_cells -hier -regexp {.*uart_subsystem_inst/rx_fifo/.*}] \
-  -to   [get_clocks clk_out1_mypll]
+  -from [get_cells -hier -regexp {.*uart_subsystem_inst/rx_fifo/rd_gray_reg\[[0-9]+\]$}] \
+  -to   [get_cells -hier -regexp {.*uart_subsystem_inst/rx_fifo/rd_gray_wr_sync1_reg\[[0-9]+\]$}]
+
+set_property ASYNC_REG TRUE [get_cells -hier -regexp \
+  {.*uart_subsystem_inst/tx_fifo/(wr_gray_rd|rd_gray_wr)_sync[12]_reg\[[0-9]+\]$}]
+set_property ASYNC_REG TRUE [get_cells -hier -regexp \
+  {.*uart_subsystem_inst/rx_fifo/(wr_gray_rd|rd_gray_wr)_sync[12]_reg\[[0-9]+\]$}]

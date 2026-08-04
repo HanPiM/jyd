@@ -1,8 +1,7 @@
 `timescale 1ns / 1ps
 
-// First-word-fall-through asynchronous byte FIFO.  The synchronised Gray
-// pointers make the data side of a crossing local to its owning clock; the
-// CPU-side UART adapter never waits for a UARTLite AXI response.
+// First-word-fall-through asynchronous byte FIFO implemented by the vendor
+// CDC macro.  XPM owns the pointer synchronization and dual-clock storage.
 module jyd_async_byte_fifo #(
     parameter integer ADDR_BITS = 4
 ) (
@@ -10,76 +9,31 @@ module jyd_async_byte_fifo #(
     input  wire       wr_resetn,
     input  wire       wr_en,
     input  wire [7:0] wr_data,
-    output reg        wr_full,
+    output wire       wr_full,
     input  wire       rd_clk,
     input  wire       rd_resetn,
     input  wire       rd_en,
     output wire [7:0] rd_data,
-    output reg        rd_empty
+    output wire       rd_empty
 );
-    localparam integer PTR_BITS = ADDR_BITS + 1;
+    localparam integer FIFO_DEPTH = 1 << ADDR_BITS;
+    localparam integer COUNT_BITS = ADDR_BITS + 1;
 
-    (* ram_style = "block" *) reg [7:0] memory [0:(1 << ADDR_BITS) - 1];
-    reg [PTR_BITS-1:0] wr_bin = {PTR_BITS{1'b0}};
-    reg [PTR_BITS-1:0] wr_gray = {PTR_BITS{1'b0}};
-    reg [PTR_BITS-1:0] rd_bin = {PTR_BITS{1'b0}};
-    reg [PTR_BITS-1:0] rd_gray = {PTR_BITS{1'b0}};
-    (* ASYNC_REG = "TRUE" *) reg [PTR_BITS-1:0] rd_gray_wr_sync1 = {PTR_BITS{1'b0}};
-    (* ASYNC_REG = "TRUE" *) reg [PTR_BITS-1:0] rd_gray_wr_sync2 = {PTR_BITS{1'b0}};
-    (* ASYNC_REG = "TRUE" *) reg [PTR_BITS-1:0] wr_gray_rd_sync1 = {PTR_BITS{1'b0}};
-    (* ASYNC_REG = "TRUE" *) reg [PTR_BITS-1:0] wr_gray_rd_sync2 = {PTR_BITS{1'b0}};
-
-    function [PTR_BITS-1:0] bin_to_gray;
-        input [PTR_BITS-1:0] value;
-        begin
-            bin_to_gray = (value >> 1) ^ value;
-        end
-    endfunction
-
-    wire [PTR_BITS-1:0] wr_bin_next = wr_bin + ((wr_en && !wr_full) ? 1'b1 : 1'b0);
-    wire [PTR_BITS-1:0] wr_gray_next = bin_to_gray(wr_bin_next);
-    wire [PTR_BITS-1:0] rd_bin_next = rd_bin + ((rd_en && !rd_empty) ? 1'b1 : 1'b0);
-    wire [PTR_BITS-1:0] rd_gray_next = bin_to_gray(rd_bin_next);
-    wire [PTR_BITS-1:0] wr_full_compare = {
-        ~rd_gray_wr_sync2[PTR_BITS-1:PTR_BITS-2],
-        rd_gray_wr_sync2[PTR_BITS-3:0]
-    };
-
-    assign rd_data = memory[rd_bin[ADDR_BITS-1:0]];
-
-    always @(posedge wr_clk) begin
-        if (!wr_resetn) begin
-            wr_bin <= {PTR_BITS{1'b0}};
-            wr_gray <= {PTR_BITS{1'b0}};
-            wr_full <= 1'b0;
-            rd_gray_wr_sync1 <= {PTR_BITS{1'b0}};
-            rd_gray_wr_sync2 <= {PTR_BITS{1'b0}};
-        end else begin
-            rd_gray_wr_sync1 <= rd_gray;
-            rd_gray_wr_sync2 <= rd_gray_wr_sync1;
-            if (wr_en && !wr_full)
-                memory[wr_bin[ADDR_BITS-1:0]] <= wr_data;
-            wr_bin <= wr_bin_next;
-            wr_gray <= wr_gray_next;
-            wr_full <= (wr_gray_next == wr_full_compare);
-        end
-    end
-
-    always @(posedge rd_clk) begin
-        if (!rd_resetn) begin
-            rd_bin <= {PTR_BITS{1'b0}};
-            rd_gray <= {PTR_BITS{1'b0}};
-            rd_empty <= 1'b1;
-            wr_gray_rd_sync1 <= {PTR_BITS{1'b0}};
-            wr_gray_rd_sync2 <= {PTR_BITS{1'b0}};
-        end else begin
-            wr_gray_rd_sync1 <= wr_gray;
-            wr_gray_rd_sync2 <= wr_gray_rd_sync1;
-            rd_bin <= rd_bin_next;
-            rd_gray <= rd_gray_next;
-            rd_empty <= (rd_gray_next == wr_gray_rd_sync2);
-        end
-    end
+    xpm_fifo_async #(
+        .CDC_SYNC_STAGES(2), .DOUT_RESET_VALUE("0"), .ECC_MODE("no_ecc"),
+        .FIFO_MEMORY_TYPE("block"), .FIFO_READ_LATENCY(0), .FIFO_WRITE_DEPTH(FIFO_DEPTH),
+        .FULL_RESET_VALUE(0), .PROG_EMPTY_THRESH(10), .PROG_FULL_THRESH(FIFO_DEPTH - 5),
+        .RD_DATA_COUNT_WIDTH(COUNT_BITS), .READ_DATA_WIDTH(8), .READ_MODE("fwft"),
+        .RELATED_CLOCKS(0), .USE_ADV_FEATURES("0707"), .WAKEUP_TIME(0),
+        .WRITE_DATA_WIDTH(8), .WR_DATA_COUNT_WIDTH(COUNT_BITS)
+    ) fifo_inst (
+        .sleep(1'b0), .rst(!wr_resetn),
+        .wr_clk(wr_clk), .wr_en(wr_en), .din(wr_data), .full(wr_full),
+        .prog_full(), .wr_data_count(), .overflow(), .wr_rst_busy(), .almost_full(), .wr_ack(),
+        .rd_clk(rd_clk), .rd_en(rd_en), .dout(rd_data), .empty(rd_empty),
+        .prog_empty(), .rd_data_count(), .underflow(), .rd_rst_busy(), .almost_empty(), .data_valid(),
+        .injectsbiterr(1'b0), .injectdbiterr(1'b0), .sbiterr(), .dbiterr()
+    );
 endmodule
 
 module jyd_uart_subsystem (
@@ -105,7 +59,9 @@ module jyd_uart_subsystem (
 
     // The CPU polls tx_full through UART+1 before each byte write, so this
     // compact FIFO only absorbs AXI UARTLite service latency.
-    jyd_async_byte_fifo #(.ADDR_BITS(3)) tx_fifo (
+    // The producer has no full backpressure. Keep the complete CoreMark report
+    // in the CPU-to-UART queue while the 9600-baud transmitter drains it.
+    jyd_async_byte_fifo #(.ADDR_BITS(10)) tx_fifo (
         .wr_clk(cpu_clk), .wr_resetn(resetn), .wr_en(tx_push), .wr_data(tx_data), .wr_full(tx_fifo_full),
         .rd_clk(uart_clk), .rd_resetn(resetn), .rd_en(tx_pop), .rd_data(tx_fifo_data), .rd_empty(tx_empty)
     );
@@ -159,7 +115,7 @@ module jyd_uart_subsystem (
     reg w_sent = 1'b0;
     reg [7:0] rx_poll_divider = 8'd0;
     reg just_popped = 1'b0;
-    reg [7:0] tx_byte = 8'd0;
+    (* DONT_TOUCH = "TRUE" *) reg [7:0] tx_byte = 8'd0;
 
     assign m_axi_awaddr = 4'h4;
     assign m_axi_wdata = {24'd0, tx_byte};
@@ -182,6 +138,7 @@ module jyd_uart_subsystem (
             rx_push_data <= 8'd0;
             rx_poll_divider <= 8'd0;
             just_popped <= 1'b0;
+            tx_byte <= 8'd0;
         end else begin
             tx_pop <= 1'b0;
             rx_push <= 1'b0;

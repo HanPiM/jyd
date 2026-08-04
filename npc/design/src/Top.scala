@@ -386,7 +386,6 @@ class CPUCore(
   wbuRawFwdInfo.data      := wbu.io.in.bits.gpr.data(21, 0)
   idu.io.wrBackInfo.exu := exu.io.fwd
   idu.io.lateLoadProducer := exu.io.lateLoadProducer
-  idu.io.lateAddFwd := exu.io.lateAddFwd
   idu.io.exuAddFwd := exu.io.addFwd
   idu.io.wrBackInfo.lsu := lsuFwdInfo
   idu.io.wrBackInfo.wbu := ExtractFwdInfoFromWrBack(wbu.io.in, wbu.io.memResp)

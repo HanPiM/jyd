@@ -122,11 +122,6 @@ class LateLoadSourceInfo(
   val data      = Types.UWord
 }
 
-class LateAddForwardInfo extends Bundle {
-  val valid = Bool()
-  val data  = Types.UWord
-}
-
 object SingleByPassMux {
   def conflict(rs: UInt, rd: UInt, en: Bool): Bool = (rs === rd) && (rd =/= 0.U) && en
   def apply(
@@ -164,7 +159,6 @@ object CacheAwareByPassMux {
     allowCache: Bool,
     lateLoadProducer: LateLoadProducerInfo,
     allowLateLoad: Bool,
-    lateAddFwd: LateAddForwardInfo,
     allowPrevExuFwd: Bool
   ): (Bool, UInt, Bool, Bool) = {
     require(wrBacks.length == 3)
@@ -176,12 +170,7 @@ object CacheAwareByPassMux {
     // The dependent ADD/ADDI is held in EXU if the registered LSU source later
     // reports a miss.
     val lateLoadSelect = allowLateLoad && exuConflict && lateLoadProducer.valid
-    // Sequential single issue makes exuConflict identify the producer; the
-    // dedicated late-add result therefore needs no second rd comparison.
-    val lateAddSelect = exuConflict && lateAddFwd.valid
-    dontTouch(lateAddSelect)
-    val prevExuFwdSelect =
-      allowPrevExuFwd && exuConflict && (wrBacks(0).dataVaild || lateAddSelect)
+    val prevExuFwdSelect = allowPrevExuFwd && exuConflict && wrBacks(0).dataVaild
 
     val needStall = Mux(
       exuConflict,
@@ -220,7 +209,6 @@ class ByPassMux(
     val wrBackInfo = Input(new WrBackInfoGroup)
     val dcacheFwd  = Input(new DCacheForwardInfo)
     val lateLoadProducer = Input(new LateLoadProducerInfo)
-    val lateAddFwd       = Input(new LateAddForwardInfo)
     val allowCacheRs1 = Input(Bool())
     val allowLateLoadRs1 = Input(Bool())
     val allowLateLoadRs2 = Input(Bool())
@@ -247,7 +235,6 @@ class ByPassMux(
     io.allowCacheRs1,
     io.lateLoadProducer,
     io.allowLateLoadRs1,
-    io.lateAddFwd,
     io.allowPrevExuFwdRs1
   )
   val (needStall2, outData2, lateLoadRs2, prevExuFwdRs2) = CacheAwareByPassMux(
@@ -258,7 +245,6 @@ class ByPassMux(
     true.B,
     io.lateLoadProducer,
     io.allowLateLoadRs2,
-    io.lateAddFwd,
     io.allowPrevExuFwdRs2
   )
 
@@ -290,7 +276,6 @@ class IDU(
     val wrBackInfo           = Input(new WrBackInfoGroup)
     val dcacheFwd            = Input(new DCacheForwardInfo)
     val lateLoadProducer     = Input(new LateLoadProducerInfo)
-    val lateAddFwd           = Input(new LateAddForwardInfo)
     val exuAddFwd            = Input(new AddForwardInfo)
     val reg1AddImmWbuRawInfo = Input(new Reg1AddImmWbuRawInfo)
 
@@ -373,7 +358,6 @@ class IDU(
   val needReg1AddImm = isTypLoad || isTypStore || isTypJALR
   bypassMux.io.dcacheFwd := io.dcacheFwd
   bypassMux.io.lateLoadProducer := io.lateLoadProducer
-  bypassMux.io.lateAddFwd       := io.lateAddFwd
   // A dependent load may consume the producer's registered LSU DCache-hit
   // data here. The resulting address crosses the existing IDU/EXU payload
   // register before it drives the next DCache lookup.
@@ -381,13 +365,11 @@ class IDU(
   // Only compact dedicated results may consume a load whose hit/miss is not
   // known in IDU. The fixed-immediate forms cover the hot xibei bit-extraction
   // loop without placing a general AND or barrel shifter in the late path.
-  val isLateLoadAdd = isTypArithmetic && inst(14, 12) === 0.U && (isFmtI || inst(31, 25) === 0.U)
   val isLateLoadAndi1 = isTypArithmetic && isFmtI && inst(14, 12) === "b111".U && inst(31, 20) === 1.U
   val isLateLoadSrli1 = isTypArithmetic && isFmtI && inst(14, 12) === "b101".U && inst(31, 20) === 1.U
-  val allowLateLoadRs1 = isLateLoadAdd || isLateLoadAndi1 || isLateLoadSrli1
-  val allowLateLoadRs2 = isLateLoadAdd && !isFmtI
+  val allowLateLoadRs1 = isLateLoadAndi1 || isLateLoadSrli1
   bypassMux.io.allowLateLoadRs1 := allowLateLoadRs1
-  bypassMux.io.allowLateLoadRs2 := allowLateLoadRs2
+  bypassMux.io.allowLateLoadRs2 := false.B
   // These consumers either complete combinationally or capture operands in
   // their execution unit on the first fire. Address and store-data consumers
   // use the same narrow post-register token rather than a wide IDU bypass.

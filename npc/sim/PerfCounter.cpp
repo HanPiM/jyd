@@ -307,17 +307,6 @@ void OptimizationDirectionPerfCounter::update() {
     cacheableFullWordStores++;
   }
 
-  const auto *idu = GetIDU();
-  if (idu->io_out_valid && idu->io_out_ready) {
-    const bool lateAddRs1 = idu->bypassMux->lateAddSelect;
-    const bool lateAddRs2 = idu->bypassMux->lateAddSelect_1;
-    if (lateAddRs1 || lateAddRs2) {
-      lateAddSuccessorCount[lateAddRs1 && lateAddRs2
-                                ? LateAddBothRs
-                                : (lateAddRs1 ? LateAddRs1Only
-                                              : LateAddRs2Only)]++;
-    }
-  }
 }
 
 std::vector<PerfCounterVariant> perf_counters;

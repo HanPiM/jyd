@@ -9,8 +9,8 @@ Usage: run_digital_twin_vivado.sh [impl|write_bitstream|bitstream] [--jobs N] [-
 Build npc pack-fpga, replace the Vivado project's imported pack-fpga directory,
 then run the digital_twin Vivado project to impl or write_bitstream.
 
-By default, a completed synth_1 checkpoint is reused and impl_1 is rerun.
-Pass --reset-runs for a clean synth_1 and impl_1 rebuild.
+By default, completed IP/OOC and synth_1 checkpoints are reused and impl_1 is rerun.
+Pass --reset-runs for a clean IP/OOC, synth_1, and impl_1 rebuild.
 
 Environment:
   VIVADO                Vivado executable to use. Defaults to "vivado".
@@ -219,9 +219,8 @@ if {$pack_file_count == 0} {
 puts "Verified $pack_file_count pack-fpga sources under: $expected_pack_dir"
 
 # Generated IP output products and OOC checkpoints are ignored build
-# artifacts.  They may therefore belong to an older experiment even when the
-# checked-in XCI is correct.  Rebuild every project IP before top synthesis so
-# neither clocks nor COE-backed memories can silently reuse stale products.
+# artifacts. A clean run rebuilds them; routine implementation iterations
+# validate and reuse the completed products that fed the completed synth_1.
 set project_ips [get_ips -quiet]
 if {[llength $project_ips] == 0} {
   error "No project IPs were found"
@@ -254,9 +253,6 @@ puts [format "Configured CPU clock: requested=%.6f MHz actual=%.6f MHz error=%.6
 if {$configured_freq_error_mhz > 0.001} {
   error [format "CPU clock requested/actual mismatch exceeds 1 kHz: %.6f MHz" $configured_freq_error_mhz]
 }
-puts "Resetting and regenerating [llength $project_ips] project IP output products"
-reset_target all $project_ips
-generate_target all $project_ips
 set checkpoint_ip_files [list]
 foreach ip_obj $project_ips {
   set ip_name [get_property NAME $ip_obj]
@@ -269,7 +265,6 @@ foreach ip_obj $project_ips {
     lappend checkpoint_ip_files $ip_file
   }
 }
-puts "Rebuilding [llength $checkpoint_ip_files] project IP synthesis checkpoints with at most $ip_jobs concurrent run(s)"
 set checkpoint_runs [list]
 foreach ip_file $checkpoint_ip_files {
   set ip_name [file rootname [file tail $ip_file]]
@@ -279,10 +274,20 @@ foreach ip_file $checkpoint_ip_files {
   }
   lappend checkpoint_runs [get_runs $run_name]
 }
+if {$reset_runs} {
+  puts "Resetting and regenerating [llength $project_ips] project IP output products"
+  reset_target all $project_ips
+  generate_target all $project_ips
+  puts "Rebuilding [llength $checkpoint_runs] project IP synthesis checkpoints with at most $ip_jobs concurrent run(s)"
+  if {[llength $checkpoint_runs] > 0} {
+    reset_run $checkpoint_runs
+    launch_runs $checkpoint_runs -jobs $ip_jobs
+    wait_on_run $checkpoint_runs
+  }
+} else {
+  puts "Reusing [llength $checkpoint_runs] completed project IP synthesis checkpoints"
+}
 if {[llength $checkpoint_runs] > 0} {
-  reset_run $checkpoint_runs
-  launch_runs $checkpoint_runs -jobs $ip_jobs
-  wait_on_run $checkpoint_runs
   foreach run_obj $checkpoint_runs {
     set run_name [get_property NAME $run_obj]
     set run_status [get_property STATUS $run_obj]
@@ -290,7 +295,7 @@ if {[llength $checkpoint_runs] > 0} {
     puts "$run_name STATUS: $run_status"
     puts "$run_name PROGRESS: $run_progress"
     if {$run_progress ne "100%" || [string match -nocase {*failed*} $run_status]} {
-      error "$run_name did not finish successfully"
+      error "$run_name is not complete; rerun with --reset-runs"
     }
   }
 }

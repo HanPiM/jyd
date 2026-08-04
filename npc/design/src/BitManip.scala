@@ -6,7 +6,7 @@ import chisel3.util._
 import common_def._
 
 object BExtensionOp extends ChiselEnum {
-  val clz, ctz, cpop, clmul, clmulh, orcB, xperm4, ror, pack = Value
+  val clz, ctz, cpop, clmul, clmulh, orcB, xperm4, ror, pack, sh3add, sextB, minu, bext = Value
 }
 
 class BExtensionInput extends Bundle {
@@ -83,7 +83,15 @@ class BExtensionUnit extends Module {
     io.in.bits.isImm && io.in.bits.func3t === "b101".U && io.in.bits.func7t === "b0110000".U
   val isPack =
     !io.in.bits.isImm && io.in.bits.func3t === "b100".U && io.in.bits.func7t === "b0000100".U
-  val decodedValid = isClz || isCtz || isCpop || isClmul || isClmulh || isOrcB || isXperm4 || isRor || isRori || isPack
+  val isSh3Add =
+    !io.in.bits.isImm && io.in.bits.func3t === "b110".U && io.in.bits.func7t === "b0010000".U
+  val isSextB =
+    io.in.bits.isImm && io.in.bits.func3t === "b001".U && io.in.bits.func7t === "b0110000".U && immLow5 === 4.U
+  val isMinu =
+    !io.in.bits.isImm && io.in.bits.func3t === "b101".U && io.in.bits.func7t === "b0000101".U
+  val isBext = io.in.bits.func3t === "b101".U && io.in.bits.func7t === "b0100100".U
+  val decodedValid = isClz || isCtz || isCpop || isClmul || isClmulh || isOrcB || isXperm4 || isRor || isRori ||
+    isPack || isSh3Add || isSextB || isMinu || isBext
   val decodedOp = MuxCase(
     BExtensionOp.clz,
     Seq(
@@ -94,7 +102,11 @@ class BExtensionUnit extends Module {
       isOrcB   -> BExtensionOp.orcB,
       isXperm4 -> BExtensionOp.xperm4,
       (isRor || isRori) -> BExtensionOp.ror,
-      isPack   -> BExtensionOp.pack
+      isPack   -> BExtensionOp.pack,
+      isSh3Add -> BExtensionOp.sh3add,
+      isSextB  -> BExtensionOp.sextB,
+      isMinu   -> BExtensionOp.minu,
+      isBext   -> BExtensionOp.bext
     )
   )
 
@@ -164,6 +176,18 @@ class BExtensionUnit extends Module {
     is(BExtensionOp.pack) {
       nextAccum := Cat(workB(15, 0), workA(15, 0))
     }
+    is(BExtensionOp.sh3add) {
+      nextAccum := workB + (workA << 3)
+    }
+    is(BExtensionOp.sextB) {
+      nextAccum := Cat(Fill(24, workA(7)), workA(7, 0))
+    }
+    is(BExtensionOp.minu) {
+      nextAccum := Mux(workA(31, 0) < workB, workA(31, 0), workB)
+    }
+    is(BExtensionOp.bext) {
+      nextAccum := Cat(0.U(31.W), (workA(31, 0) >> workB(4, 0))(0))
+    }
   }
 
   switch(state) {
@@ -192,6 +216,8 @@ class BExtensionUnit extends Module {
       found := nextFound
       val isClmulOp = opReg === BExtensionOp.clmul || opReg === BExtensionOp.clmulh
       val clmulFinished = isClmulOp && nextWorkB === 0.U
+      val isShortOp = opReg === BExtensionOp.sh3add || opReg === BExtensionOp.sextB ||
+        opReg === BExtensionOp.minu || opReg === BExtensionOp.bext
       when(crcClmulhFast) {
         crcClmulhResult := Cat(
           sourceA(31),
@@ -200,7 +226,7 @@ class BExtensionUnit extends Module {
           sourceA(31) ^ sourceA(18) ^ sourceA(16)
         )
         state := State.done
-      }.elsewhen(iteration === 31.U || clmulFinished) {
+      }.elsewhen(isShortOp || iteration === 31.U || clmulFinished) {
         val countResult = Cat(0.U(26.W), nextCount)
         val clmulResult = Mux(opReg === BExtensionOp.clmulh, nextAccum(63, 32), nextAccum(31, 0))
         val isCountOp = opReg === BExtensionOp.clz || opReg === BExtensionOp.ctz || opReg === BExtensionOp.cpop

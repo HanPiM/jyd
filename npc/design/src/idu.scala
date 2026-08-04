@@ -373,6 +373,19 @@ class IDU(
   val arithmeticFunc3 = inst(14, 12)
   val arithmeticFunc7 = inst(31, 25)
   val isMExtArithmetic = !isFmtI && arithmeticFunc7 === "b0000001".U
+  // These consumers either complete combinationally or capture operands in
+  // their execution unit on the first fire. Address and store-data consumers
+  // use the same narrow post-register token rather than a wide IDU bypass.
+  bypassMux.io.allowPrevExuFwdRs1 :=
+    (isTypArithmetic && !isMExtArithmetic) || isTypBranch || isTypSys || needReg1AddImm
+  bypassMux.io.allowPrevExuFwdRs2 := isTypArithmetic || isTypBranch || isTypStore
+  res.lateLoadRs1 := bypassMux.io.lateLoadRs1
+  res.lateLoadRs2 := bypassMux.io.lateLoadRs2
+  res.prevExuFwdRs1 := bypassMux.io.prevExuFwdRs1
+  res.prevExuFwdRs2 := bypassMux.io.prevExuFwdRs2
+  // Only operations that still use the iterative B unit assert bExtValid.
+  // Short B operations are evaluated by the ordinary ALU path so they retain
+  // same-cycle forwarding and do not inherit the old universal 32-cycle cost.
   val bImmLow5 = inst(24, 20)
   val isBCount = isFmtI && arithmeticFunc3 === "b001".U && arithmeticFunc7 === "b0110000".U &&
     (bImmLow5 === 0.U || bImmLow5 === 1.U || bImmLow5 === 2.U)
@@ -382,20 +395,6 @@ class IDU(
   val isBXperm4 = !isFmtI && arithmeticFunc7 === "b0010100".U && arithmeticFunc3 === "b010".U
   val isBRor = arithmeticFunc7 === "b0110000".U && arithmeticFunc3 === "b101".U
   val isIterativeB = isBCount || isBClmul || isBOrcB || isBXperm4 || isBRor
-  // These consumers either complete combinationally or capture operands in
-  // their execution unit on the first fire. Address and store-data consumers
-  // use the same narrow post-register token rather than a wide IDU bypass.
-  bypassMux.io.allowPrevExuFwdRs1 :=
-    (isTypArithmetic && !isMExtArithmetic) || isTypBranch || isTypSys || needReg1AddImm
-  bypassMux.io.allowPrevExuFwdRs2 :=
-    (isTypArithmetic && !isMExtArithmetic && !isIterativeB) || isTypStore
-  res.lateLoadRs1 := bypassMux.io.lateLoadRs1
-  res.lateLoadRs2 := bypassMux.io.lateLoadRs2
-  res.prevExuFwdRs1 := bypassMux.io.prevExuFwdRs1
-  res.prevExuFwdRs2 := bypassMux.io.prevExuFwdRs2
-  // Only operations that still use the iterative B unit assert bExtValid.
-  // Short B operations are evaluated by the ordinary ALU path so they retain
-  // same-cycle forwarding and do not inherit the old universal 32-cycle cost.
   val isBShiftAdd = !isFmtI && arithmeticFunc7 === "b0010000".U &&
     (arithmeticFunc3 === "b010".U || arithmeticFunc3 === "b100".U || arithmeticFunc3 === "b110".U)
   val isBSext = isFmtI && arithmeticFunc7 === "b0110000".U && arithmeticFunc3 === "b001".U &&

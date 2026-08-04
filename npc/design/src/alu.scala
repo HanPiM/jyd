@@ -13,9 +13,6 @@ class ALUInput extends Bundle {
   val bExtValid = Bool()
   val src1      = Types.UWord
   val src2      = Types.UWord
-  val rawSrc1   = Types.UWord
-  val rawSrc2   = Types.UWord
-  val rawNarrow = Bool()
 }
 
 class ALU_foo extends Module {
@@ -32,12 +29,9 @@ class ALU_foo extends Module {
 }
 
 class MultiplierInput extends Bundle {
-  val src1      = Types.UWord
-  val src2      = Types.UWord
-  val rawSrc1   = Types.UWord
-  val rawSrc2   = Types.UWord
-  val rawNarrow = Bool()
-  val func3t    = UInt(3.W)
+  val src1   = Types.UWord
+  val src2   = Types.UWord
+  val func3t = UInt(3.W)
 }
 
 class DividerInput extends Bundle {
@@ -207,8 +201,8 @@ class Multiplier extends Module {
   fastMultiplier.io.A   := io.in.bits.src1
   fastMultiplier.io.B   := io.in.bits.src2
   narrowMultiplier.io.CLK := clock
-  narrowMultiplier.io.A   := io.in.bits.rawSrc1(15, 0)
-  narrowMultiplier.io.B   := io.in.bits.rawSrc2(15, 0)
+  narrowMultiplier.io.A   := io.in.bits.src1(15, 0)
+  narrowMultiplier.io.B   := io.in.bits.src2(15, 0)
 
   val product = multiplier.io.P
   val result = Mux(isNarrowFastReg, narrowMultiplier.io.P, Mux(isFastReg, fastMultiplier.io.P, product(63, 32)))
@@ -226,8 +220,7 @@ class Multiplier extends Module {
     is(State.idle) {
       when(io.in.fire) {
         val isMul = io.in.bits.func3t === 0.U
-        val isNarrowFast = isMul && io.in.bits.rawNarrow && io.in.bits.rawSrc1(31, 16) === 0.U &&
-          io.in.bits.rawSrc2(31, 16) === 0.U
+        val isNarrowFast = isMul && io.in.bits.src1(31, 16) === 0.U && io.in.bits.src2(31, 16) === 0.U
         isFastReg := isMul
         isNarrowFastReg := isNarrowFast
         slowValidPipe := Mux(isMul, 0.U, 1.U)
@@ -464,9 +457,6 @@ class ALU extends Module {
   multiplier.io.in.valid       := io.in.valid && isMulOp
   multiplier.io.in.bits.src1   := src1
   multiplier.io.in.bits.src2   := src2
-  multiplier.io.in.bits.rawSrc1 := inbits.rawSrc1
-  multiplier.io.in.bits.rawSrc2 := inbits.rawSrc2
-  multiplier.io.in.bits.rawNarrow := inbits.rawNarrow
   multiplier.io.in.bits.func3t := func3t
   multiplier.io.out.ready      := io.out.ready
 

@@ -389,10 +389,10 @@ class IDU(
   bypassMux.io.allowLateLoadRs1 := allowLateLoadRs1
   bypassMux.io.allowLateLoadRs2 := allowLateLoadRs2
   // These consumers either complete combinationally or capture operands in
-  // their execution unit on the first fire. Address generation retains its
-  // dedicated narrow bypass; store data waits for registered LSU forwarding.
+  // their execution unit on the first fire. Address and store-data consumers
+  // use the same narrow post-register token rather than a wide IDU bypass.
   bypassMux.io.allowPrevExuFwdRs1 := isTypArithmetic || isTypBranch || isTypSys || needReg1AddImm
-  bypassMux.io.allowPrevExuFwdRs2 := isTypArithmetic || isTypBranch
+  bypassMux.io.allowPrevExuFwdRs2 := isTypArithmetic || isTypBranch || isTypStore
   res.lateLoadRs1 := bypassMux.io.lateLoadRs1
   res.lateLoadRs2 := bypassMux.io.lateLoadRs2
   res.prevExuFwdRs1 := bypassMux.io.prevExuFwdRs1

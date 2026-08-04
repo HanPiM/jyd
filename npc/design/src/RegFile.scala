@@ -58,6 +58,7 @@ class GPRIO(
     extends Bundle {
   val read  = new RegFileIO(cfg.gprAddrWidth).RX.VecRead(N_RD)
   val write = new RegFileIO(cfg.gprAddrWidth).RX.Write
+  val x1Trimmed = Output(UInt(15.W))
 }
 
 class RegisterFile(
@@ -72,6 +73,12 @@ class RegisterFile(
 
   val replicas = Seq.fill(READ_PORTS)(Module(new DistMemGen32x32))
   val writeEn  = io.write.en && io.write.addr =/= 0.U
+  val x1Trimmed = Reg(UInt(15.W))
+
+  when(writeEn && io.write.addr === 1.U) {
+    x1Trimmed := io.write.data(16, 2)
+  }
+  io.x1Trimmed := x1Trimmed
 
   replicas.foreach { replica =>
     replica.io.a   := io.write.addr.pad(5)

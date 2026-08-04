@@ -278,6 +278,7 @@ class IDU(
     val lateLoadProducer     = Input(new LateLoadProducerInfo)
     val exuAddFwd            = Input(new AddForwardInfo)
     val reg1AddImmWbuRawInfo = Input(new Reg1AddImmWbuRawInfo)
+    val committedX1Trimmed   = Input(UInt(15.W))
 
     val out = Decoupled(new DecodedInst)
   })
@@ -508,9 +509,13 @@ class IDU(
   // takes the ordinary redirect path; normal compiler epilogues restore x1
   // earlier through LSU and retain prediction.  The comparison base excludes
   // EXU data structurally even when the conservative redirect term is true.
-  val returnTargetBase = Mux(lsuReg1AddImmBypass, io.wrBackInfo.lsu.data, nonExuReg1AddImmBase)
+  val returnTargetBase = Mux(
+    lsuReg1AddImmBypass,
+    io.wrBackInfo.lsu.data(16, 2),
+    Mux(wbuReg1AddImmBypass, io.reg1AddImmWbuRawInfo.data(16, 2), io.committedX1Trimmed)
+  )
   val returnTargetPredWrong = isPredictableReturn && io.in.bits.pred.hit &&
-    (exuReg1AddImmBypass || returnTargetBase(16, 2) =/= TrimmedPC.trim(io.in.bits.pred.pc))
+    (exuReg1AddImmBypass || returnTargetBase =/= TrimmedPC.trim(io.in.bits.pred.pc))
   res.notBranchPredWrong := isJmpCSR ||
     (isTypJAL && ~io.in.bits.pred.hit) ||
     (isTypJALR && (!isPredictableReturn || ~io.in.bits.pred.hit)) || returnTargetPredWrong

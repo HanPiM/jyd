@@ -403,7 +403,9 @@ class EXU(
   // The producer token is decode-only.  In particular, do not feed the
   // current load address/cacheability back into IDU ready; cache hit only
   // decides whether the already-issued consumer completes in the next cycle.
-  io.lateLoadProducer.valid := io.in.valid && lsuInfo.cacheableLoad
+  val lateLoadWidthSupported =
+    func3t === "b000".U || func3t === "b001".U || func3t === "b010".U || func3t === "b100".U || func3t === "b101".U
+  io.lateLoadProducer.valid := io.in.valid && isTypLoad && lateLoadWidthSupported
 
   val memWMask = GenMemWMask(reg1AddImm(1, 0), func3t)
 

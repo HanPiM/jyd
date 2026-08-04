@@ -423,16 +423,16 @@ class ALU extends Module {
   val minuResult = Mux(src1 < src2, src1, src2)
   val bextResult = Cat(0.U(31.W), (src1 >> src2(4, 0))(0))
 
-  val aluResult = MuxCase(
-    baseAluResult,
+  // Group the short B overrides by func3 so common base operations do not
+  // traverse a serial priority chain for unrelated result classes.
+  val aluResult = MuxLookup(inbits.func3t, baseAluResult)(
     Seq(
-      isSh1Add -> sh1AddResult,
-      isSh2Add -> sh2AddResult,
-      isSh3Add -> sh3AddResult,
-      isSextB  -> sextBResult,
-      isSextH  -> sextHResult,
-      isMinu   -> minuResult,
-      isBext   -> bextResult
+      0.U -> add_sub_res,
+      1.U -> Mux(isSextB, sextBResult, Mux(isSextH, sextHResult, lShiftResult)),
+      2.U -> Mux(isSh1Add, sh1AddResult, slt_res),
+      4.U -> Mux(isSh2Add, sh2AddResult, Mux(isPack, packResult, logic_xor)),
+      5.U -> Mux(isMinu, minuResult, Mux(isBext, bextResult, rShiftResult)),
+      6.U -> Mux(isSh3Add, sh3AddResult, logic_or)
     )
   )
   io.singleCycleResult := aluResult

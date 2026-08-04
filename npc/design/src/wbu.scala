@@ -78,15 +78,15 @@ object ExtractFwdInfoFromWrBack {
     // val respLoadHalf = Cat(Fill(16, respLoadDataRaw(15) && (~wrBack.lsuFunc3t(2))), respLoadDataRaw(15, 0))
     // val loadResult   = Mux(wrBack.lsuFunc3t(1), respLoadDataRaw, Mux(wrBack.lsuFunc3t(0), respLoadHalf, respLoadByte))
 
-    val loadResult = ExtLoadData(memResp.bits, wrBack.lsuAddrOffset, wrBack.lsuFunc3t)
-    val gprData      = Mux(wrBack.isLoad, loadResult, wrBack.gpr.data)
+    val cachedLoadResult = ExtLoadData(wrBack.lsuResult, wrBack.lsuAddrOffset, wrBack.lsuFunc3t)
+    val canForwardLoad   = wrBack.isLoad && wrBack.cacheableLoad && wrBack.dcacheHit
 
     val out = Wire(new WrBackForwardInfo)
     out.addr      := wrBack.gpr.addr
     out.enWr      := wrBack.gpr.en && info.valid
     // WBU has no response-wait state; its assertion below checks alignment.
-    out.dataVaild := info.valid
-    out.data      := gprData
+    out.dataVaild := info.valid && (!wrBack.isLoad || canForwardLoad)
+    out.data      := Mux(canForwardLoad, cachedLoadResult, wrBack.gpr.data)
 
     out.enWrCSR := wrBack.csr.en && info.valid
 

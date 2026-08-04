@@ -164,7 +164,8 @@ object CacheAwareByPassMux {
     allowCache: Bool,
     lateLoadProducer: LateLoadProducerInfo,
     allowLateLoad: Bool,
-    lateAddFwd: LateAddForwardInfo
+    lateAddFwd: LateAddForwardInfo,
+    deferExuData: Bool
   ): (Bool, UInt, Bool) = {
     require(wrBacks.length == 3)
     val exuConflict = SingleByPassMux.conflict(rs, wrBacks(0).addr, wrBacks(0).enWr)
@@ -193,7 +194,10 @@ object CacheAwareByPassMux {
       dcacheFwd.data,
       Mux(lsuConflict, wrBacks(1).data, Mux(wbuConflict, wrBacks(2).data, regData))
     )
-    val outData = Mux(exuConflict, Mux(lateAddSelect, lateAddFwd.data, wrBacks(0).data), nonExuData)
+    val exuData = Mux(lateAddSelect, lateAddFwd.data, wrBacks(0).data)
+    // A single-cycle ALU consumer can select the same producer after its
+    // result crosses the EXU/LSU register, avoiding the wide operand loop.
+    val outData = Mux(exuConflict, Mux(deferExuData, regData, exuData), nonExuData)
     (needStall, outData, lateLoadSelect)
   }
 }
@@ -220,6 +224,7 @@ class ByPassMux(
     val allowCacheRs1 = Input(Bool())
     val allowLateLoadRs1 = Input(Bool())
     val allowLateLoadRs2 = Input(Bool())
+    val deferExuData = Input(Bool())
     val needStall  = Output(Bool())
     val lateLoadRs1 = Output(Bool())
     val lateLoadRs2 = Output(Bool())
@@ -239,7 +244,8 @@ class ByPassMux(
     io.allowCacheRs1,
     io.lateLoadProducer,
     io.allowLateLoadRs1,
-    io.lateAddFwd
+    io.lateAddFwd,
+    io.deferExuData
   )
   val (needStall2, outData2, lateLoadRs2) = CacheAwareByPassMux(
     io.rs2,
@@ -249,7 +255,8 @@ class ByPassMux(
     true.B,
     io.lateLoadProducer,
     io.allowLateLoadRs2,
-    io.lateAddFwd
+    io.lateAddFwd,
+    io.deferExuData
   )
 
   val needStallCSR = CSRByPassNeedStall(csrWrBacks)
@@ -393,6 +400,9 @@ class IDU(
   val isBXperm4 = !isFmtI && arithmeticFunc7 === "b0010100".U && arithmeticFunc3 === "b010".U
   val isBRor = arithmeticFunc7 === "b0110000".U && arithmeticFunc3 === "b101".U
   val isIterativeB = isBCount || isBClmul || isBOrcB || isBXperm4 || isBRor
+  // These consumers always complete in one EXU cycle. Their immediately
+  // preceding producer can be selected from the registered LSU boundary.
+  bypassMux.io.deferExuData := isTypArithmetic && !isMExtArithmetic && !isIterativeB
   val isBShiftAdd = !isFmtI && arithmeticFunc7 === "b0010000".U &&
     (arithmeticFunc3 === "b010".U || arithmeticFunc3 === "b100".U || arithmeticFunc3 === "b110".U)
   val isBSext = isFmtI && arithmeticFunc7 === "b0110000".U && arithmeticFunc3 === "b001".U &&

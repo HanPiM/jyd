@@ -13,11 +13,6 @@ class ALUInput extends Bundle {
   val bExtValid = Bool()
   val src1      = Types.UWord
   val src2      = Types.UWord
-  val mulRawSrc1 = Types.UWord
-  val mulRawSrc2 = Types.UWord
-  val mulPrevData = Types.UWord
-  val mulPrevRs1 = Bool()
-  val mulPrevRs2 = Bool()
 }
 
 class ALU_foo extends Module {
@@ -36,11 +31,6 @@ class ALU_foo extends Module {
 class MultiplierInput extends Bundle {
   val src1   = Types.UWord
   val src2   = Types.UWord
-  val rawSrc1 = Types.UWord
-  val rawSrc2 = Types.UWord
-  val prevData = Types.UWord
-  val prevRs1 = Bool()
-  val prevRs2 = Bool()
   val func3t = UInt(3.W)
 }
 
@@ -187,14 +177,13 @@ class Multiplier extends Module {
 
   val isFastReg       = Reg(Bool())
   val isNarrowFastReg = Reg(Bool())
-  val narrowSelectReg = Reg(UInt(2.W))
   val resultReg       = Reg(Types.UWord)
   val slowValidPipe   = RegInit(0.U(MultiplierConfig.latency.W))
   val fastValidPipe   = RegInit(0.U(MultiplierConfig.fastLatency.W))
   val narrowValidPipe = RegInit(0.U(MultiplierConfig.narrowLatency.W))
   val multiplier      = Module(new mult_gen_0)
   val fastMultiplier = Module(new mult_gen_mul32_fast)
-  val narrowMultiplier = Seq.fill(4)(Module(new mult_gen_mul16_fast))
+  val narrowMultiplier = Module(new mult_gen_mul16_fast)
 
   val inputFunc3t = io.in.bits.func3t
   val inputIsMulh = inputFunc3t === 1.U
@@ -211,25 +200,12 @@ class Multiplier extends Module {
   fastMultiplier.io.CLK := clock
   fastMultiplier.io.A   := io.in.bits.src1
   fastMultiplier.io.B   := io.in.bits.src2
-  narrowMultiplier.foreach(_.io.CLK := clock)
-  narrowMultiplier(0).io.A := io.in.bits.rawSrc1(15, 0)
-  narrowMultiplier(0).io.B := io.in.bits.rawSrc2(15, 0)
-  narrowMultiplier(1).io.A := io.in.bits.prevData(15, 0)
-  narrowMultiplier(1).io.B := io.in.bits.rawSrc2(15, 0)
-  narrowMultiplier(2).io.A := io.in.bits.rawSrc1(15, 0)
-  narrowMultiplier(2).io.B := io.in.bits.prevData(15, 0)
-  narrowMultiplier(3).io.A := io.in.bits.prevData(15, 0)
-  narrowMultiplier(3).io.B := io.in.bits.prevData(15, 0)
+  narrowMultiplier.io.CLK := clock
+  narrowMultiplier.io.A   := io.in.bits.src1(15, 0)
+  narrowMultiplier.io.B   := io.in.bits.src2(15, 0)
 
   val product = multiplier.io.P
-  val narrowProduct = MuxLookup(narrowSelectReg, narrowMultiplier(0).io.P)(
-    Seq(
-      1.U -> narrowMultiplier(1).io.P,
-      2.U -> narrowMultiplier(2).io.P,
-      3.U -> narrowMultiplier(3).io.P
-    )
-  )
-  val result = Mux(isNarrowFastReg, narrowProduct, Mux(isFastReg, fastMultiplier.io.P, product(63, 32)))
+  val result = Mux(isNarrowFastReg, narrowMultiplier.io.P, Mux(isFastReg, fastMultiplier.io.P, product(63, 32)))
   val resultValid = Mux(isNarrowFastReg, narrowValidPipe(MultiplierConfig.narrowLatency - 1), Mux(
     isFastReg,
     fastValidPipe(MultiplierConfig.fastLatency - 1),
@@ -247,7 +223,6 @@ class Multiplier extends Module {
         val isNarrowFast = isMul && io.in.bits.src1(31, 16) === 0.U && io.in.bits.src2(31, 16) === 0.U
         isFastReg := isMul
         isNarrowFastReg := isNarrowFast
-        narrowSelectReg := Cat(io.in.bits.prevRs2, io.in.bits.prevRs1)
         slowValidPipe := Mux(isMul, 0.U, 1.U)
         fastValidPipe := Mux(isMul, 1.U, 0.U)
         narrowValidPipe := Mux(isNarrowFast, 1.U, 0.U)
@@ -482,11 +457,6 @@ class ALU extends Module {
   multiplier.io.in.valid       := io.in.valid && isMulOp
   multiplier.io.in.bits.src1   := src1
   multiplier.io.in.bits.src2   := src2
-  multiplier.io.in.bits.rawSrc1 := inbits.mulRawSrc1
-  multiplier.io.in.bits.rawSrc2 := inbits.mulRawSrc2
-  multiplier.io.in.bits.prevData := inbits.mulPrevData
-  multiplier.io.in.bits.prevRs1 := inbits.mulPrevRs1
-  multiplier.io.in.bits.prevRs2 := inbits.mulPrevRs2
   multiplier.io.in.bits.func3t := func3t
   multiplier.io.out.ready      := io.out.ready
 

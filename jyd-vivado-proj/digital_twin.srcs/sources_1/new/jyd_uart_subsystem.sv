@@ -59,9 +59,9 @@ module jyd_uart_subsystem (
 
     // The CPU polls tx_full through UART+1 before each byte write, so this
     // compact FIFO only absorbs AXI UARTLite service latency.
-    // The producer has no full backpressure. Keep the complete CoreMark report
-    // in the CPU-to-UART queue while the 9600-baud transmitter drains it.
-    jyd_async_byte_fifo #(.ADDR_BITS(10)) tx_fifo (
+    // putch polls tx_full before every byte. XPM requires a minimum depth of
+    // 16, so keep this queue shallow and preserve the polling protocol.
+    jyd_async_byte_fifo #(.ADDR_BITS(4)) tx_fifo (
         .wr_clk(cpu_clk), .wr_resetn(resetn), .wr_en(tx_push), .wr_data(tx_data), .wr_full(tx_fifo_full),
         .rd_clk(uart_clk), .rd_resetn(resetn), .rd_en(tx_pop), .rd_data(tx_fifo_data), .rd_empty(tx_empty)
     );

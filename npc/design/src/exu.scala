@@ -117,6 +117,7 @@ class EXU(
     val lateLoadWBU = Input(new LateLoadSourceInfo)
     val lateAddFwd = Output(new LateAddForwardInfo)
     val previousStageFwd = Input(new WrBackForwardInfo)
+    val previousStageAddResult = Input(Types.UWord)
 
     val dcache = new Bundle {
       val hit        = Input(Bool())
@@ -169,8 +170,16 @@ class EXU(
     (ready, data)
   }
 
-  val postRegisterRegV1 = Mux(dinst.info.prevExuFwdRs1, io.previousStageFwd.data, dinst.info.reg1)
-  val postRegisterRegV2 = Mux(dinst.info.prevExuFwdRs2, io.previousStageFwd.data, dinst.info.reg2)
+  val postRegisterRegV1 = Mux(
+    dinst.info.prevExuAddFwdRs1,
+    io.previousStageAddResult,
+    Mux(dinst.info.prevExuFwdRs1, io.previousStageFwd.data, dinst.info.reg1)
+  )
+  val postRegisterRegV2 = Mux(
+    dinst.info.prevExuAddFwdRs2,
+    io.previousStageAddResult,
+    Mux(dinst.info.prevExuFwdRs2, io.previousStageFwd.data, dinst.info.reg2)
+  )
 
   val (lateRs1Ready, lateRegV1) =
     resolveLateLoadOperand(dinst.info.lateLoadRs1, postRegisterRegV1)
@@ -328,7 +337,7 @@ class EXU(
   // WBU/memory-response path.
   lsuInfo.lateLoadData := ExtLoadData(io.dcache.lateReadData, reg1AddImm(1, 0), func3t)
   lsuInfo.dcacheStoreEpoch := io.dcache.storeEpoch
-  lsuInfo.useLateAddResult := hasLateLoadOperand && isAdd
+  lsuInfo.useLateAddResult := isAdd
   lsuInfo.lateAddResult    := lateAddResult
 
   val snpc = dinst.info.staticNextPCOrCSRTarget
@@ -351,7 +360,7 @@ class EXU(
   // Only the wiring-only late bit operations still use the ordinary GPR
   // writeback-data field here.
   val arithmeticResult = Mux(isLateLoadAndi1 || isLateLoadSrli1, lateBitResult, aluOut)
-  writeBackInfo.gpr.data := Mux(isTypArithmetic, arithmeticResult, dinst.info.preMuxWrBackData)
+  writeBackInfo.gpr.data := Mux(isTypArithmetic, Mux(isAdd, 0.U, arithmeticResult), dinst.info.preMuxWrBackData)
 
   // Fill in LSU stage
   writeBackInfo.isLoad        := false.B

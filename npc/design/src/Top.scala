@@ -391,6 +391,7 @@ class CPUCore(
   idu.io.wrBackInfo.lsu := lsuFwdInfo
   idu.io.wrBackInfo.wbu := ExtractFwdInfoFromWrBack(wbu.io.in, wbu.io.memResp)
   exu.io.previousStageFwd := lsuFwdInfo
+  exu.io.previousStageAddResult := lsu.io.in.bits.lateAddResult
   idu.io.dcacheFwd := dcacheFwdInfo
   idu.io.reg1AddImmWbuRawInfo := wbuRawFwdInfo
 

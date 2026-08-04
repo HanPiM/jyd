@@ -115,7 +115,6 @@ class EXU(
     val lateLoadLSU = Input(new LateLoadSourceInfo)
     val lateLoadWBU = Input(new LateLoadSourceInfo)
     val lateAddFwd = Output(new LateAddForwardInfo)
-    val previousStageFwd = Input(new WrBackForwardInfo)
 
     val dcache = new Bundle {
       val hit        = Input(Bool())
@@ -203,16 +202,8 @@ class EXU(
     Cat(0.U(31.W), lateForwardRegV1(0)),
     Cat(0.U(1.W), lateForwardRegV1(31, 1))
   )
-  val isMExt = !isFmtI && func7t === "b0000001".U
-  val isSingleCycleConsumer = isTypArithmetic && !isMExt && !dinst.info.bExtValid && !hasLateLoadOperand
-  val previousStageReady = isSingleCycleConsumer && io.previousStageFwd.dataVaild
-  val previousStageRs1 =
-    previousStageReady && SingleByPassMux.conflict(dinst.info.rs1, io.previousStageFwd.addr, io.previousStageFwd.enWr)
-  val previousStageRs2 =
-    previousStageReady && SingleByPassMux.conflict(dinst.info.rs2, io.previousStageFwd.addr, io.previousStageFwd.enWr)
-
-  val reg_v1       = Mux(previousStageRs1, io.previousStageFwd.data, dinst.info.reg1)
-  val reg_v2       = Mux(previousStageRs2, io.previousStageFwd.data, dinst.info.reg2)
+  val reg_v1       = dinst.info.reg1
+  val reg_v2       = dinst.info.reg2
   // val pcAddImm   = dinst.pc + dinst.info.imm
   val pcAddImm   = dinst.info.pcAddImm
   val reg1AddImm = "h80".U(8.W) ## 0.U(2.W) ## dinst.info.reg1AddImm
@@ -373,6 +364,7 @@ class EXU(
   // result mux.  A multi-cycle producer still advertises its destination while it is
   // in EXU, but its data remains unavailable to IDU; a dependent consumer
   // waits one cycle and receives the registered result from LSU instead.
+  val isMExt = !isFmtI && func7t === "b0000001".U
   val useSingleCycleForward = isTypArithmetic && !isMExt && !isBExt && !hasLateLoadOperand
   val useLateBitForward = (isLateLoadAndi1 || isLateLoadSrli1) && exuResultValid && lateDataReadyFromLSU
   val exuForwardData = Mux(

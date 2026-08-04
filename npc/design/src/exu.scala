@@ -221,6 +221,10 @@ class EXU(
   alu_in.src1   := reg_v1
   // alu_in.src2   := Mux(isFmtI, dinst.info.imm, reg_v2)
   alu_in.src2   := reg_v2
+  alu_in.rawSrc1 := dinst.info.reg1
+  alu_in.rawSrc2 := dinst.info.reg2
+  alu_in.rawNarrow := !dinst.info.prevExuFwdRs1 && !dinst.info.prevExuFwdRs2 &&
+    !dinst.info.lateLoadRs1 && !dinst.info.lateLoadRs2
   alu_in.is_imm := isFmtI
   alu_in.isSub   := dinst.info.aluIsSub
   alu_in.func3t := func3t

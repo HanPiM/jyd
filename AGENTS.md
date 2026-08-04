@@ -115,6 +115,20 @@ Optimization experiment documentation has a single canonical home: branch `opt-n
 `npc/opt-iter-flow.md` and the relevant files under `npc/opt-try/` from that worktree. Copies of those files on RTL
 optimization branches are historical snapshots and must not be edited.
 
+Current active optimization goal (2026-08-04): continue timing/performance iteration until the 280 MHz CoreMark run
+time is below 12.05 s and the post-route setup WNS is no worse than -0.05 ns (`WNS >= -0.05 ns`). Read
+`npc/opt-try/280mhz-12.05s-wns-0.05.md` (canonical at
+`/home/hanpi/gitclone/jyd-opt-notes/npc/opt-try/280mhz-12.05s-wns-0.05.md`) before continuing any optimization turn,
+and keep both copies in sync. Do not substitute older cycle/time gates such as the previous 1.70 s / 476M-cycle
+targets. Every candidate promoted to a new baseline must be board-tested and recorded; every Vivado impl attempt must
+also be recorded (status, commands, results, archiving, and keep/revert decision). This iteration does not limit
+board-run count. It is acceptable to generate a bitstream after impl for a real board measurement. Unattended
+functional and performance measurements must use the CLI `capture` command to record raw UART output; use the
+interactive CLI `serial` command only when bidirectional interaction is required, such as an RT-Thread shell. LED/SEG
+packet completion checks no longer apply to the new program. A generic fast implementation path may calibrate
+Quick at 75 MHz against Default at 200 MHz, falling back to Default at 150 MHz when 200 MHz is not timing-closed and
+board-valid. Record the actual frequency, strategy, input identity, implementation time, runtime, and bitstream identity.
+
 Keep RTL, Vivado project, IP, constraint, and script changes on the relevant code branch. Commit the frozen candidate
 there first, then record the experiment in the `opt-notes` worktree with the code branch name and full commit SHA. Do
 not cherry-pick ordinary experiment-record commits back to code branches, and do not cherry-pick RTL commits into

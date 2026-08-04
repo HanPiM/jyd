@@ -341,6 +341,7 @@ class ALU extends Module {
     val addResult = Output(Types.UWord)
     val baseResult = Output(Types.UWord)
     val singleCycleResult = Output(Types.UWord)
+    val iterativeBResult = Output(Types.UWord)
   })
 
   // alias
@@ -452,6 +453,7 @@ class ALU extends Module {
   bExtension.io.in.bits.src1 := src1
   bExtension.io.in.bits.src2 := src2
   bExtension.io.out.ready    := io.out.ready
+  io.iterativeBResult        := bExtension.io.out.bits
 
   val multiplier = Module(new Multiplier)
   multiplier.io.in.valid       := io.in.valid && isMulOp

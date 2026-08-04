@@ -115,6 +115,7 @@ class EXU(
     val lateLoadLSU = Input(new LateLoadSourceInfo)
     val lateLoadWBU = Input(new LateLoadSourceInfo)
     val lateAddFwd = Output(new LateAddForwardInfo)
+    val previousStageFwd = Input(new WrBackForwardInfo)
 
     val dcache = new Bundle {
       val hit        = Input(Bool())
@@ -167,10 +168,13 @@ class EXU(
     (ready, data)
   }
 
+  val postRegisterRegV1 = Mux(dinst.info.prevExuFwdRs1, io.previousStageFwd.data, dinst.info.reg1)
+  val postRegisterRegV2 = Mux(dinst.info.prevExuFwdRs2, io.previousStageFwd.data, dinst.info.reg2)
+
   val (lateRs1Ready, lateRegV1) =
-    resolveLateLoadOperand(dinst.info.lateLoadRs1, dinst.info.reg1)
+    resolveLateLoadOperand(dinst.info.lateLoadRs1, postRegisterRegV1)
   val (lateRs2Ready, lateRegV2) =
-    resolveLateLoadOperand(dinst.info.lateLoadRs2, dinst.info.reg2)
+    resolveLateLoadOperand(dinst.info.lateLoadRs2, postRegisterRegV2)
   val hasLateLoadOperand = dinst.info.lateLoadRs1 || dinst.info.lateLoadRs2
   val lateDataReady = lateRs1Ready && lateRs2Ready
   val lateDataReadyFromLSU = hasLateLoadOperand && io.lateLoadLSU.dataValid
@@ -202,8 +206,8 @@ class EXU(
     Cat(0.U(31.W), lateForwardRegV1(0)),
     Cat(0.U(1.W), lateForwardRegV1(31, 1))
   )
-  val reg_v1       = dinst.info.reg1
-  val reg_v2       = dinst.info.reg2
+  val reg_v1       = postRegisterRegV1
+  val reg_v2       = postRegisterRegV2
   // val pcAddImm   = dinst.pc + dinst.info.imm
   val pcAddImm   = dinst.info.pcAddImm
   val reg1AddImm = "h80".U(8.W) ## 0.U(2.W) ## dinst.info.reg1AddImm

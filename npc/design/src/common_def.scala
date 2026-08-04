@@ -187,6 +187,12 @@ class DecodedInstInfo(implicit p : CPUParameters) extends InstMetaInfo with HasR
   val lateLoadRs1 = Bool()
   val lateLoadRs2 = Bool()
 
+  // An immediately preceding ready EXU producer crosses into LSU on the
+  // same edge as this consumer enters EXU. Carry only the dependency choice;
+  // the registered producer data is selected locally in EXU.
+  val prevExuFwdRs1 = Bool()
+  val prevExuFwdRs2 = Bool()
+
   // IDU classifies every non-RV32I/non-M arithmetic encoding as a supported
   // multi-cycle B operation. The exact B operation is decoded locally after
   // the B unit has registered its compact input fields.

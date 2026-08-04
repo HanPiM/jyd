@@ -84,7 +84,8 @@ object ExtractFwdInfoFromWrBack {
     val out = Wire(new WrBackForwardInfo)
     out.addr      := wrBack.gpr.addr
     out.enWr      := wrBack.gpr.en && info.valid
-    out.dataVaild := info.valid && (!wrBack.isLoad || memResp.valid)
+    // WBU has no response-wait state; its assertion below checks alignment.
+    out.dataVaild := info.valid
     out.data      := gprData
 
     out.enWrCSR := wrBack.csr.en && info.valid
@@ -149,7 +150,7 @@ class WBU(implicit p:CPUParameters) extends Module {
   io.done := valid
 
   val noYoungerStore = wbinfo.dcacheStoreEpoch === io.dcacheStoreEpoch
-  val fillLoad = valid && wbinfo.cacheableLoad && !wbinfo.dcacheHit && noYoungerStore && io.memResp.valid
+  val fillLoad = valid && wbinfo.cacheableLoad && !wbinfo.dcacheHit && noYoungerStore
   io.dcacheUpdate := fillLoad
   io.dcacheAddr   := wbinfo.memAddr
   io.dcacheData   := io.memResp.bits

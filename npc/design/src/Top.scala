@@ -400,7 +400,8 @@ class CPUCore(
       wbu.io.in.bits.lsuFunc3t === "b101".U
   val lateLoadWBUValid = wbu.io.in.valid && wbu.io.in.bits.isLoad && lateLoadWBUWidthSupported
   exu.io.lateLoadWBU.valid := lateLoadWBUValid
-  exu.io.lateLoadWBU.dataValid := lateLoadWBUValid && wbu.io.memResp.valid
+  // A valid WBU load is aligned with a valid response, as checked by WBU.
+  exu.io.lateLoadWBU.dataValid := lateLoadWBUValid
   exu.io.lateLoadWBU.data :=
     ExtLoadData(wbu.io.memResp.bits, wbu.io.in.bits.lsuAddrOffset, wbu.io.in.bits.lsuFunc3t)
 

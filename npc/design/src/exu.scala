@@ -105,6 +105,7 @@ class EXU(
 
     val branchTarget   = Output(Types.UWord)
     val branchBackward = Output(Bool())
+    val staticTarget   = Output(Types.UWord)
 
     val pc    = Output(Types.UWord)
     val nxtPC = Output(Types.UWord)
@@ -331,6 +332,7 @@ class EXU(
   lsuInfo.lateAddResult    := lateAddResult
 
   val snpc = dinst.info.staticNextPCOrCSRTarget
+  io.staticTarget := snpc
 
   writeBackInfo.gpr.en   := dinst.info.rdWrEn
   writeBackInfo.gpr.addr := dinst.info.rd

@@ -216,11 +216,12 @@ class CPUCore(
   io := DontCare
 
   val redirectNow         = Wire(Bool())
-  val redirectNowTarget   = Wire(Types.UWord)
   val activeRedirectValid = Wire(Bool())
   val redirectPendingFire = Wire(Bool())
   val redirectPendingReg  = RegInit(false.B)
-  val redirectTargetReg   = Reg(Types.UWord)
+  val redirectUseTargetReg = Reg(Bool())
+  val redirectTargetReg    = Reg(UInt(15.W))
+  val redirectFallthroughReg = Reg(UInt(15.W))
 
   val gprs = Module(new RegisterFile(READ_PORTS = 2))
   val csrs = Module(new ControlStatusRegisterFile())
@@ -271,12 +272,19 @@ class CPUCore(
   ifu.io.predNext := bp.io.pred
 
   redirectNow         := exu.io.in.valid && exu.io.predWrong
-  redirectNowTarget   := exu.io.nxtPC
   redirectPendingFire := ifu.io.pc.fire && redirectPendingReg
+
+  // Capture both redirect candidates every cycle. The branch comparator only
+  // registers the narrow choice bit, so it cannot enter either address lane.
+  val redirectFallthrough = TrimmedPC.trim(exu.io.pc) + 1.U
+  redirectUseTargetReg := !exu.io.isBranch || exu.io.branchTaken
+  redirectTargetReg := TrimmedPC.trim(
+    Mux(exu.io.btbUpdateEn, exu.io.branchTarget, exu.io.staticTarget)
+  )
+  redirectFallthroughReg := redirectFallthrough
 
   when(redirectNow) {
     redirectPendingReg := true.B
-    redirectTargetReg  := redirectNowTarget
   }.elsewhen(redirectPendingFire) {
     redirectPendingReg := false.B
   }
@@ -292,7 +300,11 @@ class CPUCore(
     Mux(ifu.io.pc.ready, TrimmedPC.trim(nxtPredictedPC), TrimmedPC.trim(pc))
   )
 
-  pcFeedToIFU := Mux(redirectPendingReg, redirectTargetReg, pc)
+  pcFeedToIFU := Mux(
+    redirectPendingReg,
+    TrimmedPC.expand(Mux(redirectUseTargetReg, redirectTargetReg, redirectFallthroughReg)),
+    pc
+  )
 
   io.irom <> ifu.io.mem
   io.dram <> dataMemBus.io.out

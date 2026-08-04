@@ -165,9 +165,8 @@ object CacheAwareByPassMux {
     lateLoadProducer: LateLoadProducerInfo,
     allowLateLoad: Bool,
     lateAddFwd: LateAddForwardInfo,
-    exuAddFwd: AddForwardInfo,
     allowPrevExuFwd: Bool
-  ): (Bool, UInt, Bool, Bool, Bool) = {
+  ): (Bool, UInt, Bool, Bool) = {
     require(wrBacks.length == 3)
     val exuConflict = SingleByPassMux.conflict(rs, wrBacks(0).addr, wrBacks(0).enWr)
     val lsuConflict = SingleByPassMux.conflict(rs, wrBacks(1).addr, wrBacks(1).enWr)
@@ -180,15 +179,13 @@ object CacheAwareByPassMux {
     // Sequential single issue makes exuConflict identify the producer; the
     // dedicated late-add result therefore needs no second rd comparison.
     val lateAddSelect = exuConflict && lateAddFwd.valid
-    val prevExuAddFwdSelect = allowPrevExuFwd && exuConflict && (lateAddFwd.valid || exuAddFwd.valid)
     dontTouch(lateAddSelect)
-    dontTouch(prevExuAddFwdSelect)
     val prevExuFwdSelect =
-      allowPrevExuFwd && exuConflict && wrBacks(0).dataVaild && !prevExuAddFwdSelect
+      allowPrevExuFwd && exuConflict && (wrBacks(0).dataVaild || lateAddSelect)
 
     val needStall = Mux(
       exuConflict,
-      !lateLoadSelect && !prevExuFwdSelect && !prevExuAddFwdSelect,
+      !lateLoadSelect && !prevExuFwdSelect,
       Mux(lsuConflict, !wrBacks(1).dataVaild && !cacheSelect, wbuConflict && !wrBacks(2).dataVaild)
     )
 
@@ -201,7 +198,7 @@ object CacheAwareByPassMux {
       dcacheFwd.data,
       Mux(lsuConflict, wrBacks(1).data, Mux(wbuConflict, wrBacks(2).data, regData))
     )
-    (needStall, outData, lateLoadSelect, prevExuFwdSelect, prevExuAddFwdSelect)
+    (needStall, outData, lateLoadSelect, prevExuFwdSelect)
   }
 }
 
@@ -224,7 +221,6 @@ class ByPassMux(
     val dcacheFwd  = Input(new DCacheForwardInfo)
     val lateLoadProducer = Input(new LateLoadProducerInfo)
     val lateAddFwd       = Input(new LateAddForwardInfo)
-    val exuAddFwd        = Input(new AddForwardInfo)
     val allowCacheRs1 = Input(Bool())
     val allowLateLoadRs1 = Input(Bool())
     val allowLateLoadRs2 = Input(Bool())
@@ -235,8 +231,6 @@ class ByPassMux(
     val lateLoadRs2 = Output(Bool())
     val prevExuFwdRs1 = Output(Bool())
     val prevExuFwdRs2 = Output(Bool())
-    val prevExuAddFwdRs1 = Output(Bool())
-    val prevExuAddFwdRs2 = Output(Bool())
 
     val outData1 = Output(Types.UWord)
     val outData2 = Output(Types.UWord)
@@ -245,7 +239,7 @@ class ByPassMux(
   val wrBacks    = Seq(io.wrBackInfo.exu, io.wrBackInfo.lsu, io.wrBackInfo.wbu)
   val csrWrBacks = Seq(io.wrBackInfo.exu, io.wrBackInfo.lsu, io.wrBackInfo.wbu)
 
-  val (needStall1, outData1, lateLoadRs1, prevExuFwdRs1, prevExuAddFwdRs1) = CacheAwareByPassMux(
+  val (needStall1, outData1, lateLoadRs1, prevExuFwdRs1) = CacheAwareByPassMux(
     io.rs1,
     io.regData1,
     wrBacks,
@@ -254,10 +248,9 @@ class ByPassMux(
     io.lateLoadProducer,
     io.allowLateLoadRs1,
     io.lateAddFwd,
-    io.exuAddFwd,
     io.allowPrevExuFwdRs1
   )
-  val (needStall2, outData2, lateLoadRs2, prevExuFwdRs2, prevExuAddFwdRs2) = CacheAwareByPassMux(
+  val (needStall2, outData2, lateLoadRs2, prevExuFwdRs2) = CacheAwareByPassMux(
     io.rs2,
     io.regData2,
     wrBacks,
@@ -266,7 +259,6 @@ class ByPassMux(
     io.lateLoadProducer,
     io.allowLateLoadRs2,
     io.lateAddFwd,
-    io.exuAddFwd,
     io.allowPrevExuFwdRs2
   )
 
@@ -277,8 +269,6 @@ class ByPassMux(
   io.lateLoadRs2 := lateLoadRs2
   io.prevExuFwdRs1 := prevExuFwdRs1
   io.prevExuFwdRs2 := prevExuFwdRs2
-  io.prevExuAddFwdRs1 := prevExuAddFwdRs1
-  io.prevExuAddFwdRs2 := prevExuAddFwdRs2
   io.outData1  := outData1
   io.outData2  := outData2
 }
@@ -384,7 +374,6 @@ class IDU(
   bypassMux.io.dcacheFwd := io.dcacheFwd
   bypassMux.io.lateLoadProducer := io.lateLoadProducer
   bypassMux.io.lateAddFwd       := io.lateAddFwd
-  bypassMux.io.exuAddFwd        := io.exuAddFwd
   // A dependent load may consume the producer's registered LSU DCache-hit
   // data here. The resulting address crosses the existing IDU/EXU payload
   // register before it drives the next DCache lookup.
@@ -408,8 +397,6 @@ class IDU(
   res.lateLoadRs2 := bypassMux.io.lateLoadRs2
   res.prevExuFwdRs1 := bypassMux.io.prevExuFwdRs1
   res.prevExuFwdRs2 := bypassMux.io.prevExuFwdRs2
-  res.prevExuAddFwdRs1 := bypassMux.io.prevExuAddFwdRs1
-  res.prevExuAddFwdRs2 := bypassMux.io.prevExuAddFwdRs2
   // Only operations that still use the iterative B unit assert bExtValid.
   // Short B operations are evaluated by the ordinary ALU path so they retain
   // same-cycle forwarding and do not inherit the old universal 32-cycle cost.

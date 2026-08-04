@@ -253,6 +253,11 @@ puts [format "Configured CPU clock: requested=%.6f MHz actual=%.6f MHz error=%.6
 if {$configured_freq_error_mhz > 0.001} {
   error [format "CPU clock requested/actual mismatch exceeds 1 kHz: %.6f MHz" $configured_freq_error_mhz]
 }
+if {$reset_runs} {
+  puts "Resetting and regenerating [llength $project_ips] project IP output products"
+  reset_target all $project_ips
+  generate_target all $project_ips
+}
 set checkpoint_ip_files [list]
 foreach ip_obj $project_ips {
   set ip_name [get_property NAME $ip_obj]
@@ -272,12 +277,16 @@ foreach ip_file $checkpoint_ip_files {
   if {[llength [get_runs -quiet $run_name]] == 0} {
     create_ip_run $ip_file
   }
-  lappend checkpoint_runs [get_runs $run_name]
+  set ip_run [get_runs -quiet $run_name]
+  if {[llength $ip_run] == 1} {
+    lappend checkpoint_runs $ip_run
+  } elseif {$reset_runs} {
+    error "Failed to create required clean IP synthesis run: $run_name"
+  } else {
+    puts "$ip_name has up-to-date cached synthesis output and no OOC run object; reusing it"
+  }
 }
 if {$reset_runs} {
-  puts "Resetting and regenerating [llength $project_ips] project IP output products"
-  reset_target all $project_ips
-  generate_target all $project_ips
   puts "Rebuilding [llength $checkpoint_runs] project IP synthesis checkpoints with at most $ip_jobs concurrent run(s)"
   if {[llength $checkpoint_runs] > 0} {
     reset_run $checkpoint_runs

@@ -278,10 +278,8 @@ class Divider extends Module {
   val inputDivisorAbs = Mux(inputDivisorNeg, (~io.in.bits.src2).asUInt + 1.U, io.in.bits.src2)
   val inputDivideByZero = io.in.bits.src2 === 0.U
   // The iterative algorithm naturally produces the architecturally required
-  // INT_MIN / -1 quotient and remainder.  Keeping overflow on the ordinary
-  // path avoids a wide operand comparison in the special-result control cone.
-  val inputSpecial = inputDivideByZero
-  val inputDivideByZeroResult = Mux(inputIsRem, io.in.bits.src1, "hffffffff".U)
+  // divide-by-zero and INT_MIN / -1 results. Keeping both on the ordinary path
+  // avoids data-dependent clock enables on the iterative datapath registers.
 
   val shiftedRemainder = Cat(remainderReg(31, 0), quotientReg(31))
   val subtractResult = shiftedRemainder - Cat(0.U(1.W), divisorReg)
@@ -299,17 +297,16 @@ class Divider extends Module {
     is(State.idle) {
       when(io.in.fire) {
         resultIsRemReg  := inputIsRem
-        resultNegReg    := Mux(inputIsRem, inputDividendNeg, inputDividendNeg ^ inputDivisorNeg)
-        when(inputSpecial) {
-          resultReg := inputDivideByZeroResult
-          state     := State.done
-        }.otherwise {
-          divisorReg   := inputDivisorAbs
-          quotientReg  := inputDividendAbs
-          remainderReg := 0.U
-          iterationReg := 0.U
-          state        := State.busy
-        }
+        resultNegReg := Mux(
+          inputIsRem,
+          inputDividendNeg,
+          !inputDivideByZero && (inputDividendNeg ^ inputDivisorNeg)
+        )
+        divisorReg   := inputDivisorAbs
+        quotientReg  := inputDividendAbs
+        remainderReg := 0.U
+        iterationReg := 0.U
+        state        := State.busy
       }
     }
     is(State.busy) {

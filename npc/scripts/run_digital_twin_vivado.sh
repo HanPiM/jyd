@@ -9,8 +9,8 @@ Usage: run_digital_twin_vivado.sh [impl|write_bitstream|bitstream] [--jobs N] [-
 Build npc pack-fpga, replace the Vivado project's imported pack-fpga directory,
 then run the digital_twin Vivado project to impl or write_bitstream.
 
-By default, completed Vivado run steps are reused and only stale or missing
-steps are run. Pass --reset-runs for a clean synth_1 and impl_1 rebuild.
+By default, a completed synth_1 checkpoint is reused and impl_1 is rerun.
+Pass --reset-runs for a clean synth_1 and impl_1 rebuild.
 
 Environment:
   VIVADO                Vivado executable to use. Defaults to "vivado".
@@ -355,11 +355,16 @@ if {$reset_runs} {
   # Resetting synthesis also invalidates and resets the dependent impl_1 run.
   puts "Resetting synth_1 and dependent impl_1 for a clean rebuild"
   reset_run synth_1
+  launch_runs synth_1 -jobs $jobs
 } else {
-  puts "Reusing completed synth_1/impl_1 steps; Vivado will run only stale or missing steps"
+  set synth_status [get_property STATUS $synth_run]
+  set synth_progress [get_property PROGRESS $synth_run]
+  if {$synth_progress ne "100%" || ![string match -nocase {*Complete*} $synth_status]} {
+    error "synth_1 is not complete; rerun with --reset-runs: status=$synth_status progress=$synth_progress"
+  }
+  puts "Reusing completed synth_1 checkpoint; impl_1 will be rerun"
 }
 
-launch_runs synth_1 -jobs $jobs
 wait_on_run synth_1
 set synth_status [get_property STATUS [get_runs synth_1]]
 set synth_progress [get_property PROGRESS [get_runs synth_1]]
@@ -394,6 +399,9 @@ if {$cpu_period_error_ns > 0.0005} {
 close_design
 
 if {$mode eq "impl"} {
+  if {!$reset_runs} {
+    reset_run impl_1
+  }
   launch_runs impl_1 -jobs $jobs
 } elseif {$mode eq "write_bitstream"} {
   launch_runs impl_1 -to_step write_bitstream -jobs $jobs

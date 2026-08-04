@@ -23,7 +23,7 @@ set_property ASYNC_REG TRUE [get_cells -hier -regexp \
 set_property ASYNC_REG TRUE [get_cells -hier -regexp \
   {.*student_top_inst/mytop/cnt/counter/tickGraySync[12]_reg\[[0-9]+\]$}]
 
-# UART TX/RX crossings are implemented and constrained by xpm_fifo_async.
+# UART TX/RX crossings are implemented and constrained by FIFO Generator IP.
 # Keep the ID/EX operand banks near their naturally clustered placement.  This
 # is intentionally soft so implementation can move registers when congestion
 # or other critical paths require it.

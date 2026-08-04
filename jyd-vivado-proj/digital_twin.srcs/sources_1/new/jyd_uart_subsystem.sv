@@ -1,38 +1,24 @@
 `timescale 1ns / 1ps
 
-// First-word-fall-through asynchronous byte FIFO implemented by the vendor
-// CDC macro.  XPM owns the pointer synchronization and dual-clock storage.
-module jyd_async_byte_fifo #(
-    parameter integer ADDR_BITS = 4
-) (
+// FIFO Generator owns the dual-clock storage, pointer CDC, and FWFT behavior.
+module jyd_async_byte_fifo (
     input  wire       wr_clk,
     input  wire       wr_resetn,
     input  wire       wr_en,
     input  wire [7:0] wr_data,
     output wire       wr_full,
+    output wire       wr_prog_full,
     input  wire       rd_clk,
     input  wire       rd_resetn,
     input  wire       rd_en,
     output wire [7:0] rd_data,
     output wire       rd_empty
 );
-    localparam integer FIFO_DEPTH = 1 << ADDR_BITS;
-    localparam integer COUNT_BITS = ADDR_BITS + 1;
-
-    xpm_fifo_async #(
-        .CDC_SYNC_STAGES(2), .DOUT_RESET_VALUE("0"), .ECC_MODE("no_ecc"),
-        .FIFO_MEMORY_TYPE("block"), .FIFO_READ_LATENCY(0), .FIFO_WRITE_DEPTH(FIFO_DEPTH),
-        .FULL_RESET_VALUE(0), .PROG_EMPTY_THRESH(10), .PROG_FULL_THRESH(FIFO_DEPTH - 5),
-        .RD_DATA_COUNT_WIDTH(COUNT_BITS), .READ_DATA_WIDTH(8), .READ_MODE("fwft"),
-        .RELATED_CLOCKS(0), .USE_ADV_FEATURES("0707"), .WAKEUP_TIME(0),
-        .WRITE_DATA_WIDTH(8), .WR_DATA_COUNT_WIDTH(COUNT_BITS)
-    ) fifo_inst (
-        .sleep(1'b0), .rst(!wr_resetn),
-        .wr_clk(wr_clk), .wr_en(wr_en), .din(wr_data), .full(wr_full),
-        .prog_full(), .wr_data_count(), .overflow(), .wr_rst_busy(), .almost_full(), .wr_ack(),
-        .rd_clk(rd_clk), .rd_en(rd_en), .dout(rd_data), .empty(rd_empty),
-        .prog_empty(), .rd_data_count(), .underflow(), .rd_rst_busy(), .almost_empty(), .data_valid(),
-        .injectsbiterr(1'b0), .injectdbiterr(1'b0), .sbiterr(), .dbiterr()
+    jyd_async_byte_fifo_ip fifo_inst (
+        .rst(!wr_resetn),
+        .wr_clk(wr_clk), .wr_en(wr_en), .din(wr_data),
+        .full(wr_full), .prog_full(wr_prog_full),
+        .rd_clk(rd_clk), .rd_en(rd_en), .dout(rd_data), .empty(rd_empty)
     );
 endmodule
 
@@ -50,6 +36,7 @@ module jyd_uart_subsystem (
     output wire       uart_tx
 );
     wire       tx_fifo_full;
+    wire       tx_fifo_prog_full;
     wire       tx_empty;
     wire [7:0] tx_fifo_data;
     reg        tx_pop;
@@ -59,14 +46,17 @@ module jyd_uart_subsystem (
 
     // The CPU polls tx_full through UART+1 before each byte write, so this
     // compact FIFO only absorbs AXI UARTLite service latency.
-    // putch polls tx_full before every byte. XPM requires a minimum depth of
-    // 16, so keep this queue shallow and preserve the polling protocol.
-    jyd_async_byte_fifo #(.ADDR_BITS(4)) tx_fifo (
+    // FIFO Generator requires a minimum depth of 16.  Its programmable-full
+    // threshold asserts at 12 entries, reserving four slots for writes already
+    // in flight after the CPU observes the polled status.
+    jyd_async_byte_fifo tx_fifo (
         .wr_clk(cpu_clk), .wr_resetn(resetn), .wr_en(tx_push), .wr_data(tx_data), .wr_full(tx_fifo_full),
+        .wr_prog_full(tx_fifo_prog_full),
         .rd_clk(uart_clk), .rd_resetn(resetn), .rd_en(tx_pop), .rd_data(tx_fifo_data), .rd_empty(tx_empty)
     );
-    jyd_async_byte_fifo #(.ADDR_BITS(4)) rx_fifo (
+    jyd_async_byte_fifo rx_fifo (
         .wr_clk(uart_clk), .wr_resetn(resetn), .wr_en(rx_push), .wr_data(rx_push_data), .wr_full(rx_full),
+        .wr_prog_full(),
         .rd_clk(cpu_clk), .rd_resetn(resetn), .rd_en(rx_pop), .rd_data(rx_data), .rd_empty(rx_empty)
     );
 
@@ -77,7 +67,7 @@ module jyd_uart_subsystem (
     end
 `endif
 
-    assign tx_full = tx_fifo_full;
+    assign tx_full = tx_fifo_prog_full;
 
     wire [3:0]  m_axi_awaddr;
     wire        m_axi_awvalid;

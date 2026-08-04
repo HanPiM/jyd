@@ -117,9 +117,6 @@ class EXU(
     val lateLoadWBU = Input(new LateLoadSourceInfo)
     val lateAddFwd = Output(new LateAddForwardInfo)
     val previousStageFwd = Input(new WrBackForwardInfo)
-    val mulPreviousStageGeneric = Input(UInt(16.W))
-    val mulPreviousStageAlternate = Input(UInt(16.W))
-    val mulPreviousStageUseAlternate = Input(Bool())
 
     val dcache = new Bundle {
       val hit        = Input(Bool())
@@ -226,9 +223,7 @@ class EXU(
   alu_in.src2   := reg_v2
   alu_in.mulRawSrc1 := dinst.info.reg1
   alu_in.mulRawSrc2 := dinst.info.reg2
-  alu_in.mulPrevGeneric := io.mulPreviousStageGeneric
-  alu_in.mulPrevAlternate := io.mulPreviousStageAlternate
-  alu_in.mulPrevUseAlternate := io.mulPreviousStageUseAlternate
+  alu_in.mulPrevData := io.previousStageFwd.data
   alu_in.mulPrevRs1 := dinst.info.prevExuFwdRs1
   alu_in.mulPrevRs2 := dinst.info.prevExuFwdRs2
   alu_in.is_imm := isFmtI

@@ -15,9 +15,7 @@ class ALUInput extends Bundle {
   val src2      = Types.UWord
   val mulRawSrc1 = Types.UWord
   val mulRawSrc2 = Types.UWord
-  val mulPrevGeneric = UInt(16.W)
-  val mulPrevAlternate = UInt(16.W)
-  val mulPrevUseAlternate = Bool()
+  val mulPrevData = Types.UWord
   val mulPrevRs1 = Bool()
   val mulPrevRs2 = Bool()
 }
@@ -40,9 +38,7 @@ class MultiplierInput extends Bundle {
   val src2   = Types.UWord
   val rawSrc1 = Types.UWord
   val rawSrc2 = Types.UWord
-  val prevGeneric = UInt(16.W)
-  val prevAlternate = UInt(16.W)
-  val prevUseAlternate = Bool()
+  val prevData = Types.UWord
   val prevRs1 = Bool()
   val prevRs2 = Bool()
   val func3t = UInt(3.W)
@@ -191,14 +187,14 @@ class Multiplier extends Module {
 
   val isFastReg       = Reg(Bool())
   val isNarrowFastReg = Reg(Bool())
-  val narrowSelectReg = Reg(UInt(3.W))
+  val narrowSelectReg = Reg(UInt(2.W))
   val resultReg       = Reg(Types.UWord)
   val slowValidPipe   = RegInit(0.U(MultiplierConfig.latency.W))
   val fastValidPipe   = RegInit(0.U(MultiplierConfig.fastLatency.W))
   val narrowValidPipe = RegInit(0.U(MultiplierConfig.narrowLatency.W))
   val multiplier      = Module(new mult_gen_0)
   val fastMultiplier = Module(new mult_gen_mul32_fast)
-  val narrowMultiplier = Seq.fill(7)(Module(new mult_gen_mul16_fast))
+  val narrowMultiplier = Seq.fill(4)(Module(new mult_gen_mul16_fast))
 
   val inputFunc3t = io.in.bits.func3t
   val inputIsMulh = inputFunc3t === 1.U
@@ -218,28 +214,19 @@ class Multiplier extends Module {
   narrowMultiplier.foreach(_.io.CLK := clock)
   narrowMultiplier(0).io.A := io.in.bits.rawSrc1(15, 0)
   narrowMultiplier(0).io.B := io.in.bits.rawSrc2(15, 0)
-  narrowMultiplier(1).io.A := io.in.bits.prevGeneric
+  narrowMultiplier(1).io.A := io.in.bits.prevData(15, 0)
   narrowMultiplier(1).io.B := io.in.bits.rawSrc2(15, 0)
   narrowMultiplier(2).io.A := io.in.bits.rawSrc1(15, 0)
-  narrowMultiplier(2).io.B := io.in.bits.prevGeneric
-  narrowMultiplier(3).io.A := io.in.bits.prevGeneric
-  narrowMultiplier(3).io.B := io.in.bits.prevGeneric
-  narrowMultiplier(4).io.A := io.in.bits.prevAlternate
-  narrowMultiplier(4).io.B := io.in.bits.rawSrc2(15, 0)
-  narrowMultiplier(5).io.A := io.in.bits.rawSrc1(15, 0)
-  narrowMultiplier(5).io.B := io.in.bits.prevAlternate
-  narrowMultiplier(6).io.A := io.in.bits.prevAlternate
-  narrowMultiplier(6).io.B := io.in.bits.prevAlternate
+  narrowMultiplier(2).io.B := io.in.bits.prevData(15, 0)
+  narrowMultiplier(3).io.A := io.in.bits.prevData(15, 0)
+  narrowMultiplier(3).io.B := io.in.bits.prevData(15, 0)
 
   val product = multiplier.io.P
   val narrowProduct = MuxLookup(narrowSelectReg, narrowMultiplier(0).io.P)(
     Seq(
       1.U -> narrowMultiplier(1).io.P,
       2.U -> narrowMultiplier(2).io.P,
-      3.U -> narrowMultiplier(3).io.P,
-      5.U -> narrowMultiplier(4).io.P,
-      6.U -> narrowMultiplier(5).io.P,
-      7.U -> narrowMultiplier(6).io.P
+      3.U -> narrowMultiplier(3).io.P
     )
   )
   val result = Mux(isNarrowFastReg, narrowProduct, Mux(isFastReg, fastMultiplier.io.P, product(63, 32)))
@@ -260,11 +247,7 @@ class Multiplier extends Module {
         val isNarrowFast = isMul && io.in.bits.src1(31, 16) === 0.U && io.in.bits.src2(31, 16) === 0.U
         isFastReg := isMul
         isNarrowFastReg := isNarrowFast
-        narrowSelectReg := Cat(
-          io.in.bits.prevUseAlternate && (io.in.bits.prevRs1 || io.in.bits.prevRs2),
-          io.in.bits.prevRs2,
-          io.in.bits.prevRs1
-        )
+        narrowSelectReg := Cat(io.in.bits.prevRs2, io.in.bits.prevRs1)
         slowValidPipe := Mux(isMul, 0.U, 1.U)
         fastValidPipe := Mux(isMul, 1.U, 0.U)
         narrowValidPipe := Mux(isNarrowFast, 1.U, 0.U)
@@ -501,9 +484,7 @@ class ALU extends Module {
   multiplier.io.in.bits.src2   := src2
   multiplier.io.in.bits.rawSrc1 := inbits.mulRawSrc1
   multiplier.io.in.bits.rawSrc2 := inbits.mulRawSrc2
-  multiplier.io.in.bits.prevGeneric := inbits.mulPrevGeneric
-  multiplier.io.in.bits.prevAlternate := inbits.mulPrevAlternate
-  multiplier.io.in.bits.prevUseAlternate := inbits.mulPrevUseAlternate
+  multiplier.io.in.bits.prevData := inbits.mulPrevData
   multiplier.io.in.bits.prevRs1 := inbits.mulPrevRs1
   multiplier.io.in.bits.prevRs2 := inbits.mulPrevRs2
   multiplier.io.in.bits.func3t := func3t

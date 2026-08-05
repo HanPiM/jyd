@@ -32,3 +32,9 @@ add_cells_to_pblock [get_pblocks p_exu_operands] \
   [get_cells -quiet -hier -regexp {.*payloadReg_4_info_reg[12]_reg\[[0-9]+\]$}]
 resize_pblock [get_pblocks p_exu_operands] -add {SLICE_X98Y98:SLICE_X119Y119}
 set_property IS_SOFT true [get_pblocks p_exu_operands]
+
+# Clock-skew experiment: group every buffer (including the automatic BUFG
+# replica that drives the multiplier DSPs) under the CPU clock root so CTS
+# places them close together and balances the inter-branch skew that currently
+# dominates the register-to-DSP input setup paths.
+set_property CLOCK_DELAY_GROUP cpu_clk_grp [get_nets pll_inst/inst/clk_out2_mypll]

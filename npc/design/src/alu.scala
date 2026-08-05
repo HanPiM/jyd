@@ -221,10 +221,13 @@ class Multiplier extends Module {
   fastMultiplier.io.A   := io.in.bits.src1
   fastMultiplier.io.B   := io.in.bits.src2
   narrowMultiplier.foreach(_.io.CLK := clock)
-  narrowMultiplier(0).io.A := io.in.bits.rawSrc1(15, 0)
-  narrowMultiplier(0).io.B := io.in.bits.rawSrc2(15, 0)
-  narrowMultiplier(1).io.A := narrowPrevAReg
-  narrowMultiplier(1).io.B := narrowPrevBReg
+  // Multiplication is commutative: swap the DSP A/B operands so the tighter
+  // DSP-B input setup is driven by the reg1-side nets, whose placement and
+  // fanout are less critical than the reg2-side nets.
+  narrowMultiplier(0).io.A := io.in.bits.rawSrc2(15, 0)
+  narrowMultiplier(0).io.B := io.in.bits.rawSrc1(15, 0)
+  narrowMultiplier(1).io.A := narrowPrevBReg
+  narrowMultiplier(1).io.B := narrowPrevAReg
 
   val product = multiplier.io.P
   val narrowProduct = Mux(narrowSelectReg, narrowMultiplier(1).io.P, narrowMultiplier(0).io.P)

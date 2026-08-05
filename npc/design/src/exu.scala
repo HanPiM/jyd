@@ -98,6 +98,8 @@ class EXU(
     val jmpHappen   = Output(Bool())
     val isJAL       = Output(Bool())
     val isBranch    = Output(Bool())
+    val isReturn    = Output(Bool())
+    val isCall      = Output(Bool())
     val branchTaken = Output(Bool())
     val btbUpdateEn = Output(Bool())
 
@@ -455,6 +457,8 @@ class EXU(
   // return encoding that IDU can validate without an address-add dependency.
   io.isJAL       := isTypJAL || dinst.code === "h00008067".U
   io.isBranch    := isTypBranch
+  io.isReturn    := isTypJALR && dinst.code === "h00008067".U
+  io.isCall      := (isTypJAL || isTypJALR) && dinst.info.rd =/= 0.U
   io.branchTaken := takeBranch
   io.btbUpdateEn := isTypBranch || isTypJAL || isTypJALR
   io.predWrong := (isFmtB && (takeBranch ^ dinst.predTake)) || io.in.bits.info.notBranchPredWrong

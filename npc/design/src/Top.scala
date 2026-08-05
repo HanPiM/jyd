@@ -254,8 +254,13 @@ class CPUCore(
   bp.io.historyTarget     := btb.io.query.target
   bp.io.historyIsJAL      := btb.io.query.isJAL
   bp.io.historyIsBranch   := btb.io.query.isBranch
+  bp.io.historyIsReturn   := btb.io.query.isReturn
   bp.io.historyDirectionTaken := btb.io.query.directionTaken
   bp.io.historyIsBackward := btb.io.query.isBackward
+  bp.io.updateEn          := RegNext(exu.io.out.valid && exu.io.btbUpdateEn)
+  bp.io.updatePc          := RegNext(exu.io.pc)
+  bp.io.updateIsCall      := RegNext(exu.io.isCall)
+  bp.io.updateIsReturn    := RegNext(exu.io.isReturn)
 
   btb.io.update.en         := RegNext(exu.io.out.valid && exu.io.btbUpdateEn)
   btb.io.update.addr       := RegNext(exu.io.pc)
@@ -264,6 +269,7 @@ class CPUCore(
   // unconditional-entry bit, adding neither a BTB data bit nor a module port.
   btb.io.update.isJAL      := RegNext(exu.io.isJAL)
   btb.io.update.isBranch   := RegNext(exu.io.isBranch)
+  btb.io.update.isReturn   := RegNext(exu.io.isReturn)
   btb.io.update.actualTaken := RegNext(exu.io.branchTaken)
   btb.io.update.isBackward := RegNext(exu.io.branchBackward)
 

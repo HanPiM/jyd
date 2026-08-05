@@ -4,10 +4,9 @@ import chisel3._
 import chisel3.util._
 
 import common_def._
-import jyd.DistMemGen32x32
 
 object BTBParameters {
-  val ENTRY_NUM   = 64
+  val ENTRY_NUM   = 256
   val INDEX_WIDTH = log2Ceil(ENTRY_NUM)
   val TAG_WIDTH   = 15 - INDEX_WIDTH
 
@@ -64,7 +63,8 @@ object BTBTarget {
 class BTBEntry extends Bundle {
   // The physical query memory is 32 bits wide.  Keep the bits freed by the
   // wider index explicit instead of changing the target encoding.
-  val reserved = UInt(2.W)
+  val reserved = UInt(1.W)
+  val isReturn = Bool()
   val valid  = Bool()
   val isJAL  = Bool()
   val isBranch = Bool()
@@ -88,6 +88,7 @@ class BranchTargetBuffer extends Module {
       val target = Output(Types.UWord)
       val isJAL  = Output(Bool())
       val isBranch = Output(Bool())
+      val isReturn = Output(Bool())
       val directionTaken = Output(Bool())
       val isBackward = Output(Bool())
     }
@@ -96,33 +97,31 @@ class BranchTargetBuffer extends Module {
       val addr   = Input(Types.UWord)
       val isJAL  = Input(Bool())
       val isBranch = Input(Bool())
+      val isReturn = Input(Bool())
       val actualTaken = Input(Bool())
       val target = Input(Types.UWord)
       val isBackward = Input(Bool())
     }
   })
 
-  require((new BTBEntry).getWidth == 32, "BTB entry must match the 32-bit distributed-memory IP")
-
-  // Keep the fetch query in one asynchronous distributed-memory copy.  The
-  // update port only needs the old tag/type/counter.  Keep that narrow
-  // state in a distributed-memory shadow so expanding the BTB does not add
-  // hundreds of resettable flops and clock loads.  validMask prevents the
-  // uninitialized shadow contents from matching after reset.
-  val queryMem       = Module(new DistMemGen32x32)
+  // Keep the fetch query in one asynchronous LUTRAM copy.  The update port
+  // only needs the old tag/type/counter, kept in a distributed-memory shadow
+  // so expanding the BTB does not add hundreds of resettable flops.  The
+  // 256-entry capacity reduces index aliasing in CoreMark's hot loops.
+  val queryMem       = Mem(BTBParameters.ENTRY_NUM, new BTBEntry)
   val updateStateMem = Mem(BTBParameters.ENTRY_NUM, new BTBUpdateState)
   val validMask      = RegInit(0.U(BTBParameters.ENTRY_NUM.W))
 
   // Query logic
   val queryTag   = BTBParameters.extractTag(io.query.addr)
   val queryIndex = BTBParameters.extractIndex(io.query.addr)
-  queryMem.io.dpra := queryIndex.pad(6)
-  val queryEntry = queryMem.io.dpo.asTypeOf(new BTBEntry)
+  val queryEntry = queryMem(queryIndex)
 
   io.query.hit    := validMask(queryIndex) && queryEntry.valid && (queryEntry.tag === queryTag)
   io.query.target := queryEntry.target.get
   io.query.isJAL  := queryEntry.isJAL
   io.query.isBranch := queryEntry.isBranch
+  io.query.isReturn := queryEntry.isReturn
   io.query.directionTaken := queryEntry.directionCounter(1)
   io.query.isBackward := queryEntry.isBackward
 
@@ -148,6 +147,7 @@ class BranchTargetBuffer extends Module {
 
   val nextEntry = Wire(new BTBEntry)
   nextEntry.reserved         := 0.U
+  nextEntry.isReturn         := io.update.isReturn
   nextEntry.valid            := true.B
   nextEntry.tag              := updateTag
   nextEntry.target           := BTBTarget(io.update.target)
@@ -168,12 +168,9 @@ class BranchTargetBuffer extends Module {
     io.update.isBranch && !io.update.actualTaken && !entryMatches
   val updateEn =
     io.update.en && !reset.asBool && !skipConflictingNotTakenBranch
-  queryMem.io.a   := updateIndex.pad(6)
-  queryMem.io.d   := nextEntry.asUInt
-  queryMem.io.clk := clock
-  queryMem.io.we  := updateEn
 
   when(updateEn) {
+    queryMem.write(updateIndex, nextEntry)
     validMask := validMask | UIntToOH(updateIndex, BTBParameters.ENTRY_NUM)
     updateStateMem.write(updateIndex, nextUpdateState)
   }

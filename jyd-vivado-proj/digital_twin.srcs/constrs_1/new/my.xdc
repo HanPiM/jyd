@@ -33,9 +33,11 @@ add_cells_to_pblock [get_pblocks p_exu_operands] \
 resize_pblock [get_pblocks p_exu_operands] -add {SLICE_X98Y98:SLICE_X119Y119}
 set_property IS_SOFT true [get_pblocks p_exu_operands]
 
-# Clock-skew experiment: group the CPU clock buffers (the automatic BUFG
-# replica that drives the multiplier DSPs shares this group) so CTS places
-# them close together and balances the inter-branch skew that dominates the
-# register-to-DSP input setup paths.  The property must target the net driven
-# by a global clock buffer, not the PLL output net.
-set_property CLOCK_DELAY_GROUP cpu_clk_grp [get_nets student_top_inst/mytop/cpu/clk_out2]
+# Clock-skew experiment 2: keep the two narrow-multiplier DSPs in the X1 clock
+# column (same clock regions as the operand/ALU logic) so the automatic BUFG
+# replica either disappears or its inter-branch skew shrinks.
+create_pblock p_narrow_dsp
+add_cells_to_pblock [get_pblocks p_narrow_dsp] \
+  [get_cells -quiet -hier -regexp {.*alu/multiplier/narrowMultiplier_[01]$}]
+resize_pblock [get_pblocks p_narrow_dsp] -add {DSP48_X3Y38:DSP48_X4Y43}
+set_property IS_SOFT true [get_pblocks p_narrow_dsp]

@@ -344,7 +344,18 @@ class EXU(
   // Only the wiring-only late bit operations still use the ordinary GPR
   // writeback-data field here.
   val arithmeticResult = Mux(isLateLoadAndi1 || isLateLoadSrli1, lateBitResult, aluOut)
-  writeBackInfo.gpr.data := Mux(isTypArithmetic, arithmeticResult, dinst.info.preMuxWrBackData)
+  // Ordinary arithmetic (non-M, non-iterative-B, non-late) writes back the
+  // base/short-B result directly, skipping the ALU-wide 4-way result mux that
+  // also carries M/div/iterative-B results.  The payload already carries the
+  // short-B selection so no new decode is needed on this path.
+  val useOrdinaryWriteback =
+    isTypArithmetic && !(!isFmtI && func7t === "b0000001".U) && !dinst.info.bExtValid && !hasLateLoadOperand
+  val ordinaryWbResult = Mux(dinst.info.aluUseSpecialResult, alu.io.singleCycleResult, alu.io.baseResult)
+  writeBackInfo.gpr.data := Mux(
+    isTypArithmetic,
+    Mux(useOrdinaryWriteback, ordinaryWbResult, arithmeticResult),
+    dinst.info.preMuxWrBackData
+  )
 
   // Fill in LSU stage
   writeBackInfo.isLoad        := false.B
@@ -364,7 +375,7 @@ class EXU(
   // in EXU, but its data remains unavailable to IDU; a dependent consumer
   // waits one cycle and receives the registered result from LSU instead.
   val isMExt = !isFmtI && func7t === "b0000001".U
-  val useSingleCycleForward = isTypArithmetic && !isMExt && !isBExt && !hasLateLoadOperand
+  val useSingleCycleForward = useOrdinaryWriteback
   val useLateBitForward = (isLateLoadAndi1 || isLateLoadSrli1) && exuResultValid && lateDataReadyFromLSU
   val exuForwardData = Mux(
     useLateBitForward,

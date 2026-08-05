@@ -84,9 +84,10 @@ class SimpleBusUART extends Module {
   val readRespPipe0 = RegNext(doRead, false.B)
   val readRespReg  = RegNext(readRespPipe0, false.B)
   val statusReadPipe0 = RegNext(doRead && isStatus, false.B)
-  // Simulation has no TX queue.  Keep bit0 asserted on reads so the AM UART
-  // status poll cannot stall even when the byte address is aligned upstream.
-  val respDataReg = RegEnable(Mux(statusReadPipe0, 1.U(32.W), uartTryGetCh.io.chData | 1.U), readRespPipe0)
+  // Simulation has no TX queue.  Keep bit0 asserted only for status reads;
+  // the data register must return the raw received byte, otherwise characters
+  // with bit0 clear (e.g. 'x' 0x78) are corrupted to their +1 value.
+  val respDataReg = RegEnable(Mux(statusReadPipe0, 1.U(32.W), uartTryGetCh.io.chData), readRespPipe0)
   io.resp_valid := respValidReg
   io.rdata      := Mux(readRespReg, respDataReg, 0.U(32.W))
 }

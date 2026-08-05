@@ -190,10 +190,17 @@ class Multiplier extends Module {
   val isFastReg       = Reg(Bool())
   val isNarrowFastReg = Reg(Bool())
   val narrowSelectReg = Reg(Bool())
+  val narrowPrevAReg  = Reg(UInt(16.W))
+  val narrowPrevBReg  = Reg(UInt(16.W))
   val resultReg       = Reg(Types.UWord)
   val slowValidPipe   = RegInit(0.U(MultiplierConfig.latency.W))
   val fastValidPipe   = RegInit(0.U(MultiplierConfig.fastLatency.W))
-  val narrowValidPipe = RegInit(0.U(MultiplierConfig.narrowLatency.W))
+  // Lane 0 (raw/raw) completes in `narrowLatency` cycles; the prev-rs2 lane
+  // first samples rawSrc1/prevData into local registers and therefore needs
+  // one extra cycle.  Keeping the two lanes on the same DSP core lets the
+  // raw/raw case stay at latency 1 while the prev-rs2 case avoids the long
+  // WBU-to-DSP-B input route that was the previous worst setup path.
+  val narrowValidPipe = RegInit(0.U(2.W))
   val multiplier      = Module(new mult_gen_0)
   val fastMultiplier = Module(new mult_gen_mul32_fast)
   val narrowMultiplier = Seq.fill(2)(Module(new mult_gen_mul16_fast))
@@ -216,13 +223,13 @@ class Multiplier extends Module {
   narrowMultiplier.foreach(_.io.CLK := clock)
   narrowMultiplier(0).io.A := io.in.bits.rawSrc1(15, 0)
   narrowMultiplier(0).io.B := io.in.bits.rawSrc2(15, 0)
-  narrowMultiplier(1).io.A := io.in.bits.rawSrc1(15, 0)
-  narrowMultiplier(1).io.B := io.in.bits.prevData(15, 0)
+  narrowMultiplier(1).io.A := narrowPrevAReg
+  narrowMultiplier(1).io.B := narrowPrevBReg
 
   val product = multiplier.io.P
   val narrowProduct = Mux(narrowSelectReg, narrowMultiplier(1).io.P, narrowMultiplier(0).io.P)
   val result = Mux(isNarrowFastReg, narrowProduct, Mux(isFastReg, fastMultiplier.io.P, product(63, 32)))
-  val resultValid = Mux(isNarrowFastReg, narrowValidPipe(MultiplierConfig.narrowLatency - 1), Mux(
+  val resultValid = Mux(isNarrowFastReg, Mux(narrowSelectReg, narrowValidPipe(1), narrowValidPipe(0)), Mux(
     isFastReg,
     fastValidPipe(MultiplierConfig.fastLatency - 1),
     slowValidPipe(MultiplierConfig.latency - 1)
@@ -241,6 +248,8 @@ class Multiplier extends Module {
         isFastReg := isMul
         isNarrowFastReg := isNarrowFast
         narrowSelectReg := io.in.bits.prevRs2
+        narrowPrevAReg := io.in.bits.rawSrc1(15, 0)
+        narrowPrevBReg := io.in.bits.prevData(15, 0)
         slowValidPipe := Mux(isMul, 0.U, 1.U)
         fastValidPipe := Mux(isMul, 1.U, 0.U)
         narrowValidPipe := Mux(isNarrowFast, 1.U, 0.U)

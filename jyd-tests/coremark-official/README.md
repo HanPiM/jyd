@@ -46,13 +46,23 @@ target ISA configuration rather than by CoreMark iteration/data settings. The
 result also prints the effective optimization,
 `-march`, `-mabi`, and `EXTRA_CFLAGS` values in `Compiler flags`.
 
+Optimization follows the intended split: the five core benchmark translation
+units (`core_list_join.c`, `core_main.c`, `core_matrix.c`, `core_state.c`,
+`core_util.c`) are compiled with `COREMARK_OPT` (default `-O3`), while setup,
+porting, formatting, and SoftFloat support files stay at `-Os` for IROM size.
+Set `COREMARK_OPT=-Os` to build the entire image at `-Os`; that matches the
+historical `11.374198420 s` board baseline, which was built before the `-O3`
+rule existed (the comment claimed the rule, but the Makefile did not implement
+it until 2026-08-06).
+
 See `SOURCES.md` before editing: it lists the byte-identical official benchmark
 files separately from EEMBC formatter adaptations and AM port files.
 
-The same sources can be embedded in RT-Thread Nano. That build defines
-`COREMARK_EMBEDDED_RTT`, uses `coremark_main` as an msh-command entry point, and
-retains this standalone build as the CRC and floating-output reference. See
-`../rtthread-nano/COREMARK.md` for the replacement and validation procedure.
+The same sources can be embedded in RT-Thread Nano. That build uses
+`coremark_main` as an msh-command entry point, keeps the raw 50 MHz `CNT_REG`
+timing identical to this standalone port, and retains this standalone build as
+the CRC and floating-output reference. See `../rtthread-nano/COREMARK.md` for
+the replacement and validation procedure.
 
 In a typical Linux system, to build and run the benchmark, type 
 

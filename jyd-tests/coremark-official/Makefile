@@ -4,6 +4,7 @@ ITERATIONS ?= 1000
 TOTAL_DATA_SIZE ?= 2000
 ENABLE_LTO ?= 0
 PSEUDO_FLOAT ?= 1
+COREMARK_OPT ?= -O3
 
 empty :=
 space := $(empty) $(empty)
@@ -19,6 +20,8 @@ SRCS := $(filter-out src/cvt.c src/coremark_softfloat.c,$(SRCS))
 else
 LIBS += softfloat
 endif
+COREMARK_BENCH_SRCS := src/core_list_join.c src/core_main.c src/core_matrix.c \
+                       src/core_state.c src/core_util.c
 
 INC_PATH += $(CURDIR)/src
 
@@ -28,9 +31,14 @@ LIB_MAKE_ARGS_softfloat = \
 	SOFTFLOAT_MABI=$(patsubst -mabi=%,%,$(filter -mabi=%,$(COMMON_CFLAGS)))
 
 # Optimize the image for IROM size by default.  The benchmark translation
-# units override this with -O3 locally; setup, reporting and formatting stay
-# optimized for size.
+# units (core_list_join/core_main/core_matrix/core_state/core_util) override
+# this with COREMARK_OPT (default -O3); setup, reporting and formatting stay
+# optimized for size.  Set COREMARK_OPT=-Os to reproduce the historical
+# all--Os image used by the 11.374198420 s board baseline.
 CFLAGS += -Os
+
+COREMARK_BENCH_OBJS = $(addprefix $(DST_DIR)/, $(addsuffix .o, $(basename $(COREMARK_BENCH_SRCS))))
+$(COREMARK_BENCH_OBJS): CFLAGS += $(COREMARK_OPT)
 
 ifeq ($(ENABLE_LTO),1)
 CFLAGS += -flto

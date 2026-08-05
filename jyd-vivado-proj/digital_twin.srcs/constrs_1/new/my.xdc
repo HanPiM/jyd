@@ -33,8 +33,9 @@ add_cells_to_pblock [get_pblocks p_exu_operands] \
 resize_pblock [get_pblocks p_exu_operands] -add {SLICE_X98Y98:SLICE_X119Y119}
 set_property IS_SOFT true [get_pblocks p_exu_operands]
 
-# Clock-skew experiment: group every buffer (including the automatic BUFG
-# replica that drives the multiplier DSPs) under the CPU clock root so CTS
-# places them close together and balances the inter-branch skew that currently
-# dominates the register-to-DSP input setup paths.
-set_property CLOCK_DELAY_GROUP cpu_clk_grp [get_nets pll_inst/inst/clk_out2_mypll]
+# Clock-skew experiment: group the CPU clock buffers (the automatic BUFG
+# replica that drives the multiplier DSPs shares this group) so CTS places
+# them close together and balances the inter-branch skew that dominates the
+# register-to-DSP input setup paths.  The property must target the net driven
+# by a global clock buffer, not the PLL output net.
+set_property CLOCK_DELAY_GROUP cpu_clk_grp [get_nets student_top_inst/mytop/cpu/clk_out2]

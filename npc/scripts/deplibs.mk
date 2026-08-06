@@ -27,6 +27,22 @@ SPDLOG_LIBPATH ?= $(SPDLOG_PATH)/build
 INC_PATH += $(abspath $(SPDLOG_PATH)/include)
 LDFLAGS += -L$(abspath $(SPDLOG_LIBPATH)) -lspdlog
 CXXFLAGS += -DSPDLOG_COMPILED_LIB
+# KonataLog.o calls fmt directly, and the shared spdlog used here is the
+# linuxbrew build whose fmt dependency is only a DT_NEEDED entry.  Newer
+# binutils ld no longer copies dt-needed entries, so link libfmt explicitly
+# from the same prefix as libspdlog.
+SPDLOG_SO := $(realpath $(SPDLOG_LIBPATH)/libspdlog.so)
+ifneq ($(SPDLOG_SO),)
+FMT_LIBDIR := $(dir $(SPDLOG_SO))
+ifeq ($(wildcard $(FMT_LIBDIR)libfmt.so*),)
+# libspdlog here is a linuxbrew Cellar symlink; libfmt lives in the same
+# linuxbrew prefix's top-level lib directory.
+FMT_LIBDIR := $(abspath $(FMT_LIBDIR)/../../../..)/lib/
+endif
+ifneq ($(wildcard $(FMT_LIBDIR)libfmt.so*),)
+LDFLAGS += -L$(FMT_LIBDIR) -lfmt
+endif
+endif
 
 # gdbstub
 GDBSTUB_PATH ?= $(DEPS_DIR)/mini-gdbstub

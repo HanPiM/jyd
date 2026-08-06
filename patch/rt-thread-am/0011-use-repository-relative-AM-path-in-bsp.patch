@@ -1,0 +1,44 @@
+From a617e2e6da8bb7eb60442887ae40b8d27fdf31c2 Mon Sep 17 00:00:00 2001
+From: hanpi <hanpi@localhost.localdomain>
+Date: Thu, 6 Aug 2026 23:28:47 +0800
+Subject: [PATCH] bsp: resolve AM via repository-relative path
+
+---
+ bsp/abstract-machine/Makefile             | 2 +-
+ bsp/abstract-machine/integrate-am-apps.py | 8 +++++---
+ 2 files changed, 6 insertions(+), 4 deletions(-)
+
+diff --git a/bsp/abstract-machine/Makefile b/bsp/abstract-machine/Makefile
+index 7bf73bd..cbad84a 100644
+--- a/bsp/abstract-machine/Makefile
++++ b/bsp/abstract-machine/Makefile
+@@ -20,7 +20,7 @@ endif
+ LDFLAGS += -T $(LINKSCRIPT)
+ -include $(FILE_MK)
+ -include $(AM_APPS_MK)
+-include $(JYD_AM_HOME)/Makefile
++include $(abspath $(dir $(lastword $(MAKEFILE_LIST)))/../../../abstract-machine/Makefile)
+ 
+ $(RTCONFIG_H):
+ 	touch $@
+diff --git a/bsp/abstract-machine/integrate-am-apps.py b/bsp/abstract-machine/integrate-am-apps.py
+index 0f8a574..1a7c52b 100644
+--- a/bsp/abstract-machine/integrate-am-apps.py
++++ b/bsp/abstract-machine/integrate-am-apps.py
+@@ -3,9 +3,11 @@
+ import sys, os, shutil, subprocess
+ from pathlib import Path
+ 
+-# global settings
+-JYD_AM_HOME = Path(os.environ["JYD_AM_HOME"])
+-AM_KERNELS_HOME = (JYD_AM_HOME / ".." / "am-kernels").resolve()
++# global settings: resolve repository-relative paths from this file instead
++# of requiring JYD_AM_HOME in the environment
++JYD_HOME = Path(__file__).resolve().parents[3]
++JYD_AM_HOME = JYD_HOME / "abstract-machine"
++AM_KERNELS_HOME = JYD_HOME / "am-kernels"
+ app_dir_list = [
+   AM_KERNELS_HOME / "kernels" / "hello",
+   AM_KERNELS_HOME / "benchmarks" / "microbench",
+-- 
+2.52.0

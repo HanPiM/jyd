@@ -209,12 +209,11 @@ index b4499dc..cecc508 100644
 @@ -15,7 +15,7 @@ all: $(addprefix Makefile., $(ALL))
  $(ALL): %: Makefile.%
  
- Makefile.%: tests/%.c latest
+Makefile.%: tests/%.c latest
 -	@/bin/echo -e "NAME = $*\nSRCS = $<\ninclude $${AM_HOME}/Makefile" > $@
-+	@/bin/echo -e "NAME = $*\nSRCS = $<\ninclude $${JYD_AM_HOME}/Makefile" > $@
++	@/bin/echo -e 'NAME = $*\nSRCS = $<\ninclude $$(abspath $$(dir $$(lastword $$(MAKEFILE_LIST)))/../../../abstract-machine/Makefile)' > $@
  	@if make -s -f $@ ARCH=$(ARCH) $(MAKECMDGOALS); then \
  		printf "[%14s] $(COLOR_GREEN)PASS$(COLOR_NONE)\n" $* >> $(RESULT); \
  	else \
 -- 
 2.52.0
-

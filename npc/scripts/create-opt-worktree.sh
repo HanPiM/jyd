@@ -199,6 +199,5 @@ echo "   status:"
 git -C "$WT_DIR" status --short | sed 's/^/     /' || true
 echo ""
 echo "Next: cd $WT_DIR"
-echo "  JYD_AM_HOME=\$PWD/abstract-machine JYD_NPC_HOME=\$PWD/npc \\"
-echo "    make -C am-kernels/tests/cpu-tests run ARCH=riscv32-jyd ALL=add"
+echo "  make -C am-kernels/tests/cpu-tests run ARCH=riscv32-jyd ALL=add"
 echo "  ./npc/scripts/run_digital_twin_vivado.sh impl --jobs 16 --ip-jobs 1"

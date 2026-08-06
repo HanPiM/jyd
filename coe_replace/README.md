@@ -30,7 +30,9 @@
   （SHA-256 `c5028d2b...`，CoreMark 10000 次 10.707474300 s，CRC 0x988c；
   由 `opt-300-dcache4k@d23a4ff` 的 DCP `d3193cff...` + COE 90bb/0710 生成）。
 - `rttnano_coremark.bit`：RTT Nano + CoreMark 替换 bit
-  （SHA-256 `08e288f0...`，源 COE 见
+  （SHA-256 `7ae61df9...`，2026-08-06 启用 msh 完整行编辑后重新生成；
+  旧 simple-editor 版本已存档为
+  `/srv/data/jyd/archive/rttnano_coremark-simple-editor-20260806.bit`；源 COE 见
   `jyd-tests/rtthread-nano/build/rtthread-nano-riscv32-jyd.{text,data}.coe`，
   data COE 含 10000 次迭代）。该 RTT 内嵌 CoreMark 与独立版逐对象同标志
   编译（`COREMARK_OPT=-Os` + 源文件 HOT/COLD O3 属性，支持 TU 同 B 扩展

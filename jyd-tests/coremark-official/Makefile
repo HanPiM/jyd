@@ -1,5 +1,8 @@
 NAME = coremark-official
 
+ROOT_DIR := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
+JYD_HOME := $(abspath $(ROOT_DIR)/../..)
+
 ITERATIONS ?= 1000
 TOTAL_DATA_SIZE ?= 2000
 ENABLE_LTO ?= 0
@@ -25,7 +28,7 @@ COREMARK_BENCH_SRCS := src/core_list_join.c src/core_main.c src/core_matrix.c \
 
 INC_PATH += $(CURDIR)/src
 
-include $(JYD_AM_HOME)/Makefile
+include $(JYD_HOME)/abstract-machine/Makefile
 LIB_MAKE_ARGS_softfloat = \
 	SOFTFLOAT_MARCH=$(patsubst -march=%,%,$(filter -march=%,$(COMMON_CFLAGS))) \
 	SOFTFLOAT_MABI=$(patsubst -mabi=%,%,$(filter -mabi=%,$(COMMON_CFLAGS)))

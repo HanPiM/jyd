@@ -4,7 +4,7 @@ ITERATIONS ?= 1000
 TOTAL_DATA_SIZE ?= 2000
 ENABLE_LTO ?= 0
 PSEUDO_FLOAT ?= 1
-COREMARK_OPT ?= -O3
+COREMARK_OPT ?= -Os
 
 empty :=
 space := $(empty) $(empty)

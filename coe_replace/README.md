@@ -23,13 +23,23 @@
 
 ## RTT Nano + 内嵌 CoreMark 示例（2026-08-06 上板验证）
 
-`example/` 下提供了基于同一 perf3 基准 bit 生成的两个产物：
+`example/` 下提供当前 300 MHz 候选（DCache 4KB + pblock，WNS -0.368，
+上板 10.707474300 s）对应的两个产物：
 
-- `original.bit`：原 perf3 CoreMark 独立版 bit
-  （SHA-256 `ba66bf67...`，11.374198420 s）。
+- `original.bit`：当前 300 MHz 独立 CoreMark bit
+  （SHA-256 `c5028d2b...`，CoreMark 10000 次 10.707474300 s，CRC 0x988c；
+  由 `opt-300-dcache4k@d23a4ff` 的 DCP `d3193cff...` + COE 90bb/0710 生成）。
 - `rttnano_coremark.bit`：RTT Nano + CoreMark 替换 bit
-  （SHA-256 `94b01881...`，源 COE 见
-  `jyd-tests/rtthread-nano/build/rtthread-nano-riscv32-jyd.{text,data}.coe`）。
+  （SHA-256 `08e288f0...`，源 COE 见
+  `jyd-tests/rtthread-nano/build/rtthread-nano-riscv32-jyd.{text,data}.coe`，
+  data COE 含 10000 次迭代）。该 RTT 内嵌 CoreMark 与独立版逐对象同标志
+  编译（`COREMARK_OPT=-Os` + 源文件 HOT/COLD O3 属性，支持 TU 同 B 扩展
+  march、伪浮点、同报告串 `-O2 -O3 -Os -march=rv32im_zicsr_zba_zbb_zbc_zbs
+  -mabi=ilp32`），FPGA13 上板 `version`/`coremark` 正常，
+  `Total time 10.706997880000 s`，与独立版 10.707474300 s 一致。
+
+历史 280 MHz perf3 示例（original `ba66bf67...` / rttnano `94b01881...`）
+已被上述 300 MHz 产物替代；perf3 11.374198420 s 的复现说明见下节。
 
 RTT 上板交互验证（FPGA13）：启动后进入 `msh >`，手动输入 `coremark`，
 完整跑完 10000 iterations：

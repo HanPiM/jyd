@@ -6,7 +6,7 @@ include $(JYD_AM_HOME)/scripts/platform/jyd.mk
 # build a plain rv32im_zicsr image (e.g. for difftest or for ports that need
 # the base ISA only).
 RISCV_ZEXTS ?= _zba_zbb_zbc_zbs
-COMMON_CFLAGS += -march=rv32im_zicsr_$(RISCV_ZEXTS) -mabi=ilp32  # overwrite
+COMMON_CFLAGS += -march=rv32im_zicsr$(RISCV_ZEXTS) -mabi=ilp32  # overwrite
 LDFLAGS       += -melf32lriscv                    # overwrite
 
 AM_SRCS += riscv/npc/libgcc/div.S \

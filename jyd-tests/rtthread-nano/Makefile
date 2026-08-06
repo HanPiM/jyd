@@ -9,7 +9,7 @@ COREMARK_PORT_DIR ?= $(abspath $(ROOT_DIR)/../coremark-official/src)
 COREMARK_BENCH_DIR ?= $(COREMARK_PORT_DIR)
 COREMARK_ITERATIONS ?= 10000
 COREMARK_DATA_SIZE ?= 2000
-COREMARK_OPT ?= -O3
+COREMARK_OPT ?= -Os
 COREMARK_SUPPORT_OPT ?= -Os
 COREMARK_ENABLE ?= 1
 # B-extension subset used ONLY for the embedded CoreMark benchmark sources
@@ -32,12 +32,16 @@ ifeq ($(COREMARK_ENABLE),1)
 COREMARK_BENCH_SRCS := $(addprefix $(COREMARK_BENCH_DIR)/, \
         core_list_join.c core_main.c core_matrix.c core_state.c core_util.c)
 COREMARK_SUPPORT_SRCS := $(addprefix $(COREMARK_PORT_DIR)/, \
-        core_portme.c coremark_softfloat.c cvt.c ee_printf.c)
-COREMARK_REPORT_FLAGS := $(COREMARK_OPT) -march=rv32im_zicsr$(COREMARK_ZEXTS)
+        core_portme.c ee_printf.c)
+# Match the standalone cdefault image exactly: the AM release profile adds
+# -O2/-O3 to CFLAGS, the app keeps -Os and the CoreMark HOT/COLD attributes
+# lift only the marked functions; the report string mirrors the standalone
+# COREMARK_COMPILER_FLAGS formula.
+COREMARK_REPORT_FLAGS := -O2 -O3 -Os -march=rv32im_zicsr$(COREMARK_ZEXTS) -mabi=ilp32
 COREMARK_CFLAGS := -DITERATIONS=$(COREMARK_ITERATIONS) \
                    -DTOTAL_DATA_SIZE=$(COREMARK_DATA_SIZE) \
+                   -DCOREMARK_PSEUDO_FLOAT=1 \
                    -DCOMPILER_FLAGS=\"$(call escape_spaces,$(COREMARK_REPORT_FLAGS))\"
-LIBS += softfloat
 endif
 
 NAME := rtthread-nano
@@ -84,6 +88,7 @@ COREMARK_SUPPORT_OBJS := $(addprefix $(DST_DIR)/,$(addsuffix .o,$(basename $(COR
 $(COREMARK_BENCH_OBJS): CFLAGS += -march=rv32im_zicsr$(COREMARK_ZEXTS)
 $(COREMARK_BENCH_OBJS): CFLAGS += $(COREMARK_OPT)
 $(COREMARK_SUPPORT_OBJS): CFLAGS += $(COREMARK_SUPPORT_OPT)
+$(COREMARK_SUPPORT_OBJS): CFLAGS += -march=rv32im_zicsr$(COREMARK_ZEXTS)
 # The embedded CoreMark is built exactly like the standalone image (raw 50 MHz
 # CNT_REG timing, COREMARK_TICKS_PER_SEC=50000000, no COREMARK_EMBEDDED_RTT).
 # The only integration change is renaming CoreMark's main() to coremark_main()

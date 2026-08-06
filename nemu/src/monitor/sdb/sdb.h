@@ -28,6 +28,7 @@ void add_wp(const char* sexpr);
 void delete_wp(int no);
 void info_wp();
 void check_wp();
+bool sdb_is_batch_mode(void);
 
 
 #endif

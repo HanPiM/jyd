@@ -81,6 +81,10 @@ void sdb_set_batch_mode() {
   is_batch_mode = true;
 }
 
+bool sdb_is_batch_mode() {
+  return is_batch_mode;
+}
+
 void sdb_mainloop() {
   if (is_batch_mode) {
 		sdb_exec(dbg, "c");

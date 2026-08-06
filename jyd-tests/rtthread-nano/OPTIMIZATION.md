@@ -122,20 +122,20 @@ literally and their arguments are not consumed.
 - Runtime validation exercised all four commands and `help`. The observed
   objects were the `tidle0` and `tshell` threads and the `shrx` semaphore.
 
-### Minimal interactive line editor
+### Full interactive line editor
 
-- Added the opt-in upstream configuration `FINSH_USING_SIMPLE_LINE_EDITOR` and
-  enabled it for this Nano image.
-- The minimal editor retains printable-character append, end-of-line
-  backspace, Enter execution, echo, the `msh >` prompt, and FSymTab command
-  dispatch. It ignores other control characters and escape sequences.
-- Tab completion, arrow-key cursor movement, and insertion or deletion in the
-  middle of a line are omitted. `msh_auto_complete` and `rt_memmove` are no
-  longer linked.
-- `finsh_thread_entry` decreased from 920 to 332 bytes. The RT-Thread-only
-  `.text` decreased from 8,484 to 7,480 bytes, saving 1,004 bytes.
-- Runtime validation used backspace to correct `versiox` to `version`, then
-  successfully ran `ps`, `list_thread`, `list_semaphore`, and `help`.
+- The default image uses RT-Thread's full FinSH line editor: `FINSH_USING_HISTORY`
+  (5 lines) is enabled and `FINSH_USING_SIMPLE_LINE_EDITOR` is not defined.
+- This provides Tab command completion (`msh_auto_complete`), arrow-key cursor
+  movement, middle-of-line insertion/deletion, command history, echo, the
+  `msh >` prompt, and FSymTab command dispatch.
+- On the current toolchain, the full editor + history costs 1,720 bytes of
+  RT-Thread-only `.text` versus the minimal editor (9,528 vs 7,808 bytes).
+  Defining `FINSH_USING_SIMPLE_LINE_EDITOR` still recovers that space but
+  drops completion, arrow-key editing, and history.
+- Runtime validation exercised Tab completion (`ver` -> `version`), left-arrow
+  + backspace editing (`pss` -> `ps`), up-arrow history recall, and the
+  `version`, `ps`, `list_thread`, `list_semaphore`, and `help` commands.
 
 ### Embedded CoreMark
 
@@ -182,7 +182,7 @@ riscv64-linux-gnu-size -A -d \
 | Tiny Nano formatter, Nano-only `-Os` | 7,724 | Pre-command baseline; saves another 1,816 B |
 | Required status commands and integer formats, `-Os` | 8,492 | Historical measurement before workload integration |
 | Required commands, before minimal line editor | 8,484 | Previous selected RTT-only baseline |
-| Current source, `COREMARK_ENABLE=0` | 7,480 | Minimal line editor; clean build |
+| Current source, `COREMARK_ENABLE=0` | 9,528 | Full editor + 5-line history; clean build (same-toolchain minimal editor = 7,808) |
 
 The current RT-Thread-only value is the first number to report when discussing
 Nano footprint. Historical rows above compare RTOS configuration work only.
@@ -271,11 +271,11 @@ the completed high-return work and ranks optional further reductions.
    using `rt_hw_console_output`, not klib printf. Recheck all linked format
    strings after every configuration change before narrowing the supported
    subset.
-2. **Completed: trim the interactive shell editor.** The selected minimal
-   append/backspace/Enter loop retains interactive command execution and
-   FSymTab dispatch while removing completion, escape/arrow-key cursor
-   movement, middle-of-line editing, `msh_auto_complete`, and `rt_memmove`. It
-   saves 1,004 bytes from the RT-Thread-only image.
+2. **Reverted: full interactive shell editor restored as the default.** The
+   minimal append/backspace/Enter loop saves 1,720 bytes on the current
+   toolchain, but the default image now uses the full editor so Tab
+   completion, arrow-key editing, and command history are available. The
+   minimal editor remains available by defining `FINSH_USING_SIMPLE_LINE_EDITOR`.
 3. **Remove the unused shell semaphore initialization.** With
    `RT_USING_DEVICE` disabled, `finsh_getchar()` polls the AM console directly,
    so `shell->rx_sem` is never taken or released. Upstream nevertheless calls

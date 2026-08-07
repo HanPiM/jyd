@@ -1,0 +1,25 @@
+From 732c4a814d89e65d67e003ab96d9e9fc5b2c2089 Mon Sep 17 00:00:00 2001
+From: hanpi <hanpi@localhost.localdomain>
+Date: Fri, 7 Aug 2026 10:36:48 +0800
+Subject: [PATCH] fix: resolve AM path from first makefile
+
+---
+ bsp/abstract-machine/Makefile | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/bsp/abstract-machine/Makefile b/bsp/abstract-machine/Makefile
+index cbad84a..3df75cd 100644
+--- a/bsp/abstract-machine/Makefile
++++ b/bsp/abstract-machine/Makefile
+@@ -20,7 +20,7 @@ endif
+ LDFLAGS += -T $(LINKSCRIPT)
+ -include $(FILE_MK)
+ -include $(AM_APPS_MK)
+-include $(abspath $(dir $(lastword $(MAKEFILE_LIST)))/../../../abstract-machine/Makefile)
++include $(abspath $(dir $(firstword $(MAKEFILE_LIST)))/../../../abstract-machine/Makefile)
+ 
+ $(RTCONFIG_H):
+ 	touch $@
+-- 
+2.52.0
+

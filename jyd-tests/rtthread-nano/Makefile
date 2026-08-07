@@ -44,6 +44,8 @@ COREMARK_CFLAGS := -DITERATIONS=$(COREMARK_ITERATIONS) \
                    -DCOMPILER_FLAGS=\"$(call escape_spaces,$(COREMARK_REPORT_FLAGS))\"
 endif
 
+# src/tinyprintf.c is picked up by the wildcard below and replaces the
+# upstream $(NANO_DIR)/src/tinyprintf.c with the local formatter.
 NAME := rtthread-nano
 SRCS := $(wildcard $(ROOT_DIR)/src/*.c) \
         $(NANO_DIR)/src/clock.c \
@@ -56,7 +58,6 @@ SRCS := $(wildcard $(ROOT_DIR)/src/*.c) \
         $(NANO_DIR)/src/object.c \
         $(NANO_DIR)/src/scheduler.c \
         $(NANO_DIR)/src/thread.c \
-        $(NANO_DIR)/src/tinyprintf.c \
         $(NANO_DIR)/src/timer.c \
         $(NANO_DIR)/components/finsh/msh.c \
         $(NANO_DIR)/components/finsh/shell.c \

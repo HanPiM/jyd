@@ -89,9 +89,10 @@ addresses and generated images must still fit the JYD memory map.
   string-only formatter changed `.text` from 13,068 to 9,540 bytes at `-O3`,
   saving 3,528 bytes.
 
-The supported format subset must be re-audited whenever adding commands or
-enabling another RT-Thread feature. Unsupported conversions are printed
-literally and their arguments are not consumed.
+The supported format subset is defined by the local `src/tinyprintf.c` and
+must be re-audited whenever adding commands or enabling another RT-Thread
+feature. Plain `%s/%c/%d/%i/%u/%x/%X` plus `-`/width for `%s` are supported;
+other conversions are printed literally and their arguments are not consumed.
 
 ### Nano-only `-Os`
 
@@ -136,6 +137,34 @@ literally and their arguments are not consumed.
 - Runtime validation exercised Tab completion (`ver` -> `version`), left-arrow
   + backspace editing (`pss` -> `ps`), up-arrow history recall, and the
   `version`, `ps`, `list_thread`, `list_semaphore`, and `help` commands.
+
+### Command descriptions in help
+
+- `help` is upstream Nano's `msh_help()` in `components/finsh/msh.c`. With both
+  `FINSH_USING_SYMTAB` and `FINSH_USING_DESCRIPTION` defined it prints the
+  aligned `%-16s - %s` list; without `FINSH_USING_DESCRIPTION` it falls back to
+  space-separated command names only.
+- `FINSH_USING_DESCRIPTION` is now enabled by default in `include/rtconfig.h`
+  so `help` matches the full RT-Thread format. Remove the define to restore the
+  compact list.
+- The config change alone leaves `.text` unchanged: `COREMARK_ENABLE=0` adds
+  159 B `.rodata` (description strings) and 20 B `.data.extra` (desc pointers
+  in the FSymTab); the combined image adds 195 B `.rodata` and 24 B
+  `.data.extra`.
+
+### String width/left-justify in tiny printf
+
+- Upstream Nano's `rt_kprintf` under `RT_USING_TINY_PRINTF` only handled plain
+  conversions; `%-16s` was emitted literally, so `help` printed
+  `%-16s - <name>` and dropped the description.
+- The formatter is now a local copy, `src/tinyprintf.c`, replacing
+  `upstream/rt-thread/src/tinyprintf.c` in the Makefile. It parses the `-`
+  flag and decimal width and pads `%s` accordingly; numeric widths are parsed
+  but not applied, keeping the formatter small.
+- Clean-build cost: +216 B `.text` in both the RT-only (9,528 -> 9,744) and
+  combined (20,476 -> 20,692) images; `.rodata`/`.data.extra` unchanged.
+- Runtime validation under NPC: `help` lists each command with the aligned
+  `%-16s - %s` format, and `version`/`ps` output is unchanged.
 
 ### Embedded CoreMark
 
@@ -182,10 +211,14 @@ riscv64-linux-gnu-size -A -d \
 | Tiny Nano formatter, Nano-only `-Os` | 7,724 | Pre-command baseline; saves another 1,816 B |
 | Required status commands and integer formats, `-Os` | 8,492 | Historical measurement before workload integration |
 | Required commands, before minimal line editor | 8,484 | Previous selected RTT-only baseline |
-| Current source, `COREMARK_ENABLE=0` | 9,528 | Full editor + 5-line history; clean build (same-toolchain minimal editor = 7,808) |
+| Descriptions enabled, upstream tiny printf | 9,528 | Full editor + 5-line history + `FINSH_USING_DESCRIPTION` |
+| Current source, `COREMARK_ENABLE=0` | 9,744 | +216 B for local `%-Ns` tiny printf; full editor + history + descriptions |
 
 The current RT-Thread-only value is the first number to report when discussing
-Nano footprint. Historical rows above compare RTOS configuration work only.
+Nano footprint. Enabling `FINSH_USING_DESCRIPTION` (the current default) does
+not change `.text` by itself (see "Command descriptions in help" for the
+`.rodata`/`.data.extra` cost); the +216 B is entirely the local tiny printf
+extension. Historical rows above compare RTOS configuration work only.
 
 ### Combined image with CoreMark (secondary metric)
 
@@ -196,11 +229,12 @@ make -C jyd-tests/rtthread-nano clean ARCH=riscv32-jyd
 make -C jyd-tests/rtthread-nano ARCH=riscv32-jyd image
 ```
 
-| Image component/accounting | `.text` bytes |
-|---|---:|
-| RT-Thread-only baseline | 7,480 |
-| CoreMark + EEMBC formatter + SoftFloat increment | 22,016 |
-| Combined 10,000-iteration image | 29,496 |
+| Image component/accounting | `.text` bytes | Notes |
+|---|---:|---|
+| RT-Thread-only baseline | 7,480 | Historical earlier toolchain/configuration |
+| CoreMark + EEMBC formatter + SoftFloat increment | 22,016 | Historical earlier toolchain/configuration |
+| Combined 10,000-iteration image | 29,496 | Historical earlier toolchain/configuration |
+| Current combined image (clean) | 20,692 | Current baseline = 20,476 + 216 B local `%-Ns` tiny printf |
 
 CoreMark size optimizations change the increment and combined total, not the
 RT-Thread baseline. Never present a reduction of the combined image as an RTOS

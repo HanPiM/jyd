@@ -450,8 +450,8 @@ class ALU extends Module {
   val minuResult = Mux(src1 < src2, src1, src2)
   val bextResult = Cat(0.U(31.W), (src1 >> src2(4, 0))(0))
 
-  val specialArith = isSh1Add || isSh2Add || isSh3Add || isSextB || isSextH || isMinu || isBext
-  val specialArithResult = Mux1H(
+  val aluResult = MuxCase(
+    baseAluResult,
     Seq(
       isSh1Add -> sh1AddResult,
       isSh2Add -> sh2AddResult,
@@ -462,7 +462,6 @@ class ALU extends Module {
       isBext   -> bextResult
     )
   )
-  val aluResult = Mux(specialArith, specialArithResult, baseAluResult)
   io.singleCycleResult := aluResult
 
   val isBExt = inbits.bExtValid
@@ -518,24 +517,17 @@ class ALU extends Module {
       (!isBExt && !isMExt) -> io.in.valid
     )
   )
-  // Route every non-ordinary result (multi-cycle units plus the B-extension
-  // special arithmetic) through one one-hot selection chain, so an ordinary
-  // arithmetic result crosses only a single final Mux level on the way to the
-  // writeback payload instead of MuxCase + unit-select.
-  val allSpecialResult = Mux1H(
+  // Keep the single-cycle ALU result on a short two-way mux.  The multi-cycle
+  // unit results are registered and stable early in the cycle, so their own
+  // one-hot selection chain is off the writeback critical path; routing the
+  // ALU result through the full 4-way Mux1H adds a second LUT level to every
+  // ordinary arithmetic writeback.
+  val multiCycleResult = Mux1H(
     Seq(
       isBExt -> bExtension.io.out.bits,
       isMulOp -> multiplier.io.out.bits,
-      isDivOp -> divider.io.out.bits,
-      isSh1Add -> sh1AddResult,
-      isSh2Add -> sh2AddResult,
-      isSh3Add -> sh3AddResult,
-      isSextB  -> sextBResult,
-      isSextH  -> sextHResult,
-      isMinu   -> minuResult,
-      isBext   -> bextResult
+      isDivOp -> divider.io.out.bits
     )
   )
-  val anySpecial = isBExt || isMulOp || isDivOp || specialArith
-  io.out.bits := Mux(anySpecial, allSpecialResult, baseAluResult)
+  io.out.bits := Mux(isBExt || isMulOp || isDivOp, multiCycleResult, aluResult)
 }

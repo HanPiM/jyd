@@ -15,7 +15,6 @@ Treat `build/`, `out/`, generated Verilog, and cache directories as disposable o
 ## Build, Test, and Development Commands
 - `make -C npc verilog`: emit merged Verilog into `npc/build/`.
 - `make -C npc ARCH=riscv32e-npc`: build the Verilator sim binary.
-- `make -C npc verilog-lint`: lint generated RTL with Verilator. `-PINCONNECTEMPTY` warnings may appear and can be ignored.
 - `make -C npc pack-fpga`: refresh `npc/build/pack-fpga/` and `npc/build/pack-fpga.zip` for the digital twin FPGA project.
 - `make -C am-kernels/tests/cpu-tests run ARCH=riscv32-jyd ALL=add`: build and run a CPU test on the selected platform. Prefer `ARCH=riscv32-jyd` over `riscv32e-npc` when validating changes.
 - `make -C npc reformat` / `make -C npc checkformat`: apply or verify Scala formatting.
@@ -45,7 +44,7 @@ If you modify floating-point execution, FPR/`fcsr` state, floating-point CSRs, g
 
 The suite currently contains 78 tests. Also rebuild the NEMU shared reference and run an NPC difftest smoke test when changing the floating-point state ABI shared by NEMU, NPC, and sdb.
 
-For `npc`, pair CPU tests with `make -C npc verilog` and `make -C npc verilog-lint`, then use `make -C npc sim IMG=<image>` when runtime confirmation is needed. `make -C npc verilog-lint` may report `-PINCONNECTEMPTY` warnings; these can be ignored even if Verilator exits nonzero because warnings are treated as fatal. The checked-in `npc` `test` target is not the maintained validation path.
+For `npc`, pair CPU tests with `make -C npc verilog`, then use `make -C npc sim IMG=<image>` when runtime confirmation is needed. Do not run `make -C npc verilog-lint` in future work; it is not part of the maintained validation path. The checked-in `npc` `test` target is not the maintained validation path.
 
 If you modify RISC-V M-extension/Zmmul multiply behavior in `npc` (for example ALU, EXU multi-cycle handshaking, forwarding, or decode paths for `mul`, `mulh`, `mulhu`, or `mulhsu`), run the directed architecture tests from the sibling test repo:
 - `make -C ../riscv-arch-test-am-jyd ARCH=riscv32-jyd run TEST_ISA=M ALL=mul-01`

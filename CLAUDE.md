@@ -57,6 +57,12 @@ use the verified prebuilt `nemu/build/riscv32-nemu-interpreter` and
 workload through its owning AM project's `make ARCH=... run` target rather than
 executing NEMU manually; do not rebuild NEMU there.
 
+### Optimization timing
+
+Do not attempt Pblocks, floorplans, or other placement/routing-only changes
+until the candidate's final post-route WNS is greater than `-0.1 ns`.  At or
+below that violation, prioritize structural RTL/architecture work instead.
+
 ### SDB (debugger library)
 ```bash
 cd sdb

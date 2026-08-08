@@ -34,11 +34,14 @@ make sim                          # Build + run RTL simulator (default ARCH=risc
 make sim IMG=path/to/image.bin    # Simulate with a binary image
 make test                         # Run Chisel/ScalaTest unit tests via Mill
 make verilog                      # Emit Verilog from Chisel
-make verilog-lint                 # Lint emitted Verilog with Verilator
 make checkformat                  # Check Scala formatting (scalafmt)
 make reformat                     # Auto-format Scala source files
 make clean
 ```
+
+`make verilog-lint` is not a maintained validation target and must not be run
+in future work.  Use generated-RTL checks together with the targeted CPU or
+simulation validation appropriate to the change.
 
 ### NEMU (C emulator)
 ```bash

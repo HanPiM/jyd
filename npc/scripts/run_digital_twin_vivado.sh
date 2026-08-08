@@ -20,6 +20,15 @@ Environment:
                          Set to 1 to enable synth_design global retiming.
   VIVADO_SYNTH_KEEP_EQUIVALENT_REGISTERS
                          Set to 1 to preserve equivalent registers in synthesis.
+  VIVADO_SYNTH_FLATTEN_HIERARCHY
+                         Optional synth_design flatten level: none, rebuilt, or full.
+  VIVADO_PLACE_DIRECTIVE
+                         Optional place_design directive, e.g. Explore.
+  VIVADO_ROUTE_DIRECTIVE
+                         Optional route_design directive, e.g. NoTimingRelaxation.
+  VIVADO_PRE_ROUTE_PHYS_OPT_DIRECTIVE
+                         Optional pre-route phys_opt_design directive,
+                         e.g. AggressiveExplore.
   VIVADO_POST_ROUTE_PHYS_OPT_DIRECTIVE
                          Default "AggressiveExplore"; supported values are
                          Default, Explore, and AggressiveExplore.
@@ -34,6 +43,10 @@ jobs="${JOBS:-$(nproc 2>/dev/null || echo 4)}"
 ip_jobs=""
 synth_global_retiming="${VIVADO_SYNTH_GLOBAL_RETIMING:-0}"
 synth_keep_equivalent_registers="${VIVADO_SYNTH_KEEP_EQUIVALENT_REGISTERS:-0}"
+synth_flatten_hierarchy="${VIVADO_SYNTH_FLATTEN_HIERARCHY:-}"
+place_directive="${VIVADO_PLACE_DIRECTIVE:-}"
+route_directive="${VIVADO_ROUTE_DIRECTIVE:-}"
+pre_route_phys_opt_directive="${VIVADO_PRE_ROUTE_PHYS_OPT_DIRECTIVE:-}"
 post_route_phys_opt_directive="${VIVADO_POST_ROUTE_PHYS_OPT_DIRECTIVE:-AggressiveExplore}"
 
 while [ "$#" -gt 0 ]; do
@@ -112,6 +125,36 @@ case "$post_route_phys_opt_directive" in
     exit 2
     ;;
 esac
+case "$synth_flatten_hierarchy" in
+  "" | none | rebuilt | full) ;;
+  *)
+    echo "Unsupported VIVADO_SYNTH_FLATTEN_HIERARCHY: $synth_flatten_hierarchy" >&2
+    exit 2
+    ;;
+esac
+case "$place_directive" in
+  "" | Default | Explore | ExtraTimingOpt | ExtraNetDelay_high | ExtraNetDelay_low | \
+  ExtraPostPlacementOpt | AltSpreadLogic_high | AltSpreadLogic_low | Auto_1) ;;
+  *)
+    echo "Unsupported VIVADO_PLACE_DIRECTIVE: $place_directive" >&2
+    exit 2
+    ;;
+esac
+case "$route_directive" in
+  "" | Default | Explore | NoTimingRelaxation | HigherDelayCost | MoreGlobalIterations | \
+  AggressiveExplore | Quick) ;;
+  *)
+    echo "Unsupported VIVADO_ROUTE_DIRECTIVE: $route_directive" >&2
+    exit 2
+    ;;
+esac
+case "$pre_route_phys_opt_directive" in
+  "" | Default | Explore | AggressiveExplore | AlternateReplication | AlternateFlowWithRetiming) ;;
+  *)
+    echo "Unsupported VIVADO_PRE_ROUTE_PHYS_OPT_DIRECTIVE: $pre_route_phys_opt_directive" >&2
+    exit 2
+    ;;
+esac
 
 script_dir=$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 npc_dir=$(CDPATH= cd -- "$script_dir/.." && pwd)
@@ -176,8 +219,8 @@ tcl_file=$(mktemp "${TMPDIR:-/tmp}/digital_twin_flow.XXXXXX.tcl")
 trap 'rm -f "$tcl_file"' EXIT
 
 cat >"$tcl_file" <<'EOF'
-if {$argc != 8} {
-  error "Expected Tcl args: <mode> <jobs> <ip-jobs> <expected-pack-fpga-dir> <reset-runs> <global-retiming> <keep-equivalent-registers> <post-route-physopt-directive>"
+if {$argc != 12} {
+  error "Expected Tcl args: <mode> <jobs> <ip-jobs> <expected-pack-fpga-dir> <reset-runs> <global-retiming> <keep-equivalent-registers> <flatten-hierarchy> <place-directive> <route-directive> <pre-route-physopt-directive> <post-route-physopt-directive>"
 }
 set mode [lindex $argv 0]
 set jobs [lindex $argv 1]
@@ -186,7 +229,11 @@ set expected_pack_dir [file normalize [lindex $argv 3]]
 set reset_runs [lindex $argv 4]
 set synth_global_retiming [lindex $argv 5]
 set synth_keep_equivalent_registers [lindex $argv 6]
-set post_route_phys_opt_directive [lindex $argv 7]
+set synth_flatten_hierarchy [lindex $argv 7]
+set place_directive [lindex $argv 8]
+set route_directive [lindex $argv 9]
+set pre_route_phys_opt_directive [lindex $argv 10]
+set post_route_phys_opt_directive [lindex $argv 11]
 if {$reset_runs ni {0 1}} {
   error "reset-runs must be 0 or 1, got: $reset_runs"
 }
@@ -198,6 +245,18 @@ if {$synth_keep_equivalent_registers ni {0 1}} {
 }
 if {$post_route_phys_opt_directive ni {Default Explore AggressiveExplore}} {
   error "unsupported post-route physopt directive: $post_route_phys_opt_directive"
+}
+if {$synth_flatten_hierarchy ni {"" none rebuilt full}} {
+  error "unsupported synth flatten hierarchy: $synth_flatten_hierarchy"
+}
+if {$place_directive ni {"" Default Explore ExtraTimingOpt ExtraNetDelay_high ExtraNetDelay_low ExtraPostPlacementOpt AltSpreadLogic_high AltSpreadLogic_low Auto_1}} {
+  error "unsupported place directive: $place_directive"
+}
+if {$route_directive ni {"" Default Explore NoTimingRelaxation HigherDelayCost MoreGlobalIterations AggressiveExplore Quick}} {
+  error "unsupported route directive: $route_directive"
+}
+if {$pre_route_phys_opt_directive ni {"" Default Explore AggressiveExplore AlternateReplication AlternateFlowWithRetiming}} {
+  error "unsupported pre-route physopt directive: $pre_route_phys_opt_directive"
 }
 
 open_project digital_twin.xpr
@@ -386,6 +445,18 @@ if {[llength [get_runs impl_1]] == 0} {
 set impl_run [get_runs impl_1]
 set_property STEPS.POST_ROUTE_PHYS_OPT_DESIGN.IS_ENABLED true $impl_run
 set_property STEPS.POST_ROUTE_PHYS_OPT_DESIGN.ARGS.DIRECTIVE $post_route_phys_opt_directive $impl_run
+if {$place_directive ne ""} {
+  set_property STEPS.PLACE_DESIGN.ARGS.DIRECTIVE $place_directive $impl_run
+  puts "impl_1 place directive: $place_directive"
+}
+if {$route_directive ne ""} {
+  set_property STEPS.ROUTE_DESIGN.ARGS.DIRECTIVE $route_directive $impl_run
+  puts "impl_1 route directive: $route_directive"
+}
+if {$pre_route_phys_opt_directive ne ""} {
+  set_property STEPS.PHYS_OPT_DESIGN.ARGS.DIRECTIVE $pre_route_phys_opt_directive $impl_run
+  puts "impl_1 pre-route physopt directive: $pre_route_phys_opt_directive"
+}
 puts "impl_1 post-route physopt: enabled, directive=$post_route_phys_opt_directive"
 
 proc clear_run_property_if_exists {run_name prop_name} {
@@ -414,6 +485,10 @@ set synth_run [get_runs synth_1]
 set_property STEPS.SYNTH_DESIGN.ARGS.RETIMING [expr {$synth_global_retiming ? "true" : "false"}] $synth_run
 set_property STEPS.SYNTH_DESIGN.ARGS.KEEP_EQUIVALENT_REGISTERS \
   [expr {$synth_keep_equivalent_registers ? "true" : "false"}] $synth_run
+if {$synth_flatten_hierarchy ne ""} {
+  set_property STEPS.SYNTH_DESIGN.ARGS.FLATTEN_HIERARCHY $synth_flatten_hierarchy $synth_run
+  puts "synth_1 flatten hierarchy: $synth_flatten_hierarchy"
+}
 puts "synth_1 global retiming: $synth_global_retiming; keep equivalent registers: $synth_keep_equivalent_registers"
 if {[lsearch -exact [list_property $synth_run] AUTO_INCREMENTAL_CHECKPOINT] >= 0} {
   # Vivado 2024.2 exposes this run property as an integer.  Passing the Tcl
@@ -520,7 +595,9 @@ ip_config_hash_before=$(ip_config_hash)
 set +e
 "$vivado_bin" -mode batch -source "$tcl_file" -tclargs \
   "$mode" "$jobs" "$ip_jobs" "$pack_dst" "$reset_runs" \
-  "$synth_global_retiming" "$synth_keep_equivalent_registers" "$post_route_phys_opt_directive"
+  "$synth_global_retiming" "$synth_keep_equivalent_registers" \
+  "$synth_flatten_hierarchy" "$place_directive" "$route_directive" \
+  "$pre_route_phys_opt_directive" "$post_route_phys_opt_directive"
 vivado_status=$?
 set -e
 ip_config_hash_after=$(ip_config_hash)

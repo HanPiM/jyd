@@ -105,11 +105,11 @@ class BranchTargetBuffer extends Module {
     }
   })
 
-  // Keep the fetch query in four asynchronous LUTRAM banks of 128 entries so
-  // the read depth stays two levels shallower than a single 512-entry memory.
-  // The update port only needs the old tag/type/counter, kept in a matching
-  // distributed-memory shadow.
-  val numBanks = 4
+  // Keep the fetch query in eight asynchronous LUTRAM banks of 64 entries so
+  // the read depth stays three levels shallower than a single 512-entry
+  // memory.  The update port only needs the old tag/type/counter, kept in a
+  // matching distributed-memory shadow.
+  val numBanks = 8
   val bankWidth = log2Ceil(numBanks)
   val bankAddrWidth = BTBParameters.INDEX_WIDTH - bankWidth
   val queryMem       = Seq.fill(numBanks)(Mem(1 << bankAddrWidth, new BTBEntry))

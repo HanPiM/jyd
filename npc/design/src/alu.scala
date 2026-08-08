@@ -362,33 +362,6 @@ class Divider extends Module {
 }
 
 class ALU extends Module {
-  /** 32-bit Kogge-Stone prefix adder.
-    *
-    * Replaces the ripple-carry chain on the ordinary ADD/SUB writeback path
-    * with a shorter LUT-logic depth so the same-cycle forwarding loop
-    * (payloadReg_5 -> operand mux -> adder -> writeback mux -> payloadReg_5)
-    * has fewer logic levels.  Semantics are identical to `a + b + cin`.
-    */
-  def koggeStone(a: UInt, b: UInt, cin: UInt): UInt = {
-    val n = a.getWidth
-    // Prefix over n+1 "bits": index 0 is the carry-in with propagate 1, and
-    // index i+1 is generate/propagate of operand bit i.  Left-shift distances
-    // propagate lower (earlier) groups upward; after all levels, g[i] is the
-    // carry into operand bit i.
-    var g = Cat(a & b, cin)
-    var p = Cat(a ^ b, 1.U)
-    val pOrig = a ^ b
-    for (i <- 0 until log2Ceil(n)) {
-      val d = 1 << i
-      val gSh = (g << d)(n, 0)
-      val pSh = (p << d)(n, 0)
-      g = g | (p & gSh)
-      p = p & pSh
-    }
-    val carry = g(n - 1, 0)
-    pOrig ^ carry
-  }
-
   val io = IO(new Bundle {
     val in        = Flipped(Decoupled(new ALUInput))
     val out       = Decoupled(Types.UWord)
@@ -415,7 +388,7 @@ class ALU extends Module {
   // output is valid only for ADD/ADDI, so it can reuse the selected result
   // instead of keeping a second unconditional src1 + src2 cone alive.
   val addSubSrc2 = Mux(inbits.isSub, ~src2, src2)
-  val add_sub_res = koggeStone(src1, addSubSrc2, inbits.isSub)
+  val add_sub_res = src1 + addSubSrc2 + inbits.isSub
   io.addResult := add_sub_res
 
   val sltu_res = src1 < src2

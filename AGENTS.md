@@ -138,10 +138,14 @@ packet completion checks no longer apply to the new program. A generic fast impl
 Quick at 75 MHz against Default at 200 MHz, falling back to Default at 150 MHz when 200 MHz is not timing-closed and
 board-valid. Record the actual frequency, strategy, input identity, implementation time, runtime, and bitstream identity.
 
-Pblock, floorplan, and other placement/routing-only experiments are prohibited
-until the exact candidate's final post-route WNS is greater than `-0.1 ns`.
-At `WNS <= -0.1 ns`, pursue structural RTL/architecture changes instead; do
-not use a Pblock to mask a materially timing-violating design.
+Pblock, floorplan, and other placement/routing-only experiments, as well as
+synthesis-level directive sweeping/traversal (for example scanning global
+retiming, flatten hierarchy, or keep-equivalent-register switches), are
+prohibited until the exact candidate's final post-route WNS is greater than
+`-0.1 ns`. At `WNS <= -0.1 ns`, only structural RTL/architecture-level
+optimization adjustments are permitted; do not use a Pblock, a
+placement/route directive scan, or a synthesis-directive scan to mask a
+materially timing-violating design.
 
 Keep RTL, Vivado project, IP, constraint, and script changes on the relevant code branch. Commit the frozen candidate
 there first, then record the experiment in the `opt-notes` worktree with the code branch name and full commit SHA. Do

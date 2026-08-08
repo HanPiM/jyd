@@ -6,7 +6,7 @@ import chisel3.util._
 import common_def._
 
 object BTBParameters {
-  val ENTRY_NUM   = 256
+  val ENTRY_NUM   = 512
   val INDEX_WIDTH = log2Ceil(ENTRY_NUM)
   val TAG_WIDTH   = 15 - INDEX_WIDTH
 
@@ -107,7 +107,7 @@ class BranchTargetBuffer extends Module {
   // Keep the fetch query in one asynchronous LUTRAM copy.  The update port
   // only needs the old tag/type/counter, kept in a distributed-memory shadow
   // so expanding the BTB does not add hundreds of resettable flops.  The
-  // 256-entry capacity reduces index aliasing in CoreMark's hot loops.
+  // 512-entry capacity reduces index aliasing in CoreMark's hot loops.
   val queryMem       = Mem(BTBParameters.ENTRY_NUM, new BTBEntry)
   val updateStateMem = Mem(BTBParameters.ENTRY_NUM, new BTBUpdateState)
   val validMask      = RegInit(0.U(BTBParameters.ENTRY_NUM.W))

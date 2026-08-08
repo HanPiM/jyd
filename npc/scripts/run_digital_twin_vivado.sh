@@ -177,8 +177,23 @@ if {[llength $active_runs] > 0} {
   error "Vivado project has active or stale-running run metadata; resolve it before starting another flow: $active_runs"
 }
 
-# The generated Chisel file list may gain helper modules (for example inferred
-# memories) without a corresponding entry in the checked-in Vivado project.
+# The generated Chisel file list may gain or lose helper modules (for example
+# inferred memories) between candidates.  In particular, a copied worktree's
+# XPR can retain an absolute path into its source worktree for a helper which
+# the new pack no longer emits.  Remove every prior pack-fpga project entry,
+# then register exactly this invocation's packaged RTL.  This keeps an
+# implementation from silently mixing sources from another worktree.
+set stale_pack_sources [list]
+foreach source_file [get_files -all] {
+  set resolved_file [file normalize $source_file]
+  if {[string first "/pack-fpga/" $resolved_file] >= 0} {
+    lappend stale_pack_sources $source_file
+  }
+}
+if {[llength $stale_pack_sources] > 0} {
+  remove_files -fileset sources_1 $stale_pack_sources
+}
+
 # Register every packaged RTL source before updating compile order so the
 # in-tree project always consumes the complete pack-fpga artifact.
 set known_project_files [dict create]

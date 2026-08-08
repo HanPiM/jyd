@@ -18,7 +18,12 @@ Treat `build/`, `out/`, generated Verilog, and cache directories as disposable o
 - `make -C npc pack-fpga`: refresh `npc/build/pack-fpga/` and `npc/build/pack-fpga.zip` for the digital twin FPGA project.
 - `make -C am-kernels/tests/cpu-tests run ARCH=riscv32-jyd ALL=add`: build and run a CPU test on the selected platform. Prefer `ARCH=riscv32-jyd` over `riscv32e-npc` when validating changes.
 - `make -C npc reformat` / `make -C npc checkformat`: apply or verify Scala formatting.
-- `make -C nemu menuconfig` then `make -C nemu`: configure and build NEMU.
+- `make -C nemu menuconfig` then `make -C nemu`: configure and build NEMU only
+  after changing NEMU source or configuration.  Otherwise, an optimization
+  worktree must use the verified prebuilt `riscv32-nemu-interpreter` and
+  `riscv32-nemu-interpreter-so` installed by `create-opt-worktree.sh`; invoke
+  NEMU workloads through the owning AM project's `make ARCH=... run` target,
+  not by manually executing the interpreter, and do not rebuild NEMU there.
 - `make -C nemu/tools/gen-inst`: regenerate instruction semantics used by NEMU. F instruction patterns and semantics are generated here; do not hand-write generated instruction patterns in NEMU.
 - `make -C abstract-machine ARCH=riscv32-jyd`: build an AM image for a target architecture.
 - `./npc/scripts/run_digital_twin_vivado.sh [impl|write_bitstream|bitstream] [--jobs N]`: run `make -C npc pack-fpga`, replace `jyd-vivado-proj/digital_twin.srcs/sources_1/imports/pack-fpga`, then run the in-tree Vivado `digital_twin` project to implementation or bitstream. `JOBS`/`--jobs` controls Vivado `launch_runs -jobs` and `general.maxThreads`.
@@ -87,10 +92,12 @@ Create and prepare new optimization worktrees with
 instead of issuing the setup commands one by one. It creates the worktree
 under `/srv/data/jyd/worktrees/`, symlinks the local ignored dependencies
 (`am-kernels`, `npc/deps`, CoreMark build outputs, `rt-thread-am`), makes
-`../riscv-arch-test-am-jyd` resolve from the worktree's parent, installs the
-NEMU difftest reference (`.config` plus
-`nemu/build/riscv32-nemu-interpreter-so`) from a proven source, and imports
-the formal CoreMark COE pair into `cur_coe/` with SHA-256 verification.
+`../riscv-arch-test-am-jyd` resolve from the worktree's parent, installs proven
+NEMU artifacts (`.config`, `nemu/build/riscv32-nemu-interpreter`, and
+`nemu/build/riscv32-nemu-interpreter-so`), and imports
+the formal CoreMark COE pair into `cur_coe/` with SHA-256 verification. When
+NEMU source/config is unchanged, use those installed artifacts directly rather
+than rebuilding NEMU in the optimization worktree.
 Example: `./npc/scripts/create-opt-worktree.sh --commit ced5558
 --name my-exp --branch opt-my-exp`. Run it with `--help` for all options.
 
@@ -119,9 +126,12 @@ time is below 12.05 s and the post-route setup WNS is no worse than -0.05 ns (`W
 `npc/opt-try/280mhz-12.05s-wns-0.05.md` (canonical at
 `/home/hanpi/gitclone/jyd-opt-notes/npc/opt-try/280mhz-12.05s-wns-0.05.md`) before continuing any optimization turn,
 and keep both copies in sync. Do not substitute older cycle/time gates such as the previous 1.70 s / 476M-cycle
-targets. Every candidate promoted to a new baseline must be board-tested and recorded; every Vivado impl attempt must
-also be recorded (status, commands, results, archiving, and keep/revert decision). This iteration does not limit
-board-run count. It is acceptable to generate a bitstream after impl for a real board measurement. Unattended
+targets. Every candidate promoted to a new baseline must normally be board-tested and recorded; every Vivado impl
+attempt must also be recorded (status, commands, results, archiving, and keep/revert decision). If board access is
+blocked by the network or board service, lack of a board run alone is not a rejection reason: a candidate with
+reproducible NPC 16M and NEMU `ITERATIONS=10000` evidence may be promoted as an explicitly unboarded interim
+baseline, provided its bitstream is retained and the later board-validation debt is recorded. This iteration does not
+limit board-run count. It is acceptable to generate a bitstream after impl for a real board measurement. Unattended
 functional and performance measurements must use the CLI `capture` command to record raw UART output; use the
 interactive CLI `serial` command only when bidirectional interaction is required, such as an RT-Thread shell. LED/SEG
 packet completion checks no longer apply to the new program. A generic fast implementation path may calibrate

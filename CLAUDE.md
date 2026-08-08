@@ -48,6 +48,12 @@ make               # Build emulator
 make run           # Build and run
 ```
 
+In an optimization worktree where NEMU source and configuration are unchanged,
+use the verified prebuilt `nemu/build/riscv32-nemu-interpreter` and
+`riscv32-nemu-interpreter-so` installed by `create-opt-worktree.sh`. Invoke a
+workload through its owning AM project's `make ARCH=... run` target rather than
+executing NEMU manually; do not rebuild NEMU there.
+
 ### SDB (debugger library)
 ```bash
 cd sdb

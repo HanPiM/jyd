@@ -21,42 +21,46 @@ class DCache extends Module {
     val updateMask = Input(UInt(4.W))
   })
 
-  // Two 2 KiB banks form a 4 KiB direct-mapped cache.  Keep the bank select
-  // outside the memory address: each Vivado IP remains the proven 512 x 32
-  // block-memory configuration and each distributed tag/late-data RAM remains
-  // the proven 512 x 8 configuration.
+  // Two 2KB banks indexed by address bits 10:2, selected by address bit 11.
+  // The data and tag lookup stay fully asynchronous in the query cycle; the
+  // BRAM data output is the usual one-cycle synchronous read.
+  val queryBank = io.queryIndex(9)
+  val queryIdx  = io.queryIndex(8, 0)
+
   val dataMem = Seq.fill(2)(Module(new BlkMemGen2KB))
   val tagMem  = Seq.fill(2)(Module(new DistMemGen512x8))
   // The normal LSU/WBU path keeps using the synchronous BRAM.  Four byte-wide
   // distributed memories mirror its writes and provide an asynchronous C0
   // lookup for the narrow late-load path.  EXU captures this value in its
   // registered LSU payload; it is never consumed directly by the C1 adder.
-  val lateDataMem = Seq.fill(2)(Seq.fill(4)(Module(new DistMemGen512x8)))
+  val lateDataMem = Seq.tabulate(2, 4) { (_, _) => Module(new DistMemGen512x8) }
 
-  val queryBank  = io.queryIndex(9)
-  val queryAddr  = io.queryIndex(8, 0)
-  val tagEntries = tagMem.map(_.io.dpo)
-  val tagEntry   = Mux(queryBank, tagEntries(1), tagEntries(0))
+  val tagEntry   = Mux(queryBank, tagMem(1).io.dpo, tagMem(0).io.dpo)
 
-  tagMem.foreach(_.io.dpra := queryAddr)
-  io.hit := tagEntry(0) && tagEntry(7, 1) === io.queryTag
+  io.hit         := tagEntry(0) && tagEntry(7, 1) === io.queryTag
 
   dataMem.foreach { bank =>
     bank.io.clkb  := clock
     bank.io.enb   := true.B
-    bank.io.addrb := queryAddr
+    bank.io.addrb := queryIdx
   }
-  // Block RAM returns the address from the previous cycle.  Its bank select
-  // must therefore be delayed by the same cycle; using queryBank directly
-  // aliases a load with the following instruction's bank.
+  // The BRAM data output is consumed one cycle after the query (in the
+  // LSU/WBU capture), while the query index has already moved on to the next
+  // instruction.  Register the bank select so the output mux still selects the
+  // bank of the instruction that drove the synchronous read address.
   val readBank = RegNext(queryBank)
   io.readData := Mux(readBank, dataMem(1).io.doutb, dataMem(0).io.doutb)
 
-  lateDataMem.flatten.foreach { bank =>
-    bank.io.dpra := queryAddr
+  lateDataMem.foreach { bank =>
+    bank.foreach { byteMem =>
+      byteMem.io.dpra := queryIdx
+    }
   }
-  val lateReadData = lateDataMem.map { banks => Cat(banks.reverse.map(_.io.dpo)) }
-  io.lateReadData := Mux(queryBank, lateReadData(1), lateReadData(0))
+  io.lateReadData := Mux(
+    queryBank,
+    Cat(lateDataMem(1).reverse.map(_.io.dpo)),
+    Cat(lateDataMem(0).reverse.map(_.io.dpo))
+  )
 
   // A store wins over an older WBU refill/update. Full-word stores allocate a
   // line. A narrow hit preserves it while a narrow miss leaves the queried tag
@@ -65,38 +69,35 @@ class DCache extends Module {
   val updateTagData = Cat(io.updateAddr(17, 11), 1.U(1.W))
   val storeTagValid = io.storeMask.andR || io.hit
   val storeTagData  = Cat(io.queryTag, storeTagValid)
-  val tagWrite      = io.storeUpdate || io.update
-  val tagWriteIndex = Mux(io.storeUpdate, io.queryIndex, io.updateAddr(11, 2))
-  val tagWriteBank  = tagWriteIndex(9)
-  val tagWriteAddr  = tagWriteIndex(8, 0)
-  val tagWriteData  = Mux(io.storeUpdate, storeTagData, updateTagData)
-  tagMem.zipWithIndex.foreach { case (bank, index) =>
-    bank.io.clk := clock
-    bank.io.we  := tagWrite && tagWriteBank === index.U
-    bank.io.a   := tagWriteAddr
-    bank.io.d   := tagWriteData
+  val writeEn       = io.storeUpdate || io.update
+  val writeMask     = Mux(io.storeUpdate, io.storeMask, Mux(io.update, io.updateMask, 0.U))
+  val writeIndex    = Mux(io.storeUpdate, io.queryIndex, io.updateAddr(11, 2))
+  val writeBank     = writeIndex(9)
+  val writeIdx      = writeIndex(8, 0)
+  val writeData     = Mux(io.storeUpdate, io.storeData, io.updateData)
+
+  tagMem.zipWithIndex.foreach { case (tag, bank) =>
+    tag.io.clk := clock
+    tag.io.dpra := queryIdx
+    tag.io.we  := writeEn && writeBank === bank.U(1.W)
+    tag.io.a   := writeIdx
+    tag.io.d   := Mux(io.storeUpdate, storeTagData, updateTagData)
   }
 
-  val dataWrite = io.storeUpdate || io.update
-  val dataWriteMask = Mux(io.storeUpdate, io.storeMask, Mux(io.update, io.updateMask, 0.U))
-  val dataWriteIndex = Mux(io.storeUpdate, io.queryIndex, io.updateAddr(11, 2))
-  val dataWriteBank  = dataWriteIndex(9)
-  val dataWriteAddr  = dataWriteIndex(8, 0)
-  val dataWriteData = Mux(io.storeUpdate, io.storeData, io.updateData)
-  dataMem.zipWithIndex.foreach { case (bank, index) =>
-    bank.io.clka  := clock
-    bank.io.ena   := dataWrite && dataWriteBank === index.U
-    bank.io.wea   := dataWriteMask
-    bank.io.addra := dataWriteAddr
-    bank.io.dina  := dataWriteData
+  dataMem.zipWithIndex.foreach { case (mem, bank) =>
+    mem.io.clka  := clock
+    mem.io.ena   := writeEn && writeBank === bank.U(1.W)
+    mem.io.wea   := writeMask
+    mem.io.addra := writeIdx
+    mem.io.dina  := writeData
   }
 
-  lateDataMem.zipWithIndex.foreach { case (banks, bankIndex) =>
-    banks.zipWithIndex.foreach { case (bank, byte) =>
-      bank.io.clk := clock
-      bank.io.we  := dataWrite && dataWriteBank === bankIndex.U && dataWriteMask(byte)
-      bank.io.a   := dataWriteAddr
-      bank.io.d   := dataWriteData(8 * byte + 7, 8 * byte)
+  lateDataMem.zipWithIndex.foreach { case (bank, bankIdx) =>
+    bank.zipWithIndex.foreach { case (byteMem, byte) =>
+      byteMem.io.clk := clock
+      byteMem.io.we  := writeEn && writeBank === bankIdx.U(1.W) && writeMask(byte)
+      byteMem.io.a   := writeIdx
+      byteMem.io.d   := writeData(8 * byte + 7, 8 * byte)
     }
   }
 }

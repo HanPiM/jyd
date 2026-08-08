@@ -75,6 +75,7 @@ class BTBEntry extends Bundle {
 }
 
 class BTBUpdateState extends Bundle {
+  val valid            = Bool()
   val tag              = UInt(BTBParameters.TAG_WIDTH.W)
   val isBranch         = Bool()
   val directionCounter = UInt(2.W)
@@ -110,14 +111,28 @@ class BranchTargetBuffer extends Module {
   // 512-entry capacity reduces index aliasing in CoreMark's hot loops.
   val queryMem       = Mem(BTBParameters.ENTRY_NUM, new BTBEntry)
   val updateStateMem = Mem(BTBParameters.ENTRY_NUM, new BTBUpdateState)
-  val validMask      = RegInit(0.U(BTBParameters.ENTRY_NUM.W))
+
+  // Zero every entry during reset-time initialization so no uninitialized
+  // LUTRAM bit is ever read as a valid prediction.  Until initDone both
+  // memories are being zeroed: force query miss and gate updates.  This
+  // removes the wide validMask register and its dynamic shift from both the
+  // fetch query and the BTB update paths.
+  val initCount = RegInit(0.U(BTBParameters.INDEX_WIDTH.W))
+  val initDone  = RegInit(false.B)
+  val initPhase = !initDone
+  when(initPhase) {
+    initCount := initCount + 1.U
+    when(initCount === (BTBParameters.ENTRY_NUM - 1).U) {
+      initDone := true.B
+    }
+  }
 
   // Query logic
   val queryTag   = BTBParameters.extractTag(io.query.addr)
   val queryIndex = BTBParameters.extractIndex(io.query.addr)
   val queryEntry = queryMem(queryIndex)
 
-  io.query.hit    := validMask(queryIndex) && queryEntry.valid && (queryEntry.tag === queryTag)
+  io.query.hit    := Mux(initDone, queryEntry.valid && (queryEntry.tag === queryTag), false.B)
   io.query.target := queryEntry.target.get
   io.query.isJAL  := queryEntry.isJAL
   io.query.isBranch := queryEntry.isBranch
@@ -130,7 +145,11 @@ class BranchTargetBuffer extends Module {
   val updateIndex    = BTBParameters.extractIndex(io.update.addr)
   val oldUpdateState = updateStateMem(updateIndex)
   val oldDirection   = oldUpdateState.directionCounter
-  val entryMatches   = validMask(updateIndex) && oldUpdateState.tag === updateTag && oldUpdateState.isBranch
+  val entryMatches = Mux(
+    initDone,
+    oldUpdateState.valid && oldUpdateState.tag === updateTag && oldUpdateState.isBranch,
+    false.B
+  )
   val nextDirection = WireDefault(0.U(2.W))
 
   when(io.update.isBranch) {
@@ -157,6 +176,7 @@ class BranchTargetBuffer extends Module {
   nextEntry.directionCounter := nextDirection
 
   val nextUpdateState = Wire(new BTBUpdateState)
+  nextUpdateState.valid             := true.B
   nextUpdateState.tag              := updateTag
   nextUpdateState.isBranch         := io.update.isBranch
   nextUpdateState.directionCounter := nextDirection
@@ -167,11 +187,21 @@ class BranchTargetBuffer extends Module {
   val skipConflictingNotTakenBranch =
     io.update.isBranch && !io.update.actualTaken && !entryMatches
   val updateEn =
-    io.update.en && !reset.asBool && !skipConflictingNotTakenBranch
+    io.update.en && initDone && !reset.asBool && !skipConflictingNotTakenBranch
 
-  when(updateEn) {
-    queryMem.write(updateIndex, nextEntry)
-    validMask := validMask | UIntToOH(updateIndex, BTBParameters.ENTRY_NUM)
-    updateStateMem.write(updateIndex, nextUpdateState)
+  // Single write port per memory: mux the init/update address, data, and
+  // enable so synthesis can still infer distributed RAM instead of registers.
+  val queryWriteEn   = initPhase || updateEn
+  val queryWriteAddr = Mux(initPhase, initCount, updateIndex)
+  val queryWriteData = Mux(initPhase, 0.U.asTypeOf(new BTBEntry), nextEntry)
+  when(queryWriteEn) {
+    queryMem.write(queryWriteAddr, queryWriteData)
+  }
+  val updateStateWriteEn   = initPhase || updateEn
+  val updateStateWriteAddr = Mux(initPhase, initCount, updateIndex)
+  val updateStateWriteData =
+    Mux(initPhase, 0.U.asTypeOf(new BTBUpdateState), nextUpdateState)
+  when(updateStateWriteEn) {
+    updateStateMem.write(updateStateWriteAddr, updateStateWriteData)
   }
 }

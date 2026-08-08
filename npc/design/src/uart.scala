@@ -140,12 +140,8 @@ class SimpleBusFPGAUART extends Module {
   val doRead   = doReq && !io.bus.wen && !isStatus
   val doStatus = doReq && !io.bus.wen && isStatus
 
-  // Register the TX push/data at the UART boundary so the long CPU-to-FIFO
-  // store path ends at a flop instead of the TX-FIFO BRAM write pins.  The
-  // CPU polls TX-ready before each byte and the FIFO keeps a four-slot
-  // in-flight margin, so the extra cycle is absorbed without backpressure.
-  io.txPush := RegNext(doWrite, false.B)
-  io.txData := RegNext(io.bus.wdata(7, 0))
+  io.txPush := doWrite
+  io.txData := io.bus.wdata(7, 0)
   io.rxPop  := doRead && !io.rxEmpty
 
   // Sample a local asynchronous-FIFO word at request time.  The FIFO has

@@ -105,12 +105,14 @@ class BranchTargetBuffer extends Module {
     }
   })
 
-  // Keep the fetch query in one asynchronous LUTRAM copy.  The update port
-  // only needs the old tag/type/counter, kept in a distributed-memory shadow
-  // so expanding the BTB does not add hundreds of resettable flops.  The
-  // 512-entry capacity reduces index aliasing in CoreMark's hot loops.
-  val queryMem       = Mem(BTBParameters.ENTRY_NUM, new BTBEntry)
-  val updateStateMem = Mem(BTBParameters.ENTRY_NUM, new BTBUpdateState)
+  // Keep the fetch query in two asynchronous LUTRAM banks of 256 entries so
+  // the read depth stays one level shallower than a single 512-entry memory.
+  // The update port only needs the old tag/type/counter, kept in a matching
+  // distributed-memory shadow.
+  val numBanks = 2
+  val bankAddrWidth = BTBParameters.INDEX_WIDTH - log2Ceil(numBanks)
+  val queryMem       = Seq.fill(numBanks)(Mem(1 << bankAddrWidth, new BTBEntry))
+  val updateStateMem = Seq.fill(numBanks)(Mem(1 << bankAddrWidth, new BTBUpdateState))
 
   // Zero every entry during reset-time initialization so no uninitialized
   // LUTRAM bit is ever read as a valid prediction.  Until initDone both
@@ -130,7 +132,9 @@ class BranchTargetBuffer extends Module {
   // Query logic
   val queryTag   = BTBParameters.extractTag(io.query.addr)
   val queryIndex = BTBParameters.extractIndex(io.query.addr)
-  val queryEntry = queryMem(queryIndex)
+  val queryBank  = queryIndex(BTBParameters.INDEX_WIDTH - 1)
+  val queryIdx   = queryIndex(bankAddrWidth - 1, 0)
+  val queryEntry = Mux(queryBank, queryMem(1)(queryIdx), queryMem(0)(queryIdx))
 
   io.query.hit    := Mux(initDone, queryEntry.valid && (queryEntry.tag === queryTag), false.B)
   io.query.target := queryEntry.target.get
@@ -143,7 +147,9 @@ class BranchTargetBuffer extends Module {
   // Update logic
   val updateTag      = BTBParameters.extractTag(io.update.addr)
   val updateIndex    = BTBParameters.extractIndex(io.update.addr)
-  val oldUpdateState = updateStateMem(updateIndex)
+  val updateBank     = updateIndex(BTBParameters.INDEX_WIDTH - 1)
+  val updateIdx      = updateIndex(bankAddrWidth - 1, 0)
+  val oldUpdateState = Mux(updateBank, updateStateMem(1)(updateIdx), updateStateMem(0)(updateIdx))
   val oldDirection   = oldUpdateState.directionCounter
   val entryMatches = Mux(
     initDone,
@@ -189,19 +195,30 @@ class BranchTargetBuffer extends Module {
   val updateEn =
     io.update.en && initDone && !reset.asBool && !skipConflictingNotTakenBranch
 
-  // Single write port per memory: mux the init/update address, data, and
+  // Pipeline the whole update write one more cycle so the long
+  // address/tag/direction cone ends at registers instead of distributed-RAM
+  // write-enable pins.  The registered payload is written on the next edge.
+  val updateEnReg        = RegNext(updateEn)
+  val updateIndexReg     = RegNext(updateIndex)
+  val nextEntryReg       = RegNext(nextEntry)
+  val nextUpdateStateReg = RegNext(nextUpdateState)
+
+  // Single write port per memory bank: mux the init/update address, data, and
   // enable so synthesis can still infer distributed RAM instead of registers.
-  val queryWriteEn   = initPhase || updateEn
-  val queryWriteAddr = Mux(initPhase, initCount, updateIndex)
-  val queryWriteData = Mux(initPhase, 0.U.asTypeOf(new BTBEntry), nextEntry)
-  when(queryWriteEn) {
-    queryMem.write(queryWriteAddr, queryWriteData)
+  val writeBank = Mux(initPhase, initCount(BTBParameters.INDEX_WIDTH - 1), updateIndexReg(BTBParameters.INDEX_WIDTH - 1))
+  val writeIdx  = Mux(initPhase, initCount(bankAddrWidth - 1, 0), updateIndexReg(bankAddrWidth - 1, 0))
+  queryMem.zipWithIndex.foreach { case (mem, bank) =>
+    val writeEn = (initPhase || updateEnReg) && writeBank === bank.U
+    val writeData = Mux(initPhase, 0.U.asTypeOf(new BTBEntry), nextEntryReg)
+    when(writeEn) {
+      mem.write(writeIdx, writeData)
+    }
   }
-  val updateStateWriteEn   = initPhase || updateEn
-  val updateStateWriteAddr = Mux(initPhase, initCount, updateIndex)
-  val updateStateWriteData =
-    Mux(initPhase, 0.U.asTypeOf(new BTBUpdateState), nextUpdateState)
-  when(updateStateWriteEn) {
-    updateStateMem.write(updateStateWriteAddr, updateStateWriteData)
+  updateStateMem.zipWithIndex.foreach { case (mem, bank) =>
+    val writeEn = (initPhase || updateEnReg) && writeBank === bank.U
+    val writeData = Mux(initPhase, 0.U.asTypeOf(new BTBUpdateState), nextUpdateStateReg)
+    when(writeEn) {
+      mem.write(writeIdx, writeData)
+    }
   }
 }

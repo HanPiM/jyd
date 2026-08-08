@@ -45,7 +45,15 @@ def run_once(
         str(bitstream),
     ]
     started_at = datetime.now(timezone.utc).isoformat()
-    completed = subprocess.run(command, cwd=client_dir, text=True, capture_output=True, check=False)
+    completed = subprocess.run(
+        command,
+        cwd=client_dir,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        capture_output=True,
+        check=False,
+    )
     log_path = output_dir / f"run-{index:03d}.log"
     log_path.write_text(completed.stdout + completed.stderr, encoding="utf-8")
     stdout = completed.stdout

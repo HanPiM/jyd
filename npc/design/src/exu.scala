@@ -351,11 +351,20 @@ class EXU(
   // ordinary arithmetic, late-load ANDI/SRLI bit result, or decode-provided
   // data (LUI/AUIPC/JAL/CSR...).
   val isLateLoadBit = isLateLoadAndi1 || isLateLoadSrli1
-  writeBackInfo.gpr.data := Mux1H(
-    Seq(
-      (isTypArithmetic && !isLateLoadBit) -> aluOut,
-      isLateLoadBit -> lateBitResult,
-      !isTypArithmetic -> dinst.info.preMuxWrBackData
+  // Plain ADD/ADDI is the dominant CoreMark arithmetic and `alu.addResult`
+  // already is the carry-chain output, so bypass both the general ALU result
+  // mux and the writeback one-hot for it.  This removes 2-3 LUT levels from
+  // the ordinary arithmetic forwarding loop without changing semantics.
+  val isPlainAdd = isTypArithmetic && !isLateLoadBit && isAdd
+  writeBackInfo.gpr.data := Mux(
+    isPlainAdd,
+    alu.io.addResult,
+    Mux1H(
+      Seq(
+        (isTypArithmetic && !isLateLoadBit) -> aluOut,
+        isLateLoadBit -> lateBitResult,
+        !isTypArithmetic -> dinst.info.preMuxWrBackData
+      )
     )
   )
 

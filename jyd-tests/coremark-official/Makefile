@@ -5,6 +5,9 @@ JYD_HOME := $(abspath $(ROOT_DIR)/../..)
 
 ITERATIONS ?= 1000
 TOTAL_DATA_SIZE ?= 2000
+# Keep CoreMark's default ISA aligned with the current JYD CPU/FPGA baseline.
+# Callers evaluating an unextended control image can still pass RISCV_ZEXTS=.
+RISCV_ZEXTS ?= _zba_zbb_zbc_zbs_zbkb_zbkx
 ENABLE_LTO ?= 0
 PSEUDO_FLOAT ?= 1
 COREMARK_OPT ?= -Os

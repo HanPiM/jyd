@@ -7,7 +7,7 @@
 #   * link local ignored/untracked dependencies (am-kernels, npc/deps,
 #     coremark build outputs, rt-thread-am)
 #   * make ../riscv-arch-test-am-jyd resolve from the worktree's parent
-#   * install the NEMU difftest reference (.config + interpreter-so)
+#   * install proven prebuilt NEMU artifacts (.config + interpreter + interpreter-so)
 #   * import the formal CoreMark COE pair into cur_coe
 #
 # Conventions (AGENTS.md):
@@ -17,7 +17,7 @@
 #
 # Usage:
 #   npc/scripts/create-opt-worktree.sh [--commit <ref>] [--branch <name>]
-#       [--name <dir>] [--src <main-repo>] [--difftest-ref <dir>]
+#       [--name <dir>] [--src <main-repo>] [--nemu-ref <dir>]
 #       [--coe-dir <dir>] [--skip-coe-check]
 
 set -euo pipefail
@@ -31,7 +31,7 @@ Automates the setup steps used for JYD optimization candidates:
   * link local ignored/untracked dependencies (am-kernels, npc/deps,
     coremark build outputs, rt-thread-am)
   * make ../riscv-arch-test-am-jyd resolve from the worktree's parent
-  * install the NEMU difftest reference (.config + interpreter-so)
+  * install proven prebuilt NEMU artifacts (.config + interpreter + interpreter-so)
   * import the formal CoreMark COE pair into cur_coe
 
 Usage:
@@ -43,9 +43,13 @@ Options:
   --name <dir>         Worktree directory name under $JYD_DATA_ROOT/worktrees
                        (default: the branch name).
   --src <main-repo>    Main repository (default: auto-detected main worktree).
-  --difftest-ref <dir> Directory whose nemu/.config and
+  --nemu-ref <dir>     Directory whose nemu/.config,
+                       nemu/build/riscv32-nemu-interpreter, and
                        nemu/build/riscv32-nemu-interpreter-so are installed
-                       (default: /srv/data/jyd/worktrees/jyd-postreg-forward).
+                       (default: --src).  Use these artifacts unchanged when
+                       NEMU source/config has not changed; do not rebuild NEMU
+                       in a candidate worktree.
+  --difftest-ref <dir> Backward-compatible alias for --nemu-ref.
   --coe-dir <dir>      Directory with coremark-official-riscv32-jyd.{text,data}.coe
                        (default: <src>/jyd-tests/coremark-official/build/
                        iter10000-data2000-z_zba_zbb_zbc_zbs-cdefault-lto0-pf1/).
@@ -61,7 +65,7 @@ SRC=""
 COMMIT=""
 BRANCH=""
 NAME=""
-DIFFTEST_REF="/srv/data/jyd/worktrees/jyd-postreg-forward"
+NEMU_REF=""
 COE_DIR=""
 SKIP_COE_CHECK=0
 
@@ -71,7 +75,7 @@ while [[ $# -gt 0 ]]; do
     --branch) BRANCH="$2"; shift 2 ;;
     --name) NAME="$2"; shift 2 ;;
     --src) SRC="$2"; shift 2 ;;
-    --difftest-ref) DIFFTEST_REF="$2"; shift 2 ;;
+    --nemu-ref|--difftest-ref) NEMU_REF="$2"; shift 2 ;;
     --coe-dir) COE_DIR="$2"; shift 2 ;;
     --skip-coe-check) SKIP_COE_CHECK=1; shift ;;
     -h|--help) usage; exit 0 ;;
@@ -88,6 +92,7 @@ if [[ -z "$SRC" || ! -d "$SRC/.git" && ! -d "$SRC" ]]; then
   exit 1
 fi
 SRC="$(cd "$SRC" && pwd)"
+NEMU_REF="${NEMU_REF:-$SRC}"
 
 COMMIT="${COMMIT:-$(git -C "$SRC" rev-parse HEAD)}"
 COMMIT_FULL="$(git -C "$SRC" rev-parse "$COMMIT^{commit}")"
@@ -141,20 +146,31 @@ else
   echo "   linked /home/hanpi/gitclone/riscv-arch-test-am-jyd -> $ARCH_TEST_LINK"
 fi
 
-# --- NEMU difftest reference -------------------------------------------------
-if [[ ! -f "$DIFFTEST_REF/nemu/.config" ]]; then
-  echo "error: --difftest-ref has no nemu/.config: $DIFFTEST_REF" >&2
+# --- prebuilt NEMU artifacts -------------------------------------------------
+# Candidate worktrees do not rebuild NEMU unless their NEMU source or
+# configuration changes.  Copy the verified native executable as well as the
+# difftest shared object so offline NEMU profiling and NPC difftest use known
+# inputs without a dependency rebuild or network fetch.
+if [[ ! -f "$NEMU_REF/nemu/.config" ]]; then
+  echo "error: --nemu-ref has no nemu/.config: $NEMU_REF" >&2
   exit 1
 fi
-if [[ ! -x "$DIFFTEST_REF/nemu/build/riscv32-nemu-interpreter-so" ]]; then
-  echo "error: --difftest-ref has no built nemu/build/riscv32-nemu-interpreter-so: $DIFFTEST_REF" >&2
+if [[ ! -x "$NEMU_REF/nemu/build/riscv32-nemu-interpreter" ]]; then
+  echo "error: --nemu-ref has no built nemu/build/riscv32-nemu-interpreter: $NEMU_REF" >&2
+  exit 1
+fi
+if [[ ! -x "$NEMU_REF/nemu/build/riscv32-nemu-interpreter-so" ]]; then
+  echo "error: --nemu-ref has no built nemu/build/riscv32-nemu-interpreter-so: $NEMU_REF" >&2
   exit 1
 fi
 mkdir -p "$WT_DIR/nemu/build"
-cp "$DIFFTEST_REF/nemu/.config" "$WT_DIR/nemu/.config"
-cp "$DIFFTEST_REF/nemu/build/riscv32-nemu-interpreter-so" \
+cp "$NEMU_REF/nemu/.config" "$WT_DIR/nemu/.config"
+cp "$NEMU_REF/nemu/build/riscv32-nemu-interpreter" \
+  "$WT_DIR/nemu/build/riscv32-nemu-interpreter"
+cp "$NEMU_REF/nemu/build/riscv32-nemu-interpreter-so" \
   "$WT_DIR/nemu/build/riscv32-nemu-interpreter-so"
 echo "   nemu/.config sha256: $(sha256sum "$WT_DIR/nemu/.config" | awk '{print $1}')"
+echo "   interpreter sha256: $(sha256sum "$WT_DIR/nemu/build/riscv32-nemu-interpreter" | awk '{print $1}')"
 echo "   interpreter-so sha256: $(sha256sum "$WT_DIR/nemu/build/riscv32-nemu-interpreter-so" | awk '{print $1}')"
 
 # --- formal COE pair ---------------------------------------------------------

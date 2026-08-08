@@ -16,6 +16,13 @@ Environment:
   VIVADO                Vivado executable to use. Defaults to "vivado".
   JOBS                  Vivado top-level jobs and max threads. Defaults to nproc.
   IP_JOBS               IP/OOC run concurrency and max threads. Defaults to 1.
+  VIVADO_SYNTH_GLOBAL_RETIMING
+                         Set to 1 to enable synth_design global retiming.
+  VIVADO_SYNTH_KEEP_EQUIVALENT_REGISTERS
+                         Set to 1 to preserve equivalent registers in synthesis.
+  VIVADO_POST_ROUTE_PHYS_OPT_DIRECTIVE
+                         Default "AggressiveExplore"; supported values are
+                         Default, Explore, and AggressiveExplore.
 EOF
 }
 
@@ -25,6 +32,9 @@ skip_vivado=0
 reset_runs=0
 jobs="${JOBS:-$(nproc 2>/dev/null || echo 4)}"
 ip_jobs=""
+synth_global_retiming="${VIVADO_SYNTH_GLOBAL_RETIMING:-0}"
+synth_keep_equivalent_registers="${VIVADO_SYNTH_KEEP_EQUIVALENT_REGISTERS:-0}"
+post_route_phys_opt_directive="${VIVADO_POST_ROUTE_PHYS_OPT_DIRECTIVE:-AggressiveExplore}"
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
@@ -87,6 +97,21 @@ if ! [[ "$ip_jobs" =~ ^[1-9][0-9]*$ ]]; then
   echo "--ip-jobs must be a positive integer: $ip_jobs" >&2
   exit 2
 fi
+if [[ "$synth_global_retiming" != 0 && "$synth_global_retiming" != 1 ]]; then
+  echo "VIVADO_SYNTH_GLOBAL_RETIMING must be 0 or 1: $synth_global_retiming" >&2
+  exit 2
+fi
+if [[ "$synth_keep_equivalent_registers" != 0 && "$synth_keep_equivalent_registers" != 1 ]]; then
+  echo "VIVADO_SYNTH_KEEP_EQUIVALENT_REGISTERS must be 0 or 1: $synth_keep_equivalent_registers" >&2
+  exit 2
+fi
+case "$post_route_phys_opt_directive" in
+  Default | Explore | AggressiveExplore) ;;
+  *)
+    echo "Unsupported VIVADO_POST_ROUTE_PHYS_OPT_DIRECTIVE: $post_route_phys_opt_directive" >&2
+    exit 2
+    ;;
+esac
 
 script_dir=$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 npc_dir=$(CDPATH= cd -- "$script_dir/.." && pwd)
@@ -151,16 +176,28 @@ tcl_file=$(mktemp "${TMPDIR:-/tmp}/digital_twin_flow.XXXXXX.tcl")
 trap 'rm -f "$tcl_file"' EXIT
 
 cat >"$tcl_file" <<'EOF'
-if {$argc != 5} {
-  error "Expected Tcl args: <mode> <jobs> <ip-jobs> <expected-pack-fpga-dir> <reset-runs>"
+if {$argc != 8} {
+  error "Expected Tcl args: <mode> <jobs> <ip-jobs> <expected-pack-fpga-dir> <reset-runs> <global-retiming> <keep-equivalent-registers> <post-route-physopt-directive>"
 }
 set mode [lindex $argv 0]
 set jobs [lindex $argv 1]
 set ip_jobs [lindex $argv 2]
 set expected_pack_dir [file normalize [lindex $argv 3]]
 set reset_runs [lindex $argv 4]
+set synth_global_retiming [lindex $argv 5]
+set synth_keep_equivalent_registers [lindex $argv 6]
+set post_route_phys_opt_directive [lindex $argv 7]
 if {$reset_runs ni {0 1}} {
   error "reset-runs must be 0 or 1, got: $reset_runs"
+}
+if {$synth_global_retiming ni {0 1}} {
+  error "global-retiming must be 0 or 1, got: $synth_global_retiming"
+}
+if {$synth_keep_equivalent_registers ni {0 1}} {
+  error "keep-equivalent-registers must be 0 or 1, got: $synth_keep_equivalent_registers"
+}
+if {$post_route_phys_opt_directive ni {Default Explore AggressiveExplore}} {
+  error "unsupported post-route physopt directive: $post_route_phys_opt_directive"
 }
 
 open_project digital_twin.xpr
@@ -348,8 +385,8 @@ if {[llength [get_runs impl_1]] == 0} {
 # produced from the same reproducible run rather than a standalone DCP edit.
 set impl_run [get_runs impl_1]
 set_property STEPS.POST_ROUTE_PHYS_OPT_DESIGN.IS_ENABLED true $impl_run
-set_property STEPS.POST_ROUTE_PHYS_OPT_DESIGN.ARGS.DIRECTIVE AggressiveExplore $impl_run
-puts "impl_1 post-route physopt: enabled, directive=AggressiveExplore"
+set_property STEPS.POST_ROUTE_PHYS_OPT_DESIGN.ARGS.DIRECTIVE $post_route_phys_opt_directive $impl_run
+puts "impl_1 post-route physopt: enabled, directive=$post_route_phys_opt_directive"
 
 proc clear_run_property_if_exists {run_name prop_name} {
   set run_obj [get_runs $run_name]
@@ -374,6 +411,10 @@ foreach run_name {synth_1 impl_1} {
 }
 
 set synth_run [get_runs synth_1]
+set_property STEPS.SYNTH_DESIGN.ARGS.RETIMING [expr {$synth_global_retiming ? "true" : "false"}] $synth_run
+set_property STEPS.SYNTH_DESIGN.ARGS.KEEP_EQUIVALENT_REGISTERS \
+  [expr {$synth_keep_equivalent_registers ? "true" : "false"}] $synth_run
+puts "synth_1 global retiming: $synth_global_retiming; keep equivalent registers: $synth_keep_equivalent_registers"
 if {[lsearch -exact [list_property $synth_run] AUTO_INCREMENTAL_CHECKPOINT] >= 0} {
   # Vivado 2024.2 exposes this run property as an integer.  Passing the Tcl
   # boolean string "false" fails with "bad lexical cast" before synthesis.
@@ -477,7 +518,9 @@ ip_config_hash() {
 # manifest across the entire process so such a run is always rejected.
 ip_config_hash_before=$(ip_config_hash)
 set +e
-"$vivado_bin" -mode batch -source "$tcl_file" -tclargs "$mode" "$jobs" "$ip_jobs" "$pack_dst" "$reset_runs"
+"$vivado_bin" -mode batch -source "$tcl_file" -tclargs \
+  "$mode" "$jobs" "$ip_jobs" "$pack_dst" "$reset_runs" \
+  "$synth_global_retiming" "$synth_keep_equivalent_registers" "$post_route_phys_opt_directive"
 vivado_status=$?
 set -e
 ip_config_hash_after=$(ip_config_hash)

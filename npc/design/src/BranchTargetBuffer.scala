@@ -105,12 +105,13 @@ class BranchTargetBuffer extends Module {
     }
   })
 
-  // Keep the fetch query in two asynchronous LUTRAM banks of 256 entries so
-  // the read depth stays one level shallower than a single 512-entry memory.
+  // Keep the fetch query in four asynchronous LUTRAM banks of 128 entries so
+  // the read depth stays two levels shallower than a single 512-entry memory.
   // The update port only needs the old tag/type/counter, kept in a matching
   // distributed-memory shadow.
-  val numBanks = 2
-  val bankAddrWidth = BTBParameters.INDEX_WIDTH - log2Ceil(numBanks)
+  val numBanks = 4
+  val bankWidth = log2Ceil(numBanks)
+  val bankAddrWidth = BTBParameters.INDEX_WIDTH - bankWidth
   val queryMem       = Seq.fill(numBanks)(Mem(1 << bankAddrWidth, new BTBEntry))
   val updateStateMem = Seq.fill(numBanks)(Mem(1 << bankAddrWidth, new BTBUpdateState))
 
@@ -132,9 +133,9 @@ class BranchTargetBuffer extends Module {
   // Query logic
   val queryTag   = BTBParameters.extractTag(io.query.addr)
   val queryIndex = BTBParameters.extractIndex(io.query.addr)
-  val queryBank  = queryIndex(BTBParameters.INDEX_WIDTH - 1)
+  val queryBank  = queryIndex(BTBParameters.INDEX_WIDTH - 1, bankAddrWidth)
   val queryIdx   = queryIndex(bankAddrWidth - 1, 0)
-  val queryEntry = Mux(queryBank, queryMem(1)(queryIdx), queryMem(0)(queryIdx))
+  val queryEntry = VecInit(queryMem.map(_(queryIdx)))(queryBank)
 
   io.query.hit    := Mux(initDone, queryEntry.valid && (queryEntry.tag === queryTag), false.B)
   io.query.target := queryEntry.target.get
@@ -147,9 +148,9 @@ class BranchTargetBuffer extends Module {
   // Update logic
   val updateTag      = BTBParameters.extractTag(io.update.addr)
   val updateIndex    = BTBParameters.extractIndex(io.update.addr)
-  val updateBank     = updateIndex(BTBParameters.INDEX_WIDTH - 1)
+  val updateBank     = updateIndex(BTBParameters.INDEX_WIDTH - 1, bankAddrWidth)
   val updateIdx      = updateIndex(bankAddrWidth - 1, 0)
-  val oldUpdateState = Mux(updateBank, updateStateMem(1)(updateIdx), updateStateMem(0)(updateIdx))
+  val oldUpdateState = VecInit(updateStateMem.map(_(updateIdx)))(updateBank)
   val oldDirection   = oldUpdateState.directionCounter
   val entryMatches = Mux(
     initDone,
@@ -205,7 +206,11 @@ class BranchTargetBuffer extends Module {
 
   // Single write port per memory bank: mux the init/update address, data, and
   // enable so synthesis can still infer distributed RAM instead of registers.
-  val writeBank = Mux(initPhase, initCount(BTBParameters.INDEX_WIDTH - 1), updateIndexReg(BTBParameters.INDEX_WIDTH - 1))
+  val writeBank = Mux(
+    initPhase,
+    initCount(BTBParameters.INDEX_WIDTH - 1, bankAddrWidth),
+    updateIndexReg(BTBParameters.INDEX_WIDTH - 1, bankAddrWidth)
+  )
   val writeIdx  = Mux(initPhase, initCount(bankAddrWidth - 1, 0), updateIndexReg(bankAddrWidth - 1, 0))
   queryMem.zipWithIndex.foreach { case (mem, bank) =>
     val writeEn = (initPhase || updateEnReg) && writeBank === bank.U

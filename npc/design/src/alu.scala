@@ -517,17 +517,12 @@ class ALU extends Module {
       (!isBExt && !isMExt) -> io.in.valid
     )
   )
-  // Keep the single-cycle ALU result on a short two-way mux.  The multi-cycle
-  // unit results are registered and stable early in the cycle, so their own
-  // one-hot selection chain is off the writeback critical path; routing the
-  // ALU result through the full 4-way Mux1H adds a second LUT level to every
-  // ordinary arithmetic writeback.
-  val multiCycleResult = Mux1H(
+  io.out.bits := Mux1H(
     Seq(
       isBExt -> bExtension.io.out.bits,
       isMulOp -> multiplier.io.out.bits,
-      isDivOp -> divider.io.out.bits
+      isDivOp -> divider.io.out.bits,
+      (!isBExt && !isMExt) -> aluResult
     )
   )
-  io.out.bits := Mux(isBExt || isMulOp || isDivOp, multiCycleResult, aluResult)
 }

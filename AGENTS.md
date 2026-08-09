@@ -67,6 +67,7 @@ For digital twin FPGA packaging or XDC changes, use this validation flow:
 - From the repository root, run `./npc/scripts/run_digital_twin_vivado.sh bitstream` when a bitstream is required. The script rebuilds `pack-fpga`, refreshes the imported files under `jyd-vivado-proj/`, and runs Vivado through synthesis, implementation, and bitstream generation. Use `impl` when bitstream generation is not needed; `JOBS` or `--jobs N` controls Vivado parallelism.
 - Vivado produces substantial logs. For workflow logs, retain case-insensitive lines containing `finished` or `error`, but ignore lines beginning with `#` because they are echoed Tcl commands.
 - After the run, use `python3 jyd-vivado-proj/scripts/extract-wns-violations.py -n 1` to inspect the worst setup/WNS path. Any `VIOLATED` result means timing is not met; `No WNS/setup timing violations found.` means setup timing is met. The routed report can also be inspected directly with `python3 jyd-vivado-proj/scripts/extract-timing-summary.py ./jyd-vivado-proj/digital_twin.runs/impl_1/top_timing_summary_routed.rpt`.
+- For structural attribution, prefer `python3 jyd-vivado-proj/scripts/extract-vivado-run-summary.py <run-or-archive> --path-report <timing-path-report> --view optimization`. The bounded view reports semantic path families, data-path primitive histograms, top data nets, clock delay/skew, resource counts/deltas, and honest coverage. This is a convenience, not a restriction: inspect full `.rpt` or `.log` files whenever direct verification or missing detail makes that useful.
 - If Vivado reports `Designutils 20-1307` for `jyd_cdc.xdc`, treat it as a hard constraint-parse failure and fix the XDC before doing further timing analysis.
 - If Vivado reports `Constraints 18-513` for `jyd_cdc.xdc`, treat it as a hard constraint-targeting failure; the XDC parsed, but the selected `-from` objects are not valid startpoints.
 
@@ -117,17 +118,17 @@ For emulator/runtime changes, rebuild the affected module and run the local work
 ## Optimization Experiment Documentation
 
 Optimization experiment documentation has a single canonical home: branch `opt-notes`, checked out at
-`/home/hanpi/gitclone/jyd-opt-notes`. Before starting or continuing an optimization experiment, read
-`npc/opt-iter-flow.md` and the relevant files under `npc/opt-try/` from that worktree. Copies of those files on RTL
-optimization branches are historical snapshots and must not be edited.
+`/home/hanpi/gitclone/jyd-opt-notes`. `npc/opt-iter-flow.md` is the operational reference for commands and validation
+rules. Files under `npc/opt-try/` are archival experiment records: future optimization agents must not be required to
+read or preload them, and should not use past attempted directions as priors for choosing a new structure. Start from
+the current user goal, current RTL, the frozen baseline commit, and current machine-readable summaries/indexes.
+Consult a historical record only when a specific provenance or comparison question requires it. Copies of optimization
+documents on RTL branches are historical snapshots and must not be edited.
 
-Current active optimization goal (2026-08-04): continue timing/performance iteration until the 280 MHz CoreMark run
-time is below 12.05 s and the post-route setup WNS is no worse than -0.05 ns (`WNS >= -0.05 ns`). Read
-`npc/opt-try/280mhz-12.05s-wns-0.05.md` (canonical at
-`/home/hanpi/gitclone/jyd-opt-notes/npc/opt-try/280mhz-12.05s-wns-0.05.md`) before continuing any optimization turn,
-and keep both copies in sync. Do not substitute older cycle/time gates such as the previous 1.70 s / 476M-cycle
-targets. Every candidate promoted to a new baseline must normally be board-tested and recorded; every Vivado impl
-attempt must also be recorded (status, commands, results, archiving, and keep/revert decision). If board access is
+Current active optimization goal (2026-08-09): at 300 MHz, achieve strict post-route setup `WNS > -0.3 ns` and
+CoreMark runtime `< 10.75 s`; equality at either boundary fails. Every candidate promoted to a new baseline must
+normally be board-tested and recorded; every Vivado impl attempt must also be recorded (status, commands, results,
+archiving, and keep/revert decision). If board access is
 blocked by the network or board service, lack of a board run alone is not a rejection reason: a candidate with
 reproducible NPC 16M and NEMU `ITERATIONS=10000` evidence may be promoted as an explicitly unboarded interim
 baseline, provided its bitstream is retained and the later board-validation debt is recorded. This iteration does not

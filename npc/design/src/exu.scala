@@ -244,6 +244,7 @@ class EXU(
   val isBExt = dinst.info.bExtValid
   alu_in.bExtValid := isBExt
   alu_in.crcValid := dinst.info.crcValid
+  alu_in.xbmulValid := dinst.info.xbmulValid
 
   val aluOut = alu.io.out.bits
 

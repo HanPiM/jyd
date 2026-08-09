@@ -202,6 +202,9 @@ class DecodedInstInfo(implicit p : CPUParameters) extends InstMetaInfo with HasR
   // CoreMark CRCU8 is a single-cycle custom-0 R-type operation.
   val crcValid = Bool()
 
+  // CoreMark bit-extract multiply is a single-cycle custom-0 operation.
+  val xbmulValid = Bool()
+
   // Predecode the ALU add/sub carry polarity before the IDU/EXU register so
   // the instruction-code bus does not drive the carry chain directly.
   val aluIsSub = Bool()

@@ -12,6 +12,7 @@ class ALUInput extends Bundle {
   val func7t    = UInt(7.W)
   val bExtValid = Bool()
   val crcValid  = Bool()
+  val xbmulValid = Bool()
   val src1      = Types.UWord
   val src2      = Types.UWord
   val mulRawSrc1 = Types.UWord
@@ -462,6 +463,7 @@ class ALU extends Module {
   )
   val crcBits = VecInit(crcMasks.map(mask => (crcInput & mask.U(24.W)).xorR))
   val crcResult = Cat(0.U(16.W), crcBits.asUInt)
+  val xbmulResult = (((src1(5, 2) * src1(11, 5))).pad(32))
 
   val aluResult = MuxCase(
     baseAluResult,
@@ -473,7 +475,8 @@ class ALU extends Module {
       isSextH  -> sextHResult,
       isMinu   -> minuResult,
       isBext   -> bextResult,
-      inbits.crcValid -> crcResult
+      inbits.crcValid   -> crcResult,
+      inbits.xbmulValid -> xbmulResult
     )
   )
   io.singleCycleResult := aluResult

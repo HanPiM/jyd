@@ -335,7 +335,12 @@ class IDU(
   val immB    = Cat(immI(31, 12), inst(7), immS(10, 1), 0.U(1.W))
   val immU    = Cat(inst(31, 12), 0.U(12.W))
   val immJ    = Cat(immI(31, 20), inst(19, 12), inst(20), inst(30, 21), 0.U(1.W))
-  val addrImm = Mux(isTypStore, immS, immI)
+  // I- and S-format address immediates share inst[31:25].  Only select the
+  // low five bits, using the store opcode class directly, so address
+  // generation does not inherit the full instruction-type decode cone.
+  val isStoreEncoding = inst(6, 5) === "b01".U
+  val addrImm12 = Cat(inst(31, 25), Mux(isStoreEncoding, inst(11, 7), inst(24, 20)))
+  val addrImm = addrImm12.asSInt.pad(32).asUInt
 
   val dontcareImm = Wire(Types.UWord)
   dontcareImm := DontCare

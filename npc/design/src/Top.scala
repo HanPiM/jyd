@@ -271,10 +271,6 @@ class CPUCore(
   btb.io.update.isReturn   := RegNext(exu.io.isReturn)
   btb.io.update.actualTaken := RegNext(exu.io.branchTaken)
 
-  nxtPredictedPC := bp.io.pred.pc
-
-  ifu.io.predNext := bp.io.pred
-
   redirectNow         := exu.io.in.valid && exu.io.predWrong
   redirectPendingFire := ifu.io.pc.fire && redirectPendingReg
 
@@ -309,6 +305,19 @@ class CPUCore(
     TrimmedPC.expand(Mux(redirectUseTargetReg, redirectTargetReg, redirectFallthroughReg)),
     pc
   )
+
+  // A redirected fetch is uncommon and already paid a pipeline flush. Avoid
+  // sending its registered address through the asynchronous BTB and RAS in
+  // the same cycle; prediction resumes normally from the fall-through PC.
+  val fetchPrediction = Wire(new PredBundle)
+  fetchPrediction := bp.io.pred
+  when(redirectPendingReg) {
+    fetchPrediction.hit  := false.B
+    fetchPrediction.take := false.B
+    fetchPrediction.pc   := pcFeedToIFU + 4.U
+  }
+  nxtPredictedPC := fetchPrediction.pc
+  ifu.io.predNext := fetchPrediction
 
   io.irom <> ifu.io.mem
   io.dram <> dataMemBus.io.out

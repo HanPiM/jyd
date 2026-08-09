@@ -81,7 +81,10 @@ include $(JYD_HOME)/abstract-machine/Makefile
 # platform defaults to (e.g. RISCV_ZEXTS) and force plain rv32im_zicsr.
 COMMON_CFLAGS := $(filter-out -march=%,$(COMMON_CFLAGS)) -march=rv32im_zicsr
 
-$(OBJS): CFLAGS += $(NANO_OPT)
+# Current GCC releases diagnose one legacy Nano control-flow path as maybe
+# uninitialized. Keep the upstream source untouched and demote only that
+# diagnostic for the compatibility checkout used by the board port.
+$(OBJS): CFLAGS += $(NANO_OPT) -Wno-error=maybe-uninitialized
 COREMARK_BENCH_OBJS := $(addprefix $(DST_DIR)/,$(addsuffix .o,$(basename $(COREMARK_BENCH_SRCS))))
 COREMARK_SUPPORT_OBJS := $(addprefix $(DST_DIR)/,$(addsuffix .o,$(basename $(COREMARK_SUPPORT_SRCS))))
 # Only the CoreMark benchmark translation units get the B extensions; the

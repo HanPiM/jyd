@@ -106,7 +106,6 @@ class EXU(
     val predWrong = Output(Bool())
 
     val branchTarget   = Output(Types.UWord)
-    val branchBackward = Output(Bool())
     val staticTarget   = Output(Types.UWord)
 
     val pc    = Output(Types.UWord)
@@ -200,6 +199,8 @@ class EXU(
   )
   val reg_v1       = postRegisterRegV1
   val reg_v2       = postRegisterRegV2
+  val equalityRegV1 = Mux(dinst.info.lateLoadRs1, lateRegV1, postRegisterRegV1)
+  val equalityRegV2 = Mux(dinst.info.lateLoadRs2, lateRegV2, postRegisterRegV2)
   // val pcAddImm   = dinst.pc + dinst.info.imm
   val pcAddImm   = dinst.info.pcAddImm
   val reg1AddImm = "h80".U(8.W) ## 0.U(2.W) ## dinst.info.reg1AddImm
@@ -207,7 +208,6 @@ class EXU(
   // Branches/JAL use PC+imm, while a JALR BTB entry must learn the resolved
   // rs1+imm target.  The BTB stores only the same trimmed PC bits either way.
   io.branchTarget   := Mux(isTypJALR, reg1AddImm, pcAddImm)
-  io.branchBackward := dinst.info.imm(31)
 
   alu_in.src1   := reg_v1
   // alu_in.src2   := Mux(isFmtI, dinst.info.imm, reg_v2)
@@ -289,7 +289,11 @@ class EXU(
 
   val isFmtB = InstFmt.hasSame(dinst.info.fmt, InstFmt.branch)
 
-  val isEqual     = reg_v1 === reg_v2
+  val equalityDiff = equalityRegV1 ^ equalityRegV2
+  dontTouch(equalityDiff)
+  val equalityChunkNonZero = VecInit((0 until 4).map(i => equalityDiff(8 * i + 7, 8 * i).orR))
+  dontTouch(equalityChunkNonZero)
+  val isEqual     = !equalityChunkNonZero.asUInt.orR
   val isLessThan  = reg_v1.asSInt < reg_v2.asSInt
   val isLessThanU = reg_v1 < reg_v2
 
@@ -371,7 +375,7 @@ class EXU(
   writeBackInfo.dcacheStoreEpoch := false.B
 
   val isMemOP        = isTypLoad || isTypStore
-  val exuResultValid = !isTypArithmetic || (alu.io.out.valid && (!hasLateLoadOperand || lateDataReady))
+  val exuResultValid = (!isTypArithmetic || alu.io.out.valid) && (!hasLateLoadOperand || lateDataReady)
   // Keep the same-cycle forwarding loop independent of the multi-cycle M/D/B
   // result mux.  A multi-cycle producer still advertises its destination while it is
   // in EXU, but its data remains unavailable to IDU; a dependent consumer
@@ -472,7 +476,7 @@ class EXU(
   io.isCall      := (isTypJAL || isTypJALR) && dinst.info.rd =/= 0.U
   io.branchTaken := takeBranch
   io.btbUpdateEn := isTypBranch || isTypJAL || isTypJALR
-  io.predWrong := (isFmtB && (takeBranch ^ dinst.predTake)) || io.in.bits.info.notBranchPredWrong
+  io.predWrong := exuResultValid && ((isFmtB && (takeBranch ^ dinst.predTake)) || io.in.bits.info.notBranchPredWrong)
 
   StageLogger(
     clock,

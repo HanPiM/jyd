@@ -367,9 +367,10 @@ class IDU(
   // loop without placing a general AND or barrel shifter in the late path.
   val isLateLoadAndi1 = isTypArithmetic && isFmtI && inst(14, 12) === "b111".U && inst(31, 20) === 1.U
   val isLateLoadSrli1 = isTypArithmetic && isFmtI && inst(14, 12) === "b101".U && inst(31, 20) === 1.U
-  val allowLateLoadRs1 = isLateLoadAndi1 || isLateLoadSrli1
+  val isEqualityBranch = isTypBranch && inst(14, 13) === 0.U
+  val allowLateLoadRs1 = isLateLoadAndi1 || isLateLoadSrli1 || isEqualityBranch
   bypassMux.io.allowLateLoadRs1 := allowLateLoadRs1
-  bypassMux.io.allowLateLoadRs2 := false.B
+  bypassMux.io.allowLateLoadRs2 := isEqualityBranch
   val arithmeticFunc3 = inst(14, 12)
   val arithmeticFunc7 = inst(31, 25)
   val isMExtArithmetic = !isFmtI && arithmeticFunc7 === "b0000001".U

@@ -442,13 +442,14 @@ class IDU(
 
   // res.snpc       := io.in.bits.pc + 4.U
   res.pcAddImm := io.in.bits.pc + res.imm
-  // Keep address generation independent from the generic rs1 bypass path.
-  //
-  // 80[012]
-  // for [012] only lo 2 bits are used, so
-  // hi 8+2b: {8'b80, 2'b0}
-  //
-  def addAddrImm(base: UInt): UInt = base(17, 0) + addrImm(17, 0)
+  // Split the 22-bit address add at the 64 KiB boundary.  The immediate is
+  // sign-extended, so the upper six bits only need the low-add carry minus
+  // the immediate sign bit.
+  def addAddrImm(base: UInt): UInt = {
+    val lowSum = base(15, 0) +& addrImm(15, 0)
+    val high   = base(21, 16) + lowSum(16) - addrImm(15)
+    high ## lowSum(15, 0)
+  }
 
   // res.reg1AddImm := DontCare
   val lsuReg1AddImmBypass =
@@ -464,10 +465,7 @@ class IDU(
   val nonLsuReg1AddImmBase = Mux(exuReg1AddImmBypass, io.exuAddFwd.data, nonExuReg1AddImmBase)
   val useLsuReg1AddImm = !exuReg1AddImmBypass && lsuReg1AddImmBypass
   val reg1AddImmBase = Mux(useLsuReg1AddImm, io.wrBackInfo.lsu.data(21, 0), nonLsuReg1AddImmBase)
-  def genReg1AddImm(base: UInt): UInt = {
-    val region = base(21, 20) + base(19)
-    region ## 0.U(2.W) ## addAddrImm(base)
-  }
+  def genReg1AddImm(base: UInt): UInt = addAddrImm(base)
   res.reg1AddImm := genReg1AddImm(reg1AddImmBase)
 
   res.isECall := inst === "h73".U

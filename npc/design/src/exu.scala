@@ -160,15 +160,38 @@ class EXU(
 
   alu.io.in.valid := io.in.valid && isTypArithmetic
 
+  // DCache hits still resolve a dependent consumer in this cycle.  A miss or
+  // peripheral load reaches WBU later; capture that response first so the
+  // memory-response mux cannot drive branch resolution and pipeline flush in
+  // the same cycle.
+  val capturedLateLoadValid  = RegInit(false.B)
+  val capturedLateLoadRaw    = Reg(Types.UWord)
+  val capturedLateLoadFunc3  = Reg(UInt(3.W))
+  val capturedLateLoadOffset = Reg(UInt(2.W))
+  val captureLateLoadWBU =
+    io.in.valid && (dinst.info.lateLoadRs1 || dinst.info.lateLoadRs2) &&
+      !io.lateLoadLSU.valid && io.lateLoadWBU.valid && io.lateLoadWBU.dataValid && !capturedLateLoadValid
+
+  when(!io.in.valid || io.in.fire) {
+    capturedLateLoadValid := false.B
+  }.elsewhen(captureLateLoadWBU) {
+    capturedLateLoadValid  := true.B
+    capturedLateLoadRaw    := io.lateLoadWBURawData
+    capturedLateLoadFunc3  := io.lateLoadWBUFunc3
+    capturedLateLoadOffset := io.lateLoadWBUOffset
+  }
+
+  val capturedLateLoadData =
+    ExtLoadData(capturedLateLoadRaw, capturedLateLoadOffset, capturedLateLoadFunc3)
+
   // A late-load operand first looks at LSU. This priority is required when an
-  // older WBU instruction happens to target the same register. A miss keeps
-  // the LSU match selected but not ready; the existing IDU/EXU payload
-  // register then holds the consumer until its producer reaches WBU.
+  // older instruction happens to target the same register. A miss keeps the
+  // payload held until the WBU response has crossed the capture register.
   def resolveLateLoadOperand(late: Bool, normalData: UInt): (Bool, UInt) = {
     val lsuMatch = late && io.lateLoadLSU.valid
-    val wbuMatch = late && !lsuMatch && io.lateLoadWBU.valid
-    val ready = !late || (lsuMatch && io.lateLoadLSU.dataValid) || (wbuMatch && io.lateLoadWBU.dataValid)
-    val data = Mux(lsuMatch, io.lateLoadLSU.data, Mux(wbuMatch, io.lateLoadWBU.data, normalData))
+    val capturedMatch = late && !lsuMatch && capturedLateLoadValid
+    val ready = !late || (lsuMatch && io.lateLoadLSU.dataValid) || capturedMatch
+    val data = Mux(lsuMatch, io.lateLoadLSU.data, Mux(capturedMatch, capturedLateLoadData, normalData))
     (ready, data)
   }
 
@@ -204,26 +227,6 @@ class EXU(
   val reg_v2       = postRegisterRegV2
   val equalityRegV1 = Mux(dinst.info.lateLoadRs1, lateRegV1, postRegisterRegV1)
   val equalityRegV2 = Mux(dinst.info.lateLoadRs2, lateRegV2, postRegisterRegV2)
-  val equalityOther = Mux(dinst.info.lateLoadRs1, postRegisterRegV2, postRegisterRegV1)
-  val rawHalf = Mux(io.lateLoadWBUOffset(1), io.lateLoadWBURawData(31, 16), io.lateLoadWBURawData(15, 0))
-  val rawByte = MuxLookup(io.lateLoadWBUOffset, io.lateLoadWBURawData(7, 0))(
-    Seq(
-      1.U -> io.lateLoadWBURawData(15, 8),
-      2.U -> io.lateLoadWBURawData(23, 16),
-      3.U -> io.lateLoadWBURawData(31, 24)
-    )
-  )
-  val byteUpper = Mux(io.lateLoadWBUFunc3(2), 0.U(24.W), Fill(24, rawByte(7)))
-  val halfUpper = Mux(io.lateLoadWBUFunc3(2), 0.U(16.W), Fill(16, rawHalf(15)))
-  val rawLoadEqual = Mux(
-    io.lateLoadWBUFunc3(1),
-    io.lateLoadWBURawData === equalityOther,
-    Mux(
-      io.lateLoadWBUFunc3(0),
-      rawHalf === equalityOther(15, 0) && halfUpper === equalityOther(31, 16),
-      rawByte === equalityOther(7, 0) && byteUpper === equalityOther(31, 8)
-    )
-  )
   // val pcAddImm   = dinst.pc + dinst.info.imm
   val pcAddImm   = dinst.info.pcAddImm
   val reg1AddImm = "h80".U(8.W) ## 0.U(2.W) ## dinst.info.reg1AddImm
@@ -317,8 +320,7 @@ class EXU(
   val equalityChunkNonZero = VecInit((0 until 4).map(i => equalityDiff(8 * i + 7, 8 * i).orR))
   dontTouch(equalityChunkNonZero)
   val extendedLoadEqual = !equalityChunkNonZero.asUInt.orR
-  val equalityUsesWBU = hasLateLoadOperand && !io.lateLoadLSU.valid && io.lateLoadWBU.valid
-  val isEqual     = Mux(equalityUsesWBU, rawLoadEqual, extendedLoadEqual)
+  val isEqual     = extendedLoadEqual
   val isLessThan  = reg_v1.asSInt < reg_v2.asSInt
   val isLessThanU = reg_v1 < reg_v2
 

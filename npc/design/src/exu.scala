@@ -116,6 +116,9 @@ class EXU(
     val lateLoadProducer = Output(new LateLoadProducerInfo)
     val lateLoadLSU = Input(new LateLoadSourceInfo)
     val lateLoadWBU = Input(new LateLoadSourceInfo)
+    val lateLoadWBURawData = Input(Types.UWord)
+    val lateLoadWBUFunc3   = Input(UInt(3.W))
+    val lateLoadWBUOffset  = Input(UInt(2.W))
     val previousStageFwd = Input(new WrBackForwardInfo)
 
     val dcache = new Bundle {
@@ -201,6 +204,26 @@ class EXU(
   val reg_v2       = postRegisterRegV2
   val equalityRegV1 = Mux(dinst.info.lateLoadRs1, lateRegV1, postRegisterRegV1)
   val equalityRegV2 = Mux(dinst.info.lateLoadRs2, lateRegV2, postRegisterRegV2)
+  val equalityOther = Mux(dinst.info.lateLoadRs1, postRegisterRegV2, postRegisterRegV1)
+  val rawHalf = Mux(io.lateLoadWBUOffset(1), io.lateLoadWBURawData(31, 16), io.lateLoadWBURawData(15, 0))
+  val rawByte = MuxLookup(io.lateLoadWBUOffset, io.lateLoadWBURawData(7, 0))(
+    Seq(
+      1.U -> io.lateLoadWBURawData(15, 8),
+      2.U -> io.lateLoadWBURawData(23, 16),
+      3.U -> io.lateLoadWBURawData(31, 24)
+    )
+  )
+  val byteUpper = Mux(io.lateLoadWBUFunc3(2), 0.U(24.W), Fill(24, rawByte(7)))
+  val halfUpper = Mux(io.lateLoadWBUFunc3(2), 0.U(16.W), Fill(16, rawHalf(15)))
+  val rawLoadEqual = Mux(
+    io.lateLoadWBUFunc3(1),
+    io.lateLoadWBURawData === equalityOther,
+    Mux(
+      io.lateLoadWBUFunc3(0),
+      rawHalf === equalityOther(15, 0) && halfUpper === equalityOther(31, 16),
+      rawByte === equalityOther(7, 0) && byteUpper === equalityOther(31, 8)
+    )
+  )
   // val pcAddImm   = dinst.pc + dinst.info.imm
   val pcAddImm   = dinst.info.pcAddImm
   val reg1AddImm = "h80".U(8.W) ## 0.U(2.W) ## dinst.info.reg1AddImm
@@ -293,7 +316,9 @@ class EXU(
   dontTouch(equalityDiff)
   val equalityChunkNonZero = VecInit((0 until 4).map(i => equalityDiff(8 * i + 7, 8 * i).orR))
   dontTouch(equalityChunkNonZero)
-  val isEqual     = !equalityChunkNonZero.asUInt.orR
+  val extendedLoadEqual = !equalityChunkNonZero.asUInt.orR
+  val equalityUsesWBU = hasLateLoadOperand && !io.lateLoadLSU.valid && io.lateLoadWBU.valid
+  val isEqual     = Mux(equalityUsesWBU, rawLoadEqual, extendedLoadEqual)
   val isLessThan  = reg_v1.asSInt < reg_v2.asSInt
   val isLessThanU = reg_v1 < reg_v2
 

@@ -248,8 +248,10 @@ class CPUCore(
   // A pending redirect is a registered PC mailbox. Query prediction state
   // with the address actually presented to IFU, not the speculative pcReg
   // hidden behind the mailbox.
-  btb.io.query.addr       := pcFeedToIFU
-  bp.io.pc                := pcFeedToIFU
+  // Redirected fetches use a fixed fall-through prediction below, so the BTB
+  // only needs the stable speculative PC and never sees the redirect mailbox.
+  btb.io.query.addr       := pc
+  bp.io.pc                := pc
   bp.io.historyHit        := btb.io.query.hit
   bp.io.historyTarget     := btb.io.query.target
   bp.io.historyIsJAL      := btb.io.query.isJAL
@@ -429,6 +431,9 @@ class CPUCore(
   exu.io.lateLoadWBU.dataValid := lateLoadWBUValid
   exu.io.lateLoadWBU.data :=
     ExtLoadData(wbu.io.memResp.bits, wbu.io.in.bits.lsuAddrOffset, wbu.io.in.bits.lsuFunc3t)
+  exu.io.lateLoadWBURawData := wbu.io.memResp.bits
+  exu.io.lateLoadWBUFunc3   := wbu.io.in.bits.lsuFunc3t
+  exu.io.lateLoadWBUOffset  := wbu.io.in.bits.lsuAddrOffset
 
   idu.io.pipelineFlush := activeRedirectValid
 

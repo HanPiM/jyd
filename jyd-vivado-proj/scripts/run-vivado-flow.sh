@@ -11,6 +11,7 @@ Options:
   --mode <mode>           synth, impl, or bitstream (default: bitstream)
   --vivado <path>         Vivado executable (default: $VIVADO_BIN or vivado in PATH)
   --result-dir <path>     Result directory (default: <project-root>/result/<sample>)
+  --summary-metadata <path> JSON identity metadata passed to the strict audit extractor
   --skip-project-update   Assume pack-fpga and COE imports are already applied
   -h, --help              Show this help
 EOF
@@ -20,6 +21,7 @@ PROJECT_ROOT="."
 MODE="bitstream"
 VIVADO_BIN="${VIVADO_BIN:-}"
 RESULT_DIR=""
+SUMMARY_METADATA=""
 PACK_ZIP=""
 COE_DIR=""
 SAMPLE=""
@@ -41,6 +43,10 @@ while [ "$#" -gt 0 ]; do
       ;;
     --result-dir)
       RESULT_DIR="$2"
+      shift 2
+      ;;
+    --summary-metadata)
+      SUMMARY_METADATA="$2"
       shift 2
       ;;
     --pack-zip)
@@ -126,13 +132,62 @@ echo "Sample: $SAMPLE"
 echo "Vivado: $VIVADO_BIN"
 echo "Result dir: $RESULT_DIR"
 
-"$VIVADO_BIN" \
+if "$VIVADO_BIN" \
   -mode batch \
   -source "$FLOW_TCL" \
-  -tclargs "$MODE" "$PROJECT_FILE" "$PRE_HOOK" "$RESULT_DIR"
+  -tclargs "$MODE" "$PROJECT_FILE" "$PRE_HOOK" "$RESULT_DIR"; then
+  VIVADO_STATUS=0
+else
+  VIVADO_STATUS=$?
+  echo "Vivado flow failed with exit code $VIVADO_STATUS; preserving audit artifacts" >&2
+fi
 
 for log_file in "$PROJECT_ROOT"/vivado.log "$PROJECT_ROOT"/vivado.jou; do
   if [ -f "$log_file" ]; then
     cp "$log_file" "$RESULT_DIR/"
   fi
 done
+
+for log_file in "$PROJECT_ROOT"/*impl*.log "$PROJECT_ROOT"/*runner*.log; do
+  if [ -f "$log_file" ]; then
+    cp "$log_file" "$RESULT_DIR/"
+  fi
+done
+
+RUN_NAME="impl_1"
+if [ "$MODE" = "synth" ]; then
+  RUN_NAME="synth_1"
+fi
+RUN_LOG="$PROJECT_ROOT/digital_twin.runs/$RUN_NAME/runme.log"
+if [ -f "$RUN_LOG" ]; then
+  cp "$RUN_LOG" "$RESULT_DIR/"
+fi
+
+for log_file in "$PROJECT_ROOT/digital_twin.runs/$RUN_NAME"/*.log; do
+  if [ -f "$log_file" ]; then
+    cp "$log_file" "$RESULT_DIR/"
+  fi
+done
+
+for dcp_file in "$PROJECT_ROOT/digital_twin.runs/$RUN_NAME"/*.dcp; do
+  if [ -f "$dcp_file" ]; then
+    cp "$dcp_file" "$RESULT_DIR/"
+  fi
+done
+
+SUMMARY_ARGS=("$RESULT_DIR" "--mode" "$MODE" "--output" "$RESULT_DIR/vivado-run-summary.json")
+if [ -n "$SUMMARY_METADATA" ]; then
+  SUMMARY_ARGS+=("--metadata" "$SUMMARY_METADATA")
+fi
+SUMMARY_STATUS=0
+if python3 "$SCRIPT_DIR/extract-vivado-run-summary.py" "${SUMMARY_ARGS[@]}" --strict; then
+  SUMMARY_STATUS=0
+else
+  SUMMARY_STATUS=$?
+  echo "strict Vivado audit failed; preserving audit artifacts" >&2
+fi
+
+if [ "$VIVADO_STATUS" -ne 0 ]; then
+  exit "$VIVADO_STATUS"
+fi
+exit "$SUMMARY_STATUS"

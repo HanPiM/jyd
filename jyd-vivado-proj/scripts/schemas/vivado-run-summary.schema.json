@@ -1,0 +1,199 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jyd.local/schemas/vivado-run-summary-v2.json",
+  "title": "JYD Vivado run summary",
+  "type": "object",
+  "required": ["schema", "schema_version", "analysis_schema", "analysis_schema_version", "status", "mode", "identity", "timing", "performance", "implementation", "goal_checks", "evidence", "audit"],
+  "properties": {
+    "schema": {"const": "jyd-vivado-run-summary"},
+    "schema_version": {"const": 2},
+    "analysis_schema": {"const": "jyd-vivado-timing-analysis"},
+    "analysis_schema_version": {"const": 2},
+    "status": {"enum": ["complete", "partial", "error"]},
+    "mode": {"enum": ["synth", "impl", "bitstream"]},
+    "identity": {
+      "type": "object",
+      "required": ["vivado_version", "run_name", "code_commit", "frequency_mhz", "input", "strategy", "artifacts"],
+      "properties": {
+        "vivado_version": {"type": ["string", "null"]},
+        "run_name": {"type": "string"},
+        "code_commit": {"type": ["string", "null"]},
+        "vivado_commit": {"type": ["string", "null"]},
+        "frequency_mhz": {"type": ["number", "null"]},
+        "input": {"type": ["object", "null"]},
+        "strategy": {"type": "object"},
+        "artifacts": {"type": "object"}
+      }
+    },
+    "timing": {
+      "type": "object",
+      "required": ["status", "report_kind", "summary", "clocks", "critical_paths", "clock_groups", "path_families", "primitive_histogram", "top_delay_nets", "clock_delays", "resources", "congestion", "analysis_reports", "violated"],
+      "properties": {
+        "status": {"enum": ["complete", "missing"]},
+        "report_kind": {"enum": ["postroute_physopted", "routed", null]},
+        "summary": {"type": ["object", "null"]},
+        "clocks": {"type": "array"},
+        "critical_paths": {"type": "array"},
+        "clock_groups": {
+          "type": "object",
+          "required": ["status", "coverage", "items"],
+          "properties": {
+            "status": {"enum": ["complete", "sampled", "partial", "unknown"]},
+            "coverage": {"enum": ["complete", "sampled", "partial", "unknown"]},
+            "items": {"type": "array", "items": {"type": "object"}}
+          }
+        },
+        "path_families": {
+          "type": "object",
+          "required": ["status", "coverage", "items"],
+          "properties": {
+            "status": {"enum": ["complete", "sampled", "partial", "unknown"]},
+            "coverage": {"enum": ["complete", "sampled", "partial", "unknown"]},
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["name", "worst_slack_ns", "tns_ns", "endpoints", "coverage"],
+                "properties": {
+                  "name": {"type": "string"},
+                  "worst_slack_ns": {"type": ["number", "null"]},
+                  "tns_ns": {"type": ["number", "null"]},
+                  "endpoints": {"type": ["integer", "null"]},
+                  "failing_endpoints": {"type": ["integer", "null"]},
+                  "total_endpoints": {"type": ["integer", "null"]},
+                  "coverage": {"enum": ["complete", "sampled", "partial", "unknown"]}
+                }
+              }
+            },
+            "sample_limit": {"type": ["integer", "null"]}
+          }
+        },
+        "primitive_histogram": {
+          "type": "object",
+          "required": ["coverage", "items", "scope"],
+          "properties": {
+            "coverage": {"enum": ["complete", "sampled", "partial", "unknown"]},
+            "items": {"type": "object"},
+            "scope": {"enum": ["data_path"]}
+          }
+        },
+        "top_delay_nets": {
+          "type": "object",
+          "required": ["coverage", "items"],
+          "properties": {
+            "coverage": {"enum": ["complete", "sampled", "partial", "unknown"]},
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["name", "fanout", "delay_ns"],
+                "properties": {
+                  "name": {"type": "string"},
+                  "fanout": {"type": "integer"},
+                  "delay_ns": {"type": ["number", "null"]},
+                  "occurrences": {"type": "integer"}
+                }
+              }
+            },
+            "sample_limit": {"type": ["integer", "null"]},
+            "scope": {"enum": ["data_path"]}
+          }
+        },
+        "clock_delays": {
+          "type": "object",
+          "required": ["coverage", "items"],
+          "properties": {
+            "coverage": {"enum": ["complete", "sampled", "partial", "unknown"]},
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["source_clock_delay_ns", "destination_clock_delay_ns", "clock_skew_ns"],
+                "properties": {
+                  "source_clock_delay_ns": {"type": ["number", "null"]},
+                  "destination_clock_delay_ns": {"type": ["number", "null"]},
+                  "clock_skew_ns": {"type": ["number", "null"]}
+                }
+              }
+            },
+            "sample_limit": {"type": ["integer", "null"]}
+          }
+        },
+        "resources": {
+          "type": "object",
+          "required": ["status", "coverage", "counts"],
+          "properties": {
+            "status": {"enum": ["complete", "sampled", "partial", "unknown"]},
+            "coverage": {"enum": ["complete", "sampled", "partial", "unknown"]},
+            "primitive_histogram": {"type": "object"},
+            "counts": {
+              "type": "object",
+              "required": ["RAM64M", "RAMD64E", "LUT", "FF", "BRAM"],
+              "properties": {
+                "RAM64M": {"type": ["integer", "null"]},
+                "RAMD64E": {"type": ["integer", "null"]},
+                "LUT": {"type": ["integer", "null"]},
+                "FF": {"type": ["integer", "null"]},
+                "BRAM": {"type": ["integer", "null"]}
+              }
+            },
+            "baseline": {
+              "type": ["object", "null"],
+              "properties": {
+                "coverage": {"enum": ["complete", "sampled", "partial", "unknown"]},
+                "counts": {"type": "object"},
+                "changes": {"type": "object"}
+              }
+            }
+          }
+        },
+        "congestion": {
+          "type": "object",
+          "required": ["status", "coverage", "items"],
+          "properties": {
+            "status": {"enum": ["complete", "sampled", "partial", "unknown"]},
+            "coverage": {"enum": ["complete", "sampled", "partial", "unknown"]},
+            "items": {"type": "array", "items": {"type": "object"}}
+          }
+        },
+        "analysis_reports": {"type": "object"},
+        "violated": {"type": ["boolean", "null"]}
+      }
+    },
+    "performance": {"type": "object", "required": ["runtime_s"]},
+    "implementation": {
+      "type": "object",
+      "required": ["status", "phases", "errors", "log_sources", "log_coverage", "checks"],
+      "properties": {
+        "status": {"enum": ["complete", "partial", "error"]},
+        "phases": {"type": "array"},
+        "errors": {"type": "array"},
+        "log_sources": {"type": "array"},
+        "log_coverage": {"type": "object"},
+        "checks": {"type": "object"}
+      }
+    },
+    "goal_checks": {"type": "object", "required": ["wns", "runtime", "passed"]},
+    "evidence": {
+      "type": "object",
+      "required": ["quality", "artifact_consistency", "selection_eligible"],
+      "properties": {
+        "quality": {"enum": ["complete", "partial", "sampled", "unknown", "error"]},
+        "artifact_consistency": {"type": "object"},
+        "selection_eligible": {"type": "boolean"}
+      }
+    },
+    "audit": {
+      "type": "object",
+      "required": ["status", "missing_fields", "raw_text_review_required", "review_reasons", "issues"],
+      "properties": {
+        "status": {"enum": ["ok", "partial", "error"]},
+        "missing_fields": {"type": "array", "items": {"type": "string"}},
+        "raw_text_review_required": {"type": "boolean"},
+        "review_reasons": {"type": "array", "items": {"type": "string"}},
+        "issues": {"type": "array", "items": {"type": "string"}}
+      }
+    }
+  },
+  "additionalProperties": true
+}

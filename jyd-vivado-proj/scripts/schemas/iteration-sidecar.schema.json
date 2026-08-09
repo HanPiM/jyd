@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jyd.local/schemas/iteration-sidecar-v2.json",
+  "title": "JYD optimization iteration sidecar",
+  "type": "object",
+  "required": [
+    "schema", "schema_version", "experiment", "status", "identity", "results",
+    "goal_checks", "evidence_quality", "promotion_level", "supersedes", "baseline_id",
+    "method_class", "decision", "validation_debt", "board"
+  ],
+  "properties": {
+    "schema": {"const": "jyd-optimization-iteration-sidecar"},
+    "schema_version": {"const": 2},
+    "experiment": {"type": "object", "required": ["id", "title"]},
+    "status": {"enum": ["planned", "in_progress", "complete", "accepted", "rejected", "partial", "failed"]},
+    "identity": {
+      "type": "object",
+      "required": ["code_commit", "frequency_mhz", "strategy", "input", "source_manifest", "input_manifest", "dcp", "bitstream"]
+    },
+    "results": {"type": "object", "required": ["vivado_summary", "vivado_summary_sha256"]},
+    "goal_checks": {"type": "object", "required": ["wns", "runtime", "passed"]},
+    "evidence_quality": {"enum": ["complete", "partial", "sampled", "unknown", "error"]},
+    "promotion_level": {"enum": ["none", "candidate", "interim", "baseline", "final"]},
+    "supersedes": {"type": ["string", "null"]},
+    "baseline_id": {"type": ["string", "null"]},
+    "method_class": {"type": "string"},
+    "decision": {"enum": ["planned", "accepted", "rejected", "hold", "final"]},
+    "validation_debt": {"type": "array", "items": {"type": "string"}},
+    "board": {"type": "object", "required": ["samples", "valid"]}
+  },
+  "additionalProperties": true
+}

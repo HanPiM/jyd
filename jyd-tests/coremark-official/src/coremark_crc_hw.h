@@ -17,7 +17,7 @@ __hw_crcu8(ee_u8 data, ee_u16 crc)
     return (ee_u16)result;
 }
 
-extern inline __attribute__((always_inline, gnu_inline)) ee_u16
+static __attribute__((noinline, unused)) ee_u16
 __hw_crcu16(ee_u16 data, ee_u16 crc)
 {
 #if defined(COREMARK_CRC_ACCEL_NATIVE)
@@ -32,7 +32,7 @@ __hw_crcu16(ee_u16 data, ee_u16 crc)
 #endif
 }
 
-extern inline __attribute__((always_inline, gnu_inline)) ee_u16
+static __attribute__((noinline, unused)) ee_u16
 __hw_crcu32(ee_u32 data, ee_u16 crc)
 {
 #if defined(COREMARK_CRC_ACCEL_NATIVE)
@@ -47,7 +47,7 @@ __hw_crcu32(ee_u32 data, ee_u16 crc)
 #endif
 }
 
-extern inline __attribute__((always_inline, gnu_inline)) ee_u16
+static __attribute__((noinline, unused)) ee_u16
 __hw_crc16(ee_s16 data, ee_u16 crc)
 {
     return __hw_crcu16((ee_u16)data, crc);

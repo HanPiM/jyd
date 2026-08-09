@@ -168,7 +168,10 @@ class EXU(
   val xlrevCurrent = Reg(Types.UWord)
   val xlrevPrevious = Reg(Types.UWord)
   val xlrevNext    = Reg(Types.UWord)
-  val xlrevResult  = Reg(Types.UWord)
+  val xaccelResult = Reg(Types.UWord)
+  val xlrevCacheStoreValid = RegInit(false.B)
+  val xlrevCacheStoreAddr  = Reg(Types.UWord)
+  val xlrevCacheStoreData  = Reg(Types.UWord)
   val isXlrev      = dinst.info.xlrevValid
 
   object XmsumState extends ChiselEnum {
@@ -182,7 +185,6 @@ class EXU(
   val xmsumTmp    = Reg(UInt(32.W))
   val xmsumPrev   = Reg(UInt(32.W))
   val xmsumRet    = Reg(UInt(16.W))
-  val xmsumResult = Reg(Types.UWord)
   val isXmsum     = dinst.info.xmsumValid
 
   // DCache hits still resolve a dependent consumer in this cycle.  A miss or
@@ -248,7 +250,7 @@ class EXU(
     xlrevCurrent  := reg_v1
     xlrevPrevious := 0.U
     when(reg_v1 === 0.U) {
-      xlrevResult := 0.U
+      xaccelResult := 0.U
       xlrevState  := XlrevState.done
     }.otherwise {
       xlrevState := XlrevState.loadRequest
@@ -262,7 +264,7 @@ class EXU(
     xlrevState := XlrevState.storeResponse
   }.elsewhen(xlrevState === XlrevState.storeResponse && io.memResp.valid) {
     when(xlrevNext === 0.U) {
-      xlrevResult := xlrevCurrent
+      xaccelResult := xlrevCurrent
       xlrevState  := XlrevState.done
     }.otherwise {
       xlrevPrevious := xlrevCurrent
@@ -283,7 +285,7 @@ class EXU(
     xmsumPrev  := 0.U
     xmsumRet   := 0.U
     when(n === 0.U) {
-      xmsumResult := 0.U
+      xaccelResult := 0.U
       xmsumState  := XmsumState.done
     }.otherwise {
       xmsumState := XmsumState.request
@@ -300,7 +302,7 @@ class EXU(
     xmsumPrev := current
     xmsumRet  := nextRet
     when(xmsumIndex + 1.U === xmsumCount) {
-      xmsumResult := Cat(Fill(16, nextRet(15)), nextRet)
+      xaccelResult := Cat(Fill(16, nextRet(15)), nextRet)
       xmsumState  := XmsumState.done
     }.otherwise {
       xmsumIndex := xmsumIndex + 1.U
@@ -477,7 +479,7 @@ class EXU(
       !isTypArithmetic -> dinst.info.preMuxWrBackData
     )
   )
-  writeBackInfo.gpr.data := Mux(isXlrev, xlrevResult, Mux(isXmsum, xmsumResult, normalWriteBackData))
+  writeBackInfo.gpr.data := Mux(isXlrev || isXmsum, xaccelResult, normalWriteBackData)
 
   // Fill in LSU stage
   writeBackInfo.isLoad        := false.B
@@ -540,17 +542,22 @@ class EXU(
   val memWData = GenMemWData(reg1AddImm(1, 0), reg_v2)
 
   val xlrevStoreRequest = xlrevState === XlrevState.storeRequest
-  val dcacheQueryAddr = Mux(xlrevStoreRequest, xlrevCurrent, reg1AddImm)
+  val dcacheQueryAddr = Mux(xlrevCacheStoreValid, xlrevCacheStoreAddr, reg1AddImm)
   io.dcache.queryIndex := dcacheQueryAddr(11, 2)
   io.dcache.queryTag   := dcacheQueryAddr(15, 11)
   val cacheableStore = isTypStore && reg1AddImm(21, 20) === "b01".U
   val cacheableStoreFire = memReqFire && cacheableStore
   val xlrevStoreFire = memReqFire && xlrevStoreRequest && xlrevCurrent(21, 20) === "b01".U
+  xlrevCacheStoreValid := xlrevStoreFire
+  when(xlrevStoreFire) {
+    xlrevCacheStoreAddr := xlrevCurrent
+    xlrevCacheStoreData := xlrevPrevious
+  }
   // DCache resolves a narrow-store hit locally. Keep its asynchronous tag
   // lookup out of this cross-module control and every data-memory write enable.
-  io.dcache.storeUpdate := cacheableStoreFire || xlrevStoreFire
-  io.dcache.storeData   := Mux(xlrevStoreRequest, xlrevPrevious, memWData)
-  io.dcache.storeMask   := Mux(xlrevStoreRequest, "b1111".U, memWMask)
+  io.dcache.storeUpdate := cacheableStoreFire || xlrevCacheStoreValid
+  io.dcache.storeData   := Mux(xlrevCacheStoreValid, xlrevCacheStoreData, memWData)
+  io.dcache.storeMask   := Mux(xlrevCacheStoreValid, "b1111".U, memWMask)
 
   val xlrevLoadRequest = xlrevState === XlrevState.loadRequest
   val xlrevRequest = xlrevLoadRequest || xlrevStoreRequest

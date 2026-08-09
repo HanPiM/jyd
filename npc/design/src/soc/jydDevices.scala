@@ -9,7 +9,7 @@ import testSoC.MaskedRdWrMem
 
 object AddrSpace {
   val IROM = ("h80000000".U, "h80080000".U)
-  val DRAM = ("h80100000".U, "h80180000".U)
+  val DRAM = ("h80100000".U, "h80110000".U)
   val MMIO = ("h80200000".U, "h80200100".U)
 
   val LED = ("h80200040".U, "h80200044".U)
@@ -44,8 +44,9 @@ object AddrSpace {
 
 object JYDSoCConfig {
   val iromSizeInByte    = 1024 * 512
-  val dramSizeInByte    = 1024 * 512
+  val dramSizeInByte    = 1024 * 64
   val fpgaMemAddrWidth  = 18
+  val fpgaDramAddrWidth = 14
   val fpgaMemDataWidth  = 32
   val iromBaseAddr: BigInt = 0x80000000L
   val dramBaseAddr: BigInt = 0x80100000L
@@ -339,7 +340,7 @@ class JYDFPGADRAMBlackBox extends BlackBox {
     val clka  = Input(Clock())
     val ena   = Input(Bool())
     val wea   = Input(UInt(4.W))
-    val addra = Input(UInt(JYDSoCConfig.fpgaMemAddrWidth.W))
+    val addra = Input(UInt(JYDSoCConfig.fpgaDramAddrWidth.W))
     val dina  = Input(UInt(JYDSoCConfig.fpgaMemDataWidth.W))
     val douta = Output(UInt(JYDSoCConfig.fpgaMemDataWidth.W))
   })

@@ -131,6 +131,7 @@ static const char *width_names[] = {"byte", "half", "word", "other"};
 static const char *out_path;
 static uint64_t total, kinds[K_NR], mops[M_NR], bops[B_NR], crcops[CRC_NR],
     raw_dist[9];
+static uint64_t xaccel_ops[6], xaccel_units[6], xaccel_cycles[6];
 static uint64_t pack_rs2_zero, pack_rs1_upper_zero, pack_matches_xor;
 static uint64_t miss_consumer_successor_deps;
 static uint64_t m_divide_by_zero, m_signed_overflow;
@@ -209,6 +210,15 @@ void riscv_profile_set_output(const char *path) {
     load_pairs = calloc(PAIR_SLOTS, sizeof(*load_pairs));
 }
 bool riscv_profile_enabled(void) { return out_path != NULL; }
+
+void riscv_profile_record_xaccel(unsigned op, uint64_t units,
+                                 uint64_t modeled_cycles) {
+  if (!out_path || op >= 6)
+    return;
+  xaccel_ops[op]++;
+  xaccel_units[op] += units;
+  xaccel_cycles[op] += modeled_cycles;
+}
 
 static unsigned kind_of(uint32_t x) {
   unsigned op = x & 0x7f, f3 = (x >> 12) & 7, f7 = x >> 25;
@@ -1087,6 +1097,14 @@ void riscv_profile_finish(void) {
           "],\n  \"crc_ops_order\":[\"crcu8\",\"crcu16\",\"crcu32\"],"
           "\n  \"crc_ops\":[");
   arr(f, crcops, CRC_NR);
+  fprintf(f,
+          "],\n  \"xaccel_ops_order\":[\"xmac16\",\"xdot16\",\"xbmul\","
+          "\"xlrev\",\"xstate\",\"xmsum\"],\n  \"xaccel_ops\":[");
+  arr(f, xaccel_ops, 6);
+  fprintf(f, "],\n  \"xaccel_units\":[");
+  arr(f, xaccel_units, 6);
+  fprintf(f, "],\n  \"xaccel_modeled_cycles_conservative\":[");
+  arr(f, xaccel_cycles, 6);
   fprintf(f,
           "],\n  \"pack_diagnostics\":{"
           "\"rs2_zero\":%llu,\"rs1_upper_zero\":%llu,"

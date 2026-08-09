@@ -48,6 +48,22 @@
 #define MASK_COREMARK_CRCU16  MASK_COREMARK_CRC
 #define MASK_COREMARK_CRCU32  MASK_COREMARK_CRC
 
+#define MATCH_COREMARK_XMAC16 0x0000300b
+#define MATCH_COREMARK_XDOT16 0x0000400b
+#define MATCH_COREMARK_XBMUL  0x0000500b
+#define MATCH_COREMARK_XLREV  0x0000700b
+#define MATCH_COREMARK_XSTATE 0x0200700b
+#define MATCH_COREMARK_XMSUM  0x0400700b
+#define MASK_COREMARK_XACCEL  0xfe00707f
+#define MASK_COREMARK_XMAC16 MASK_COREMARK_XACCEL
+#define MASK_COREMARK_XDOT16 MASK_COREMARK_XACCEL
+#define MASK_COREMARK_XBMUL  MASK_COREMARK_XACCEL
+#define MASK_COREMARK_XLREV  MASK_COREMARK_XACCEL
+#define MASK_COREMARK_XSTATE MASK_COREMARK_XACCEL
+#define MASK_COREMARK_XMSUM  MASK_COREMARK_XACCEL
+
+enum { XA_MAC16, XA_DOT16, XA_BMUL, XA_LREV, XA_STATE, XA_MSUM };
+
 static word_t coremark_crc(word_t data, word_t crc, unsigned bytes) {
   crc &= 0xffffu;
   for (unsigned byte = 0; byte < bytes; byte++) {
@@ -62,6 +78,126 @@ static word_t coremark_crc(word_t data, word_t crc, unsigned bytes) {
     }
   }
   return crc & 0xffffu;
+}
+
+static inline int32_t sx16(word_t value) { return (int16_t)(uint16_t)value; }
+
+static word_t coremark_list_reverse(vaddr_t list, uint64_t *nodes) {
+  vaddr_t next = 0;
+  *nodes = 0;
+  while (list) {
+    vaddr_t tmp = vaddr_read(list, 4);
+    vaddr_write(list, 4, next);
+    next = list;
+    list = tmp;
+    (*nodes)++;
+  }
+  return next;
+}
+
+enum CoreState {
+  CS_START, CS_INVALID, CS_S1, CS_S2, CS_INT, CS_FLOAT, CS_EXPONENT,
+  CS_SCIENTIFIC
+};
+
+static inline bool coremark_digit(uint8_t c) { return c >= '0' && c <= '9'; }
+
+static word_t coremark_state_transition(vaddr_t instr_addr,
+                                        vaddr_t counts_addr,
+                                        uint64_t *chars) {
+  vaddr_t str = vaddr_read(instr_addr, 4);
+  unsigned state = CS_START;
+  *chars = 0;
+  while (state != CS_INVALID) {
+    uint8_t c = vaddr_read(str, 1);
+    (*chars)++;
+    if (!c)
+      break;
+    if (c == ',') {
+      str++;
+      break;
+    }
+    vaddr_t count_addr = counts_addr + state * 4;
+    uint32_t count = vaddr_read(count_addr, 4);
+    switch (state) {
+    case CS_START:
+      if (coremark_digit(c)) state = CS_INT;
+      else if (c == '+' || c == '-') state = CS_S1;
+      else if (c == '.') state = CS_FLOAT;
+      else state = CS_INVALID;
+      vaddr_write(count_addr, 4, count + 1);
+      if (state == CS_INVALID) {
+        vaddr_t invalid_addr = counts_addr + CS_INVALID * 4;
+        vaddr_write(invalid_addr, 4, vaddr_read(invalid_addr, 4) + 1);
+      }
+      break;
+    case CS_S1:
+      if (coremark_digit(c)) state = CS_INT;
+      else if (c == '.') state = CS_FLOAT;
+      else state = CS_INVALID;
+      vaddr_write(count_addr, 4, count + 1);
+      break;
+    case CS_INT:
+      if (c == '.') {
+        state = CS_FLOAT;
+        vaddr_write(count_addr, 4, count + 1);
+      } else if (!coremark_digit(c)) {
+        state = CS_INVALID;
+        vaddr_write(count_addr, 4, count + 1);
+      }
+      break;
+    case CS_FLOAT:
+      if (c == 'E' || c == 'e') {
+        state = CS_S2;
+        vaddr_write(count_addr, 4, count + 1);
+      } else if (!coremark_digit(c)) {
+        state = CS_INVALID;
+        vaddr_write(count_addr, 4, count + 1);
+      }
+      break;
+    case CS_S2:
+      state = (c == '+' || c == '-') ? CS_EXPONENT : CS_INVALID;
+      vaddr_write(count_addr, 4, count + 1);
+      break;
+    case CS_EXPONENT:
+      state = coremark_digit(c) ? CS_SCIENTIFIC : CS_INVALID;
+      vaddr_write(count_addr, 4, count + 1);
+      break;
+    case CS_SCIENTIFIC:
+      if (!coremark_digit(c)) {
+        state = CS_INVALID;
+        vaddr_t invalid_addr = counts_addr + CS_INVALID * 4;
+        vaddr_write(invalid_addr, 4, vaddr_read(invalid_addr, 4) + 1);
+      }
+      break;
+    default:
+      break;
+    }
+    str++;
+  }
+  vaddr_write(instr_addr, 4, str);
+  return state;
+}
+
+static word_t coremark_matrix_sum(vaddr_t data, word_t config,
+                                  uint64_t *elements) {
+  uint32_t n = config >> 16;
+  int32_t clip = (int16_t)(config & 0xffffu);
+  int32_t tmp = 0, prev = 0, cur = 0;
+  int16_t ret = 0;
+  *elements = (uint64_t)n * n;
+  for (uint64_t i = 0; i < *elements; i++) {
+    cur = (int32_t)vaddr_read(data + i * 4, 4);
+    tmp += cur;
+    if (tmp > clip) {
+      ret = (int16_t)(ret + 10);
+      tmp = 0;
+    } else {
+      ret = (int16_t)(ret + (cur > prev));
+    }
+    prev = cur;
+  }
+  return (word_t)(int32_t)ret;
 }
 
 static word_t _handle_csr_rw(word_t csr, word_t src1, bool is_write);
@@ -234,6 +370,42 @@ static int decode_exec(Decode *s) {
   }
   if (IS_INST(COREMARK_CRCU32)) {
     R(rd) = coremark_crc(R(rs1), R(rs2), 4);
+    matched = true;
+  }
+  if (IS_INST(COREMARK_XMAC16)) {
+    R(rd) = R(rd) + (word_t)(sx16(R(rs1)) * sx16(R(rs2)));
+    riscv_profile_record_xaccel(XA_MAC16, 1, 3);
+    matched = true;
+  }
+  if (IS_INST(COREMARK_XDOT16)) {
+    int32_t lo = sx16(R(rs1)) * sx16(R(rs2));
+    int32_t hi = (int16_t)(R(rs1) >> 16) * (int16_t)(R(rs2) >> 16);
+    R(rd) = (word_t)(lo + hi);
+    riscv_profile_record_xaccel(XA_DOT16, 2, 4);
+    matched = true;
+  }
+  if (IS_INST(COREMARK_XBMUL)) {
+    word_t value = R(rs1);
+    R(rd) = ((value >> 2) & 0xfu) * ((value >> 5) & 0x7fu);
+    riscv_profile_record_xaccel(XA_BMUL, 1, 1);
+    matched = true;
+  }
+  if (IS_INST(COREMARK_XLREV)) {
+    uint64_t nodes;
+    R(rd) = coremark_list_reverse(R(rs1), &nodes);
+    riscv_profile_record_xaccel(XA_LREV, nodes, 4 + 2 * nodes);
+    matched = true;
+  }
+  if (IS_INST(COREMARK_XSTATE)) {
+    uint64_t chars;
+    R(rd) = coremark_state_transition(R(rs1), R(rs2), &chars);
+    riscv_profile_record_xaccel(XA_STATE, chars, 4 + 3 * chars);
+    matched = true;
+  }
+  if (IS_INST(COREMARK_XMSUM)) {
+    uint64_t elements;
+    R(rd) = coremark_matrix_sum(R(rs1), R(rs2), &elements);
+    riscv_profile_record_xaccel(XA_MSUM, elements, 8 + 2 * elements);
     matched = true;
   }
 

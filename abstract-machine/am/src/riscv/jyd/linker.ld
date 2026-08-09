@@ -2,12 +2,12 @@ ENTRY(_start)
 
 MEMORY {
   IROM (rx) : ORIGIN = 0x80000000, LENGTH = 128K
-  DRAM (rwx) : ORIGIN = 0x80100000, LENGTH = 256K
+  DRAM (rwx) : ORIGIN = 0x80100000, LENGTH = 48K
 	/* 赛题文档中没有指定堆区，是直接给出编译产物的结果，具体的堆区地址和大小是
 	 * 主办方那边设置的，这里设置的堆区只是提供给自己的测试程序使用，实际比赛时
 	 * 是跑给出的编译产物的 */
-	/* 为了优化，访存不支持大于 256K 的内存，必须放置在 DRAM 中 */
-	heap (rwx) : ORIGIN = 0x80120000, LENGTH = 128K
+	/* CoreMark-only FPGA configuration provides 64K of DRAM. */
+	heap (rwx) : ORIGIN = 0x8010c000, LENGTH = 16K
 }
 
 SECTIONS {

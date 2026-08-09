@@ -61,17 +61,17 @@ object BTBTarget {
 }
 
 class BTBEntry extends Bundle {
-  // The physical query memory is 32 bits wide.  Keep the bits freed by the
-  // wider index explicit instead of changing the target encoding.
-  val reserved = UInt(1.W)
-  val isReturn = Bool()
-  val valid  = Bool()
-  val isJAL  = Bool()
-  val isBranch = Bool()
-  val isBackward = Bool()
+  val entryType = UInt(2.W)
   val directionCounter = UInt(2.W)
   val tag    = UInt(BTBParameters.TAG_WIDTH.W)
   val target = new BTBTarget()
+}
+
+object BTBEntryType {
+  val invalid = 0.U(2.W)
+  val branch  = 1.U(2.W)
+  val jal     = 2.U(2.W)
+  val ret     = 3.U(2.W)
 }
 
 class BTBUpdateState extends Bundle {
@@ -91,7 +91,6 @@ class BranchTargetBuffer extends Module {
       val isBranch = Output(Bool())
       val isReturn = Output(Bool())
       val directionTaken = Output(Bool())
-      val isBackward = Output(Bool())
     }
     val update = new Bundle {
       val en     = Input(Bool())
@@ -101,7 +100,6 @@ class BranchTargetBuffer extends Module {
       val isReturn = Input(Bool())
       val actualTaken = Input(Bool())
       val target = Input(Types.UWord)
-      val isBackward = Input(Bool())
     }
   })
 
@@ -137,13 +135,12 @@ class BranchTargetBuffer extends Module {
   val queryIdx   = queryIndex(bankAddrWidth - 1, 0)
   val queryEntry = VecInit(queryMem.map(_(queryIdx)))(queryBank)
 
-  io.query.hit    := Mux(initDone, queryEntry.valid && (queryEntry.tag === queryTag), false.B)
+  io.query.hit    := Mux(initDone, queryEntry.entryType =/= BTBEntryType.invalid && (queryEntry.tag === queryTag), false.B)
   io.query.target := queryEntry.target.get
-  io.query.isJAL  := queryEntry.isJAL
-  io.query.isBranch := queryEntry.isBranch
-  io.query.isReturn := queryEntry.isReturn
+  io.query.isJAL  := queryEntry.entryType === BTBEntryType.jal || queryEntry.entryType === BTBEntryType.ret
+  io.query.isBranch := queryEntry.entryType === BTBEntryType.branch
+  io.query.isReturn := queryEntry.entryType === BTBEntryType.ret
   io.query.directionTaken := queryEntry.directionCounter(1)
-  io.query.isBackward := queryEntry.isBackward
 
   // Update logic
   val updateTag      = BTBParameters.extractTag(io.update.addr)
@@ -172,14 +169,13 @@ class BranchTargetBuffer extends Module {
   }
 
   val nextEntry = Wire(new BTBEntry)
-  nextEntry.reserved         := 0.U
-  nextEntry.isReturn         := io.update.isReturn
-  nextEntry.valid            := true.B
+  nextEntry.entryType        := Mux(
+    io.update.isBranch,
+    BTBEntryType.branch,
+    Mux(io.update.isReturn, BTBEntryType.ret, Mux(io.update.isJAL, BTBEntryType.jal, BTBEntryType.invalid))
+  )
   nextEntry.tag              := updateTag
   nextEntry.target           := BTBTarget(io.update.target)
-  nextEntry.isJAL            := io.update.isJAL
-  nextEntry.isBranch         := io.update.isBranch
-  nextEntry.isBackward       := io.update.isBackward
   nextEntry.directionCounter := nextDirection
 
   val nextUpdateState = Wire(new BTBUpdateState)
@@ -194,7 +190,8 @@ class BranchTargetBuffer extends Module {
   val skipConflictingNotTakenBranch =
     io.update.isBranch && !io.update.actualTaken && !entryMatches
   val updateEn =
-    io.update.en && initDone && !reset.asBool && !skipConflictingNotTakenBranch
+    io.update.en && nextEntry.entryType =/= BTBEntryType.invalid && initDone && !reset.asBool &&
+      !skipConflictingNotTakenBranch
 
   // Pipeline the whole update write one more cycle so the long
   // address/tag/direction cone ends at registers instead of distributed-RAM

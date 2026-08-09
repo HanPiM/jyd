@@ -248,15 +248,16 @@ class CPUCore(
   // A pending redirect is a registered PC mailbox. Query prediction state
   // with the address actually presented to IFU, not the speculative pcReg
   // hidden behind the mailbox.
-  btb.io.query.addr       := pcFeedToIFU
-  bp.io.pc                := pcFeedToIFU
+  // Redirected fetches use a fixed fall-through prediction below, so the BTB
+  // only needs the stable speculative PC and never sees the redirect mailbox.
+  btb.io.query.addr       := pc
+  bp.io.pc                := pc
   bp.io.historyHit        := btb.io.query.hit
   bp.io.historyTarget     := btb.io.query.target
   bp.io.historyIsJAL      := btb.io.query.isJAL
   bp.io.historyIsBranch   := btb.io.query.isBranch
   bp.io.historyIsReturn   := btb.io.query.isReturn
   bp.io.historyDirectionTaken := btb.io.query.directionTaken
-  bp.io.historyIsBackward := btb.io.query.isBackward
   bp.io.updateEn          := RegNext(exu.io.out.valid && exu.io.btbUpdateEn)
   bp.io.updatePc          := RegNext(exu.io.pc)
   bp.io.updateIsCall      := RegNext(exu.io.isCall)
@@ -271,11 +272,6 @@ class CPUCore(
   btb.io.update.isBranch   := RegNext(exu.io.isBranch)
   btb.io.update.isReturn   := RegNext(exu.io.isReturn)
   btb.io.update.actualTaken := RegNext(exu.io.branchTaken)
-  btb.io.update.isBackward := RegNext(exu.io.branchBackward)
-
-  nxtPredictedPC := bp.io.pred.pc
-
-  ifu.io.predNext := bp.io.pred
 
   redirectNow         := exu.io.in.valid && exu.io.predWrong
   redirectPendingFire := ifu.io.pc.fire && redirectPendingReg
@@ -311,6 +307,19 @@ class CPUCore(
     TrimmedPC.expand(Mux(redirectUseTargetReg, redirectTargetReg, redirectFallthroughReg)),
     pc
   )
+
+  // A redirected fetch is uncommon and already paid a pipeline flush. Avoid
+  // sending its registered address through the asynchronous BTB and RAS in
+  // the same cycle; prediction resumes normally from the fall-through PC.
+  val fetchPrediction = Wire(new PredBundle)
+  fetchPrediction := bp.io.pred
+  when(redirectPendingReg) {
+    fetchPrediction.hit  := false.B
+    fetchPrediction.take := false.B
+    fetchPrediction.pc   := pcFeedToIFU + 4.U
+  }
+  nxtPredictedPC := fetchPrediction.pc
+  ifu.io.predNext := fetchPrediction
 
   io.irom <> ifu.io.mem
   io.dram <> dataMemBus.io.out
@@ -383,10 +392,12 @@ class CPUCore(
   idu.io.csrJmpTarget.mtvec := csrs.io.mtvec
 
   val lsuFwdInfo = ExtractFwdInfoFromLSU(lsu.io.in)
+  val lsuLateLoadData =
+    ExtLoadData(lsu.io.in.bits.lateLoadData, lsu.io.in.bits.destAddr(1, 0), lsu.io.in.bits.func3t)
   val dcacheFwdInfo = Wire(new DCacheForwardInfo)
   dcacheFwdInfo.valid := lsu.io.in.valid && lsu.io.in.bits.cacheableLoad && lsu.io.in.bits.dcacheHit
   dcacheFwdInfo.addr  := lsu.io.in.bits.exuWriteBack.gpr.addr
-  dcacheFwdInfo.data  := lsu.io.in.bits.lateLoadData
+  dcacheFwdInfo.data  := lsuLateLoadData
   val wbuRawFwdInfo = Wire(new Reg1AddImmWbuRawInfo)
   wbuRawFwdInfo.dataValid := wbu.io.in.valid && !wbu.io.in.bits.isLoad
   wbuRawFwdInfo.data      := wbu.io.in.bits.gpr.data(21, 0)
@@ -407,10 +418,9 @@ class CPUCore(
   exu.io.lateLoadLSU.valid := lateLoadLSUValid
   exu.io.lateLoadLSU.dataValid :=
     lateLoadLSUValid && lsu.io.in.bits.cacheableLoad && lsu.io.in.bits.dcacheHit
-  // lateLoadData was selected and extended from the asynchronous shadow in C0,
-  // then crossed the existing EXU-to-LSU pipeline register. Do not reconnect
-  // the C1 consumer directly to either shadow output or synchronous BRAM.
-  exu.io.lateLoadLSU.data := lsu.io.in.bits.lateLoadData
+  // The asynchronous shadow crossed the EXU-to-LSU pipeline register as raw
+  // data; extend it from the registered address/width metadata in C1.
+  exu.io.lateLoadLSU.data := lsuLateLoadData
 
   val lateLoadWBUWidthSupported =
     wbu.io.in.bits.lsuFunc3t === "b000".U || wbu.io.in.bits.lsuFunc3t === "b001".U ||
@@ -422,6 +432,9 @@ class CPUCore(
   exu.io.lateLoadWBU.dataValid := lateLoadWBUValid
   exu.io.lateLoadWBU.data :=
     ExtLoadData(wbu.io.memResp.bits, wbu.io.in.bits.lsuAddrOffset, wbu.io.in.bits.lsuFunc3t)
+  exu.io.lateLoadWBURawData := wbu.io.memResp.bits
+  exu.io.lateLoadWBUFunc3   := wbu.io.in.bits.lsuFunc3t
+  exu.io.lateLoadWBUOffset  := wbu.io.in.bits.lsuAddrOffset
 
   idu.io.pipelineFlush := activeRedirectValid
 

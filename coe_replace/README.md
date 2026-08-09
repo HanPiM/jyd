@@ -124,10 +124,11 @@ python3 coe_replace.py \
 
 依赖：Vivado 2024.2（能打开该 DCP 即可）、Python 3 标准库。
 
-脚本只支持当前 digital_twin 结构：
+脚本支持当前和历史 digital_twin 结构：
 
 - IROM：8 个单元（1x RAMB18 2-bit + 1x RAMB36 4-bit + 6x RAMB36 8/9-bit）
-- DRAM：64 个 RAMB36 8-bit 单元（16 bank × 4 字节通道）
+- DRAM：16 个 RAMB36 8-bit 单元（4 bank × 4 字节通道），或历史的 64 个
+  RAMB36 8-bit 单元（16 bank × 4 字节通道）
 
 其它结构会明确报错，不会静默产出错误 bit。
 

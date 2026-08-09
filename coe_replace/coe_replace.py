@@ -58,10 +58,11 @@ from pathlib import Path
 #   ramloop[6] : RAMB36E1, 4096 x 8  -> data bits [31:24], addr 0..4095
 #   ramloop[7] : RAMB36E1, 4096 x 8  -> data bits [31:24], addr 4096..8191
 #
-# DRAM (65536 x 32, base 0x80100000): 64 x RAMB36E1, each 4096 x 8.
-#   ramloop[i] : bank = i % 16, byte lane = i // 16
-#                addresses [bank*4096 .. bank*4096+4095]
-#                data bits [lane*8+7 : lane*8]
+# DRAM (65536 bytes, base 0x80100000) has two supported implementations:
+#   64 x RAMB36E1, 4096 x 8:
+#     ramloop[i] : bank = i % 16, byte lane = i // 16
+#   16 x RAMB36E1, 4096 x 8:
+#     ramloop[i] : bank = i % 4, byte lane = i // 4
 # ---------------------------------------------------------------------------
 
 IROM_SPECS = [
@@ -76,8 +77,8 @@ IROM_SPECS = [
     (7, 4096, 24, 8, 4096, None),
 ]
 
-DRAM_NUM_CELLS = 64
-DRAM_DEPTH = 4096
+DRAM_BYTE_LANE_CELLS = 64
+DRAM_WORD_CELLS = 16
 
 
 def parse_coe(path: Path) -> list[int]:
@@ -200,10 +201,13 @@ def build_specs(cells: list[dict]) -> tuple[dict[int, dict], dict[int, dict]]:
             f"unexpected IROM cell indices {sorted(irom)}; this script supports "
             "the digital_twin 8192x32 IROM layout only"
         )
-    if sorted(dram) != list(range(DRAM_NUM_CELLS)):
+    if sorted(dram) not in (
+        list(range(DRAM_BYTE_LANE_CELLS)),
+        list(range(DRAM_WORD_CELLS)),
+    ):
         raise SystemExit(
-            f"unexpected DRAM cell indices {sorted(dram)}; expected "
-            f"{DRAM_NUM_CELLS} cells"
+            f"unexpected DRAM cell indices {sorted(dram)}; expected either "
+            f"{DRAM_BYTE_LANE_CELLS} byte-lane cells or {DRAM_WORD_CELLS} word cells"
         )
     return irom, dram
 
@@ -250,15 +254,18 @@ def main() -> int:
         for key, val in initp.items():
             tcl_lines.append(f"set_property {key} 256'h{val} $cell")
 
-    for idx in range(DRAM_NUM_CELLS):
-        cell = dram[idx]
-        bank = idx % 16
-        lane = idx // 16
-        first_bit = lane * 8
-        base_addr = bank * DRAM_DEPTH
-        init, initp = compute_init(
-            dram_words, DRAM_DEPTH, first_bit, 8, base_addr, 128
-        )
+    for idx, cell in dram.items():
+        if len(dram) == DRAM_BYTE_LANE_CELLS:
+            depth = 4096
+            first_bit = (idx // 16) * 8
+            nbits = 8
+            base_addr = (idx % 16) * depth
+        else:
+            depth = 4096
+            first_bit = (idx // 4) * 8
+            nbits = 8
+            base_addr = (idx % 4) * depth
+        init, initp = compute_init(dram_words, depth, first_bit, nbits, base_addr, 128)
         tcl_lines.append(f"set cell [get_cells {{{cell['name']}}}]")
         for key, val in init.items():
             tcl_lines.append(f"set_property {key} 256'h{val} $cell")

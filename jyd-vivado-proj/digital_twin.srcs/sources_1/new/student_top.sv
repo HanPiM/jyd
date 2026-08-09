@@ -35,6 +35,10 @@ module student_top#(
     input  [7:0]                                uartRxData    ,
     input                                       uartRxEmpty   ,
     output                                      uartRxPop     ,
+    input                                       aht10SclIn    ,
+    input                                       aht10SdaIn    ,
+    output                                      aht10SclDriveLow,
+    output                                      aht10SdaDriveLow,
 
     output [P_LED_CNT - 1:0]                    virtual_led   ,
     output [P_SEG_CNT - 1:0]                    virtual_seg   
@@ -76,7 +80,11 @@ module student_top#(
         .uartTxFull(uartTxFull),
         .uartRxData(uartRxData),
         .uartRxEmpty(uartRxEmpty),
-        .uartRxPop(uartRxPop)
+        .uartRxPop(uartRxPop),
+        .aht10SclIn(aht10SclIn),
+        .aht10SdaIn(aht10SdaIn),
+        .aht10SclDriveLow(aht10SclDriveLow),
+        .aht10SdaDriveLow(aht10SdaDriveLow)
     );
 //    // IROM
 //    logic [31:0] pc;

@@ -138,6 +138,7 @@ object InstInfoDecoder {
     val lut = Seq(
       "b00000".U -> (InstFmt.imm, InstType.load),
       "b00100".U -> (InstFmt.imm, InstType.arithmetic),
+      "b00010".U -> (InstFmt.reg, InstType.arithmetic),
       "b11001".U -> (InstFmt.imm, InstType.jalr),
       "b11100".U -> (InstFmt.imm, InstType.system),
       "b01100".U -> (InstFmt.reg, InstType.arithmetic),
@@ -197,6 +198,9 @@ class DecodedInstInfo(implicit p : CPUParameters) extends InstMetaInfo with HasR
   // multi-cycle B operation. The exact B operation is decoded locally after
   // the B unit has registered its compact input fields.
   val bExtValid = Bool()
+
+  // CoreMark CRCU8 is a single-cycle custom-0 R-type operation.
+  val crcValid = Bool()
 
   // Predecode the ALU add/sub carry polarity before the IDU/EXU register so
   // the instruction-code bus does not drive the carry chain directly.

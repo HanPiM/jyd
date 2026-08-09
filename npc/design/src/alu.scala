@@ -11,6 +11,7 @@ class ALUInput extends Bundle {
   val func3t    = UInt(3.W)
   val func7t    = UInt(7.W)
   val bExtValid = Bool()
+  val crcValid  = Bool()
   val src1      = Types.UWord
   val src2      = Types.UWord
   val mulRawSrc1 = Types.UWord
@@ -450,6 +451,18 @@ class ALU extends Module {
   val minuResult = Mux(src1 < src2, src1, src2)
   val bextResult = Cat(0.U(31.W), (src1 >> src2(4, 0))(0))
 
+  // CRCU8 is linear over GF(2).  This parallel XOR matrix avoids the timing
+  // depth of eight serial polynomial-update rounds.
+  val crcInput = Cat(src1(7, 0), src2(15, 0))
+  val crcMasks = Seq(
+    0xff01ff, 0x000200, 0x000400, 0x000800,
+    0x001000, 0x002000, 0x014001, 0x038003,
+    0x060006, 0x0c000c, 0x180018, 0x300030,
+    0x600060, 0xc000c0, 0x7f007f, 0xff00ff
+  )
+  val crcBits = VecInit(crcMasks.map(mask => (crcInput & mask.U(24.W)).xorR))
+  val crcResult = Cat(0.U(16.W), crcBits.asUInt)
+
   val aluResult = MuxCase(
     baseAluResult,
     Seq(
@@ -459,7 +472,8 @@ class ALU extends Module {
       isSextB  -> sextBResult,
       isSextH  -> sextHResult,
       isMinu   -> minuResult,
-      isBext   -> bextResult
+      isBext   -> bextResult,
+      inbits.crcValid -> crcResult
     )
   )
   io.singleCycleResult := aluResult

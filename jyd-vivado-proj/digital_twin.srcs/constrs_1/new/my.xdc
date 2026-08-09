@@ -8,6 +8,23 @@
 #resize_pblock [get_pblocks p_dcache_mid] -add {SLICE_X0Y0:SLICE_X79Y140}
 #set_property IS_SOFT true [get_pblocks p_dcache_mid]
 
+# The 4 KiB DCache has two tag and late-data LUTRAM banks.  Keep those local
+# to the BRAM data banks without constraining the BRAM primitives themselves.
+# The pblock remains soft so timing optimization can escape it when needed.
+create_pblock p_dcache_lutram
+add_cells_to_pblock [get_pblocks p_dcache_lutram] \
+  [get_cells -quiet -hier -regexp {.*cpu/dcache/(tagMem|lateDataMem).*}]
+resize_pblock [get_pblocks p_dcache_lutram] -add {SLICE_X40Y40:SLICE_X85Y95}
+set_property IS_SOFT true [get_pblocks p_dcache_lutram]
+
+# Co-locate only the branch/redirect control cones implicated by the 300 MHz
+# critical path.  Do not pull IFU valid/PC state into this pblock.
+create_pblock p_branch_redirect
+add_cells_to_pblock [get_pblocks p_branch_redirect] \
+  [get_cells -quiet -hier -regexp {.*(takeBranch|redirectUseTargetReg_i_|btb_io_update_actualTaken).*}]
+resize_pblock [get_pblocks p_branch_redirect] -add {SLICE_X94Y90:SLICE_X110Y100}
+set_property IS_SOFT true [get_pblocks p_branch_redirect]
+
 # CPU -> 50MHz tick counter: enable enters the first synchronizer stage.
 set_false_path \
 -from [get_cells -hier -regexp {.*student_top_inst/mytop/perip/cntEnableReg_reg$}] \

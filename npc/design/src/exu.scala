@@ -123,7 +123,7 @@ class EXU(
       val hit        = Input(Bool())
       val lateReadData = Input(Types.UWord)
       val storeEpoch = Input(Bool())
-      val queryIndex = Output(UInt(9.W))
+      val queryIndex = Output(UInt(10.W))
       val queryTag   = Output(UInt(7.W))
       val storeUpdate = Output(Bool())
       val storeData   = Output(Types.UWord)
@@ -345,8 +345,19 @@ class EXU(
   // Late ADD data crosses the EXU-to-LSU boundary in its dedicated lane.
   // Only the wiring-only late bit operations still use the ordinary GPR
   // writeback-data field here.
-  val arithmeticResult = Mux(isLateLoadAndi1 || isLateLoadSrli1, lateBitResult, aluOut)
-  writeBackInfo.gpr.data := Mux(isTypArithmetic, arithmeticResult, dinst.info.preMuxWrBackData)
+  // Flatten the writeback data selection into a single 3-way one-hot mux so a
+  // normal arithmetic result crosses only one LUT level on its way to the
+  // EXU-to-LSU payload register.  The three selects are mutually exclusive:
+  // ordinary arithmetic, late-load ANDI/SRLI bit result, or decode-provided
+  // data (LUI/AUIPC/JAL/CSR...).
+  val isLateLoadBit = isLateLoadAndi1 || isLateLoadSrli1
+  writeBackInfo.gpr.data := Mux1H(
+    Seq(
+      (isTypArithmetic && !isLateLoadBit) -> aluOut,
+      isLateLoadBit -> lateBitResult,
+      !isTypArithmetic -> dinst.info.preMuxWrBackData
+    )
+  )
 
   // Fill in LSU stage
   writeBackInfo.isLoad        := false.B
@@ -404,7 +415,7 @@ class EXU(
 
   val memWData = GenMemWData(reg1AddImm(1, 0), reg_v2)
 
-  io.dcache.queryIndex := reg1AddImm(10, 2)
+  io.dcache.queryIndex := reg1AddImm(11, 2)
   io.dcache.queryTag   := reg1AddImm(17, 11)
   val cacheableStore = isTypStore && reg1AddImm(21, 20) === "b01".U
   val cacheableStoreFire = memReqFire && cacheableStore

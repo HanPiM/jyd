@@ -40,6 +40,30 @@
 
 #define R(i) gpr(i)
 
+#define MATCH_COREMARK_CRCU8  0x0000000b
+#define MATCH_COREMARK_CRCU16 0x0000100b
+#define MATCH_COREMARK_CRCU32 0x0000200b
+#define MASK_COREMARK_CRC     0xfe00707f
+#define MASK_COREMARK_CRCU8   MASK_COREMARK_CRC
+#define MASK_COREMARK_CRCU16  MASK_COREMARK_CRC
+#define MASK_COREMARK_CRCU32  MASK_COREMARK_CRC
+
+static word_t coremark_crc(word_t data, word_t crc, unsigned bytes) {
+  crc &= 0xffffu;
+  for (unsigned byte = 0; byte < bytes; byte++) {
+    word_t value = data & 0xffu;
+    data >>= 8;
+    for (unsigned bit = 0; bit < 8; bit++) {
+      word_t x16 = (value ^ crc) & 1u;
+      value >>= 1;
+      if (x16)
+        crc ^= 0x4002u;
+      crc = (crc >> 1) | (x16 << 15);
+    }
+  }
+  return crc & 0xffffu;
+}
+
 static word_t _handle_csr_rw(word_t csr, word_t src1, bool is_write);
 static word_t _csr_read(word_t csr) { return _handle_csr_rw(csr, 0, 0); }
 static void _csr_write(word_t csr, word_t src1) {
@@ -94,6 +118,7 @@ static int decode_exec(Decode *s) {
 
   word_t rd = (inst & INSN_FIELD_RD) >> 7;
   word_t rs1 = (inst & INSN_FIELD_RS1) >> 15;
+  word_t rs2 = (inst & INSN_FIELD_RS2) >> 20;
 
 #define IS_INST(name) (((inst & MASK_##name) == MATCH_##name) && (!matched))
 #define _NOCHK_IS_INST(name) ((inst & MASK_##name) == MATCH_##name)
@@ -196,6 +221,19 @@ static int decode_exec(Decode *s) {
   // xRET sets the pc to the value stored in the xepc register.
   if (IS_INST(MRET)) {
     s->dnpc = _csr_read(CSR_MEPC);
+    matched = true;
+  }
+
+  if (IS_INST(COREMARK_CRCU8)) {
+    R(rd) = coremark_crc(R(rs1), R(rs2), 1);
+    matched = true;
+  }
+  if (IS_INST(COREMARK_CRCU16)) {
+    R(rd) = coremark_crc(R(rs1), R(rs2), 2);
+    matched = true;
+  }
+  if (IS_INST(COREMARK_CRCU32)) {
+    R(rd) = coremark_crc(R(rs1), R(rs2), 4);
     matched = true;
   }
 

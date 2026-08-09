@@ -21,6 +21,7 @@ enum Kind {
   K_STORE,
   K_M,
   K_B,
+  K_CRC,
   K_SYSTEM,
   K_OTHER,
   K_NR
@@ -70,6 +71,7 @@ enum BOp {
   B_NR
 };
 enum MemWidth { W_BYTE, W_HALF, W_WORD, W_OTHER, W_NR };
+enum CrcOp { CRC_U8, CRC_U16, CRC_U32, CRC_NR };
 
 typedef struct {
   uint32_t pc;
@@ -123,11 +125,12 @@ typedef struct {
 
 static const char *kind_names[] = {
     "alu", "branch", "jal", "jalr", "load", "store", "m", "b",
-    "system", "other"};
+    "crc", "system", "other"};
 static const char *width_names[] = {"byte", "half", "word", "other"};
 
 static const char *out_path;
-static uint64_t total, kinds[K_NR], mops[M_NR], bops[B_NR], raw_dist[9];
+static uint64_t total, kinds[K_NR], mops[M_NR], bops[B_NR], crcops[CRC_NR],
+    raw_dist[9];
 static uint64_t pack_rs2_zero, pack_rs1_upper_zero, pack_matches_xor;
 static uint64_t miss_consumer_successor_deps;
 static uint64_t m_divide_by_zero, m_signed_overflow;
@@ -219,6 +222,8 @@ static unsigned kind_of(uint32_t x) {
     return K_LOAD;
   if (op == 0x23)
     return K_STORE;
+  if (op == 0x0b && f7 == 0 && f3 < CRC_NR)
+    return K_CRC;
   if (op == 0x73)
     return K_SYSTEM;
   if (op == 0x33 && f7 == 1)
@@ -737,7 +742,7 @@ void riscv_profile_record(const Decode *s, word_t x, word_t rs1_before,
   unsigned k = kind_of(x), op = x & 0x7f, rd = (x >> 7) & 31,
            rs1 = (x >> 15) & 31, rs2 = (x >> 20) & 31;
   bool use1 = !(op == 0x37 || op == 0x17 || op == 0x6f);
-  bool use2 = op == 0x33 || op == 0x23 || op == 0x63;
+  bool use2 = op == 0x33 || op == 0x23 || op == 0x63 || op == 0x0b;
   uint64_t seq = ++total;
   kinds[k]++;
   Phase *p = &phases[(seq - 1) / PHASE_LEN];
@@ -815,6 +820,8 @@ void riscv_profile_record(const Decode *s, word_t x, word_t rs1_before,
       pack_matches_xor += pack_result == (rs1_before ^ rs2_before);
     }
   }
+  if (k == K_CRC)
+    crcops[(x >> 12) & 7]++;
   if (k == K_BRANCH || k == K_JAL || k == K_JALR) {
     bool taken = s->dnpc != s->snpc;
     p->control++;
@@ -1054,7 +1061,7 @@ void riscv_profile_finish(void) {
       masked_forward_net_cycles + masked_successor_net_cycles;
 
   fprintf(f,
-          "{\n  \"schema\":2,\n  \"total_instructions\":%llu,\n  "
+          "{\n  \"schema\":3,\n  \"total_instructions\":%llu,\n  "
           "\"control_instructions\":%llu,\n  \"categories\":{",
           (unsigned long long)total, (unsigned long long)control);
   for (int i = 0; i < K_NR; i++)
@@ -1076,6 +1083,10 @@ void riscv_profile_finish(void) {
           (unsigned long long)m_divide_by_zero,
           (unsigned long long)m_signed_overflow);
   arr(f, bops, B_NR);
+  fprintf(f,
+          "],\n  \"crc_ops_order\":[\"crcu8\",\"crcu16\",\"crcu32\"],"
+          "\n  \"crc_ops\":[");
+  arr(f, crcops, CRC_NR);
   fprintf(f,
           "],\n  \"pack_diagnostics\":{"
           "\"rs2_zero\":%llu,\"rs1_upper_zero\":%llu,"

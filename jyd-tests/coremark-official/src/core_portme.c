@@ -29,6 +29,10 @@ void __am_timer_uptime(AM_TIMER_UPTIME_T *uptime);
 static uint32_t uptime_ticks(void) {
 #ifdef COREMARK_EMBEDDED_RTT
   return io_read(AM_TIMER_UPTIME).us / 1000;
+#elif defined(ARCH_IS_NEMU)
+  AM_TIMER_UPTIME_T uptime;
+  __am_timer_uptime(&uptime);
+  return (uint32_t)uptime.us;
 #else
   extern uint32_t CNT_REG[];
   return CNT_REG[0];

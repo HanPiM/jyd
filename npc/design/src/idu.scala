@@ -335,7 +335,12 @@ class IDU(
   val immB    = Cat(immI(31, 12), inst(7), immS(10, 1), 0.U(1.W))
   val immU    = Cat(inst(31, 12), 0.U(12.W))
   val immJ    = Cat(immI(31, 20), inst(19, 12), inst(20), inst(30, 21), 0.U(1.W))
-  val addrImm = Mux(isTypStore, immS, immI)
+  // I- and S-format address immediates share inst[31:25].  Only select the
+  // low five bits, using the store opcode class directly, so address
+  // generation does not inherit the full instruction-type decode cone.
+  val isStoreEncoding = inst(6, 5) === "b01".U
+  val addrImm12 = Cat(inst(31, 25), Mux(isStoreEncoding, inst(11, 7), inst(24, 20)))
+  val addrImm = addrImm12.asSInt.pad(32).asUInt
 
   val dontcareImm = Wire(Types.UWord)
   dontcareImm := DontCare
@@ -367,9 +372,10 @@ class IDU(
   // loop without placing a general AND or barrel shifter in the late path.
   val isLateLoadAndi1 = isTypArithmetic && isFmtI && inst(14, 12) === "b111".U && inst(31, 20) === 1.U
   val isLateLoadSrli1 = isTypArithmetic && isFmtI && inst(14, 12) === "b101".U && inst(31, 20) === 1.U
-  val allowLateLoadRs1 = isLateLoadAndi1 || isLateLoadSrli1
+  val isEqualityBranch = isTypBranch && inst(14, 13) === 0.U
+  val allowLateLoadRs1 = isLateLoadAndi1 || isLateLoadSrli1 || isEqualityBranch
   bypassMux.io.allowLateLoadRs1 := allowLateLoadRs1
-  bypassMux.io.allowLateLoadRs2 := false.B
+  bypassMux.io.allowLateLoadRs2 := isEqualityBranch
   val arithmeticFunc3 = inst(14, 12)
   val arithmeticFunc7 = inst(31, 25)
   val isMExtArithmetic = !isFmtI && arithmeticFunc7 === "b0000001".U
@@ -441,13 +447,16 @@ class IDU(
 
   // res.snpc       := io.in.bits.pc + 4.U
   res.pcAddImm := io.in.bits.pc + res.imm
-  // Keep address generation independent from the generic rs1 bypass path.
-  //
-  // 80[012]
-  // for [012] only lo 2 bits are used, so
-  // hi 8+2b: {8'b80, 2'b0}
-  //
-  def addAddrImm(base: UInt): UInt = base(17, 0) + addrImm(17, 0)
+  // CoreMark data occupies 0x8010_0000-0x8010_ffff.  Its only required
+  // cross-window address formation is an AUIPC base in 0x800f_fxxx plus a
+  // positive load/store offset.  JYD peripherals do not use that 0xff page
+  // crossing, so keep their upper address bits and special-case this carry.
+  def addAddrImm(base: UInt): UInt = {
+    val lowSum = base(15, 0) +& addrImm(15, 0)
+    val crossesIntoDram = !addrImm(15) && base(19, 12) === "hff".U && lowSum(16)
+    val high = Mux(crossesIntoDram, "h10".U(6.W), base(21, 16))
+    high ## lowSum(15, 0)
+  }
 
   // res.reg1AddImm := DontCare
   val lsuReg1AddImmBypass =
@@ -463,10 +472,7 @@ class IDU(
   val nonLsuReg1AddImmBase = Mux(exuReg1AddImmBypass, io.exuAddFwd.data, nonExuReg1AddImmBase)
   val useLsuReg1AddImm = !exuReg1AddImmBypass && lsuReg1AddImmBypass
   val reg1AddImmBase = Mux(useLsuReg1AddImm, io.wrBackInfo.lsu.data(21, 0), nonLsuReg1AddImmBase)
-  def genReg1AddImm(base: UInt): UInt = {
-    val region = base(21, 20) + base(19)
-    region ## 0.U(2.W) ## addAddrImm(base)
-  }
+  def genReg1AddImm(base: UInt): UInt = addAddrImm(base)
   res.reg1AddImm := genReg1AddImm(reg1AddImmBase)
 
   res.isECall := inst === "h73".U

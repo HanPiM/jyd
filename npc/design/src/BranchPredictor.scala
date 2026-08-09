@@ -14,8 +14,6 @@ class BranchPredictorIO extends Bundle {
   val historyIsBranch = Input(Bool())
   val historyIsReturn = Input(Bool())
   val historyDirectionTaken = Input(Bool())
-  val historyIsBackward = Input(Bool())
-
   val historyTarget = Input(Types.UWord)
 
   val updateEn = Input(Bool())
@@ -58,7 +56,6 @@ class BranchPredictor extends Module {
     io.historyHit && (io.historyIsJAL || (io.historyIsBranch && io.historyDirectionTaken)))
 
   // io.predictTarget := Mux(io.historyHit, io.historyTarget, io.pc + 4.U)
-  // io.predictTarget := Mux(io.historyHit && isBackward, io.historyTarget, io.pc + 4.U)
   // io.predictTarget := io.pc + 4.U
 
   io.pred.hit := io.historyHit

@@ -106,7 +106,6 @@ class EXU(
     val predWrong = Output(Bool())
 
     val branchTarget   = Output(Types.UWord)
-    val branchBackward = Output(Bool())
     val staticTarget   = Output(Types.UWord)
 
     val pc    = Output(Types.UWord)
@@ -117,14 +116,17 @@ class EXU(
     val lateLoadProducer = Output(new LateLoadProducerInfo)
     val lateLoadLSU = Input(new LateLoadSourceInfo)
     val lateLoadWBU = Input(new LateLoadSourceInfo)
+    val lateLoadWBURawData = Input(Types.UWord)
+    val lateLoadWBUFunc3   = Input(UInt(3.W))
+    val lateLoadWBUOffset  = Input(UInt(2.W))
     val previousStageFwd = Input(new WrBackForwardInfo)
 
     val dcache = new Bundle {
       val hit        = Input(Bool())
       val lateReadData = Input(Types.UWord)
       val storeEpoch = Input(Bool())
-      val queryIndex = Output(UInt(9.W))
-      val queryTag   = Output(UInt(7.W))
+      val queryIndex = Output(UInt(10.W))
+      val queryTag   = Output(UInt(5.W))
       val storeUpdate = Output(Bool())
       val storeData   = Output(Types.UWord)
       val storeMask   = Output(UInt(4.W))
@@ -158,15 +160,31 @@ class EXU(
 
   alu.io.in.valid := io.in.valid && isTypArithmetic
 
+  // DCache hits still resolve a dependent consumer in this cycle.  A miss or
+  // peripheral load reaches WBU later; capture that response first so the
+  // memory-response mux cannot drive branch resolution and pipeline flush in
+  // the same cycle.
+  val capturedLateLoadValid = RegInit(false.B)
+  val capturedLateLoadData  = Reg(Types.UWord)
+  val captureLateLoadWBU =
+    io.in.valid && (dinst.info.lateLoadRs1 || dinst.info.lateLoadRs2) &&
+      !io.lateLoadLSU.valid && io.lateLoadWBU.valid && io.lateLoadWBU.dataValid && !capturedLateLoadValid
+
+  when(!io.in.valid || io.in.fire) {
+    capturedLateLoadValid := false.B
+  }.elsewhen(captureLateLoadWBU) {
+    capturedLateLoadValid := true.B
+    capturedLateLoadData  := io.lateLoadWBU.data
+  }
+
   // A late-load operand first looks at LSU. This priority is required when an
-  // older WBU instruction happens to target the same register. A miss keeps
-  // the LSU match selected but not ready; the existing IDU/EXU payload
-  // register then holds the consumer until its producer reaches WBU.
+  // older instruction happens to target the same register. A miss keeps the
+  // payload held until the WBU response has crossed the capture register.
   def resolveLateLoadOperand(late: Bool, normalData: UInt): (Bool, UInt) = {
     val lsuMatch = late && io.lateLoadLSU.valid
-    val wbuMatch = late && !lsuMatch && io.lateLoadWBU.valid
-    val ready = !late || (lsuMatch && io.lateLoadLSU.dataValid) || (wbuMatch && io.lateLoadWBU.dataValid)
-    val data = Mux(lsuMatch, io.lateLoadLSU.data, Mux(wbuMatch, io.lateLoadWBU.data, normalData))
+    val capturedMatch = late && !lsuMatch && capturedLateLoadValid
+    val ready = !late || (lsuMatch && io.lateLoadLSU.dataValid) || capturedMatch
+    val data = Mux(lsuMatch, io.lateLoadLSU.data, Mux(capturedMatch, capturedLateLoadData, normalData))
     (ready, data)
   }
 
@@ -200,6 +218,8 @@ class EXU(
   )
   val reg_v1       = postRegisterRegV1
   val reg_v2       = postRegisterRegV2
+  val equalityRegV1 = Mux(dinst.info.lateLoadRs1, lateRegV1, postRegisterRegV1)
+  val equalityRegV2 = Mux(dinst.info.lateLoadRs2, lateRegV2, postRegisterRegV2)
   // val pcAddImm   = dinst.pc + dinst.info.imm
   val pcAddImm   = dinst.info.pcAddImm
   val reg1AddImm = "h80".U(8.W) ## 0.U(2.W) ## dinst.info.reg1AddImm
@@ -207,7 +227,6 @@ class EXU(
   // Branches/JAL use PC+imm, while a JALR BTB entry must learn the resolved
   // rs1+imm target.  The BTB stores only the same trimmed PC bits either way.
   io.branchTarget   := Mux(isTypJALR, reg1AddImm, pcAddImm)
-  io.branchBackward := dinst.info.imm(31)
 
   alu_in.src1   := reg_v1
   // alu_in.src2   := Mux(isFmtI, dinst.info.imm, reg_v2)
@@ -289,7 +308,12 @@ class EXU(
 
   val isFmtB = InstFmt.hasSame(dinst.info.fmt, InstFmt.branch)
 
-  val isEqual     = reg_v1 === reg_v2
+  val equalityDiff = equalityRegV1 ^ equalityRegV2
+  dontTouch(equalityDiff)
+  val equalityChunkNonZero = VecInit((0 until 4).map(i => equalityDiff(8 * i + 7, 8 * i).orR))
+  dontTouch(equalityChunkNonZero)
+  val extendedLoadEqual = !equalityChunkNonZero.asUInt.orR
+  val isEqual     = extendedLoadEqual
   val isLessThan  = reg_v1.asSInt < reg_v2.asSInt
   val isLessThanU = reg_v1 < reg_v2
 
@@ -320,10 +344,11 @@ class EXU(
   lsuInfo.cacheableLoad :=
     isTypLoad && supportedLoadWidth && loadAddressAligned && reg1AddImm(21, 20) === "b01".U
   lsuInfo.dcacheHit := lsuInfo.cacheableLoad && io.dcache.hit
-  // Select and extend the asynchronous shadow result before the existing
-  // EXU-to-LSU payload register. A miss ignores it and retains the normal
-  // WBU/memory-response path.
-  lsuInfo.lateLoadData := ExtLoadData(io.dcache.lateReadData, reg1AddImm(1, 0), func3t)
+  // Capture the asynchronous shadow result without sign extension. Extending
+  // byte/half loads before this register lets synthesis map the replicated
+  // sign bit onto slow synchronous-set pins; registered offset/width metadata
+  // performs the extension in C1 instead.
+  lsuInfo.lateLoadData := io.dcache.lateReadData
   lsuInfo.dcacheStoreEpoch := io.dcache.storeEpoch
 
   val snpc = dinst.info.staticNextPCOrCSRTarget
@@ -345,8 +370,19 @@ class EXU(
   // Late ADD data crosses the EXU-to-LSU boundary in its dedicated lane.
   // Only the wiring-only late bit operations still use the ordinary GPR
   // writeback-data field here.
-  val arithmeticResult = Mux(isLateLoadAndi1 || isLateLoadSrli1, lateBitResult, aluOut)
-  writeBackInfo.gpr.data := Mux(isTypArithmetic, arithmeticResult, dinst.info.preMuxWrBackData)
+  // Flatten the writeback data selection into a single 3-way one-hot mux so a
+  // normal arithmetic result crosses only one LUT level on its way to the
+  // EXU-to-LSU payload register.  The three selects are mutually exclusive:
+  // ordinary arithmetic, late-load ANDI/SRLI bit result, or decode-provided
+  // data (LUI/AUIPC/JAL/CSR...).
+  val isLateLoadBit = isLateLoadAndi1 || isLateLoadSrli1
+  writeBackInfo.gpr.data := Mux1H(
+    Seq(
+      (isTypArithmetic && !isLateLoadBit) -> aluOut,
+      isLateLoadBit -> lateBitResult,
+      !isTypArithmetic -> dinst.info.preMuxWrBackData
+    )
+  )
 
   // Fill in LSU stage
   writeBackInfo.isLoad        := false.B
@@ -360,7 +396,7 @@ class EXU(
   writeBackInfo.dcacheStoreEpoch := false.B
 
   val isMemOP        = isTypLoad || isTypStore
-  val exuResultValid = !isTypArithmetic || (alu.io.out.valid && (!hasLateLoadOperand || lateDataReady))
+  val exuResultValid = (!isTypArithmetic || alu.io.out.valid) && (!hasLateLoadOperand || lateDataReady)
   // Keep the same-cycle forwarding loop independent of the multi-cycle M/D/B
   // result mux.  A multi-cycle producer still advertises its destination while it is
   // in EXU, but its data remains unavailable to IDU; a dependent consumer
@@ -404,8 +440,8 @@ class EXU(
 
   val memWData = GenMemWData(reg1AddImm(1, 0), reg_v2)
 
-  io.dcache.queryIndex := reg1AddImm(10, 2)
-  io.dcache.queryTag   := reg1AddImm(17, 11)
+  io.dcache.queryIndex := reg1AddImm(11, 2)
+  io.dcache.queryTag   := reg1AddImm(15, 11)
   val cacheableStore = isTypStore && reg1AddImm(21, 20) === "b01".U
   val cacheableStoreFire = memReqFire && cacheableStore
   // DCache resolves a narrow-store hit locally. Keep its asynchronous tag
@@ -461,7 +497,7 @@ class EXU(
   io.isCall      := (isTypJAL || isTypJALR) && dinst.info.rd =/= 0.U
   io.branchTaken := takeBranch
   io.btbUpdateEn := isTypBranch || isTypJAL || isTypJALR
-  io.predWrong := (isFmtB && (takeBranch ^ dinst.predTake)) || io.in.bits.info.notBranchPredWrong
+  io.predWrong := exuResultValid && ((isFmtB && (takeBranch ^ dinst.predTake)) || io.in.bits.info.notBranchPredWrong)
 
   StageLogger(
     clock,

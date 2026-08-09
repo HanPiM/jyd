@@ -147,7 +147,6 @@ prohibited until the exact candidate's final post-route WNS is greater than
 optimization adjustments are permitted; do not use a Pblock, a
 placement/route directive scan, or a synthesis-directive scan to mask a
 materially timing-violating design.
-
 Keep RTL, Vivado project, IP, constraint, and script changes on the relevant code branch. Commit the frozen candidate
 there first, then record the experiment in the `opt-notes` worktree with the code branch name and full commit SHA. Do
 not cherry-pick ordinary experiment-record commits back to code branches, and do not cherry-pick RTL commits into

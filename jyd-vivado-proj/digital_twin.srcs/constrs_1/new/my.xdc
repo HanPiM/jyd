@@ -1,13 +1,3 @@
-## dcache 层级约束
-#set_property KEEP_HIERARCHY yes [get_cells -hier *dcache*]
-#set_property CELL_BLOAT_FACTOR MEDIUM [get_cells -hier *dcache*]
-
-## Pblock 也可以放 XDC
-#create_pblock p_dcache_mid
-#add_cells_to_pblock [get_pblocks p_dcache_mid] [get_cells -hier *dcache*]
-#resize_pblock [get_pblocks p_dcache_mid] -add {SLICE_X0Y0:SLICE_X79Y140}
-#set_property IS_SOFT true [get_pblocks p_dcache_mid]
-
 # CPU -> 50MHz tick counter: enable enters the first synchronizer stage.
 set_false_path \
 -from [get_cells -hier -regexp {.*student_top_inst/mytop/perip/cntEnableReg_reg$}] \
@@ -24,20 +14,3 @@ set_property ASYNC_REG TRUE [get_cells -hier -regexp \
   {.*student_top_inst/mytop/cnt/counter/tickGraySync[12]_reg\[[0-9]+\]$}]
 
 # UART TX/RX crossings are implemented and constrained by FIFO Generator IP.
-# Keep the ID/EX operand banks near their naturally clustered placement.  This
-# is intentionally soft so implementation can move registers when congestion
-# or other critical paths require it.
-create_pblock p_exu_operands
-add_cells_to_pblock [get_pblocks p_exu_operands] \
-  [get_cells -quiet -hier -regexp {.*payloadReg_4_info_reg[12]_reg\[[0-9]+\]$}]
-resize_pblock [get_pblocks p_exu_operands] -add {SLICE_X98Y98:SLICE_X119Y119}
-set_property IS_SOFT true [get_pblocks p_exu_operands]
-
-# Clock-skew experiment 2: keep the two narrow-multiplier DSPs in the X1 clock
-# column (same clock regions as the operand/ALU logic) so the automatic BUFG
-# replica either disappears or its inter-branch skew shrinks.
-create_pblock p_narrow_dsp
-add_cells_to_pblock [get_pblocks p_narrow_dsp] \
-  [get_cells -quiet -hier -regexp {.*alu/multiplier/narrowMultiplier_[01]$}]
-resize_pblock [get_pblocks p_narrow_dsp] -add {DSP48_X3Y38:DSP48_X4Y43}
-set_property IS_SOFT true [get_pblocks p_narrow_dsp]

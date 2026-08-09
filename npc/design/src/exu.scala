@@ -164,10 +164,8 @@ class EXU(
   // peripheral load reaches WBU later; capture that response first so the
   // memory-response mux cannot drive branch resolution and pipeline flush in
   // the same cycle.
-  val capturedLateLoadValid  = RegInit(false.B)
-  val capturedLateLoadRaw    = Reg(Types.UWord)
-  val capturedLateLoadFunc3  = Reg(UInt(3.W))
-  val capturedLateLoadOffset = Reg(UInt(2.W))
+  val capturedLateLoadValid = RegInit(false.B)
+  val capturedLateLoadData  = Reg(Types.UWord)
   val captureLateLoadWBU =
     io.in.valid && (dinst.info.lateLoadRs1 || dinst.info.lateLoadRs2) &&
       !io.lateLoadLSU.valid && io.lateLoadWBU.valid && io.lateLoadWBU.dataValid && !capturedLateLoadValid
@@ -175,14 +173,9 @@ class EXU(
   when(!io.in.valid || io.in.fire) {
     capturedLateLoadValid := false.B
   }.elsewhen(captureLateLoadWBU) {
-    capturedLateLoadValid  := true.B
-    capturedLateLoadRaw    := io.lateLoadWBURawData
-    capturedLateLoadFunc3  := io.lateLoadWBUFunc3
-    capturedLateLoadOffset := io.lateLoadWBUOffset
+    capturedLateLoadValid := true.B
+    capturedLateLoadData  := io.lateLoadWBU.data
   }
-
-  val capturedLateLoadData =
-    ExtLoadData(capturedLateLoadRaw, capturedLateLoadOffset, capturedLateLoadFunc3)
 
   // A late-load operand first looks at LSU. This priority is required when an
   // older instruction happens to target the same register. A miss keeps the

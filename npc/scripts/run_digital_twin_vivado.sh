@@ -15,7 +15,7 @@ Pass --reset-runs for a clean IP/OOC, synth_1, and impl_1 rebuild.
 Environment:
   VIVADO                Vivado executable to use. Defaults to "vivado".
   JOBS                  Vivado top-level jobs and max threads. Defaults to nproc.
-  IP_JOBS               IP/OOC run concurrency and max threads. Defaults to 1.
+  IP_JOBS               IP/OOC run concurrency and max threads. Defaults to 4.
   VIVADO_SYNTH_GLOBAL_RETIMING
                          Set to 1 to enable synth_design global retiming.
   VIVADO_SYNTH_KEEP_EQUIVALENT_REGISTERS
@@ -104,7 +104,7 @@ if ! [[ "$jobs" =~ ^[1-9][0-9]*$ ]]; then
   exit 2
 fi
 if [ -z "$ip_jobs" ]; then
-  ip_jobs="${IP_JOBS:-1}"
+  ip_jobs="${IP_JOBS:-4}"
 fi
 if ! [[ "$ip_jobs" =~ ^[1-9][0-9]*$ ]]; then
   echo "--ip-jobs must be a positive integer: $ip_jobs" >&2

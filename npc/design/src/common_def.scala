@@ -205,6 +205,9 @@ class DecodedInstInfo(implicit p : CPUParameters) extends InstMetaInfo with HasR
   // CoreMark bit-extract multiply is a single-cycle custom-0 operation.
   val xbmulValid = Bool()
 
+  // CoreMark matrix reduction is a blocking multi-cycle custom operation.
+  val xmsumValid = Bool()
+
   // Predecode the ALU add/sub carry polarity before the IDU/EXU register so
   // the instruction-code bus does not drive the carry chain directly.
   val aluIsSub = Bool()

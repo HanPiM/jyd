@@ -133,6 +133,7 @@ class EXU(
     }
 
     val memReq = Decoupled(new MemReq)
+    val memResp = Input(Valid(Types.UWord))
     val out    = Decoupled(new LSUInput)
   })
 
@@ -158,7 +159,21 @@ class EXU(
 
   val isAdd = isTypArithmetic && func3t === 0.U && (isFmtI || func7t === 0.U)
 
-  alu.io.in.valid := io.in.valid && isTypArithmetic
+  alu.io.in.valid := io.in.valid && isTypArithmetic && !dinst.info.xmsumValid
+
+  object XmsumState extends ChiselEnum {
+    val idle, request, response, done = Value
+  }
+  val xmsumState  = RegInit(XmsumState.idle)
+  val xmsumBase   = Reg(Types.UWord)
+  val xmsumIndex  = Reg(UInt(32.W))
+  val xmsumCount  = Reg(UInt(32.W))
+  val xmsumClip   = Reg(SInt(32.W))
+  val xmsumTmp    = Reg(UInt(32.W))
+  val xmsumPrev   = Reg(UInt(32.W))
+  val xmsumRet    = Reg(UInt(16.W))
+  val xmsumResult = Reg(Types.UWord)
+  val isXmsum     = dinst.info.xmsumValid
 
   // DCache hits still resolve a dependent consumer in this cycle.  A miss or
   // peripheral load reaches WBU later; capture that response first so the
@@ -218,6 +233,44 @@ class EXU(
   )
   val reg_v1       = postRegisterRegV1
   val reg_v2       = postRegisterRegV2
+
+  when(xmsumState === XmsumState.idle && io.in.valid && isXmsum) {
+    val n = reg_v2(31, 16)
+    xmsumBase  := reg_v1
+    xmsumIndex := 0.U
+    xmsumCount := n * n
+    xmsumClip  := Cat(Fill(16, reg_v2(15)), reg_v2(15, 0)).asSInt
+    xmsumTmp   := 0.U
+    xmsumPrev  := 0.U
+    xmsumRet   := 0.U
+    when(n === 0.U) {
+      xmsumResult := 0.U
+      xmsumState  := XmsumState.done
+    }.otherwise {
+      xmsumState := XmsumState.request
+    }
+  }.elsewhen(xmsumState === XmsumState.request && io.memReq.fire) {
+    xmsumState := XmsumState.response
+  }.elsewhen(xmsumState === XmsumState.response && io.memResp.valid) {
+    val current = io.memResp.bits
+    val sum     = xmsumTmp + current
+    val clipped = sum.asSInt > xmsumClip
+    val nextRet = Wire(UInt(16.W))
+    nextRet := Mux(clipped, xmsumRet + 10.U, xmsumRet + (current.asSInt > xmsumPrev.asSInt))
+    xmsumTmp  := Mux(clipped, 0.U, sum)
+    xmsumPrev := current
+    xmsumRet  := nextRet
+    when(xmsumIndex + 1.U === xmsumCount) {
+      xmsumResult := Cat(Fill(16, nextRet(15)), nextRet)
+      xmsumState  := XmsumState.done
+    }.otherwise {
+      xmsumIndex := xmsumIndex + 1.U
+      xmsumState := XmsumState.request
+    }
+  }.elsewhen(xmsumState === XmsumState.done && io.out.fire) {
+    xmsumState := XmsumState.idle
+  }
+
   val equalityRegV1 = Mux(dinst.info.lateLoadRs1, lateRegV1, postRegisterRegV1)
   val equalityRegV2 = Mux(dinst.info.lateLoadRs2, lateRegV2, postRegisterRegV2)
   // val pcAddImm   = dinst.pc + dinst.info.imm
@@ -378,13 +431,14 @@ class EXU(
   // ordinary arithmetic, late-load ANDI/SRLI bit result, or decode-provided
   // data (LUI/AUIPC/JAL/CSR...).
   val isLateLoadBit = isLateLoadAndi1 || isLateLoadSrli1
-  writeBackInfo.gpr.data := Mux1H(
+  val normalWriteBackData = Mux1H(
     Seq(
       (isTypArithmetic && !isLateLoadBit) -> aluOut,
       isLateLoadBit -> lateBitResult,
       !isTypArithmetic -> dinst.info.preMuxWrBackData
     )
   )
+  writeBackInfo.gpr.data := Mux(isXmsum, xmsumResult, normalWriteBackData)
 
   // Fill in LSU stage
   writeBackInfo.isLoad        := false.B
@@ -398,13 +452,15 @@ class EXU(
   writeBackInfo.dcacheStoreEpoch := false.B
 
   val isMemOP        = isTypLoad || isTypStore
-  val exuResultValid = (!isTypArithmetic || alu.io.out.valid) && (!hasLateLoadOperand || lateDataReady)
+  val xmsumDone = isXmsum && xmsumState === XmsumState.done
+  val exuResultValid =
+    Mux(isXmsum, xmsumDone, (!isTypArithmetic || alu.io.out.valid) && (!hasLateLoadOperand || lateDataReady))
   // Keep the same-cycle forwarding loop independent of the multi-cycle M/D/B
   // result mux.  A multi-cycle producer still advertises its destination while it is
   // in EXU, but its data remains unavailable to IDU; a dependent consumer
   // waits one cycle and receives the registered result from LSU instead.
   val isMExt = !isFmtI && func7t === "b0000001".U
-  val useSingleCycleForward = isTypArithmetic && !isMExt && !isBExt && !hasLateLoadOperand
+  val useSingleCycleForward = isTypArithmetic && !isMExt && !isBExt && !isXmsum && !hasLateLoadOperand
   val useLateBitForward = (isLateLoadAndi1 || isLateLoadSrli1) && exuResultValid && lateDataReadyFromLSU
   val exuForwardData = Mux(
     useLateBitForward,
@@ -452,19 +508,22 @@ class EXU(
   io.dcache.storeData   := memWData
   io.dcache.storeMask   := memWMask
 
-  io.memReq.valid      := needMemReq && io.in.valid && io.out.ready
-  io.memReq.bits.addr  := reg1AddImm
-  io.memReq.bits.size  := func3t(1, 0)
-  io.memReq.bits.wen   := isTypStore
-  io.memReq.bits.wdata := memWData
-  io.memReq.bits.wmask := memWMask
+  val xmsumRequest = xmsumState === XmsumState.request
+  io.memReq.valid      := xmsumRequest || (needMemReq && io.in.valid && io.out.ready)
+  io.memReq.bits.addr  := Mux(xmsumRequest, xmsumBase + (xmsumIndex << 2), reg1AddImm)
+  io.memReq.bits.size  := Mux(xmsumRequest, 2.U, func3t(1, 0))
+  io.memReq.bits.wen   := !xmsumRequest && isTypStore
+  io.memReq.bits.wdata := Mux(xmsumRequest, 0.U, memWData)
+  io.memReq.bits.wmask := Mux(xmsumRequest, 0.U, memWMask)
 
-  io.in.ready  := memReqFire || (
+  val normalReady = memReqFire || (
     io.out.ready && !needMemReq && exuResultValid
   )
-  io.out.valid := memReqFire || (
+  val normalValid = memReqFire || (
     io.in.valid && !needMemReq && exuResultValid
   )
+  io.in.ready  := Mux(isXmsum, xmsumDone && io.out.ready, normalReady)
+  io.out.valid := Mux(isXmsum, xmsumDone, normalValid)
 
   writeBackInfo.iid := dinst.iid
 

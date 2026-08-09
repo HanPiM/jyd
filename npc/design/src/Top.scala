@@ -324,6 +324,7 @@ class CPUCore(
   io.irom <> ifu.io.mem
   io.dram <> dataMemBus.io.out
   exu.io.memReq <> dataMemBus.io.exuMemReq
+  exu.io.memResp := dataMemBus.io.memResp
   wbu.io.memResp <> dataMemBus.io.memResp
   dcache.io.queryIndex := exu.io.dcache.queryIndex
   dcache.io.queryTag   := exu.io.dcache.queryTag

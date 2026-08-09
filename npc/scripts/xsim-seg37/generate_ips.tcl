@@ -13,6 +13,7 @@ set ip_names [list \
   blk_mem_gen_2KB \
   blk_mem_gen_dram \
   blk_mem_gen_irom \
+  jyd_async_byte_fifo_ip \
   jyd_axi_clock_converter \
   jyd_axi_uartlite \
   dist_mem_gen_32x32 \

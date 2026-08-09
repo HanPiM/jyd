@@ -56,7 +56,8 @@ if [ -z "$ip_project" ]; then
   echo "Could not locate generated IP simulation products; see $work_dir/generate-ips.log" >&2
   exit 1
 fi
-mapfile -t ip_verilog < <(find "$work_dir" -type f -path '*/sim/*.v' -print | sort)
+mapfile -t ip_verilog < <(find "$work_dir" -type f \
+  \( -path '*/hdl/*.v' -o -path '*/sim/*.v' -o -path '*/simulation/*.v' \) -print | sort)
 mapfile -t ip_vhdl < <(find "$work_dir" -type f -path '*/sim/*.vhd' -print | sort)
 mapfile -t rtl_sources < <(find "$repo_root/npc/build/pack-fpga" -type f \( -name '*.v' -o -name '*.sv' \) -print | sort)
 

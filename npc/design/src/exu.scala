@@ -326,16 +326,17 @@ class EXU(
   // val isLessThan = dinst.info.isLessThan
   // val isLessThanU = dinst.info.isLessThanU
 
-  val takeBranch = Mux1H(
+  val isEqualityBranch = dinst.info.is_beq || dinst.info.is_bne
+  val equalityBranchTaken = isEqual ^ dinst.info.is_bne
+  val orderedBranchTaken = Mux1H(
     Seq(
-      dinst.info.is_beq  -> isEqual,
-      dinst.info.is_bne  -> !isEqual,
       dinst.info.is_blt  -> isLessThan,
       dinst.info.is_bge  -> !isLessThan,
       dinst.info.is_bltu -> isLessThanU,
       dinst.info.is_bgeu -> !isLessThanU
     )
   )
+  val takeBranch = Mux(isEqualityBranch, equalityBranchTaken, orderedBranchTaken)
 
   // --- LSU input ---
   val lsuInfo = io.out.bits

@@ -392,10 +392,12 @@ class CPUCore(
   idu.io.csrJmpTarget.mtvec := csrs.io.mtvec
 
   val lsuFwdInfo = ExtractFwdInfoFromLSU(lsu.io.in)
+  val lsuLateLoadData =
+    ExtLoadData(lsu.io.in.bits.lateLoadData, lsu.io.in.bits.destAddr(1, 0), lsu.io.in.bits.func3t)
   val dcacheFwdInfo = Wire(new DCacheForwardInfo)
   dcacheFwdInfo.valid := lsu.io.in.valid && lsu.io.in.bits.cacheableLoad && lsu.io.in.bits.dcacheHit
   dcacheFwdInfo.addr  := lsu.io.in.bits.exuWriteBack.gpr.addr
-  dcacheFwdInfo.data  := lsu.io.in.bits.lateLoadData
+  dcacheFwdInfo.data  := lsuLateLoadData
   val wbuRawFwdInfo = Wire(new Reg1AddImmWbuRawInfo)
   wbuRawFwdInfo.dataValid := wbu.io.in.valid && !wbu.io.in.bits.isLoad
   wbuRawFwdInfo.data      := wbu.io.in.bits.gpr.data(21, 0)
@@ -416,10 +418,9 @@ class CPUCore(
   exu.io.lateLoadLSU.valid := lateLoadLSUValid
   exu.io.lateLoadLSU.dataValid :=
     lateLoadLSUValid && lsu.io.in.bits.cacheableLoad && lsu.io.in.bits.dcacheHit
-  // lateLoadData was selected and extended from the asynchronous shadow in C0,
-  // then crossed the existing EXU-to-LSU pipeline register. Do not reconnect
-  // the C1 consumer directly to either shadow output or synchronous BRAM.
-  exu.io.lateLoadLSU.data := lsu.io.in.bits.lateLoadData
+  // The asynchronous shadow crossed the EXU-to-LSU pipeline register as raw
+  // data; extend it from the registered address/width metadata in C1.
+  exu.io.lateLoadLSU.data := lsuLateLoadData
 
   val lateLoadWBUWidthSupported =
     wbu.io.in.bits.lsuFunc3t === "b000".U || wbu.io.in.bits.lsuFunc3t === "b001".U ||

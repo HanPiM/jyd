@@ -344,10 +344,11 @@ class EXU(
   lsuInfo.cacheableLoad :=
     isTypLoad && supportedLoadWidth && loadAddressAligned && reg1AddImm(21, 20) === "b01".U
   lsuInfo.dcacheHit := lsuInfo.cacheableLoad && io.dcache.hit
-  // Select and extend the asynchronous shadow result before the existing
-  // EXU-to-LSU payload register. A miss ignores it and retains the normal
-  // WBU/memory-response path.
-  lsuInfo.lateLoadData := ExtLoadData(io.dcache.lateReadData, reg1AddImm(1, 0), func3t)
+  // Capture the asynchronous shadow result without sign extension. Extending
+  // byte/half loads before this register lets synthesis map the replicated
+  // sign bit onto slow synchronous-set pins; registered offset/width metadata
+  // performs the extension in C1 instead.
+  lsuInfo.lateLoadData := io.dcache.lateReadData
   lsuInfo.dcacheStoreEpoch := io.dcache.storeEpoch
 
   val snpc = dinst.info.staticNextPCOrCSRTarget

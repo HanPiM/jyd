@@ -449,14 +449,13 @@ class IDU(
 
   // res.snpc       := io.in.bits.pc + 4.U
   res.pcAddImm := io.in.bits.pc + res.imm
-  // CoreMark data occupies 0x8010_0000-0x8010_ffff.  Its only required
-  // cross-window address formation is an AUIPC base in 0x800f_fxxx plus a
-  // positive load/store offset.  JYD peripherals do not use that 0xff page
-  // crossing, so keep their upper address bits and special-case this carry.
+  // Keep the common address path narrow while preserving the two 64 KiB
+  // crossings used by CoreMark data and the JYD peripheral window.
   def addAddrImm(base: UInt): UInt = {
     val lowSum = base(15, 0) +& addrImm(15, 0)
     val crossesIntoDram = !addrImm(15) && base(19, 12) === "hff".U && lowSum(16)
-    val high = Mux(crossesIntoDram, "h10".U(6.W), base(21, 16))
+    val crossesIntoPerip = !addrImm(15) && base(20, 12) === "h1ff".U && lowSum(16)
+    val high = Mux(crossesIntoPerip, "h20".U(6.W), Mux(crossesIntoDram, "h10".U(6.W), base(21, 16)))
     high ## lowSum(15, 0)
   }
 

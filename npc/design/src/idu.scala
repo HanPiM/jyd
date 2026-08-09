@@ -446,8 +446,18 @@ class IDU(
   // sign-extended, so the upper six bits only need the low-add carry minus
   // the immediate sign bit.
   def addAddrImm(base: UInt): UInt = {
-    val lowSum = base(15, 0) +& addrImm(15, 0)
-    val high   = base(21, 16) + lowSum(16) - addrImm(15)
+    val lowSum    = base(15, 0) +& addrImm(15, 0)
+    val highBase  = base(21, 16)
+    val highInc   = highBase + 1.U
+    val highDec   = highBase - 1.U
+    dontTouch(highInc)
+    dontTouch(highDec)
+    val high = MuxLookup(Cat(addrImm(15), lowSum(16)), highBase)(
+      Seq(
+        "b01".U -> highInc,
+        "b10".U -> highDec
+      )
+    )
     high ## lowSum(15, 0)
   }
 

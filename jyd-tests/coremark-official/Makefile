@@ -12,6 +12,7 @@ ENABLE_LTO ?= 0
 PSEUDO_FLOAT ?= 1
 COREMARK_OPT ?= -Os
 COREMARK_CRC_ACCEL ?= none
+COREMARK_ACCELS ?=
 
 COREMARK_CRC_ACCEL_MODES := none u8 native
 ifeq ($(filter $(COREMARK_CRC_ACCEL),$(COREMARK_CRC_ACCEL_MODES)),)
@@ -22,7 +23,7 @@ empty :=
 space := $(empty) $(empty)
 comma := ,
 sanitize = $(subst $(space),_,$(subst /,_,$(subst :,_,$(subst =,_,$(subst ',_,$(1))))))
-COREMARK_CONFIG_ID = iter$(ITERATIONS)-data$(TOTAL_DATA_SIZE)-z$(call sanitize,$(if $(strip $(RISCV_ZEXTS)),$(RISCV_ZEXTS),none))-c$(call sanitize,$(if $(strip $(EXTRA_CFLAGS)),$(EXTRA_CFLAGS),default))-lto$(ENABLE_LTO)-pf$(PSEUDO_FLOAT)-crc$(COREMARK_CRC_ACCEL)
+COREMARK_CONFIG_ID = iter$(ITERATIONS)-data$(TOTAL_DATA_SIZE)-z$(call sanitize,$(if $(strip $(RISCV_ZEXTS)),$(RISCV_ZEXTS),none))-c$(call sanitize,$(if $(strip $(EXTRA_CFLAGS)),$(EXTRA_CFLAGS),default))-lto$(ENABLE_LTO)-pf$(PSEUDO_FLOAT)-crc$(COREMARK_CRC_ACCEL)-xa$(call sanitize,$(if $(strip $(COREMARK_ACCELS)),$(COREMARK_ACCELS),none))
 BUILD_DIR ?= build/$(COREMARK_CONFIG_ID)
 LIB_BUILD_DIR_softfloat = build/$(ARCH)-z$(call sanitize,$(if $(strip $(RISCV_ZEXTS)),$(RISCV_ZEXTS),none))
 
@@ -53,6 +54,25 @@ CFLAGS += -Os
 COREMARK_BENCH_OBJS = $(addprefix $(DST_DIR)/, $(addsuffix .o, $(basename $(COREMARK_BENCH_SRCS))))
 $(COREMARK_BENCH_OBJS): CFLAGS += $(COREMARK_OPT)
 
+ifneq ($(strip $(COREMARK_ACCELS)),)
+HOST_CXX ?= g++
+GCC_PLUGIN_DIR := $(shell $(CC) -print-file-name=plugin)
+GCC_PLUGIN_GMP_INCLUDE ?= /home/hanpi/jyd-vivado-projs/jyd-vivado-proj-regional/digital_twin.gen/sources_1/ip/fp_add_sub_test/cmodel/floating_point_v7_1_bitacc_cmodel_lin64
+COREMARK_ACCEL_PLUGIN := $(CURDIR)/build/tools/coremark_accel_plugin.so
+
+$(COREMARK_ACCEL_PLUGIN): accel/coremark_accel_plugin.cc
+	@mkdir -p $(dir $@)
+	$(HOST_CXX) -std=gnu++17 -fPIC -shared -fno-rtti -fno-exceptions \
+		-I$(GCC_PLUGIN_DIR)/include \
+		-I$(GCC_PLUGIN_GMP_INCLUDE) \
+		-o $@ $<
+
+$(COREMARK_BENCH_OBJS): $(COREMARK_ACCEL_PLUGIN)
+$(COREMARK_BENCH_OBJS): CFLAGS += -fplugin=$(COREMARK_ACCEL_PLUGIN) \
+	-fplugin-arg-coremark_accel_plugin-accels=$(COREMARK_ACCELS) \
+	-include $(CURDIR)/accel/coremark_accel.c
+endif
+
 ifneq ($(COREMARK_CRC_ACCEL),none)
 COREMARK_CRC_CALLER_OBJS = $(addprefix $(DST_DIR)/, $(addsuffix .o, $(basename $(COREMARK_CRC_CALLER_SRCS))))
 $(COREMARK_CRC_CALLER_OBJS): CFLAGS += -include $(CURDIR)/src/coremark_crc_hw.h
@@ -78,7 +98,7 @@ $(IMAGE).elf: $(LINKAGE) $(LDSCRIPTS)
 endif
 
 ifndef COREMARK_COMPILER_FLAGS
-COREMARK_COMPILER_FLAGS := $(strip $(filter -O%,$(CFLAGS)) $(filter -march=% -mabi=%,$(COMMON_CFLAGS)) $(EXTRA_CFLAGS) COREMARK_CRC_ACCEL=$(COREMARK_CRC_ACCEL))
+COREMARK_COMPILER_FLAGS := $(strip $(filter -O%,$(CFLAGS)) $(filter -march=% -mabi=%,$(COMMON_CFLAGS)) $(EXTRA_CFLAGS) COREMARK_CRC_ACCEL=$(COREMARK_CRC_ACCEL) COREMARK_ACCELS=$(if $(COREMARK_ACCELS),$(COREMARK_ACCELS),none))
 endif
 escape_spaces = $(subst $(space),\ ,$(1))
 
@@ -86,3 +106,7 @@ CFLAGS += -DITERATIONS=$(ITERATIONS) -DTOTAL_DATA_SIZE=$(TOTAL_DATA_SIZE)
 CFLAGS += -DCOREMARK_PSEUDO_FLOAT=$(PSEUDO_FLOAT)
 CFLAGS += -DCOMPILER_FLAGS=\"$(call escape_spaces,$(COREMARK_COMPILER_FLAGS))\"
 CFLAGS += $(EXTRA_CFLAGS)
+
+.PHONY: audit-accel
+audit-accel: $(IMAGE).elf
+	python3 accel/audit_accel_elf.py --elf $< --accels '$(COREMARK_ACCELS)'

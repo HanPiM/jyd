@@ -1,0 +1,60 @@
+#!/usr/bin/env python3
+import argparse
+import subprocess
+
+
+ENCODINGS = {
+    "xmac16": 0x0000300B,
+    "xdot16": 0x0000400B,
+    "xbmul": 0x0000500B,
+    "xlrev": 0x0000700B,
+    "xstate": 0x0200700B,
+    "xmsum": 0x0400700B,
+}
+MASK = 0xFE00707F
+
+
+def output(*args):
+    return subprocess.run(args, check=True, text=True, stdout=subprocess.PIPE).stdout
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Audit inlined CoreMark custom instructions")
+    parser.add_argument("--elf", required=True)
+    parser.add_argument("--accels", default="")
+    args = parser.parse_args()
+
+    enabled = [name for name in args.accels.split(",") if name]
+    unknown = sorted(set(enabled) - ENCODINGS.keys())
+    if unknown:
+        parser.error("unknown accelerators: " + ", ".join(unknown))
+
+    symbols = output("riscv64-linux-gnu-nm", args.elf)
+    wrappers = [line for line in symbols.splitlines() if "__cm_" in line]
+    if wrappers:
+        raise SystemExit("wrapper symbols survived final link:\n" + "\n".join(wrappers))
+
+    disassembly = output("riscv64-linux-gnu-objdump", "-d", args.elf)
+    counts = dict.fromkeys(enabled, 0)
+    for line in disassembly.splitlines():
+        fields = line.split()
+        if len(fields) < 2 or len(fields[1]) != 8:
+            continue
+        try:
+            instruction = int(fields[1], 16)
+        except ValueError:
+            continue
+        for name in enabled:
+            if instruction & MASK == ENCODINGS[name]:
+                counts[name] += 1
+
+    missing = [name for name, count in counts.items() if count == 0]
+    if missing:
+        raise SystemExit("enabled instructions absent from final ELF: " + ", ".join(missing))
+    print("no __cm_ wrapper symbols or calls remain")
+    for name, count in counts.items():
+        print(f"{name}: {count} static instruction site(s)")
+
+
+if __name__ == "__main__":
+    main()

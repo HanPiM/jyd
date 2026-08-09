@@ -63,7 +63,8 @@ SRCS := $(wildcard $(ROOT_DIR)/src/*.c) \
         $(COREMARK_BENCH_SRCS) \
         $(COREMARK_SUPPORT_SRCS)
 
-INC_PATH += $(ROOT_DIR)/include $(NANO_DIR)/include $(NANO_DIR)/components/finsh \
+INC_PATH += $(ROOT_DIR)/include $(JYD_HOME)/abstract-machine/am/include \
+            $(NANO_DIR)/include $(NANO_DIR)/components/finsh \
             $(COREMARK_BENCH_DIR) $(COREMARK_PORT_DIR)
 CFLAGS += -DHAVE_CCONFIG_H -D__RTTHREAD__ -DCOREMARK_ENABLE=$(COREMARK_ENABLE) \
           $(COREMARK_CFLAGS) -Wno-nonnull-compare

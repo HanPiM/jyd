@@ -442,12 +442,14 @@ class IDU(
 
   // res.snpc       := io.in.bits.pc + 4.U
   res.pcAddImm := io.in.bits.pc + res.imm
-  // Split the 22-bit address add at the 64 KiB boundary.  The immediate is
-  // sign-extended, so the upper six bits only need the low-add carry minus
-  // the immediate sign bit.
+  // CoreMark data occupies 0x8010_0000-0x8010_ffff.  Its only required
+  // cross-window address formation is an AUIPC base in 0x800f_fxxx plus a
+  // positive load/store offset.  JYD peripherals do not use that 0xff page
+  // crossing, so keep their upper address bits and special-case this carry.
   def addAddrImm(base: UInt): UInt = {
     val lowSum = base(15, 0) +& addrImm(15, 0)
-    val high   = base(21, 16) + lowSum(16) - addrImm(15)
+    val crossesIntoDram = !addrImm(15) && base(19, 12) === "hff".U && lowSum(16)
+    val high = Mux(crossesIntoDram, "h10".U(6.W), base(21, 16))
     high ## lowSum(15, 0)
   }
 

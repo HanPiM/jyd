@@ -376,14 +376,9 @@ class EXU(
   // ordinary arithmetic, late-load ANDI/SRLI bit result, or decode-provided
   // data (LUI/AUIPC/JAL/CSR...).
   val isLateLoadBit = isLateLoadAndi1 || isLateLoadSrli1
-  val isMultiCycleArithmetic = (!isFmtI && func7t === "b0000001".U) || isBExt
   writeBackInfo.gpr.data := Mux1H(
     Seq(
-      (isTypArithmetic && !isLateLoadBit && !isMultiCycleArithmetic && !dinst.info.aluUseSpecialResult) ->
-        alu.io.baseResult,
-      (isTypArithmetic && !isLateLoadBit && !isMultiCycleArithmetic && dinst.info.aluUseSpecialResult) ->
-        alu.io.singleCycleResult,
-      (isTypArithmetic && !isLateLoadBit && isMultiCycleArithmetic) -> aluOut,
+      (isTypArithmetic && !isLateLoadBit) -> aluOut,
       isLateLoadBit -> lateBitResult,
       !isTypArithmetic -> dinst.info.preMuxWrBackData
     )

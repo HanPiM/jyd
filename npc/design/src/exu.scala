@@ -126,7 +126,7 @@ class EXU(
       val lateReadData = Input(Types.UWord)
       val storeEpoch = Input(Bool())
       val queryIndex = Output(UInt(10.W))
-      val queryTag   = Output(UInt(7.W))
+      val queryTag   = Output(UInt(5.W))
       val storeUpdate = Output(Bool())
       val storeData   = Output(Types.UWord)
       val storeMask   = Output(UInt(4.W))
@@ -440,7 +440,7 @@ class EXU(
   val memWData = GenMemWData(reg1AddImm(1, 0), reg_v2)
 
   io.dcache.queryIndex := reg1AddImm(11, 2)
-  io.dcache.queryTag   := reg1AddImm(17, 11)
+  io.dcache.queryTag   := reg1AddImm(15, 11)
   val cacheableStore = isTypStore && reg1AddImm(21, 20) === "b01".U
   val cacheableStoreFire = memReqFire && cacheableStore
   // DCache resolves a narrow-store hit locally. Keep its asynchronous tag

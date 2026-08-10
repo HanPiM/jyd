@@ -65,14 +65,17 @@ class DCache extends Module {
   // invalid. Every store writes the tag port unconditionally, so the async hit
   // only drives the valid data bit instead of the RAM write enable.
   val updateTagData = Cat(io.updateAddr(17, 11), io.updateValid)
-  val storeTagValid = io.storeFull || io.hit
-  val storeTagData  = Cat(io.queryTag, storeTagValid)
   val tagWrite      = io.storeUpdate || io.update
   val tagWriteIndex = Mux(io.storeUpdate, io.queryIndex, io.updateAddr(11, 2))
   val tagWriteBank  = tagWriteIndex(9)
   val tagWriteAddr  = tagWriteIndex(8, 0)
-  val tagWriteData  = Mux(io.storeUpdate, storeTagData, updateTagData)
   tagMem.zipWithIndex.foreach { case (bank, index) =>
+    // Resolve a narrow store's hit against this bank directly.  Going through
+    // io.hit would mux both asynchronous tag outputs before routing the result
+    // back to the selected tag RAM write port.
+    val localStoreHit = bank.io.dpo(0) && bank.io.dpo(7, 1) === io.queryTag
+    val storeTagData  = Cat(io.queryTag, io.storeFull || localStoreHit)
+    val tagWriteData  = Mux(io.storeUpdate, storeTagData, updateTagData)
     bank.io.clk := clock
     bank.io.we  := tagWrite && tagWriteBank === index.U
     bank.io.a   := tagWriteAddr

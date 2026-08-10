@@ -25,9 +25,9 @@ class CoremarkXstate extends Module {
   })
 
   object State extends ChiselEnum {
-    val idle, pointerLookup, pointerLookupResponse, pointerReadRequest, pointerReadResponse,
-      wordLookup, wordLookupResponse, wordReadRequest, wordReadResponse, parse,
-      flushScan, counterLookup, counterLookupResponse, counterReadRequest, counterReadResponse,
+    val idle, pointerReadRequest, pointerReadResponse,
+      wordReadRequest, wordReadResponse, parse,
+      flushScan, counterReadRequest, counterReadResponse,
       counterStoreRequest, counterStoreResponse,
       pointerStoreRequest, pointerStoreResponse, done = Value
   }
@@ -36,7 +36,6 @@ class CoremarkXstate extends Module {
   val instrAddr   = Reg(Types.UWord)
   val countsAddr  = Reg(Types.UWord)
   val strAddr     = Reg(Types.UWord)
-  val wordAddr    = Reg(Types.UWord)
   val wordData    = Reg(Types.UWord)
   val queryAddr   = Reg(Types.UWord)
   val parserState = RegInit(0.U(3.W))
@@ -47,8 +46,6 @@ class CoremarkXstate extends Module {
   val storeAddr   = Reg(Types.UWord)
   val storeData   = Reg(Types.UWord)
   val result      = Reg(Types.UWord)
-  val lookupHit   = Reg(Bool())
-  val lookupData  = Reg(Types.UWord)
 
   val cacheStoreValid = RegInit(false.B)
 
@@ -76,14 +73,13 @@ class CoremarkXstate extends Module {
   val selectedByte = MuxLookup(strAddr(1, 0), wordData(7, 0))(
     Seq(0.U -> wordData(7, 0), 1.U -> wordData(15, 8), 2.U -> wordData(23, 16), 3.U -> wordData(31, 24))
   )
-  val isDigit = selectedByte >= '0'.U && selectedByte <= '9'.U
+  val isDigit = selectedByte(7, 4) === 3.U && selectedByte(3, 0) <= 9.U
   val isSign  = selectedByte === '+'.U || selectedByte === '-'.U
 
-  def startWordLookup(addr: UInt): Unit = {
+  def startWordRead(addr: UInt): Unit = {
     val aligned = addr & "hfffffffc".U
     queryAddr := aligned
-    wordAddr  := aligned
-    state     := State.wordLookup
+    state     := State.wordReadRequest
   }
 
   def advanceOrFlush(nextParserState: UInt): Unit = {
@@ -93,10 +89,10 @@ class CoremarkXstate extends Module {
     when(nextParserState === 1.U) {
       flushIndex := 0.U
       state      := State.flushScan
-    }.elsewhen((nextAddr & "hfffffffc".U) === wordAddr) {
+    }.elsewhen(strAddr(1, 0) =/= 3.U) {
       state := State.parse
     }.otherwise {
-      startWordLookup(nextAddr)
+      startWordRead(nextAddr)
     }
   }
 
@@ -109,20 +105,7 @@ class CoremarkXstate extends Module {
         flushIndex  := 0.U
         deltas.foreach(_ := false.B)
         queryAddr := io.instrAddr
-        state     := State.pointerLookup
-      }
-    }
-    is(State.pointerLookup) {
-      lookupHit  := io.cacheHit
-      lookupData := io.cacheData
-      state      := State.pointerLookupResponse
-    }
-    is(State.pointerLookupResponse) {
-      when(lookupHit) {
-        strAddr := lookupData
-        startWordLookup(lookupData)
-      }.otherwise {
-        state := State.pointerReadRequest
+        state     := State.pointerReadRequest
       }
     }
     is(State.pointerReadRequest) {
@@ -131,20 +114,7 @@ class CoremarkXstate extends Module {
     is(State.pointerReadResponse) {
       when(io.memResp.valid) {
         strAddr := io.memResp.bits
-        startWordLookup(io.memResp.bits)
-      }
-    }
-    is(State.wordLookup) {
-      lookupHit  := io.cacheHit
-      lookupData := io.cacheData
-      state      := State.wordLookupResponse
-    }
-    is(State.wordLookupResponse) {
-      when(lookupHit) {
-        wordData := lookupData
-        state    := State.parse
-      }.otherwise {
-        state := State.wordReadRequest
+        startWordRead(io.memResp.bits)
       }
     }
     is(State.wordReadRequest) {
@@ -235,21 +205,8 @@ class CoremarkXstate extends Module {
         }
       }.otherwise {
         queryAddr := countsAddr + (flushIndex << 2)
-        state     := State.counterLookup
-      }
-    }
-    is(State.counterLookup) {
-      storeAddr  := queryAddr
-      lookupHit  := io.cacheHit
-      lookupData := io.cacheData
-      state      := State.counterLookupResponse
-    }
-    is(State.counterLookupResponse) {
-      when(lookupHit) {
-        storeData := lookupData + 1.U
-        state     := State.counterStoreRequest
-      }.otherwise {
-        state := State.counterReadRequest
+        storeAddr := countsAddr + (flushIndex << 2)
+        state     := State.counterReadRequest
       }
     }
     is(State.counterReadRequest) {

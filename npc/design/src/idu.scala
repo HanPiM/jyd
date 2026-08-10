@@ -399,7 +399,7 @@ class IDU(
   val isBXperm4 = !isFmtI && arithmeticFunc7 === "b0010100".U && arithmeticFunc3 === "b010".U
   val isBRor = arithmeticFunc7 === "b0110000".U && arithmeticFunc3 === "b101".U
   val isIterativeB = isBCount || isBClmul || isBOrcB || isBXperm4 || isBRor
-  val usesMultiplierOperandUnit = isTypArithmetic && isMExtArithmetic
+  val usesMultiplierOperandUnit = isTypArithmetic && isMExtArithmetic && !arithmeticFunc3(2)
   val usesBExtensionOperandUnit = isTypArithmetic && isIterativeB
   res.prevExuFwdRs1 :=
     bypassMux.io.prevExuFwdRs1 && !usesMultiplierOperandUnit && !usesBExtensionOperandUnit

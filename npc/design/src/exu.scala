@@ -145,6 +145,7 @@ class EXU(
   val xlrevState   = RegInit(XlrevState.idle)
   val xlrevCurrent = Reg(Types.UWord)
   val xlrevPrevious = Reg(Types.UWord)
+  val xlrevChainPrevious = Reg(Types.UWord)
   val xlrevNext    = Reg(Types.UWord)
   val xaccelResult = Reg(Types.UWord)
   // xlrev mutates memory behind the cache. Once it has run, bypass cached
@@ -153,6 +154,7 @@ class EXU(
   val dcachePoisonedByXlrev = RegInit(false.B)
   val isXlrev      = dinst.info.xlrevValid
   val isXlrevSingle = isXlrev && func3t === 6.U
+  val isXlrevChain = isXlrevSingle && dinst.code(31, 25) === 1.U
 
   object XmsumState extends ChiselEnum {
     val idle, request, response, finalizeResult, done = Value
@@ -237,7 +239,6 @@ class EXU(
   val reg_v2       = postRegisterRegV2
   val xlrevSingleHitStart =
     xlrevState === XlrevState.idle && io.in.valid && isXlrevSingle && reg_v1 =/= 0.U && io.dcache.hit
-  val xlrevSingleFastFire = xlrevSingleHitStart && io.memReq.ready
 
   val xstateCounters = RegInit(VecInit(Seq.fill(8)(0.U(32.W))))
   object XstateWordState extends ChiselEnum {
@@ -313,15 +314,18 @@ class EXU(
       dcachePoisonedByXlrev := true.B
     }
     xlrevCurrent  := reg_v1
-    xlrevPrevious := Mux(isXlrevSingle, reg_v2, 0.U)
+    xlrevPrevious := Mux(isXlrevChain, xlrevChainPrevious, Mux(isXlrevSingle, reg_v2, 0.U))
+    when(isXlrevSingle) {
+      xlrevChainPrevious := reg_v1
+    }
     when(reg_v1 === 0.U) {
-      xaccelResult := 0.U
+      xaccelResult := Mux(isXlrevChain, xlrevChainPrevious, 0.U)
       xlrevState  := XlrevState.done
     }.elsewhen(isXlrevSingle && io.dcache.hit) {
       xlrevNext := io.dcache.lateReadData
       when(io.memReq.ready) {
         xaccelResult := io.dcache.lateReadData
-        xlrevState   := Mux(io.out.ready, XlrevState.idle, XlrevState.done)
+        xlrevState   := XlrevState.done
       }.otherwise {
         xlrevState := XlrevState.storeRequest
       }
@@ -580,9 +584,7 @@ class EXU(
     )
   )
   writeBackInfo.gpr.data := Mux(isXstateWord, xstateWordResult,
-    Mux(isXstate, xstate.io.result,
-      Mux(isXlrev, Mux(xlrevSingleFastFire, io.dcache.lateReadData, xaccelResult),
-        Mux(isXmsum, xaccelResult, normalWriteBackData))))
+    Mux(isXstate, xstate.io.result, Mux(isXlrev || isXmsum, xaccelResult, normalWriteBackData)))
 
   // Fill in LSU stage
   writeBackInfo.isLoad        := false.B
@@ -596,7 +598,7 @@ class EXU(
   writeBackInfo.dcacheStoreEpoch := false.B
 
   val isMemOP        = isTypLoad || isTypStore
-  val xlrevDone = isXlrev && (xlrevState === XlrevState.done || xlrevSingleFastFire)
+  val xlrevDone = isXlrev && xlrevState === XlrevState.done
   val xstateDone = isXstate && xstate.io.done
   val xmsumDone = isXmsum && xmsumState === XmsumState.done
   val xstateWordDone = isXstateWordStep && xstateWordState === XstateWordState.done
@@ -675,7 +677,7 @@ class EXU(
       Mux(xlrevRequest, xlrevCurrent, Mux(xmsumRequest, xmsumAddress, reg1AddImm))))
   normalMemReq.size  := Mux(xstateWordRequest || xlrevRequest || xmsumRequest, 2.U, func3t(1, 0))
   normalMemReq.wen   := Mux(xstateWordRequest, false.B, Mux(xlrevRequest, xlrevStoreRequest, !xmsumRequest && isTypStore))
-  normalMemReq.wdata := Mux(xlrevSingleHitStart, reg_v2,
+  normalMemReq.wdata := Mux(xlrevSingleHitStart, Mux(isXlrevChain, xlrevChainPrevious, reg_v2),
     Mux(xlrevStoreRequest, xlrevPrevious, Mux(xmsumRequest || xlrevLoadRequest, 0.U, memWData)))
   normalMemReq.wmask := Mux(xlrevStoreRequest, "b1111".U, Mux(xmsumRequest || xlrevLoadRequest, 0.U, memWMask))
   io.memReq.valid := Mux(

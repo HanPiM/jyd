@@ -271,17 +271,24 @@ __cm_xlrev(void *list)
 static inline __attribute__((always_inline, used)) void *
 __cm_xlrev1(void *list)
 {
-    void *previous = 0;
+    if (!list)
+        return 0;
+    asm volatile(".insn r 0x0b, 6, 0, %0, %0, zero"
+                 : "+r"(list)
+                 :
+                 : "memory");
     while (list)
     {
-        void *current = list;
-        asm volatile(".insn r 0x0b, 6, 0, %0, %0, %1"
+        asm volatile(".insn r 0x0b, 6, 1, %0, %0, zero"
                      : "+r"(list)
-                     : "r"(previous)
+                     :
                      : "memory");
-        previous = current;
     }
-    return previous;
+    asm volatile(".insn r 0x0b, 6, 1, %0, %0, zero"
+                 : "+r"(list)
+                 :
+                 : "memory");
+    return list;
 }
 
 static inline __attribute__((always_inline, used)) int

@@ -382,8 +382,10 @@ class IDU(
   // These consumers either complete combinationally or capture operands in
   // their execution unit on the first fire. Address and store-data consumers
   // use the same narrow post-register token rather than a wide IDU bypass.
+  val isXlrevEncoding = (inst(31, 25) === 0.U || inst(31, 25) === 1.U) &&
+    (arithmeticFunc3 === 6.U || arithmeticFunc3 === 7.U) && inst(6, 0) === "b0001011".U
   bypassMux.io.allowPrevExuFwdRs1 :=
-    (isTypArithmetic && !isMExtArithmetic) || isTypBranch || isTypSys || needReg1AddImm
+    (isTypArithmetic && !isMExtArithmetic && !isXlrevEncoding) || isTypBranch || isTypSys || needReg1AddImm
   bypassMux.io.allowPrevExuFwdRs2 := isTypArithmetic || isTypBranch || isTypStore
   res.lateLoadRs1 := bypassMux.io.lateLoadRs1
   res.lateLoadRs2 := bypassMux.io.lateLoadRs2
@@ -411,8 +413,7 @@ class IDU(
   val isBBext = arithmeticFunc7 === "b0100100".U && arithmeticFunc3 === "b101".U
   val isCoremarkCrcU8 = inst(31, 25) === 0.U && arithmeticFunc3 === 0.U && inst(6, 0) === "b0001011".U
   val isCoremarkXbmul = inst(31, 25) === 0.U && arithmeticFunc3 === 5.U && inst(6, 0) === "b0001011".U
-  val isCoremarkXlrev = (inst(31, 25) === 0.U || inst(31, 25) === 1.U) &&
-    (arithmeticFunc3 === 6.U || arithmeticFunc3 === 7.U) && inst(6, 0) === "b0001011".U
+  val isCoremarkXlrev = isXlrevEncoding
   val isCoremarkXmsum = inst(31, 25) === 2.U && arithmeticFunc3 === 7.U && inst(6, 0) === "b0001011".U
   val isCoremarkXstateWord = inst(31, 25) === 0.U && inst(6, 0) === "b1011011".U &&
     (arithmeticFunc3 === 0.U || arithmeticFunc3 === 2.U || arithmeticFunc3 === 3.U || arithmeticFunc3 === 5.U)

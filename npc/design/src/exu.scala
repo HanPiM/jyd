@@ -638,11 +638,10 @@ class EXU(
 
   val xlrevStoreRequest = xlrevState === XlrevState.storeRequest
   val xstateActive = xstate.io.busy
-  // Query the operand directly only when xlrev starts.  All later states use
-  // the captured address, keeping write-back forwarding out of the cache
-  // update path in the done cycle.
-  val xlrevQueryAddr = Mux(xlrevState === XlrevState.idle, reg_v1, xlrevCurrent)
-  val dcacheQueryAddr = Mux(isXlrevSingle, xlrevQueryAddr, reg1AddImm)
+  // xlrev's operand is held in the IDU/EXU payload for the instruction's
+  // entire residence in EXU.  Its decoder disables the previous-EXU direct
+  // bypass, so this registered value cannot create a forwarding-to-tag path.
+  val dcacheQueryAddr = Mux(isXlrevSingle, dinst.info.reg1, reg1AddImm)
   io.dcache.queryIndex := dcacheQueryAddr(11, 2)
   io.dcache.queryTag   := dcacheQueryAddr(17, 11)
   xstate.io.cacheHit  := false.B

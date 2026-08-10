@@ -61,20 +61,17 @@ class DCache extends Module {
   io.lateReadData := Mux(queryBank, lateReadData(1), lateReadData(0))
 
   // A store wins over an older WBU refill/update. Full-word stores allocate a
-  // line. A narrow hit preserves it while a narrow miss leaves the queried tag
-  // invalid. Every store writes the tag port unconditionally, so the async hit
-  // only drives the valid data bit instead of the RAM write enable.
+  // complete line. A narrow store conservatively invalidates the line: feeding
+  // the asynchronous tag lookup back into the tag RAM write data forms a long
+  // read/compare/write path, while retaining the line is only a performance
+  // optimization. The backing memory and byte-masked data write remain exact.
   val updateTagData = Cat(io.updateAddr(17, 11), io.updateValid)
   val tagWrite      = io.storeUpdate || io.update
   val tagWriteIndex = Mux(io.storeUpdate, io.queryIndex, io.updateAddr(11, 2))
   val tagWriteBank  = tagWriteIndex(9)
   val tagWriteAddr  = tagWriteIndex(8, 0)
   tagMem.zipWithIndex.foreach { case (bank, index) =>
-    // Resolve a narrow store's hit against this bank directly.  Going through
-    // io.hit would mux both asynchronous tag outputs before routing the result
-    // back to the selected tag RAM write port.
-    val localStoreHit = bank.io.dpo(0) && bank.io.dpo(7, 1) === io.queryTag
-    val storeTagData  = Cat(io.queryTag, io.storeFull || localStoreHit)
+    val storeTagData  = Cat(io.queryTag, io.storeFull)
     val tagWriteData  = Mux(io.storeUpdate, storeTagData, updateTagData)
     bank.io.clk := clock
     bank.io.we  := tagWrite && tagWriteBank === index.U

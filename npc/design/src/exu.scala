@@ -148,6 +148,7 @@ class EXU(
   val xlrevChainPrevious = Reg(Types.UWord)
   val xlrevNext    = Reg(Types.UWord)
   val xlrevResult  = Reg(Types.UWord)
+  val xlrevSingleStoreCommitted = RegInit(false.B)
   // xlrev mutates memory behind the cache. Once it has run, bypass cached
   // loads until reset instead of updating every reversed node through the
   // cache RAM write ports.
@@ -316,6 +317,7 @@ class EXU(
     // is consumed is decided by the state transition, keeping xlrevSingle out
     // of this register's timing-critical write-enable cone.
     xlrevNext := io.dcache.lateReadData
+    xlrevSingleStoreCommitted := false.B
     when(!isXlrevSingle) {
       dcachePoisonedByXlrev := true.B
     }
@@ -340,6 +342,7 @@ class EXU(
     xlrevState := XlrevState.storeRequest
   }.elsewhen(xlrevState === XlrevState.storeRequest && io.memReq.fire) {
     when(isXlrevSingle) {
+      xlrevSingleStoreCommitted := true.B
       val loopTaken = isXlrevLoop && xlrevNext =/= 0.U
       xlrevResult := Mux(isXlrevLoop && !loopTaken, xlrevCurrent, xlrevNext)
       xlrevLoopTaken := loopTaken
@@ -664,9 +667,9 @@ class EXU(
   xstate.io.cacheData := 0.U
   val cacheableStore = isTypStore && reg1AddImm(21, 20) === "b01".U
   val cacheableStoreFire = memReqFire && cacheableStore
-  val xlrevSingleCacheStore = isXlrevSingle && xlrevState === XlrevState.done && xlrevCurrent =/= 0.U
-  // DCache resolves a narrow-store hit locally. Keep its asynchronous tag
-  // lookup out of this cross-module control and every data-memory write enable.
+  val xlrevSingleCacheStore = isXlrevSingle && xlrevState === XlrevState.done && xlrevSingleStoreCommitted
+  // Keep the asynchronous tag lookup out of this cross-module control and
+  // every data-memory write enable.
   io.dcache.storeUpdate := cacheableStoreFire
   io.dcache.storeFull   := cacheableStoreFire && memWMask.andR
   io.dcache.storeData   := memWData

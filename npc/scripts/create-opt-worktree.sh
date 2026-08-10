@@ -277,8 +277,16 @@ echo "   interpreter-so sha256: $(sha256sum "$WT_DIR/nemu/build/riscv32-nemu-int
 
 # --- formal COE pair ---------------------------------------------------------
 if [[ -z "$COE_DIR" ]]; then
-  COE_DIR="$SRC/jyd-tests/coremark-official/build/iter10000-data2000-z_zba_zbb_zbc_zbs-cdefault-lto0-pf1"
+  COE_DIR="$SRC/jyd-tests/coremark-official/build/iter10000-data2000-z_zba_zbb_zbc_zbs_zbkb_zbkx-x_xbmul_xcrcu8_xmsum_xstate-cdefault-lto0-pf1"
 fi
+case "/$COE_DIR/" in
+  */iter10000-*) ;;
+  *)
+    echo "error: formal COE directory is not identified as ITERATIONS=10000: $COE_DIR" >&2
+    echo "       rebuild CoreMark with ITERATIONS=10000; iter1000 COEs are never valid board inputs" >&2
+    exit 1
+    ;;
+esac
 if [[ ! -f "$COE_DIR/coremark-official-riscv32-jyd.text.coe" || \
       ! -f "$COE_DIR/coremark-official-riscv32-jyd.data.coe" ]]; then
   echo "error: COE files missing in --coe-dir: $COE_DIR" >&2
@@ -290,12 +298,20 @@ cp "$COE_DIR/coremark-official-riscv32-jyd.text.coe" "$CUR_COE/irom.coe"
 cp "$COE_DIR/coremark-official-riscv32-jyd.data.coe" "$CUR_COE/dram.coe"
 COE_TEXT="$(sha256sum "$CUR_COE/irom.coe" | awk '{print $1}')"
 COE_DATA="$(sha256sum "$CUR_COE/dram.coe" | awk '{print $1}')"
+cat >"$CUR_COE/coremark-workload.env" <<EOF
+COREMARK_ITERATIONS=10000
+COREMARK_TOTAL_DATA_SIZE=2000
+COREMARK_SOURCE_DIR=$COE_DIR
+COREMARK_IROM_SHA256=$COE_TEXT
+COREMARK_DRAM_SHA256=$COE_DATA
+EOF
 echo "   cur_coe/irom.coe sha256: $COE_TEXT"
 echo "   cur_coe/dram.coe sha256: $COE_DATA"
+echo "   cur_coe workload: ITERATIONS=10000"
 
 if [[ "$SKIP_COE_CHECK" -eq 0 ]]; then
-  FROZEN_TEXT="c93b3f8d57fa0cc4bba2481c321f55def46ff72f6e1f703bf87fa2e2576abe36"
-  FROZEN_DATA="b4d242fa61985e8065a804c23f4a088b60bc249bccbb75031c8de1982a374165"
+  FROZEN_TEXT="4876a3eba61e19517b5917b118cc3911fd0e488c513b0b0479eec1c47e3f60a8"
+  FROZEN_DATA="3eb373d697554a4d22e44fc1fa0b6b38b0697f413e8dd3d44cfb587c10b3f62f"
   HIST_TEXT="5067088dee8da04cc366d6334f5e8dda2cd97f13679ae8d377f146d6a3e008f9"
   HIST_DATA="07b2cff9328da907f4db3510ebfb1c441f509ceae6c8c70cf3075c94a41a8254"
   if [[ "$COE_TEXT" != "$FROZEN_TEXT" || "$COE_DATA" != "$FROZEN_DATA" ]]; then

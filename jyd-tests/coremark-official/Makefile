@@ -3,7 +3,9 @@ NAME = coremark-official
 ROOT_DIR := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 JYD_HOME := $(abspath $(ROOT_DIR)/../..)
 
-ITERATIONS ?= 1000
+# Formal FPGA evaluation uses 10000 iterations.  Keep the default formal so a
+# caller that omits ITERATIONS cannot silently produce a short board image.
+ITERATIONS ?= 10000
 TOTAL_DATA_SIZE ?= 2000
 # Keep CoreMark's default ISA aligned with the current JYD CPU/FPGA baseline.
 # Callers evaluating an unextended control image can still pass RISCV_ZEXTS=.

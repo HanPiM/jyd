@@ -638,10 +638,11 @@ class EXU(
 
   val xlrevStoreRequest = xlrevState === XlrevState.storeRequest
   val xstateActive = xstate.io.busy
-  // The pipeline input remains stable while a multi-cycle instruction is in
-  // EXU, so a single-step xlrev can query reg_v1 in every state.  Keeping the
-  // state decoder out of this address cuts the async tag lookup control path.
-  val dcacheQueryAddr = Mux(isXlrevSingle, reg_v1, reg1AddImm)
+  // Query the operand directly only when xlrev starts.  All later states use
+  // the captured address, keeping write-back forwarding out of the cache
+  // update path in the done cycle.
+  val xlrevQueryAddr = Mux(xlrevState === XlrevState.idle, reg_v1, xlrevCurrent)
+  val dcacheQueryAddr = Mux(isXlrevSingle, xlrevQueryAddr, reg1AddImm)
   io.dcache.queryIndex := dcacheQueryAddr(11, 2)
   io.dcache.queryTag   := dcacheQueryAddr(17, 11)
   xstate.io.cacheHit  := false.B

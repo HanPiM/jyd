@@ -464,10 +464,10 @@ class IDU(
   // crossings used by CoreMark data and the JYD peripheral window.
   def addAddrImm(base: UInt): UInt = {
     val lowSum = base(15, 0) +& addrImm(15, 0)
-    val crossesIntoDram = !addrImm(15) && base(19, 12) === "hff".U && lowSum(16)
-    val crossesIntoPerip = !addrImm(15) && base(20, 12) === "h1ff".U && lowSum(16)
-    val high = Mux(crossesIntoPerip, "h20".U(6.W), Mux(crossesIntoDram, "h10".U(6.W), base(21, 16)))
-    high ## lowSum(15, 0)
+    val signedImmHigh = Fill(6, addrImm(15))
+    val highNoCarry = base(21, 16) + signedImmHigh
+    val highWithCarry = base(21, 16) + signedImmHigh + 1.U
+    Mux(lowSum(16), highWithCarry, highNoCarry) ## lowSum(15, 0)
   }
 
   // res.reg1AddImm := DontCare

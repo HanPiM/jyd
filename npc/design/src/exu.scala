@@ -645,8 +645,10 @@ class EXU(
 
   val xlrevStoreRequest = xlrevState === XlrevState.storeRequest || xlrevSingleHitStart
   val xstateActive = xstate.io.busy
-  val xlrevQueryAddr = Mux(xlrevState === XlrevState.idle, reg_v1, xlrevCurrent)
-  val dcacheQueryAddr = Mux(isXlrevSingle, xlrevQueryAddr, reg1AddImm)
+  // The pipeline input remains stable while a multi-cycle instruction is in
+  // EXU, so a single-step xlrev can query reg_v1 in every state.  Keeping the
+  // state decoder out of this address cuts the async tag lookup control path.
+  val dcacheQueryAddr = Mux(isXlrevSingle, reg_v1, reg1AddImm)
   io.dcache.queryIndex := dcacheQueryAddr(11, 2)
   io.dcache.queryTag   := dcacheQueryAddr(17, 11)
   xstate.io.cacheHit  := false.B
@@ -654,7 +656,9 @@ class EXU(
   val cacheableStore = isTypStore && reg1AddImm(21, 20) === "b01".U
   val cacheableStoreFire = memReqFire && cacheableStore
   val xlrevSingleStoreFire = memReqFire && isXlrevSingle && xlrevStoreRequest
-  val xlrevSingleCacheStore = RegNext(xlrevSingleStoreFire, false.B)
+  val xlrevSingleCacheStore = RegInit(false.B)
+  xlrevSingleCacheStore := xlrevSingleStoreFire
+  dontTouch(xlrevSingleCacheStore)
   // DCache resolves a narrow-store hit locally. Keep its asynchronous tag
   // lookup out of this cross-module control and every data-memory write enable.
   io.dcache.storeUpdate := cacheableStoreFire

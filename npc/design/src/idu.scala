@@ -399,11 +399,11 @@ class IDU(
   val isBXperm4 = !isFmtI && arithmeticFunc7 === "b0010100".U && arithmeticFunc3 === "b010".U
   val isBRor = arithmeticFunc7 === "b0110000".U && arithmeticFunc3 === "b101".U
   val isIterativeB = isBCount || isBClmul || isBOrcB || isBXperm4 || isBRor
-  val usesMultiCycleOperandUnit = isTypArithmetic && (isMExtArithmetic || isIterativeB)
-  res.prevExuFwdRs1 := bypassMux.io.prevExuFwdRs1 && !usesMultiCycleOperandUnit
-  res.prevExuFwdRs2 := bypassMux.io.prevExuFwdRs2 && !usesMultiCycleOperandUnit
-  res.prevExuFwdRs1MultiCycle := bypassMux.io.prevExuFwdRs1 && usesMultiCycleOperandUnit
-  res.prevExuFwdRs2MultiCycle := bypassMux.io.prevExuFwdRs2 && usesMultiCycleOperandUnit
+  val usesMultiplierOperandUnit = isTypArithmetic && isMExtArithmetic
+  res.prevExuFwdRs1 := bypassMux.io.prevExuFwdRs1 && !usesMultiplierOperandUnit
+  res.prevExuFwdRs2 := bypassMux.io.prevExuFwdRs2 && !usesMultiplierOperandUnit
+  res.prevExuFwdRs1MultiCycle := bypassMux.io.prevExuFwdRs1 && usesMultiplierOperandUnit
+  res.prevExuFwdRs2MultiCycle := bypassMux.io.prevExuFwdRs2 && usesMultiplierOperandUnit
   val isBShiftAdd = !isFmtI && arithmeticFunc7 === "b0010000".U &&
     (arithmeticFunc3 === "b010".U || arithmeticFunc3 === "b100".U || arithmeticFunc3 === "b110".U)
   val isBSext = isFmtI && arithmeticFunc7 === "b0110000".U && arithmeticFunc3 === "b001".U &&

@@ -205,6 +205,9 @@ class DecodedInstInfo(implicit p : CPUParameters) extends InstMetaInfo with HasR
   // CoreMark bit-extract multiply is a single-cycle custom-0 operation.
   val xbmulValid = Bool()
 
+  // CoreMark list reversal is a blocking multi-cycle custom operation.
+  val xlrevValid = Bool()
+
   // CoreMark state parser is a blocking multi-cycle custom operation.
   val xstateValid = Bool()
 

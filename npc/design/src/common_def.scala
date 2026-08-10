@@ -58,6 +58,7 @@ object AddrSpace {
 case class CPUParameters(
   gprAddrWidth:      Int = 4,
   enableDCache:      Boolean = false,
+  enableXlrev:       Boolean = true,
   skipDifftestAddrs: Seq[(UInt, UInt)] = AddrSpace.needSkipDifftestGroup
 ) {
   def GPRAddr = UInt(gprAddrWidth.W)

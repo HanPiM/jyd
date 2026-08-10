@@ -4,6 +4,7 @@
 
 int main(void) {
   extern void rt_hw_port_init(void);
+  extern void rt_hw_tick_poll(void);
   extern int finsh_system_init(void);
 
   ioe_init();
@@ -14,6 +15,9 @@ int main(void) {
     halt(1);
   }
   rt_thread_idle_init();
+  if (rt_thread_idle_sethook(rt_hw_tick_poll) != RT_EOK) {
+    halt(1);
+  }
   rt_system_scheduler_start();
   halt(1);
 }

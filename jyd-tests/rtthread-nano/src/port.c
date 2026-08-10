@@ -1,9 +1,17 @@
 #include <am.h>
 #include <klib.h>
 #include <rtthread.h>
+#include <stdint.h>
+
+#define JYD_COUNTER_HZ 50000000ULL
+#define JYD_CYCLES_PER_RT_TICK (JYD_COUNTER_HZ / RT_TICK_PER_SECOND)
+
+extern uint32_t CNT_REG[];
 
 static rt_ubase_t switch_from;
 static rt_ubase_t switch_to;
+static uint32_t tick_last_counter;
+static uint64_t tick_pending_cycles;
 
 typedef struct {
   void *entry;
@@ -33,6 +41,19 @@ static Context *event_handler(Event event, Context *context) {
 
 void rt_hw_port_init(void) {
   cte_init(event_handler);
+  tick_last_counter = *(volatile uint32_t *)CNT_REG;
+  tick_pending_cycles = 0;
+}
+
+void rt_hw_tick_poll(void) {
+  uint32_t current = *(volatile uint32_t *)CNT_REG;
+
+  tick_pending_cycles += (uint32_t)(current - tick_last_counter);
+  tick_last_counter = current;
+  while (tick_pending_cycles >= JYD_CYCLES_PER_RT_TICK) {
+    tick_pending_cycles -= JYD_CYCLES_PER_RT_TICK;
+    rt_tick_increase();
+  }
 }
 
 rt_base_t rt_hw_interrupt_disable(void) {
@@ -78,6 +99,7 @@ void rt_hw_console_output(const char *text) {
 }
 
 char rt_hw_console_getchar(void) {
+  rt_hw_tick_poll();
   return try_getch();
 }
 

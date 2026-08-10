@@ -430,6 +430,10 @@ class IDU(
   // payload avoids a wide IDU payload mux/self-loop on the critical path.
   res.reg1                := Mux(isTypLoad, 0.U, bypassMux.io.outData1)
   res.reg2                := Mux(isFmtI, immI, bypassMux.io.outData2) // For exu ALU src2
+  res.branchReg1          := bypassMux.io.outData1
+  res.branchReg2          := bypassMux.io.outData2
+  dontTouch(res.branchReg1)
+  dontTouch(res.branchReg2)
   res.csrReadData         := io.csrRead.data
 
   val reg1AddImmExuConflict =

@@ -552,7 +552,7 @@ class EXU(
   val memWData = GenMemWData(reg1AddImm(1, 0), reg_v2)
 
   val xlrevStoreRequest = xlrevState === XlrevState.storeRequest
-  val xstateActive = io.in.valid && isXstate
+  val xstateActive = xstate.io.busy
   val dcacheQueryAddr = Mux(
     xstate.io.cacheStore,
     xstate.io.cacheStoreAddr,

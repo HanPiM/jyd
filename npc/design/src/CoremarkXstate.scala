@@ -10,6 +10,7 @@ class CoremarkXstate extends Module {
     val instrAddr  = Input(Types.UWord)
     val countsAddr = Input(Types.UWord)
     val done       = Output(Bool())
+    val busy       = Output(Bool())
     val result     = Output(Types.UWord)
 
     val memReq  = Decoupled(new MemReq)
@@ -52,6 +53,7 @@ class CoremarkXstate extends Module {
   val cacheStoreData  = Reg(Types.UWord)
 
   io.done   := state === State.done
+  io.busy   := state =/= State.idle
   io.result := result
   io.cacheQueryAddr := queryAddr
   io.cacheStore     := cacheStoreValid

@@ -325,7 +325,6 @@ class EXU(
       xlrevState  := XlrevState.done
     }.elsewhen(isXlrevSingle && io.dcache.hit) {
       xlrevNext := io.dcache.lateReadData
-      xlrevLoopTaken := isXlrevLoop && io.dcache.lateReadData =/= 0.U
       xlrevState := XlrevState.storeRequest
     }.otherwise {
       xlrevState := XlrevState.loadRequest
@@ -334,11 +333,12 @@ class EXU(
     xlrevState := XlrevState.loadResponse
   }.elsewhen(xlrevState === XlrevState.loadResponse && io.memResp.valid) {
     xlrevNext  := io.memResp.bits
-    xlrevLoopTaken := isXlrevLoop && io.memResp.bits =/= 0.U
     xlrevState := XlrevState.storeRequest
   }.elsewhen(xlrevState === XlrevState.storeRequest && io.memReq.fire) {
     when(isXlrevSingle) {
-      xaccelResult := Mux(isXlrevLoop && !xlrevLoopTaken, xlrevCurrent, xlrevNext)
+      val loopTaken = isXlrevLoop && xlrevNext =/= 0.U
+      xaccelResult := Mux(isXlrevLoop && !loopTaken, xlrevCurrent, xlrevNext)
+      xlrevLoopTaken := loopTaken
       xlrevState   := XlrevState.done
     }.otherwise {
       xlrevState := XlrevState.storeResponse

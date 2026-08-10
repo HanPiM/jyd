@@ -129,7 +129,6 @@ class EXU(
       val queryTag   = Output(UInt(5.W))
       val storeUpdate = Output(Bool())
       val storeFull   = Output(Bool())
-      val storeAddr   = Output(Types.UWord)
       val storeData   = Output(Types.UWord)
       val storeMask   = Output(UInt(4.W))
       val fullUpdate     = Output(Bool())
@@ -586,8 +585,13 @@ class EXU(
 
   val xlrevStoreRequest = xlrevState === XlrevState.storeRequest
   val xstateActive = xstate.io.busy
-  io.dcache.queryIndex := reg1AddImm(11, 2)
-  io.dcache.queryTag   := reg1AddImm(15, 11)
+  val dcacheQueryAddr = Mux(
+    xlrevCacheStoreValid,
+    xlrevCacheStoreAddr,
+    reg1AddImm
+  )
+  io.dcache.queryIndex := dcacheQueryAddr(11, 2)
+  io.dcache.queryTag   := dcacheQueryAddr(15, 11)
   xstate.io.cacheHit  := false.B
   xstate.io.cacheData := 0.U
   val cacheableStore = isTypStore && reg1AddImm(21, 20) === "b01".U
@@ -602,7 +606,6 @@ class EXU(
   // lookup out of this cross-module control and every data-memory write enable.
   io.dcache.storeUpdate := cacheableStoreFire || xlrevCacheStoreValid
   io.dcache.storeFull   := xlrevCacheStoreValid || (cacheableStoreFire && memWMask.andR)
-  io.dcache.storeAddr   := Mux(xlrevCacheStoreValid, xlrevCacheStoreAddr, reg1AddImm)
   io.dcache.storeData   := Mux(xlrevCacheStoreValid, xlrevCacheStoreData, memWData)
   io.dcache.storeMask   := Mux(xlrevCacheStoreValid, "b1111".U, memWMask)
   io.dcache.fullUpdate     := xstate.io.cacheStore

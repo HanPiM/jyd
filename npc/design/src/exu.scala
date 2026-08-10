@@ -164,10 +164,12 @@ class EXU(
   val isAdd = isTypArithmetic && func3t === 0.U && (isFmtI || func7t === 0.U)
 
   alu.io.in.valid :=
-    io.in.valid && isTypArithmetic && !dinst.info.xlrevValid && !dinst.info.xstateValid && !dinst.info.xmsumValid
+    io.in.valid && isTypArithmetic && !dinst.info.xlrevValid && !dinst.info.xstateValid && !dinst.info.xmsumValid &&
+      !dinst.info.xstateWordValid
 
   val xstate = Module(new CoremarkXstate)
   val isXstate = dinst.info.xstateValid
+  val isXstateWord = dinst.info.xstateWordValid
 
   object XlrevState extends ChiselEnum {
     val idle, loadRequest, loadResponse, storeRequest, storeResponse, done = Value
@@ -262,6 +264,52 @@ class EXU(
   )
   val reg_v1       = postRegisterRegV1
   val reg_v2       = postRegisterRegV2
+
+  val xstateCounters = RegInit(VecInit(Seq.fill(8)(0.U(32.W))))
+  object XstateWordState extends ChiselEnum {
+    val idle, request, response, process, done = Value
+  }
+  val xstateWordState = RegInit(XstateWordState.idle)
+  val xstateWordStartState = Reg(UInt(3.W))
+  val xstateWordAddress = Reg(Types.UWord)
+  val xstateWordStepResult = Reg(Types.UWord)
+  val xstateWordResponseData = Reg(Types.UWord)
+  val isXstateWordStep = isXstateWord && func3t === 5.U
+  val xstateWordOffset = xstateWordAddress(1, 0)
+  val xstateWord4 = Module(new CoremarkXstate4)
+  val xstateWord4ShiftedData = xstateWordResponseData >> (xstateWordOffset << 3)
+  xstateWord4.io.state := xstateWordStartState
+  xstateWord4.io.symbols := xstateWord4ShiftedData
+  xstateWord4.io.available := 4.U - xstateWordOffset
+  val xstateCounterRead = xstateCounters(reg_v1(2, 0))
+  val xstateWordResult = Mux(func3t === 2.U, xstateCounterRead, Mux(isXstateWordStep, xstateWordStepResult, 0.U))
+
+  when(xstateWordState === XstateWordState.idle && io.in.valid && isXstateWordStep) {
+    xstateWordStartState := reg_v1(2, 0)
+    xstateWordAddress := reg_v2
+    xstateWordState := XstateWordState.request
+  }.elsewhen(xstateWordState === XstateWordState.request && io.memReq.fire) {
+    xstateWordState := XstateWordState.response
+  }.elsewhen(xstateWordState === XstateWordState.response && io.memResp.valid) {
+    xstateWordResponseData := io.memResp.bits
+    xstateWordState := XstateWordState.process
+  }.elsewhen(xstateWordState === XstateWordState.process) {
+    xstateWordStepResult := xstateWord4.io.result
+    xstateWordState := XstateWordState.done
+  }.elsewhen(xstateWordState === XstateWordState.done && io.out.fire) {
+    xstateWordState := XstateWordState.idle
+  }
+
+  when(io.in.fire && isXstateWord && func3t === 0.U) {
+    xstateCounters.foreach(_ := 0.U)
+  }
+  when(io.in.fire && isXstateWord && func3t === 3.U) {
+    for (state <- 0 until 8) {
+      when(reg_v1(state)) {
+        xstateCounters(state) := xstateCounters(state) + 1.U
+      }
+    }
+  }
 
   xstate.io.start      := io.in.valid && isXstate
   xstate.io.instrAddr  := reg_v1
@@ -512,7 +560,8 @@ class EXU(
       !isTypArithmetic -> dinst.info.preMuxWrBackData
     )
   )
-  writeBackInfo.gpr.data := Mux(isXstate, xstate.io.result, Mux(isXlrev || isXmsum, xaccelResult, normalWriteBackData))
+  writeBackInfo.gpr.data := Mux(isXstateWord, xstateWordResult,
+    Mux(isXstate, xstate.io.result, Mux(isXlrev || isXmsum, xaccelResult, normalWriteBackData)))
 
   // Fill in LSU stage
   writeBackInfo.isLoad        := false.B
@@ -529,17 +578,21 @@ class EXU(
   val xlrevDone = isXlrev && xlrevState === XlrevState.done
   val xstateDone = isXstate && xstate.io.done
   val xmsumDone = isXmsum && xmsumState === XmsumState.done
+  val xstateWordDone = isXstateWordStep && xstateWordState === XstateWordState.done
   val exuResultValid =
-    Mux(isXstate, xstateDone, Mux(isXlrev, xlrevDone, Mux(isXmsum, xmsumDone, (!isTypArithmetic || alu.io.out.valid) && (!hasLateLoadOperand || lateDataReady))))
+    Mux(isXstateWordStep, xstateWordDone,
+      Mux(isXstate, xstateDone, Mux(isXlrev, xlrevDone, Mux(isXmsum, xmsumDone,
+        (!isTypArithmetic || isXstateWord || alu.io.out.valid) && (!hasLateLoadOperand || lateDataReady)))))
   // Keep the same-cycle forwarding loop independent of the multi-cycle M/D/B
   // result mux.  A multi-cycle producer still advertises its destination while it is
   // in EXU, but its data remains unavailable to IDU; a dependent consumer
   // waits one cycle and receives the registered result from LSU instead.
   val isMExt = !isFmtI && func7t === "b0000001".U
   val useSingleCycleForward =
-    isTypArithmetic && !isMExt && !isBExt && !isXlrev && !isXstate && !isXmsum && !hasLateLoadOperand
+    isTypArithmetic && !isMExt && !isBExt && !isXlrev && !isXstate && !isXmsum && !isXstateWordStep &&
+      !hasLateLoadOperand
   val useLateBitForward = (isLateLoadAndi1 || isLateLoadSrli1) && exuResultValid && lateDataReadyFromLSU
-  val exuForwardData = Mux(
+  val regularExuForwardData = Mux(
     useLateBitForward,
     lateBitForwardResult,
     Mux(
@@ -548,6 +601,7 @@ class EXU(
       dinst.info.preMuxWrBackData
     )
   )
+  val exuForwardData = Mux(isXstateWord, xstateWordResult, regularExuForwardData)
   val exuForwardDataValid =
     (!isMemOP && !hasLateLoadOperand && (!isTypArithmetic || useSingleCycleForward)) || useLateBitForward
   io.fwd := WrBackForwardInfo(io.in.valid, dinst, exuForwardDataValid, exuForwardData, csrWrEnable)
@@ -596,17 +650,19 @@ class EXU(
   val xlrevLoadRequest = xlrevState === XlrevState.loadRequest
   val xlrevRequest = xlrevLoadRequest || xlrevStoreRequest
   val xmsumRequest = xmsumState === XmsumState.request
+  val xstateWordRequest = xstateWordState === XstateWordState.request
   xstate.io.memReq.ready := io.memReq.ready && xstateActive
   val normalMemReq = Wire(new MemReq)
-  normalMemReq.addr  := Mux(xlrevRequest, xlrevCurrent, Mux(xmsumRequest, xmsumBase + (xmsumIndex << 2), reg1AddImm))
-  normalMemReq.size  := Mux(xlrevRequest || xmsumRequest, 2.U, func3t(1, 0))
-  normalMemReq.wen   := Mux(xlrevRequest, xlrevStoreRequest, !xmsumRequest && isTypStore)
+  normalMemReq.addr  := Mux(xstateWordRequest, xstateWordAddress & ~3.U(32.W),
+    Mux(xlrevRequest, xlrevCurrent, Mux(xmsumRequest, xmsumBase + (xmsumIndex << 2), reg1AddImm)))
+  normalMemReq.size  := Mux(xstateWordRequest || xlrevRequest || xmsumRequest, 2.U, func3t(1, 0))
+  normalMemReq.wen   := Mux(xstateWordRequest, false.B, Mux(xlrevRequest, xlrevStoreRequest, !xmsumRequest && isTypStore))
   normalMemReq.wdata := Mux(xlrevStoreRequest, xlrevPrevious, Mux(xmsumRequest || xlrevLoadRequest, 0.U, memWData))
   normalMemReq.wmask := Mux(xlrevStoreRequest, "b1111".U, Mux(xmsumRequest || xlrevLoadRequest, 0.U, memWMask))
   io.memReq.valid := Mux(
     xstateActive,
     xstate.io.memReq.valid,
-    xlrevRequest || xmsumRequest || (needMemReq && io.in.valid && io.out.ready)
+    xstateWordRequest || xlrevRequest || xmsumRequest || (needMemReq && io.in.valid && io.out.ready)
   )
   io.memReq.bits := Mux(xstateActive, xstate.io.memReq.bits, normalMemReq)
 
@@ -616,8 +672,11 @@ class EXU(
   val normalValid = memReqFire || (
     io.in.valid && !needMemReq && exuResultValid
   )
-  io.in.ready := Mux(isXstate, xstateDone && io.out.ready, Mux(isXlrev, xlrevDone && io.out.ready, Mux(isXmsum, xmsumDone && io.out.ready, normalReady)))
-  io.out.valid := Mux(isXstate, xstateDone, Mux(isXlrev, xlrevDone, Mux(isXmsum, xmsumDone, normalValid)))
+  io.in.ready := Mux(isXstateWordStep, xstateWordDone && io.out.ready,
+    Mux(isXstate, xstateDone && io.out.ready, Mux(isXlrev, xlrevDone && io.out.ready,
+      Mux(isXmsum, xmsumDone && io.out.ready, normalReady))))
+  io.out.valid := Mux(isXstateWordStep, xstateWordDone,
+    Mux(isXstate, xstateDone, Mux(isXlrev, xlrevDone, Mux(isXmsum, xmsumDone, normalValid))))
 
   writeBackInfo.iid := dinst.iid
 

@@ -410,14 +410,16 @@ class IDU(
   val isCoremarkCrcU8 = inst(31, 25) === 0.U && arithmeticFunc3 === 0.U && inst(6, 0) === "b0001011".U
   val isCoremarkXbmul = inst(31, 25) === 0.U && arithmeticFunc3 === 5.U && inst(6, 0) === "b0001011".U
   val isCoremarkXlrev = inst(31, 25) === 0.U && arithmeticFunc3 === 7.U && inst(6, 0) === "b0001011".U
-  val isCoremarkXstate = inst(31, 25) === 1.U && arithmeticFunc3 === 7.U && inst(6, 0) === "b0001011".U
   val isCoremarkXmsum = inst(31, 25) === 2.U && arithmeticFunc3 === 7.U && inst(6, 0) === "b0001011".U
+  val isCoremarkXstateWord = inst(31, 25) === 0.U && inst(6, 0) === "b1011011".U &&
+    (arithmeticFunc3 === 0.U || arithmeticFunc3 === 2.U || arithmeticFunc3 === 3.U || arithmeticFunc3 === 5.U)
   res.bExtValid := isTypArithmetic && !isMExtArithmetic && isIterativeB
   res.crcValid := isCoremarkCrcU8
   res.xbmulValid := isCoremarkXbmul
   res.xlrevValid := isCoremarkXlrev
-  res.xstateValid := isCoremarkXstate
+  res.xstateValid := false.B
   res.xmsumValid := isCoremarkXmsum
+  res.xstateWordValid := isCoremarkXstateWord
   res.aluIsSub  := !isFmtI && inst(30)
   res.aluUseSpecialResult :=
     isTypArithmetic && (isBShiftAdd || isBSext || isBMinu || isBBext || isCoremarkCrcU8 || isCoremarkXbmul)

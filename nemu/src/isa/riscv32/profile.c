@@ -132,7 +132,7 @@ static const char *out_path;
 static uint64_t total, kinds[K_NR], mops[M_NR], bops[B_NR], crcops[CRC_NR],
     raw_dist[9];
 static uint64_t xaccel_ops[6], xaccel_units[6], xaccel_cycles[6];
-static uint64_t xstatec_ops[3];
+static uint64_t xstatec_ops[6];
 static uint64_t pack_rs2_zero, pack_rs1_upper_zero, pack_matches_xor;
 static uint64_t miss_consumer_successor_deps;
 static uint64_t m_divide_by_zero, m_signed_overflow;
@@ -222,7 +222,7 @@ void riscv_profile_record_xaccel(unsigned op, uint64_t units,
 }
 
 void riscv_profile_record_xstatec(unsigned op) {
-  if (out_path && op < 3)
+  if (out_path && op < 6)
     xstatec_ops[op]++;
 }
 
@@ -1111,9 +1111,9 @@ void riscv_profile_finish(void) {
   arr(f, xaccel_units, 6);
   fprintf(f, "],\n  \"xaccel_modeled_cycles_conservative\":[");
   arr(f, xaccel_cycles, 6);
-  fprintf(f, "],\n  \"xstatec_ops_order\":[\"init\",\"inc\",\"read\"],"
+  fprintf(f, "],\n  \"xstatec_ops_order\":[\"init\",\"inc\",\"read\",\"commit\",\"step2\",\"step4\"],"
              "\n  \"xstatec_ops\":[");
-  arr(f, xstatec_ops, 3);
+  arr(f, xstatec_ops, 6);
   fprintf(f,
           "],\n  \"pack_diagnostics\":{"
           "\"rs2_zero\":%llu,\"rs1_upper_zero\":%llu,"

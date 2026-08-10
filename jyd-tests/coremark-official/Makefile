@@ -69,12 +69,18 @@ $(COREMARK_ACCEL_PLUGIN): accel/coremark_accel_plugin.cc
 		-I$(GCC_PLUGIN_GMP_INCLUDE) \
 		-o $@ $<
 
-$(COREMARK_BENCH_OBJS): $(COREMARK_ACCEL_PLUGIN)
+$(COREMARK_BENCH_OBJS): $(COREMARK_ACCEL_PLUGIN) accel/coremark_accel.c
 $(COREMARK_BENCH_OBJS): CFLAGS += -fplugin=$(COREMARK_ACCEL_PLUGIN) \
 	-fplugin-arg-coremark_accel_plugin-accels=$(COREMARK_ACCELS) \
 	-include $(CURDIR)/accel/coremark_accel.c
 ifneq ($(filter xstatec,$(subst $(comma), ,$(COREMARK_ACCELS))),)
 $(DST_DIR)/src/core_list_join.o: CFLAGS += -DCOREMARK_XSTATEC_CALLSITE=1
+endif
+ifneq ($(filter xstate2,$(subst $(comma), ,$(COREMARK_ACCELS))),)
+$(DST_DIR)/src/core_list_join.o: CFLAGS += -DCOREMARK_XSTATE2_CALLSITE=1
+endif
+ifneq ($(filter xstate4,$(subst $(comma), ,$(COREMARK_ACCELS))),)
+$(DST_DIR)/src/core_list_join.o: CFLAGS += -DCOREMARK_XSTATE4_CALLSITE=1
 endif
 endif
 

@@ -35,6 +35,31 @@ __cm_xstatec_read(ee_u32 state)
     return value;
 }
 
+static inline __attribute__((always_inline)) void
+__cm_xstatec_commit(ee_u32 mask)
+{
+    asm volatile(".insn r 0x5b, 3, 0, x0, %0, x0"
+                 :: "r"(mask) : "memory");
+}
+
+static inline __attribute__((always_inline)) ee_u32
+__cm_xstate2_step(ee_u32 state, const ee_u8 *str)
+{
+    ee_u32 result;
+    asm volatile(".insn r 0x5b, 4, 0, %0, %1, %2"
+                 : "=r"(result) : "r"(state), "r"(str) : "memory");
+    return result;
+}
+
+static inline __attribute__((always_inline)) ee_u32
+__cm_xstate4_step(ee_u32 state, const ee_u8 *str)
+{
+    ee_u32 result;
+    asm volatile(".insn r 0x5b, 5, 0, %0, %1, %2"
+                 : "=r"(result) : "r"(state), "r"(str) : "memory");
+    return result;
+}
+
 static inline __attribute__((always_inline)) int
 __cm_isdigit(ee_u8 c)
 {
@@ -89,6 +114,44 @@ __cm_xstatec_transition(ee_u8 **instr)
     return state;
 }
 
+static inline __attribute__((always_inline)) ee_u32
+__cm_xstate2_transition(ee_u8 **instr)
+{
+    ee_u8 *str = *instr;
+    ee_u32 state = __CM_STATE_START;
+    ee_u32 mask = 0;
+
+    for (;;) {
+        ee_u32 result = __cm_xstate2_step(state, str);
+        state = result & 7u;
+        str += (result >> 3) & 3u;
+        mask |= (result >> 6) & 0xffu;
+        if (result & (1u << 5)) break;
+    }
+    __cm_xstatec_commit(mask);
+    *instr = str;
+    return state;
+}
+
+static inline __attribute__((always_inline)) ee_u32
+__cm_xstate4_transition(ee_u8 **instr)
+{
+    ee_u8 *str = *instr;
+    ee_u32 state = __CM_STATE_START;
+    ee_u32 mask = 0;
+
+    for (;;) {
+        ee_u32 result = __cm_xstate4_step(state, str);
+        state = result & 7u;
+        str += (result >> 3) & 7u;
+        mask |= (result >> 7) & 0xffu;
+        if (result & (1u << 6)) break;
+    }
+    __cm_xstatec_commit(mask);
+    *instr = str;
+    return state;
+}
+
 static inline __attribute__((always_inline)) ee_u16
 __cm_crc32_u8(ee_u32 data, ee_u16 crc)
 {
@@ -123,8 +186,56 @@ __cm_xstatec_bench(ee_u32 blksize, ee_u8 *memblock, ee_s16 seed1,
     return crc;
 }
 
+static __attribute__((noinline, used)) ee_u16
+core_bench_state_xstate2(ee_u32 blksize, ee_u8 *memblock, ee_s16 seed1,
+                         ee_s16 seed2, ee_s16 step, ee_u16 crc)
+{
+    ee_u32 final_counts[8] = {0};
+    ee_u8 *p = memblock;
+    __cm_xstatec_init();
+    while (*p != 0) final_counts[__cm_xstate2_transition(&p)]++;
+    p = memblock;
+    while (p < memblock + blksize) { if (*p != ',') *p ^= (ee_u8)seed1; p += step; }
+    p = memblock;
+    while (*p != 0) final_counts[__cm_xstate2_transition(&p)]++;
+    p = memblock;
+    while (p < memblock + blksize) { if (*p != ',') *p ^= (ee_u8)seed2; p += step; }
+    for (ee_u32 i = 0; i < 8; i++) {
+        crc = __cm_crc32_u8(final_counts[i], crc);
+        crc = __cm_crc32_u8(__cm_xstatec_read(i), crc);
+    }
+    return crc;
+}
+
+static __attribute__((noinline, used)) ee_u16
+core_bench_state_xstate4(ee_u32 blksize, ee_u8 *memblock, ee_s16 seed1,
+                         ee_s16 seed2, ee_s16 step, ee_u16 crc)
+{
+    ee_u32 final_counts[8] = {0};
+    ee_u8 *p = memblock;
+    __cm_xstatec_init();
+    while (*p != 0) final_counts[__cm_xstate4_transition(&p)]++;
+    p = memblock;
+    while (p < memblock + blksize) { if (*p != ',') *p ^= (ee_u8)seed1; p += step; }
+    p = memblock;
+    while (*p != 0) final_counts[__cm_xstate4_transition(&p)]++;
+    p = memblock;
+    while (p < memblock + blksize) { if (*p != ',') *p ^= (ee_u8)seed2; p += step; }
+    for (ee_u32 i = 0; i < 8; i++) {
+        crc = __cm_crc32_u8(final_counts[i], crc);
+        crc = __cm_crc32_u8(__cm_xstatec_read(i), crc);
+    }
+    return crc;
+}
+
 #ifdef COREMARK_XSTATEC_CALLSITE
 #define core_bench_state __cm_xstatec_bench
+#endif
+#ifdef COREMARK_XSTATE2_CALLSITE
+#define core_bench_state core_bench_state_xstate2
+#endif
+#ifdef COREMARK_XSTATE4_CALLSITE
+#define core_bench_state core_bench_state_xstate4
 #endif
 
 static inline ee_s32

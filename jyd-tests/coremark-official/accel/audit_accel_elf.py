@@ -10,6 +10,9 @@ ENCODINGS = {
     "xlrev": 0x0000700B,
     "xstate": 0x0200700B,
     "xmsum": 0x0400700B,
+    "xstatec": 0x0000005B,
+    "xstate2": 0x0000405B,
+    "xstate4": 0x0000505B,
 }
 MASK = 0xFE00707F
 
@@ -48,12 +51,29 @@ def main():
             if instruction & MASK == ENCODINGS[name]:
                 counts[name] += 1
 
+    if "xstate2" in counts or "xstate4" in counts:
+        commit_count = 0
+        for line in disassembly.splitlines():
+            fields = line.split()
+            if len(fields) < 2 or len(fields[1]) != 8:
+                continue
+            try:
+                instruction = int(fields[1], 16)
+            except ValueError:
+                continue
+            if instruction & MASK == 0x0000305B:
+                commit_count += 1
+        if commit_count == 0:
+            raise SystemExit("xstate word image has no counter-mask commit instruction")
+
     missing = [name for name, count in counts.items() if count == 0]
     if missing:
         raise SystemExit("enabled instructions absent from final ELF: " + ", ".join(missing))
     print("no __cm_ wrapper symbols or calls remain")
     for name, count in counts.items():
         print(f"{name}: {count} static instruction site(s)")
+    if "xstate2" in counts or "xstate4" in counts:
+        print(f"xstate word commit: {commit_count} static instruction site(s)")
 
 
 if __name__ == "__main__":

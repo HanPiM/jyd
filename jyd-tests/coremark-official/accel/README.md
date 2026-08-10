@@ -7,8 +7,9 @@ redirects the selected CoreMark calls before early inlining.  The pass also
 updates GCC's call graph; changing only the GIMPLE call can let later IPA
 passes inline the old callee and silently remove the intended instruction.
 
-Supported names are `xmac16`, `xdot16`, `xbmul`, `xlrev`, `xstate`, `xstatec`, and
-`xmsum`.  For example:
+Supported names are `xmac16`, `xdot16`, `xbmul`, `xlrev`, `xstate`, `xstatec`,
+`xstate2`, `xstate4`, and `xmsum`. The word-fed state instructions evaluate two
+or four characters and commit one transition mask per token. For example:
 
 ```sh
 make ARCH=riscv32-nemu ITERATIONS=10000 COREMARK_CRC_ACCEL=u8 \

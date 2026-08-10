@@ -146,7 +146,8 @@ object InstInfoDecoder {
       "b01101".U -> (InstFmt.upper, InstType.lui),
       "b00101".U -> (InstFmt.upper, InstType.auipc),
       "b11011".U -> (InstFmt.jump, InstType.jal),
-      "b11000".U -> (InstFmt.branch, InstType.branch)
+      "b11000".U -> (InstFmt.branch, InstType.branch),
+      "b10110".U -> (InstFmt.reg, InstType.arithmetic)
     ).map { case (key, (fmt, typ)) =>
       key -> {
         val info = Wire(new InstMetaInfo)
@@ -213,6 +214,9 @@ class DecodedInstInfo(implicit p : CPUParameters) extends InstMetaInfo with HasR
 
   // CoreMark matrix reduction is a blocking multi-cycle custom operation.
   val xmsumValid = Bool()
+
+  // CoreMark word-fed parser and implicit counter operations are custom-2.
+  val xstateWordValid = Bool()
 
   // Predecode the ALU add/sub carry polarity before the IDU/EXU register so
   // the instruction-code bus does not drive the carry chain directly.

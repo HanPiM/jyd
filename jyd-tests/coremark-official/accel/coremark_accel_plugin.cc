@@ -35,6 +35,8 @@ static bool has(const char *name) {
 }
 
 static const char *replacement_for(const char *name) {
+  if (has("xstate4") && !std::strcmp(name, "core_bench_state")) return "core_bench_state_xstate4";
+  if (has("xstate2") && !std::strcmp(name, "core_bench_state")) return "core_bench_state_xstate2";
   if (has("xstatec") && !std::strcmp(name, "core_bench_state")) return "__cm_xstatec_bench";
   if (has("xlrev") && !std::strcmp(name, "core_list_reverse")) return "__cm_xlrev";
   if (has("xstate") && !std::strcmp(name, "core_state_transition")) return "__cm_xstate";

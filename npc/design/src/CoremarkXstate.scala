@@ -49,16 +49,14 @@ class CoremarkXstate extends Module {
   val lookupData  = Reg(Types.UWord)
 
   val cacheStoreValid = RegInit(false.B)
-  val cacheStoreAddr  = Reg(Types.UWord)
-  val cacheStoreData  = Reg(Types.UWord)
 
   io.done   := state === State.done
   io.busy   := state =/= State.idle
   io.result := result
   io.cacheQueryAddr := queryAddr
   io.cacheStore     := cacheStoreValid
-  io.cacheStoreAddr := cacheStoreAddr
-  io.cacheStoreData := cacheStoreData
+  io.cacheStoreAddr := storeAddr
+  io.cacheStoreData := storeData
 
   val readRequest = state === State.pointerReadRequest || state === State.wordReadRequest ||
     state === State.counterReadRequest
@@ -72,10 +70,6 @@ class CoremarkXstate extends Module {
 
   val storeFire = io.memReq.fire && storeRequest
   cacheStoreValid := storeFire
-  when(storeFire) {
-    cacheStoreAddr := storeAddr
-    cacheStoreData := storeData
-  }
 
   val selectedByte = MuxLookup(strAddr(1, 0), wordData(7, 0))(
     Seq(0.U -> wordData(7, 0), 1.U -> wordData(15, 8), 2.U -> wordData(23, 16), 3.U -> wordData(31, 24))

@@ -171,10 +171,9 @@ class EXU(
   val isXstate = dinst.info.xstateValid
 
   object XlrevState extends ChiselEnum {
-    val idle, loadRequest, loadResponse, storeRequest, storeResponse = Value
+    val idle, loadRequest, loadResponse, storeRequest, storeResponse, done = Value
   }
   val xlrevState   = RegInit(XlrevState.idle)
-  val xlrevDoneReg = RegInit(false.B)
   val xlrevCurrent = Reg(Types.UWord)
   val xlrevPrevious = Reg(Types.UWord)
   val xlrevNext    = Reg(Types.UWord)
@@ -270,12 +269,12 @@ class EXU(
   xstate.io.countsAddr := reg_v2
   xstate.io.memResp    := io.memResp
 
-  when(xlrevState === XlrevState.idle && !xlrevDoneReg && io.in.valid && isXlrev) {
+  when(xlrevState === XlrevState.idle && io.in.valid && isXlrev) {
     xlrevCurrent  := reg_v1
     xlrevPrevious := 0.U
     when(reg_v1 === 0.U) {
       xaccelResult := 0.U
-      xlrevDoneReg := true.B
+      xlrevState  := XlrevState.done
     }.otherwise {
       xlrevState := XlrevState.loadRequest
     }
@@ -289,15 +288,14 @@ class EXU(
   }.elsewhen(xlrevState === XlrevState.storeResponse && io.memResp.valid) {
     when(xlrevNext === 0.U) {
       xaccelResult := xlrevCurrent
-      xlrevState   := XlrevState.idle
-      xlrevDoneReg := true.B
+      xlrevState  := XlrevState.done
     }.otherwise {
       xlrevPrevious := xlrevCurrent
       xlrevCurrent  := xlrevNext
       xlrevState    := XlrevState.loadRequest
     }
-  }.elsewhen(xlrevDoneReg && io.out.fire) {
-    xlrevDoneReg := false.B
+  }.elsewhen(xlrevState === XlrevState.done && io.out.fire) {
+    xlrevState := XlrevState.idle
   }
 
   when(xmsumState === XmsumState.idle && io.in.valid && isXmsum) {
@@ -537,7 +535,7 @@ class EXU(
   writeBackInfo.dcacheStoreEpoch := false.B
 
   val isMemOP        = isTypLoad || isTypStore
-  val xlrevDone = isXlrev && xlrevDoneReg
+  val xlrevDone = isXlrev && xlrevState === XlrevState.done
   val xstateDone = isXstate && xstate.io.done
   val xmsumDone = isXmsum && xmsumState === XmsumState.done
   val exuResultValid =

@@ -124,11 +124,7 @@ class Inst extends Bundle {
   val pred = Output(new PredBundle)
 }
 
-class FetchedInst extends Inst {
-  // Isolate the register-file address from the full instruction-code fanout
-  // across the IFU/IDU pipeline boundary.
-  val rs1 = Output(UInt(5.W))
-}
+class FetchedInst extends Inst
 
 class InstMetaInfo extends Bundle {
   val fmt = InstFmt()

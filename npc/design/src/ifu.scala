@@ -87,7 +87,6 @@ class IFU extends Module {
   val inst = RegEnableReadNew(memIO.rdata, memIO.resp_valid)
 
   io.out.bits.code            := inst
-  io.out.bits.rs1             := inst(19, 15)
   io.out.bits.pc              := pcReg
   io.out.bits.pred := predNextReg
 

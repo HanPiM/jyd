@@ -40,7 +40,9 @@ class CoremarkXstate extends Module {
   val wordData    = Reg(Types.UWord)
   val queryAddr   = Reg(Types.UWord)
   val parserState = RegInit(0.U(3.W))
-  val deltas      = RegInit(VecInit(Seq.fill(8)(0.U(32.W))))
+  // The parser has no state-transition back edges, so each counter changes at
+  // most once per invocation. Keep a bit mask and add one while flushing.
+  val deltas      = RegInit(VecInit(Seq.fill(8)(false.B)))
   val flushIndex  = Reg(UInt(3.W))
   val storeAddr   = Reg(Types.UWord)
   val storeData   = Reg(Types.UWord)
@@ -105,7 +107,7 @@ class CoremarkXstate extends Module {
         countsAddr  := io.countsAddr
         parserState := 0.U
         flushIndex  := 0.U
-        deltas.foreach(_ := 0.U)
+        deltas.foreach(_ := false.B)
         queryAddr := io.instrAddr
         state     := State.pointerLookup
       }
@@ -165,7 +167,7 @@ class CoremarkXstate extends Module {
       }.otherwise {
         switch(parserState) {
           is(0.U) {
-            deltas(0) := deltas(0) + 1.U
+            deltas(0) := true.B
             when(isDigit) {
               advanceOrFlush(4.U)
             }.elsewhen(isSign) {
@@ -173,20 +175,20 @@ class CoremarkXstate extends Module {
             }.elsewhen(selectedByte === '.'.U) {
               advanceOrFlush(5.U)
             }.otherwise {
-              deltas(1) := deltas(1) + 1.U
+              deltas(1) := true.B
               advanceOrFlush(1.U)
             }
           }
           is(2.U) {
-            deltas(2) := deltas(2) + 1.U
+            deltas(2) := true.B
             advanceOrFlush(Mux(isDigit, 4.U, Mux(selectedByte === '.'.U, 5.U, 1.U)))
           }
           is(4.U) {
             when(selectedByte === '.'.U) {
-              deltas(4) := deltas(4) + 1.U
+              deltas(4) := true.B
               advanceOrFlush(5.U)
             }.elsewhen(!isDigit) {
-              deltas(4) := deltas(4) + 1.U
+              deltas(4) := true.B
               advanceOrFlush(1.U)
             }.otherwise {
               advanceOrFlush(4.U)
@@ -194,26 +196,26 @@ class CoremarkXstate extends Module {
           }
           is(5.U) {
             when(selectedByte === 'E'.U || selectedByte === 'e'.U) {
-              deltas(5) := deltas(5) + 1.U
+              deltas(5) := true.B
               advanceOrFlush(3.U)
             }.elsewhen(!isDigit) {
-              deltas(5) := deltas(5) + 1.U
+              deltas(5) := true.B
               advanceOrFlush(1.U)
             }.otherwise {
               advanceOrFlush(5.U)
             }
           }
           is(3.U) {
-            deltas(3) := deltas(3) + 1.U
+            deltas(3) := true.B
             advanceOrFlush(Mux(isSign, 6.U, 1.U))
           }
           is(6.U) {
-            deltas(6) := deltas(6) + 1.U
+            deltas(6) := true.B
             advanceOrFlush(Mux(isDigit, 7.U, 1.U))
           }
           is(7.U) {
             when(!isDigit) {
-              deltas(1) := deltas(1) + 1.U
+              deltas(1) := true.B
               advanceOrFlush(1.U)
             }.otherwise {
               advanceOrFlush(7.U)
@@ -244,7 +246,7 @@ class CoremarkXstate extends Module {
     }
     is(State.counterLookupResponse) {
       when(lookupHit) {
-        storeData := lookupData + deltas(flushIndex)
+        storeData := lookupData + 1.U
         state     := State.counterStoreRequest
       }.otherwise {
         state := State.counterReadRequest
@@ -255,7 +257,7 @@ class CoremarkXstate extends Module {
     }
     is(State.counterReadResponse) {
       when(io.memResp.valid) {
-        storeData := io.memResp.bits + deltas(flushIndex)
+        storeData := io.memResp.bits + 1.U
         state     := State.counterStoreRequest
       }
     }

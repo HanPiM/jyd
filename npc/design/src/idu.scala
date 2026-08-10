@@ -389,6 +389,8 @@ class IDU(
   res.lateLoadRs2 := bypassMux.io.lateLoadRs2
   res.prevExuFwdRs1 := bypassMux.io.prevExuFwdRs1
   res.prevExuFwdRs2 := bypassMux.io.prevExuFwdRs2
+  res.prevExuFwdRs2Alu := bypassMux.io.prevExuFwdRs2
+  dontTouch(res.prevExuFwdRs2Alu)
   // Only operations that still use the iterative B unit assert bExtValid.
   // Short B operations are evaluated by the ordinary ALU path so they retain
   // same-cycle forwarding and do not inherit the old universal 32-cycle cost.

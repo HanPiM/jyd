@@ -236,6 +236,7 @@ class EXU(
 
   val postRegisterRegV1 = Mux(dinst.info.prevExuFwdRs1, io.previousStageFwd.data, dinst.info.reg1)
   val postRegisterRegV2 = Mux(dinst.info.prevExuFwdRs2, io.previousStageFwd.data, dinst.info.reg2)
+  val aluPostRegisterRegV2 = Mux(dinst.info.prevExuFwdRs2Alu, io.previousStageFwd.data, dinst.info.reg2)
 
   val (lateRs1Ready, lateRegV1) =
     resolveLateLoadOperand(dinst.info.lateLoadRs1, postRegisterRegV1)
@@ -424,7 +425,7 @@ class EXU(
 
   alu_in.src1   := reg_v1
   // alu_in.src2   := Mux(isFmtI, dinst.info.imm, reg_v2)
-  alu_in.src2   := reg_v2
+  alu_in.src2   := aluPostRegisterRegV2
   alu_in.mulRawSrc1 := dinst.info.reg1
   alu_in.mulRawSrc2 := dinst.info.reg2
   alu_in.mulPrevData := io.previousStageFwd.data

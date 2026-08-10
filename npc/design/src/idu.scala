@@ -463,11 +463,7 @@ class IDU(
   // Keep the common address path narrow while preserving the two 64 KiB
   // crossings used by CoreMark data and the JYD peripheral window.
   def addAddrImm(base: UInt): UInt = {
-    val lowByte = base(7, 0) +& addrImm(7, 0)
-    val highByte = base(15, 8) +& addrImm(15, 8)
-    val highByteWithCarry = highByte + 1.U
-    val selectedHighByte = Mux(lowByte(8), highByteWithCarry, highByte)
-    val lowSum = Cat(selectedHighByte, lowByte(7, 0))
+    val lowSum = base(15, 0) +& addrImm(15, 0)
     val crossesIntoDram = !addrImm(15) && base(19, 12) === "hff".U && lowSum(16)
     val crossesIntoPerip = !addrImm(15) && base(20, 12) === "h1ff".U && lowSum(16)
     val high = Mux(crossesIntoPerip, "h20".U(6.W), Mux(crossesIntoDram, "h10".U(6.W), base(21, 16)))

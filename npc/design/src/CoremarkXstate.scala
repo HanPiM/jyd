@@ -24,9 +24,9 @@ class CoremarkXstate extends Module {
   })
 
   object State extends ChiselEnum {
-    val idle, pointerLookup, pointerReadRequest, pointerReadResponse,
-      wordLookup, wordReadRequest, wordReadResponse, parse,
-      flushScan, counterLookup, counterReadRequest, counterReadResponse,
+    val idle, pointerLookup, pointerLookupResponse, pointerReadRequest, pointerReadResponse,
+      wordLookup, wordLookupResponse, wordReadRequest, wordReadResponse, parse,
+      flushScan, counterLookup, counterLookupResponse, counterReadRequest, counterReadResponse,
       counterStoreRequest, counterStoreResponse,
       pointerStoreRequest, pointerStoreResponse, done = Value
   }
@@ -44,6 +44,8 @@ class CoremarkXstate extends Module {
   val storeAddr   = Reg(Types.UWord)
   val storeData   = Reg(Types.UWord)
   val result      = Reg(Types.UWord)
+  val lookupHit   = Reg(Bool())
+  val lookupData  = Reg(Types.UWord)
 
   val cacheStoreValid = RegInit(false.B)
   val cacheStoreAddr  = Reg(Types.UWord)
@@ -113,9 +115,14 @@ class CoremarkXstate extends Module {
       }
     }
     is(State.pointerLookup) {
-      when(io.cacheHit) {
-        strAddr := io.cacheData
-        startWordLookup(io.cacheData)
+      lookupHit  := io.cacheHit
+      lookupData := io.cacheData
+      state      := State.pointerLookupResponse
+    }
+    is(State.pointerLookupResponse) {
+      when(lookupHit) {
+        strAddr := lookupData
+        startWordLookup(lookupData)
       }.otherwise {
         state := State.pointerReadRequest
       }
@@ -130,8 +137,13 @@ class CoremarkXstate extends Module {
       }
     }
     is(State.wordLookup) {
-      when(io.cacheHit) {
-        wordData := io.cacheData
+      lookupHit  := io.cacheHit
+      lookupData := io.cacheData
+      state      := State.wordLookupResponse
+    }
+    is(State.wordLookupResponse) {
+      when(lookupHit) {
+        wordData := lookupData
         state    := State.parse
       }.otherwise {
         state := State.wordReadRequest
@@ -229,9 +241,14 @@ class CoremarkXstate extends Module {
       }
     }
     is(State.counterLookup) {
-      when(io.cacheHit) {
+      lookupHit  := io.cacheHit
+      lookupData := io.cacheData
+      state      := State.counterLookupResponse
+    }
+    is(State.counterLookupResponse) {
+      when(lookupHit) {
         storeAddr := queryAddr
-        storeData := io.cacheData + deltas(flushIndex)
+        storeData := lookupData + deltas(flushIndex)
         state     := State.counterStoreRequest
       }.otherwise {
         state := State.counterReadRequest

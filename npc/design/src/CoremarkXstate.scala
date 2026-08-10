@@ -243,13 +243,13 @@ class CoremarkXstate extends Module {
       }
     }
     is(State.counterLookup) {
+      storeAddr  := queryAddr
       lookupHit  := io.cacheHit
       lookupData := io.cacheData
       state      := State.counterLookupResponse
     }
     is(State.counterLookupResponse) {
       when(lookupHit) {
-        storeAddr := queryAddr
         storeData := lookupData + deltas(flushIndex)
         state     := State.counterStoreRequest
       }.otherwise {
@@ -261,7 +261,6 @@ class CoremarkXstate extends Module {
     }
     is(State.counterReadResponse) {
       when(io.memResp.valid) {
-        storeAddr := queryAddr
         storeData := io.memResp.bits + deltas(flushIndex)
         state     := State.counterStoreRequest
       }

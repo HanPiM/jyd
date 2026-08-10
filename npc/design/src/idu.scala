@@ -317,7 +317,7 @@ class IDU(
   val noNeedRs2 = isFmtI || isFmtU || isFmtJ
 
   res.rd  := inst(11, 7)
-  res.rs1 := inst(19, 15)
+  res.rs1 := io.in.bits.rs1
   res.rs2 := Mux(noNeedRs2, 0.U, inst(24, 20))
 
   // for now, system inst, ecall and mret has rd == 0

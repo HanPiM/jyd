@@ -431,9 +431,6 @@ class EXU(
   alu_in.mulPrevRs1 := dinst.info.prevExuFwdRs1MultiCycle
   alu_in.mulPrevRs2 := dinst.info.prevExuFwdRs2MultiCycle
   alu_in.mulNoLate := !dinst.info.lateLoadRs1 && !dinst.info.lateLoadRs2
-  alu_in.bPrevData := io.previousStageFwd.data
-  alu_in.bPrevRs1 := dinst.info.prevExuFwdRs1BExt
-  alu_in.bPrevRs2 := dinst.info.prevExuFwdRs2BExt
   alu_in.is_imm := isFmtI
   alu_in.isSub   := dinst.info.aluIsSub
   alu_in.func3t := func3t

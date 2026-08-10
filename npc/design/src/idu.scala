@@ -400,15 +400,10 @@ class IDU(
   val isBRor = arithmeticFunc7 === "b0110000".U && arithmeticFunc3 === "b101".U
   val isIterativeB = isBCount || isBClmul || isBOrcB || isBXperm4 || isBRor
   val usesMultiplierOperandUnit = isTypArithmetic && isMExtArithmetic && !arithmeticFunc3(2)
-  val usesBExtensionOperandUnit = isTypArithmetic && isIterativeB
-  res.prevExuFwdRs1 :=
-    bypassMux.io.prevExuFwdRs1 && !usesMultiplierOperandUnit && !usesBExtensionOperandUnit
-  res.prevExuFwdRs2 :=
-    bypassMux.io.prevExuFwdRs2 && !usesMultiplierOperandUnit && !usesBExtensionOperandUnit
+  res.prevExuFwdRs1 := bypassMux.io.prevExuFwdRs1 && !usesMultiplierOperandUnit
+  res.prevExuFwdRs2 := bypassMux.io.prevExuFwdRs2 && !usesMultiplierOperandUnit
   res.prevExuFwdRs1MultiCycle := bypassMux.io.prevExuFwdRs1 && usesMultiplierOperandUnit
   res.prevExuFwdRs2MultiCycle := bypassMux.io.prevExuFwdRs2 && usesMultiplierOperandUnit
-  res.prevExuFwdRs1BExt := bypassMux.io.prevExuFwdRs1 && usesBExtensionOperandUnit
-  res.prevExuFwdRs2BExt := bypassMux.io.prevExuFwdRs2 && usesBExtensionOperandUnit
   val isBShiftAdd = !isFmtI && arithmeticFunc7 === "b0010000".U &&
     (arithmeticFunc3 === "b010".U || arithmeticFunc3 === "b100".U || arithmeticFunc3 === "b110".U)
   val isBSext = isFmtI && arithmeticFunc7 === "b0110000".U && arithmeticFunc3 === "b001".U &&

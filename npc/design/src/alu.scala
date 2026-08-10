@@ -21,9 +21,6 @@ class ALUInput extends Bundle {
   val mulPrevRs1 = Bool()
   val mulPrevRs2 = Bool()
   val mulNoLate = Bool()
-  val bPrevData = Types.UWord
-  val bPrevRs1 = Bool()
-  val bPrevRs2 = Bool()
 }
 
 class ALU_foo extends Module {
@@ -499,8 +496,8 @@ class ALU extends Module {
   bExtension.io.in.bits.isImm := inbits.is_imm
   bExtension.io.in.bits.func3t := inbits.func3t
   bExtension.io.in.bits.func7t := inbits.func7t
-  bExtension.io.in.bits.src1 := Mux(inbits.bPrevRs1, inbits.bPrevData, src1)
-  bExtension.io.in.bits.src2 := Mux(inbits.bPrevRs2, inbits.bPrevData, src2)
+  bExtension.io.in.bits.src1 := src1
+  bExtension.io.in.bits.src2 := src2
   bExtension.io.out.ready    := io.out.ready
 
   val multiplier = Module(new Multiplier)

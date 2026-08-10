@@ -4,7 +4,7 @@ set -euo pipefail
 
 usage() {
   cat <<'EOF'
-Usage: run_digital_twin_vivado.sh [impl|write_bitstream|bitstream] [--jobs N] [--ip-jobs N] [--reset-runs] [--skip-pack] [--skip-vivado]
+Usage: run_digital_twin_vivado.sh [impl|write_bitstream|bitstream] [--jobs N] [--ip-jobs N] [--reset-runs] [--skip-pack] [--skip-vivado] [--user-approved-low-jobs]
 
 Build npc pack-fpga, replace the Vivado project's imported pack-fpga directory,
 then run the digital_twin Vivado project to impl or write_bitstream.
@@ -16,6 +16,10 @@ Environment:
   VIVADO                Vivado executable to use. Defaults to "vivado".
   JOBS                  Vivado top-level jobs and max threads. Defaults to nproc.
   IP_JOBS               IP/OOC run concurrency and max threads. Defaults to 4.
+
+Parallelism policy:
+  Top-level jobs must be at least 16 and IP/OOC jobs must be at least 4.
+  Lower values require explicit user approval and --user-approved-low-jobs.
   VIVADO_SYNTH_GLOBAL_RETIMING
                          Set to 1 to enable synth_design global retiming.
   VIVADO_SYNTH_KEEP_EQUIVALENT_REGISTERS
@@ -39,6 +43,7 @@ mode=impl
 skip_pack=0
 skip_vivado=0
 reset_runs=0
+user_approved_low_jobs=0
 jobs="${JOBS:-$(nproc 2>/dev/null || echo 4)}"
 ip_jobs=""
 synth_global_retiming="${VIVADO_SYNTH_GLOBAL_RETIMING:-0}"
@@ -87,6 +92,10 @@ while [ "$#" -gt 0 ]; do
       skip_vivado=1
       shift
       ;;
+    --user-approved-low-jobs)
+      user_approved_low_jobs=1
+      shift
+      ;;
     -h | --help)
       usage
       exit 0
@@ -109,6 +118,14 @@ fi
 if ! [[ "$ip_jobs" =~ ^[1-9][0-9]*$ ]]; then
   echo "--ip-jobs must be a positive integer: $ip_jobs" >&2
   exit 2
+fi
+if [ "$jobs" -lt 16 ] || [ "$ip_jobs" -lt 4 ]; then
+  if [ "$user_approved_low_jobs" -ne 1 ]; then
+    echo "Vivado parallelism below policy minimum: jobs=$jobs (minimum 16), ip-jobs=$ip_jobs (minimum 4)." >&2
+    echo "Obtain explicit user approval, then pass --user-approved-low-jobs to override." >&2
+    exit 2
+  fi
+  echo "WARNING: USER-APPROVED LOW PARALLELISM: jobs=$jobs ip-jobs=$ip_jobs" >&2
 fi
 if [[ "$synth_global_retiming" != 0 && "$synth_global_retiming" != 1 ]]; then
   echo "VIVADO_SYNTH_GLOBAL_RETIMING must be 0 or 1: $synth_global_retiming" >&2

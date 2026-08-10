@@ -339,6 +339,7 @@ class CPUCore(
   wbu.io.dcacheStoreEpoch  := dcacheStoreEpoch
   val dcacheStoreUpdate = exu.io.dcache.storeUpdate && p.enableDCache.B
   dcache.io.storeUpdate := dcacheStoreUpdate
+  dcache.io.storeFull   := exu.io.dcache.storeFull
   dcache.io.storeData   := exu.io.dcache.storeData
   dcache.io.storeMask   := exu.io.dcache.storeMask
   lsu.io.dcacheReadData := dcache.io.readData

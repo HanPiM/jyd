@@ -13,6 +13,7 @@ class DCache extends Module {
     val lateReadData = Output(UInt(32.W))
 
     val storeUpdate = Input(Bool())
+    val storeFull   = Input(Bool())
     val storeData   = Input(UInt(32.W))
     val storeMask   = Input(UInt(4.W))
     val update     = Input(Bool())
@@ -63,7 +64,7 @@ class DCache extends Module {
   // invalid. Every store writes the tag port unconditionally, so the async hit
   // only drives the valid data bit instead of the RAM write enable.
   val updateTagData = Cat(0.U(2.W), io.updateAddr(15, 11), 1.U(1.W))
-  val storeTagValid = io.storeMask.andR || io.hit
+  val storeTagValid = io.storeFull || io.hit
   val storeTagData  = Cat(0.U(2.W), io.queryTag, storeTagValid)
   val tagWrite      = io.storeUpdate || io.update
   val tagWriteIndex = Mux(io.storeUpdate, io.queryIndex, io.updateAddr(11, 2))

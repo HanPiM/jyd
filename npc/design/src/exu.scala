@@ -128,6 +128,7 @@ class EXU(
       val queryIndex = Output(UInt(10.W))
       val queryTag   = Output(UInt(5.W))
       val storeUpdate = Output(Bool())
+      val storeFull   = Output(Bool())
       val storeData   = Output(Types.UWord)
       val storeMask   = Output(UInt(4.W))
     }
@@ -573,6 +574,7 @@ class EXU(
   // DCache resolves a narrow-store hit locally. Keep its asynchronous tag
   // lookup out of this cross-module control and every data-memory write enable.
   io.dcache.storeUpdate := cacheableStoreFire || xlrevCacheStoreValid || xstate.io.cacheStore
+  io.dcache.storeFull   := xstate.io.cacheStore || xlrevCacheStoreValid || (cacheableStoreFire && memWMask.andR)
   io.dcache.storeData   := Mux(xstate.io.cacheStore, xstate.io.cacheStoreData, Mux(xlrevCacheStoreValid, xlrevCacheStoreData, memWData))
   io.dcache.storeMask   := Mux(xstate.io.cacheStore || xlrevCacheStoreValid, "b1111".U, memWMask)
 

@@ -131,6 +131,9 @@ class EXU(
       val storeFull   = Output(Bool())
       val storeData   = Output(Types.UWord)
       val storeMask   = Output(UInt(4.W))
+      val fullUpdate     = Output(Bool())
+      val fullUpdateAddr = Output(Types.UWord)
+      val fullUpdateData = Output(Types.UWord)
     }
 
     val memReq = Decoupled(new MemReq)
@@ -555,14 +558,14 @@ class EXU(
   val xlrevStoreRequest = xlrevState === XlrevState.storeRequest
   val xstateActive = xstate.io.busy
   val dcacheQueryAddr = Mux(
-    xstate.io.cacheStore,
-    xstate.io.cacheStoreAddr,
-    Mux(xlrevCacheStoreValid, xlrevCacheStoreAddr, Mux(xstateActive, xstate.io.cacheQueryAddr, reg1AddImm))
+    xlrevCacheStoreValid,
+    xlrevCacheStoreAddr,
+    reg1AddImm
   )
   io.dcache.queryIndex := dcacheQueryAddr(11, 2)
   io.dcache.queryTag   := dcacheQueryAddr(15, 11)
-  xstate.io.cacheHit  := io.dcache.hit && xstate.io.cacheQueryAddr(21, 20) === "b01".U
-  xstate.io.cacheData := io.dcache.lateReadData
+  xstate.io.cacheHit  := false.B
+  xstate.io.cacheData := 0.U
   val cacheableStore = isTypStore && reg1AddImm(21, 20) === "b01".U
   val cacheableStoreFire = memReqFire && cacheableStore
   val xlrevStoreFire = memReqFire && xlrevStoreRequest && xlrevCurrent(21, 20) === "b01".U
@@ -573,10 +576,13 @@ class EXU(
   }
   // DCache resolves a narrow-store hit locally. Keep its asynchronous tag
   // lookup out of this cross-module control and every data-memory write enable.
-  io.dcache.storeUpdate := cacheableStoreFire || xlrevCacheStoreValid || xstate.io.cacheStore
-  io.dcache.storeFull   := xstate.io.cacheStore || xlrevCacheStoreValid || (cacheableStoreFire && memWMask.andR)
-  io.dcache.storeData   := Mux(xstate.io.cacheStore, xstate.io.cacheStoreData, Mux(xlrevCacheStoreValid, xlrevCacheStoreData, memWData))
-  io.dcache.storeMask   := Mux(xstate.io.cacheStore || xlrevCacheStoreValid, "b1111".U, memWMask)
+  io.dcache.storeUpdate := cacheableStoreFire || xlrevCacheStoreValid
+  io.dcache.storeFull   := xlrevCacheStoreValid || (cacheableStoreFire && memWMask.andR)
+  io.dcache.storeData   := Mux(xlrevCacheStoreValid, xlrevCacheStoreData, memWData)
+  io.dcache.storeMask   := Mux(xlrevCacheStoreValid, "b1111".U, memWMask)
+  io.dcache.fullUpdate     := xstate.io.cacheStore
+  io.dcache.fullUpdateAddr := xstate.io.cacheStoreAddr
+  io.dcache.fullUpdateData := xstate.io.cacheStoreData
 
   val xlrevLoadRequest = xlrevState === XlrevState.loadRequest
   val xlrevRequest = xlrevLoadRequest || xlrevStoreRequest

@@ -330,7 +330,8 @@ class CPUCore(
   dcache.io.queryTag   := exu.io.dcache.queryTag
   exu.io.dcache.hit    := dcache.io.hit && p.enableDCache.B
   exu.io.dcache.lateReadData := dcache.io.lateReadData
-  val dcacheStoreMutation = exu.io.dcache.storeUpdate && p.enableDCache.B
+  val dcacheStorePortMutation = exu.io.dcache.storeUpdate && p.enableDCache.B
+  val dcacheStoreMutation = dcacheStorePortMutation || (exu.io.dcache.fullUpdate && p.enableDCache.B)
   val dcacheStoreEpoch    = RegInit(false.B)
   when(dcacheStoreMutation) {
     dcacheStoreEpoch := ~dcacheStoreEpoch
@@ -343,20 +344,20 @@ class CPUCore(
   dcache.io.storeData   := exu.io.dcache.storeData
   dcache.io.storeMask   := exu.io.dcache.storeMask
   lsu.io.dcacheReadData := dcache.io.readData
-  dcache.io.update     := wbu.io.dcacheUpdate && p.enableDCache.B && !dcacheStoreMutation
-  dcache.io.updateAddr := wbu.io.dcacheAddr
-  dcache.io.updateData := wbu.io.dcacheData
-  dcache.io.updateMask := wbu.io.dcacheMask
+  dcache.io.update := p.enableDCache.B && (exu.io.dcache.fullUpdate || (wbu.io.dcacheUpdate && !dcacheStoreMutation))
+  dcache.io.updateAddr := Mux(exu.io.dcache.fullUpdate, exu.io.dcache.fullUpdateAddr, wbu.io.dcacheAddr)
+  dcache.io.updateData := Mux(exu.io.dcache.fullUpdate, exu.io.dcache.fullUpdateData, wbu.io.dcacheData)
+  dcache.io.updateMask := Mux(exu.io.dcache.fullUpdate, "b1111".U, wbu.io.dcacheMask)
 
   // JYD memory accepts one request per cycle and responds two cycles later.
   // A store in the intervening cycle changes the generation; a store in the
   // response cycle wins directly over the older refill.
-  val previousDcacheStoreMutation = RegNext(dcacheStoreMutation, false.B)
-  when(wbu.io.dcacheUpdate) {
+  val previousDcacheStoreMutation = RegNext(dcacheStorePortMutation, false.B)
+  when(wbu.io.dcacheUpdate && !exu.io.dcache.fullUpdate) {
     assert(!previousDcacheStoreMutation, "A refill must observe an intervening store generation")
   }
-  when(dcache.io.update) {
-    assert(!dcacheStoreMutation, "A store mutation and WBU refill must be mutually exclusive")
+  when(dcache.io.update && !exu.io.dcache.fullUpdate) {
+    assert(!dcacheStorePortMutation, "A store mutation and WBU refill must be mutually exclusive")
   }
 
   ifu.io.pc.bits  := pcFeedToIFU

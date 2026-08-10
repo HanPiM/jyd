@@ -147,7 +147,7 @@ class EXU(
   val xlrevPrevious = Reg(Types.UWord)
   val xlrevChainPrevious = Reg(Types.UWord)
   val xlrevNext    = Reg(Types.UWord)
-  val xaccelResult = Reg(Types.UWord)
+  val xlrevResult  = Reg(Types.UWord)
   // xlrev mutates memory behind the cache. Once it has run, bypass cached
   // loads until reset instead of updating every reversed node through the
   // cache RAM write ports.
@@ -174,6 +174,7 @@ class EXU(
   val xmsumRetClipped = Reg(Bool())
   val xmsumRetIncreased = Reg(Bool())
   val xmsumRetPending = RegInit(false.B)
+  val xmsumResult = Reg(Types.UWord)
   val isXmsum     = dinst.info.xmsumValid
 
   val xmsumRetPlusOne = xmsumRet + 1.U
@@ -239,7 +240,7 @@ class EXU(
   )
   val reg_v1       = postRegisterRegV1
   val reg_v2       = postRegisterRegV2
-  val xlrevActiveCurrent = Mux(isXlrevLoop, xaccelResult, reg_v1)
+  val xlrevActiveCurrent = Mux(isXlrevLoop, xlrevResult, reg_v1)
 
   val xstateCounters = RegInit(VecInit(Seq.fill(8)(0.U(32.W))))
   object XstateWordState extends ChiselEnum {
@@ -311,6 +312,10 @@ class EXU(
   xstate.io.memResp    := io.memResp
 
   when(xlrevState === XlrevState.idle && io.in.valid && isXlrev) {
+    // Capture the asynchronous cache value for every xlrev entry.  Whether it
+    // is consumed is decided by the state transition, keeping xlrevSingle out
+    // of this register's timing-critical write-enable cone.
+    xlrevNext := io.dcache.lateReadData
     when(!isXlrevSingle) {
       dcachePoisonedByXlrev := true.B
     }
@@ -320,11 +325,10 @@ class EXU(
       xlrevChainPrevious := xlrevActiveCurrent
     }
     when(xlrevActiveCurrent === 0.U) {
-      xaccelResult := Mux(isXlrevChain || isXlrevLoop, xlrevChainPrevious, 0.U)
+      xlrevResult := Mux(isXlrevChain || isXlrevLoop, xlrevChainPrevious, 0.U)
       xlrevLoopTaken := false.B
       xlrevState  := XlrevState.done
     }.elsewhen(isXlrevSingle && io.dcache.hit) {
-      xlrevNext := io.dcache.lateReadData
       xlrevState := XlrevState.storeRequest
     }.otherwise {
       xlrevState := XlrevState.loadRequest
@@ -337,7 +341,7 @@ class EXU(
   }.elsewhen(xlrevState === XlrevState.storeRequest && io.memReq.fire) {
     when(isXlrevSingle) {
       val loopTaken = isXlrevLoop && xlrevNext =/= 0.U
-      xaccelResult := Mux(isXlrevLoop && !loopTaken, xlrevCurrent, xlrevNext)
+      xlrevResult := Mux(isXlrevLoop && !loopTaken, xlrevCurrent, xlrevNext)
       xlrevLoopTaken := loopTaken
       xlrevState   := XlrevState.done
     }.otherwise {
@@ -345,10 +349,10 @@ class EXU(
     }
   }.elsewhen(xlrevState === XlrevState.storeResponse && io.memResp.valid) {
     when(isXlrevSingle) {
-      xaccelResult := xlrevNext
+      xlrevResult := xlrevNext
       xlrevState  := XlrevState.done
     }.elsewhen(xlrevNext === 0.U) {
-      xaccelResult := xlrevCurrent
+      xlrevResult := xlrevCurrent
       xlrevState  := XlrevState.done
     }.otherwise {
       xlrevPrevious := xlrevCurrent
@@ -372,7 +376,7 @@ class EXU(
     xmsumRet   := 0.U
     xmsumRetPending := false.B
     when(n === 0.U) {
-      xaccelResult := 0.U
+      xmsumResult := 0.U
       xmsumState  := XmsumState.done
     }.otherwise {
       xmsumState := XmsumState.request
@@ -404,7 +408,7 @@ class EXU(
       xmsumState := XmsumState.request
     }
   }.elsewhen(xmsumState === XmsumState.finalizeResult) {
-    xaccelResult := Cat(Fill(16, xmsumNextRet(15)), xmsumNextRet)
+    xmsumResult := Cat(Fill(16, xmsumNextRet(15)), xmsumNextRet)
     xmsumState   := XmsumState.done
   }.elsewhen(xmsumState === XmsumState.done && io.out.fire) {
     xmsumState := XmsumState.idle
@@ -583,7 +587,7 @@ class EXU(
     )
   )
   writeBackInfo.gpr.data := Mux(isXstateWord, xstateWordResult,
-    Mux(isXstate, xstate.io.result, Mux(isXlrev || isXmsum, xaccelResult, normalWriteBackData)))
+    Mux(isXstate, xstate.io.result, Mux(isXlrev, xlrevResult, Mux(isXmsum, xmsumResult, normalWriteBackData))))
 
   // Fill in LSU stage
   writeBackInfo.isLoad        := false.B
@@ -652,7 +656,7 @@ class EXU(
   // operand can therefore lag behind even when the dependency has already
   // reached LSU/WBU.  Query from the local result register for every loop
   // iteration without reconnecting the global forwarding path to the tag RAM.
-  val xlrevQueryAddr = Mux(isXlrevLoop, xaccelResult, dinst.info.reg1)
+  val xlrevQueryAddr = Mux(isXlrevLoop, xlrevResult, dinst.info.reg1)
   val dcacheQueryAddr = Mux(isXlrevSingle, xlrevQueryAddr, reg1AddImm)
   io.dcache.queryIndex := dcacheQueryAddr(11, 2)
   io.dcache.queryTag   := dcacheQueryAddr(17, 11)

@@ -187,7 +187,7 @@ class EXU(
     val idle, request, response, finalizeResult, done = Value
   }
   val xmsumState  = RegInit(XmsumState.idle)
-  val xmsumWordAddr = Reg(UInt(20.W))
+  val xmsumBase   = Reg(Types.UWord)
   val xmsumIndex  = Reg(UInt(32.W))
   val xmsumCount  = Reg(UInt(32.W))
   val xmsumClip   = Reg(SInt(32.W))
@@ -299,7 +299,7 @@ class EXU(
 
   when(xmsumState === XmsumState.idle && io.in.valid && isXmsum) {
     val n = reg_v2(31, 16)
-    xmsumWordAddr := reg_v1(21, 2)
+    xmsumBase  := reg_v1
     xmsumIndex := 0.U
     xmsumCount := n * n
     xmsumClip  := Cat(Fill(16, reg_v2(15)), reg_v2(15, 0)).asSInt
@@ -329,7 +329,6 @@ class EXU(
       xmsumState := XmsumState.finalizeResult
     }.otherwise {
       xmsumIndex := xmsumIndex + 1.U
-      xmsumWordAddr := xmsumWordAddr + 1.U
       xmsumRetPending := true.B
       xmsumState := XmsumState.request
     }
@@ -605,7 +604,7 @@ class EXU(
   val xmsumRequest = xmsumState === XmsumState.request
   xstate.io.memReq.ready := io.memReq.ready && xstateActive
   val normalMemReq = Wire(new MemReq)
-  normalMemReq.addr  := Mux(xlrevRequest, xlrevCurrent, Mux(xmsumRequest, Cat(xmsumWordAddr, 0.U(2.W)), reg1AddImm))
+  normalMemReq.addr  := Mux(xlrevRequest, xlrevCurrent, Mux(xmsumRequest, xmsumBase + (xmsumIndex << 2), reg1AddImm))
   normalMemReq.size  := Mux(xlrevRequest || xmsumRequest, 2.U, func3t(1, 0))
   normalMemReq.wen   := Mux(xlrevRequest, xlrevStoreRequest, !xmsumRequest && isTypStore)
   normalMemReq.wdata := Mux(xlrevStoreRequest, xlrevPrevious, Mux(xmsumRequest || xlrevLoadRequest, 0.U, memWData))

@@ -24,7 +24,7 @@ class BExtensionInput extends Bundle {
   * iterative; their result is registered before it becomes visible on the
   * output, keeping the iterative datapath out of the EXU-to-LSU path.
   */
-class BExtensionUnit(implicit p: CPUParameters) extends Module {
+class BExtensionUnit extends Module {
   val io = IO(new Bundle {
     val in  = Flipped(Decoupled(new BExtensionInput))
     val out = Decoupled(Types.UWord)
@@ -36,18 +36,17 @@ class BExtensionUnit(implicit p: CPUParameters) extends Module {
 
   val state     = RegInit(State.idle)
   val opReg     = Reg(BExtensionOp())
-  val workWidth = if (p.enableZbc) 64 else 32
   val sourceA   = Reg(Types.UWord)
-  val workA     = Reg(UInt(workWidth.W))
+  val workA     = Reg(UInt(64.W))
   val workB     = Reg(Types.UWord)
-  val accum     = Reg(UInt(workWidth.W))
+  val accum     = Reg(UInt(64.W))
   val count     = Reg(UInt(6.W))
   val rorRemain = Reg(UInt(5.W))
   val found     = Reg(Bool())
   val iteration = Reg(UInt(5.W))
   val resultReg = Reg(Types.UWord)
-  val crcClmulhFast   = if (p.enableZbc) Reg(Bool()) else false.B
-  val crcClmulhResult = if (p.enableZbc) Reg(UInt(16.W)) else 0.U(16.W)
+  val crcClmulhFast   = Reg(Bool())
+  val crcClmulhResult = Reg(UInt(16.W))
 
   io.in.ready  := state === State.idle
   io.out.valid := state === State.done
@@ -70,13 +69,13 @@ class BExtensionUnit(implicit p: CPUParameters) extends Module {
     io.in.bits.isImm && io.in.bits.func3t === "b001".U && io.in.bits.func7t === "b0110000".U && immLow5 === 1.U
   val isCpop =
     io.in.bits.isImm && io.in.bits.func3t === "b001".U && io.in.bits.func7t === "b0110000".U && immLow5 === 2.U
-  val isClmul = p.enableZbc.B &&
+  val isClmul =
     !io.in.bits.isImm && io.in.bits.func3t === "b001".U && io.in.bits.func7t === "b0000101".U
-  val isClmulh = p.enableZbc.B &&
+  val isClmulh =
     !io.in.bits.isImm && io.in.bits.func3t === "b011".U && io.in.bits.func7t === "b0000101".U
   val isOrcB =
     io.in.bits.isImm && io.in.bits.func3t === "b101".U && io.in.bits.func7t === "b0010100".U && immLow5 === 7.U
-  val isXperm4 = p.enableZbkx.B &&
+  val isXperm4 =
     !io.in.bits.isImm && io.in.bits.func3t === "b010".U && io.in.bits.func7t === "b0010100".U
   val isRor =
     !io.in.bits.isImm && io.in.bits.func3t === "b101".U && io.in.bits.func7t === "b0110000".U
@@ -85,15 +84,19 @@ class BExtensionUnit(implicit p: CPUParameters) extends Module {
   val isPack =
     !io.in.bits.isImm && io.in.bits.func3t === "b100".U && io.in.bits.func7t === "b0000100".U
   val decodedValid = isClz || isCtz || isCpop || isClmul || isClmulh || isOrcB || isXperm4 || isRor || isRori || isPack
-  val decodedOpCases = Seq(
+  val decodedOp = MuxCase(
+    BExtensionOp.clz,
+    Seq(
       isCtz    -> BExtensionOp.ctz,
       isCpop   -> BExtensionOp.cpop,
+      isClmul  -> BExtensionOp.clmul,
+      isClmulh -> BExtensionOp.clmulh,
       isOrcB   -> BExtensionOp.orcB,
+      isXperm4 -> BExtensionOp.xperm4,
       (isRor || isRori) -> BExtensionOp.ror,
       isPack   -> BExtensionOp.pack
-    ) ++ Option.when(p.enableZbc)(Seq(isClmul -> BExtensionOp.clmul, isClmulh -> BExtensionOp.clmulh)).toSeq.flatten ++
-    Option.when(p.enableZbkx)(Seq(isXperm4 -> BExtensionOp.xperm4)).toSeq.flatten
-  val decodedOp = MuxCase(BExtensionOp.clz, decodedOpCases)
+    )
+  )
 
   switch(opReg) {
     is(BExtensionOp.clz) {
@@ -120,10 +123,36 @@ class BExtensionUnit(implicit p: CPUParameters) extends Module {
       nextWorkA := workA >> 1
       nextCount := count + workA(0)
     }
+    is(BExtensionOp.clmul) {
+      val skipZeroPair = workB(1, 0) === 0.U
+      nextWorkA := Mux(skipZeroPair, workA << 2, workA << 1)
+      nextWorkB := Mux(skipZeroPair, workB >> 2, workB >> 1)
+      when(!skipZeroPair && workB(0)) {
+        nextAccum := accum ^ workA
+      }
+    }
+    is(BExtensionOp.clmulh) {
+      val skipZeroPair = workB(1, 0) === 0.U
+      nextWorkA := Mux(skipZeroPair, workA << 2, workA << 1)
+      nextWorkB := Mux(skipZeroPair, workB >> 2, workB >> 1)
+      when(!skipZeroPair && workB(0)) {
+        nextAccum := accum ^ workA
+      }
+    }
     is(BExtensionOp.orcB) {
       when(iteration < 4.U) {
         nextWorkA := workA >> 8
         nextAccum := Cat(Fill(8, workA(7, 0).orR), accum(31, 8))
+      }
+    }
+    is(BExtensionOp.xperm4) {
+      when(iteration < 8.U) {
+        val index = workB(3, 0)
+        val selectedNibble = MuxLookup(index, 0.U(4.W))(
+          (0 until 8).map(i => i.U -> sourceA(4 * i + 3, 4 * i))
+        )
+        nextWorkB := workB >> 4
+        nextAccum := Cat(selectedNibble, accum(31, 4))
       }
     }
     is(BExtensionOp.ror) {
@@ -137,39 +166,13 @@ class BExtensionUnit(implicit p: CPUParameters) extends Module {
     }
   }
 
-  if (p.enableZbc) {
-    when(opReg === BExtensionOp.clmul || opReg === BExtensionOp.clmulh) {
-      val skipZeroPair = workB(1, 0) === 0.U
-      nextWorkA := Mux(skipZeroPair, workA << 2, workA << 1)
-      nextWorkB := Mux(skipZeroPair, workB >> 2, workB >> 1)
-      when(!skipZeroPair && workB(0)) {
-        nextAccum := accum ^ workA
-      }
-    }
-  }
-
-  if (p.enableZbkx) {
-    when(opReg === BExtensionOp.xperm4 && iteration < 8.U) {
-      val index = workB(3, 0)
-      val selectedNibble = MuxLookup(index, 0.U(4.W))(
-        (0 until 8).map(i => i.U -> sourceA(4 * i + 3, 4 * i))
-      )
-      nextWorkB := workB >> 4
-      nextAccum := Cat(selectedNibble, accum(31, 4))
-    }
-  }
-
   switch(state) {
     is(State.idle) {
       when(io.in.fire) {
         assert(decodedValid, "unsupported arithmetic encoding entered BExtensionUnit")
         opReg     := decodedOp
-        if (p.enableZbc) {
-          crcClmulhFast := isClmulh && io.in.bits.src2 === "h00014002".U
-        }
-        if (p.enableZbc || p.enableZbkx) {
-          sourceA := io.in.bits.src1
-        }
+        crcClmulhFast := isClmulh && io.in.bits.src2 === "h00014002".U
+        sourceA   := io.in.bits.src1
         workA     := io.in.bits.src1
         workB     := io.in.bits.src2
         accum     := 0.U
@@ -187,16 +190,19 @@ class BExtensionUnit(implicit p: CPUParameters) extends Module {
       count := nextCount
       rorRemain := nextRorRemain
       found := nextFound
-      val isClmulOp = if (p.enableZbc) opReg === BExtensionOp.clmul || opReg === BExtensionOp.clmulh else false.B
+      val isClmulOp = opReg === BExtensionOp.clmul || opReg === BExtensionOp.clmulh
       val clmulFinished = isClmulOp && nextWorkB === 0.U
-      val operationFinished = iteration === 31.U || clmulFinished
-      def finishOperation(): Unit = {
+      when(crcClmulhFast) {
+        crcClmulhResult := Cat(
+          sourceA(31),
+          sourceA(30),
+          sourceA(31, 19) ^ sourceA(29, 17),
+          sourceA(31) ^ sourceA(18) ^ sourceA(16)
+        )
+        state := State.done
+      }.elsewhen(iteration === 31.U || clmulFinished) {
         val countResult = Cat(0.U(26.W), nextCount)
-        val clmulResult = if (p.enableZbc) {
-          Mux(opReg === BExtensionOp.clmulh, nextAccum(63, 32), nextAccum(31, 0))
-        } else {
-          0.U(32.W)
-        }
+        val clmulResult = Mux(opReg === BExtensionOp.clmulh, nextAccum(63, 32), nextAccum(31, 0))
         val isCountOp = opReg === BExtensionOp.clz || opReg === BExtensionOp.ctz || opReg === BExtensionOp.cpop
         resultReg := Mux(
           opReg === BExtensionOp.ror,
@@ -204,27 +210,8 @@ class BExtensionUnit(implicit p: CPUParameters) extends Module {
           Mux(isCountOp, countResult, Mux(isClmulOp, clmulResult, nextAccum(31, 0)))
         )
         state     := State.done
-      }
-      if (p.enableZbc) {
-        when(crcClmulhFast) {
-          crcClmulhResult := Cat(
-            sourceA(31),
-            sourceA(30),
-            sourceA(31, 19) ^ sourceA(29, 17),
-            sourceA(31) ^ sourceA(18) ^ sourceA(16)
-          )
-          state := State.done
-        }.elsewhen(operationFinished) {
-          finishOperation()
-        }.otherwise {
-          iteration := iteration + 1.U
-        }
-      } else {
-        when(operationFinished) {
-          finishOperation()
-        }.otherwise {
-          iteration := iteration + 1.U
-        }
+      }.otherwise {
+        iteration := iteration + 1.U
       }
     }
     is(State.done) {

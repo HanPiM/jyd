@@ -363,7 +363,7 @@ class Divider extends Module {
   }
 }
 
-class ALU(implicit p: CPUParameters) extends Module {
+class ALU extends Module {
   val io = IO(new Bundle {
     val in        = Flipped(Decoupled(new ALUInput))
     val out       = Decoupled(Types.UWord)

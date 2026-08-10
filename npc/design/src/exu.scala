@@ -237,8 +237,6 @@ class EXU(
   )
   val reg_v1       = postRegisterRegV1
   val reg_v2       = postRegisterRegV2
-  val xlrevSingleHitStart =
-    xlrevState === XlrevState.idle && io.in.valid && isXlrevSingle && reg_v1 =/= 0.U && io.dcache.hit
 
   val xstateCounters = RegInit(VecInit(Seq.fill(8)(0.U(32.W))))
   object XstateWordState extends ChiselEnum {
@@ -323,12 +321,7 @@ class EXU(
       xlrevState  := XlrevState.done
     }.elsewhen(isXlrevSingle && io.dcache.hit) {
       xlrevNext := io.dcache.lateReadData
-      when(io.memReq.ready) {
-        xaccelResult := io.dcache.lateReadData
-        xlrevState   := XlrevState.done
-      }.otherwise {
-        xlrevState := XlrevState.storeRequest
-      }
+      xlrevState := XlrevState.storeRequest
     }.otherwise {
       xlrevState := XlrevState.loadRequest
     }
@@ -643,7 +636,7 @@ class EXU(
 
   val memWData = GenMemWData(reg1AddImm(1, 0), reg_v2)
 
-  val xlrevStoreRequest = xlrevState === XlrevState.storeRequest || xlrevSingleHitStart
+  val xlrevStoreRequest = xlrevState === XlrevState.storeRequest
   val xstateActive = xstate.io.busy
   // The pipeline input remains stable while a multi-cycle instruction is in
   // EXU, so a single-step xlrev can query reg_v1 in every state.  Keeping the
@@ -655,10 +648,7 @@ class EXU(
   xstate.io.cacheData := 0.U
   val cacheableStore = isTypStore && reg1AddImm(21, 20) === "b01".U
   val cacheableStoreFire = memReqFire && cacheableStore
-  val xlrevSingleStoreFire = memReqFire && isXlrevSingle && xlrevStoreRequest
-  val xlrevSingleCacheStore = RegInit(false.B)
-  xlrevSingleCacheStore := xlrevSingleStoreFire
-  dontTouch(xlrevSingleCacheStore)
+  val xlrevSingleCacheStore = isXlrevSingle && xlrevState === XlrevState.done && xlrevCurrent =/= 0.U
   // DCache resolves a narrow-store hit locally. Keep its asynchronous tag
   // lookup out of this cross-module control and every data-memory write enable.
   io.dcache.storeUpdate := cacheableStoreFire
@@ -677,12 +667,11 @@ class EXU(
   xstate.io.memReq.ready := io.memReq.ready && xstateActive
   val normalMemReq = Wire(new MemReq)
   normalMemReq.addr  := Mux(xstateWordRequest, xstateWordAddress & ~3.U(32.W),
-    Mux(xlrevSingleHitStart, reg_v1,
-      Mux(xlrevRequest, xlrevCurrent, Mux(xmsumRequest, xmsumAddress, reg1AddImm))))
+    Mux(xlrevRequest, xlrevCurrent, Mux(xmsumRequest, xmsumAddress, reg1AddImm)))
   normalMemReq.size  := Mux(xstateWordRequest || xlrevRequest || xmsumRequest, 2.U, func3t(1, 0))
   normalMemReq.wen   := Mux(xstateWordRequest, false.B, Mux(xlrevRequest, xlrevStoreRequest, !xmsumRequest && isTypStore))
-  normalMemReq.wdata := Mux(xlrevSingleHitStart, Mux(isXlrevChain, xlrevChainPrevious, reg_v2),
-    Mux(xlrevStoreRequest, xlrevPrevious, Mux(xmsumRequest || xlrevLoadRequest, 0.U, memWData)))
+  normalMemReq.wdata := Mux(xlrevStoreRequest, xlrevPrevious,
+    Mux(xmsumRequest || xlrevLoadRequest, 0.U, memWData))
   normalMemReq.wmask := Mux(xlrevStoreRequest, "b1111".U, Mux(xmsumRequest || xlrevLoadRequest, 0.U, memWMask))
   io.memReq.valid := Mux(
     xstateActive,

@@ -411,7 +411,8 @@ class IDU(
   val isBBext = arithmeticFunc7 === "b0100100".U && arithmeticFunc3 === "b101".U
   val isCoremarkCrcU8 = inst(31, 25) === 0.U && arithmeticFunc3 === 0.U && inst(6, 0) === "b0001011".U
   val isCoremarkXbmul = inst(31, 25) === 0.U && arithmeticFunc3 === 5.U && inst(6, 0) === "b0001011".U
-  val isCoremarkXlrev = inst(31, 25) === 0.U && arithmeticFunc3 === 7.U && inst(6, 0) === "b0001011".U
+  val isCoremarkXlrev = inst(31, 25) === 0.U &&
+    (arithmeticFunc3 === 6.U || arithmeticFunc3 === 7.U) && inst(6, 0) === "b0001011".U
   val isCoremarkXmsum = inst(31, 25) === 2.U && arithmeticFunc3 === 7.U && inst(6, 0) === "b0001011".U
   val isCoremarkXstateWord = inst(31, 25) === 0.U && inst(6, 0) === "b1011011".U &&
     (arithmeticFunc3 === 0.U || arithmeticFunc3 === 2.U || arithmeticFunc3 === 3.U || arithmeticFunc3 === 5.U)

@@ -15,8 +15,10 @@ the custom suffix is passed as the real compiler definition
 string reports the effective optimization and ISA options followed by the
 plugin and forced-include options used by the build.
 
-Supported names are `xmac16`, `xdot16`, `xbmul`, `xcrcu8`, `xlrev`, `xstate`,
-and `xmsum`.  For example:
+Supported names are `xmac16`, `xdot16`, `xbmul`, `xcrcu8`, `xlrev1`, `xlrev`,
+`xstate`, `xstatec`, `xstate2`, `xstate4`, and `xmsum`. The word-fed state
+instructions evaluate two or four characters and commit one transition mask
+per token. For example:
 
 ```sh
 make ARCH=riscv32-nemu ITERATIONS=10000 \

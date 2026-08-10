@@ -345,9 +345,14 @@ class CPUCore(
   dcache.io.storeMask   := exu.io.dcache.storeMask
   lsu.io.dcacheReadData := dcache.io.readData
   dcache.io.update := p.enableDCache.B && (exu.io.dcache.fullUpdate || (wbu.io.dcacheUpdate && !dcacheStoreMutation))
+  dcache.io.updateValid := Mux(exu.io.dcache.fullUpdate, exu.io.dcache.fullUpdateValid, true.B)
   dcache.io.updateAddr := Mux(exu.io.dcache.fullUpdate, exu.io.dcache.fullUpdateAddr, wbu.io.dcacheAddr)
   dcache.io.updateData := Mux(exu.io.dcache.fullUpdate, exu.io.dcache.fullUpdateData, wbu.io.dcacheData)
-  dcache.io.updateMask := Mux(exu.io.dcache.fullUpdate, "b1111".U, wbu.io.dcacheMask)
+  dcache.io.updateMask := Mux(
+    exu.io.dcache.fullUpdate,
+    Mux(exu.io.dcache.fullUpdateValid, "b1111".U, 0.U),
+    wbu.io.dcacheMask
+  )
 
   // JYD memory accepts one request per cycle and responds two cycles later.
   // A store in the intervening cycle changes the generation; a store in the

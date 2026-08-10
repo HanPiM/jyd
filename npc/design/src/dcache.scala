@@ -7,7 +7,7 @@ import jyd.{BlkMemGen2KB, DistMemGen512x8}
 class DCache extends Module {
   val io = IO(new Bundle {
     val queryIndex = Input(UInt(10.W))
-    val queryTag   = Input(UInt(5.W))
+    val queryTag   = Input(UInt(7.W))
     val hit       = Output(Bool())
     val readData  = Output(UInt(32.W))
     val lateReadData = Output(UInt(32.W))
@@ -17,6 +17,7 @@ class DCache extends Module {
     val storeData   = Input(UInt(32.W))
     val storeMask   = Input(UInt(4.W))
     val update     = Input(Bool())
+    val updateValid = Input(Bool())
     val updateAddr = Input(UInt(32.W))
     val updateData = Input(UInt(32.W))
     val updateMask = Input(UInt(4.W))
@@ -40,7 +41,7 @@ class DCache extends Module {
   val tagEntry   = Mux(queryBank, tagEntries(1), tagEntries(0))
 
   tagMem.foreach(_.io.dpra := queryAddr)
-  io.hit := tagEntry(0) && tagEntry(5, 1) === io.queryTag
+  io.hit := tagEntry(0) && tagEntry(7, 1) === io.queryTag
 
   dataMem.foreach { bank =>
     bank.io.clkb  := clock
@@ -63,9 +64,9 @@ class DCache extends Module {
   // line. A narrow hit preserves it while a narrow miss leaves the queried tag
   // invalid. Every store writes the tag port unconditionally, so the async hit
   // only drives the valid data bit instead of the RAM write enable.
-  val updateTagData = Cat(0.U(2.W), io.updateAddr(15, 11), 1.U(1.W))
+  val updateTagData = Cat(io.updateAddr(17, 11), io.updateValid)
   val storeTagValid = io.storeFull || io.hit
-  val storeTagData  = Cat(0.U(2.W), io.queryTag, storeTagValid)
+  val storeTagData  = Cat(io.queryTag, storeTagValid)
   val tagWrite      = io.storeUpdate || io.update
   val tagWriteIndex = Mux(io.storeUpdate, io.queryIndex, io.updateAddr(11, 2))
   val tagWriteBank  = tagWriteIndex(9)

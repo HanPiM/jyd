@@ -52,6 +52,7 @@
 #define MATCH_COREMARK_XDOT16 0x0000400b
 #define MATCH_COREMARK_XBMUL  0x0000500b
 #define MATCH_COREMARK_XLREV  0x0000700b
+#define MATCH_COREMARK_XLREV1 0x0000600b
 #define MATCH_COREMARK_XSTATE 0x0200700b
 #define MATCH_COREMARK_XMSUM  0x0400700b
 #define MASK_COREMARK_XACCEL  0xfe00707f
@@ -59,6 +60,7 @@
 #define MASK_COREMARK_XDOT16 MASK_COREMARK_XACCEL
 #define MASK_COREMARK_XBMUL  MASK_COREMARK_XACCEL
 #define MASK_COREMARK_XLREV  MASK_COREMARK_XACCEL
+#define MASK_COREMARK_XLREV1 MASK_COREMARK_XACCEL
 #define MASK_COREMARK_XSTATE MASK_COREMARK_XACCEL
 #define MASK_COREMARK_XMSUM  MASK_COREMARK_XACCEL
 
@@ -470,6 +472,13 @@ static int decode_exec(Decode *s) {
     uint64_t nodes;
     R(rd) = coremark_list_reverse(R(rs1), &nodes);
     riscv_profile_record_xaccel(XA_LREV, nodes, 4 + 2 * nodes);
+    matched = true;
+  }
+  if (IS_INST(COREMARK_XLREV1)) {
+    vaddr_t current = R(rs1);
+    R(rd) = vaddr_read(current, 4);
+    vaddr_write(current, 4, R(rs2));
+    riscv_profile_record_xaccel(XA_LREV, 1, 4);
     matched = true;
   }
   if (IS_INST(COREMARK_XSTATE)) {

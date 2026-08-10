@@ -7,7 +7,7 @@
 #   * link local ignored/untracked dependencies (am-kernels, npc/deps,
 #     coremark build outputs, rt-thread-am)
 #   * make ../riscv-arch-test-am-jyd resolve from the worktree's parent
-#   * install proven prebuilt NEMU artifacts (.config + interpreter + interpreter-so)
+#   * install a proven prebuilt NEMU dependency tree
 #   * import the formal CoreMark COE pair into cur_coe
 #
 # Conventions (AGENTS.md):
@@ -31,7 +31,7 @@ Automates the setup steps used for JYD optimization candidates:
   * link local ignored/untracked dependencies (am-kernels, npc/deps,
     coremark build outputs, rt-thread-am)
   * make ../riscv-arch-test-am-jyd resolve from the worktree's parent
-  * install proven prebuilt NEMU artifacts (.config + interpreter + interpreter-so)
+  * install a proven prebuilt NEMU dependency tree
   * import the formal CoreMark COE pair into cur_coe
 
 Usage:
@@ -43,9 +43,9 @@ Options:
   --name <dir>         Worktree directory name under $JYD_DATA_ROOT/worktrees
                        (default: the branch name).
   --src <main-repo>    Main repository (default: auto-detected main worktree).
-  --nemu-ref <dir>     Directory whose nemu/.config,
-                       nemu/build/riscv32-nemu-interpreter, and
-                       nemu/build/riscv32-nemu-interpreter-so are installed
+  --nemu-ref <dir>     Directory whose generated NEMU configuration, build
+                       tree, generated instructions, fixdep, SoftFloat, and
+                       sdb archive are installed
                        (default: --src).  Use these artifacts unchanged when
                        NEMU source/config has not changed; do not rebuild NEMU
                        in a candidate worktree.
@@ -163,12 +163,81 @@ if [[ ! -x "$NEMU_REF/nemu/build/riscv32-nemu-interpreter-so" ]]; then
   echo "error: --nemu-ref has no built nemu/build/riscv32-nemu-interpreter-so: $NEMU_REF" >&2
   exit 1
 fi
-mkdir -p "$WT_DIR/nemu/build"
+for required in \
+  nemu/include/generated/autoconf.h \
+  nemu/include/config/auto.conf \
+  nemu/tools/fixdep/build/fixdep \
+  nemu/tools/gen-inst/build/out.cc \
+  nemu/tools/softfloat/repo/source/include/softfloat.h \
+  nemu/tools/softfloat/repo/build/Linux-x86_64-GCC/softfloat.a \
+  sdb/build/libsdb.a; do
+  if [[ ! -e "$NEMU_REF/$required" ]]; then
+    echo "error: --nemu-ref has no prebuilt dependency $required: $NEMU_REF" >&2
+    exit 1
+  fi
+done
+
+mkdir -p "$WT_DIR/nemu/build" "$WT_DIR/nemu/include" \
+  "$WT_DIR/nemu/tools/fixdep" "$WT_DIR/nemu/tools/gen-inst" \
+  "$WT_DIR/nemu/tools/softfloat/repo/source" \
+  "$WT_DIR/nemu/tools/softfloat/repo/build/Linux-x86_64-GCC" \
+  "$WT_DIR/sdb/build"
 cp "$NEMU_REF/nemu/.config" "$WT_DIR/nemu/.config"
-cp "$NEMU_REF/nemu/build/riscv32-nemu-interpreter" \
-  "$WT_DIR/nemu/build/riscv32-nemu-interpreter"
-cp "$NEMU_REF/nemu/build/riscv32-nemu-interpreter-so" \
-  "$WT_DIR/nemu/build/riscv32-nemu-interpreter-so"
+cp -a "$NEMU_REF/nemu/include/generated" "$WT_DIR/nemu/include/"
+cp -a "$NEMU_REF/nemu/include/config" "$WT_DIR/nemu/include/"
+cp -a "$NEMU_REF/nemu/tools/fixdep/build" "$WT_DIR/nemu/tools/fixdep/"
+cp -a "$NEMU_REF/nemu/tools/gen-inst/build" "$WT_DIR/nemu/tools/gen-inst/"
+cp -a "$NEMU_REF/nemu/build/." "$WT_DIR/nemu/build/"
+cp -a "$NEMU_REF/nemu/tools/softfloat/repo/source/include" \
+  "$WT_DIR/nemu/tools/softfloat/repo/source/"
+cp -a "$NEMU_REF/nemu/tools/softfloat/repo/build/Linux-x86_64-GCC/softfloat.a" \
+  "$WT_DIR/nemu/tools/softfloat/repo/build/Linux-x86_64-GCC/softfloat.a"
+cp -a "$NEMU_REF/sdb/build/libsdb.a" "$WT_DIR/sdb/build/libsdb.a"
+
+# Sources outside nemu/ have absolute object paths.  Relocate those copied
+# objects to the paths this worktree's Makefile computes.
+for obj_dir in "$WT_DIR"/nemu/build/obj-*; do
+  embedded_ref="$obj_dir/${NEMU_REF#/}"
+  embedded_wt="$obj_dir/${WT_DIR#/}"
+  if [[ -d "$embedded_ref" ]]; then
+    mkdir -p "$(dirname "$embedded_wt")"
+    cp -a "$embedded_ref" "$embedded_wt"
+  fi
+done
+
+# fixdep records absolute source and object paths.  Point the copied dependency
+# files at this worktree, then make the verified outputs newer than the freshly
+# checked-out sources so make only launches the prebuilt executable.
+NEMU_REF_SED="${NEMU_REF//\\/\\\\}"
+NEMU_REF_SED="${NEMU_REF_SED//|/\\|}"
+NEMU_REF_SED="${NEMU_REF_SED//&/\\&}"
+WT_DIR_SED="${WT_DIR//\\/\\\\}"
+WT_DIR_SED="${WT_DIR_SED//|/\\|}"
+WT_DIR_SED="${WT_DIR_SED//&/\\&}"
+find "$WT_DIR/nemu/build" -type f -name '*.d' -exec \
+  sed -i "s|$NEMU_REF_SED|$WT_DIR_SED|g" {} +
+touch "$WT_DIR/nemu/.config"
+find "$WT_DIR/nemu/include/generated" "$WT_DIR/nemu/include/config" \
+  "$WT_DIR/nemu/tools/fixdep/build" "$WT_DIR/nemu/tools/gen-inst/build" \
+  "$WT_DIR/nemu/tools/softfloat/repo/source/include" \
+  -type f -exec touch {} +
+touch "$WT_DIR/nemu/tools/softfloat/repo/build/Linux-x86_64-GCC/softfloat.a" \
+  "$WT_DIR/sdb/build/libsdb.a"
+find "$WT_DIR/nemu/build" -type f -exec touch {} +
+
+if ! make -s -q -C "$WT_DIR/nemu" \
+  "$WT_DIR/nemu/build/riscv32-nemu-interpreter"; then
+  echo "error: installed NEMU interpreter dependency tree is not up to date" >&2
+  make -n -C "$WT_DIR/nemu" "$WT_DIR/nemu/build/riscv32-nemu-interpreter" >&2 || true
+  exit 1
+fi
+if ! make -s -q -C "$WT_DIR/nemu" SHARE=1 \
+  "$WT_DIR/nemu/build/riscv32-nemu-interpreter-so"; then
+  echo "error: installed NEMU interpreter-so dependency tree is not up to date" >&2
+  make -n -C "$WT_DIR/nemu" SHARE=1 \
+    "$WT_DIR/nemu/build/riscv32-nemu-interpreter-so" >&2 || true
+  exit 1
+fi
 echo "   nemu/.config sha256: $(sha256sum "$WT_DIR/nemu/.config" | awk '{print $1}')"
 echo "   interpreter sha256: $(sha256sum "$WT_DIR/nemu/build/riscv32-nemu-interpreter" | awk '{print $1}')"
 echo "   interpreter-so sha256: $(sha256sum "$WT_DIR/nemu/build/riscv32-nemu-interpreter-so" | awk '{print $1}')"

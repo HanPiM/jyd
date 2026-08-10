@@ -223,6 +223,17 @@ def main() -> int:
     ap.add_argument("--workdir", type=Path, default=None, help="scratch directory (default: mktemp)")
     args = ap.parse_args()
 
+    # Vivado is run with cwd=workdir below. Resolve every caller-supplied path
+    # first so a valid relative path cannot silently become invalid there.
+    args.dcp = args.dcp.resolve()
+    args.irom_coe = args.irom_coe.resolve()
+    args.dram_coe = args.dram_coe.resolve()
+    args.out = args.out.resolve()
+    if args.bit is not None:
+        args.bit = args.bit.resolve()
+    if args.workdir is not None:
+        args.workdir = args.workdir.resolve()
+
     for p in (args.dcp, args.irom_coe, args.dram_coe):
         if not p.is_file():
             raise SystemExit(f"missing file: {p}")

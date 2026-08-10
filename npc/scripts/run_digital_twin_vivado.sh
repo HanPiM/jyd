@@ -4,13 +4,15 @@ set -euo pipefail
 
 usage() {
   cat <<'EOF'
-Usage: run_digital_twin_vivado.sh [impl|write_bitstream|bitstream] [--jobs N] [--ip-jobs N] [--reset-runs] [--skip-pack] [--skip-vivado] [--user-approved-low-jobs]
+Usage: run_digital_twin_vivado.sh [impl|write_bitstream|bitstream] [--jobs N] [--ip-jobs N] [--coe-dir DIR] [--reset-runs] [--skip-pack] [--skip-vivado] [--user-approved-low-jobs]
 
 Build npc pack-fpga, replace the Vivado project's imported pack-fpga directory,
 then run the digital_twin Vivado project to impl or write_bitstream.
 
 By default, completed IP/OOC and synth_1 checkpoints are reused and impl_1 is rerun.
 Pass --reset-runs for a clean IP/OOC, synth_1, and impl_1 rebuild.
+Bitstream mode always replaces the routed DCP's memories from DIR/irom.coe and
+DIR/dram.coe (default: <repo>/cur_coe), then records their hashes beside top.bit.
 
 Environment:
   VIVADO                Vivado executable to use. Defaults to "vivado".
@@ -46,6 +48,7 @@ reset_runs=0
 user_approved_low_jobs=0
 jobs="${JOBS:-$(nproc 2>/dev/null || echo 4)}"
 ip_jobs=""
+coe_dir=""
 synth_global_retiming="${VIVADO_SYNTH_GLOBAL_RETIMING:-0}"
 synth_keep_equivalent_registers="${VIVADO_SYNTH_KEEP_EQUIVALENT_REGISTERS:-0}"
 synth_flatten_hierarchy="${VIVADO_SYNTH_FLATTEN_HIERARCHY:-}"
@@ -78,6 +81,14 @@ while [ "$#" -gt 0 ]; do
         exit 2
       fi
       ip_jobs="$2"
+      shift 2
+      ;;
+    --coe-dir)
+      if [ "$#" -lt 2 ]; then
+        echo "Missing value for --coe-dir" >&2
+        exit 2
+      fi
+      coe_dir="$2"
       shift 2
       ;;
     --reset-runs)
@@ -177,6 +188,27 @@ script_dir=$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 npc_dir=$(CDPATH= cd -- "$script_dir/.." && pwd)
 repo_root=$(CDPATH= cd -- "$npc_dir/.." && pwd)
 pack_src="$npc_dir/build/pack-fpga"
+
+if [ -z "$coe_dir" ]; then
+  coe_dir="$repo_root/cur_coe"
+fi
+if [ "$mode" = write_bitstream ]; then
+  if [ "${coe_dir#/}" = "$coe_dir" ]; then
+    coe_dir="$PWD/$coe_dir"
+  fi
+  coe_dir=$(CDPATH= cd -- "$coe_dir" 2>/dev/null && pwd) || {
+    echo "COE directory does not exist: $coe_dir" >&2
+    exit 1
+  }
+  irom_coe="$coe_dir/irom.coe"
+  dram_coe="$coe_dir/dram.coe"
+  for coe_file in "$irom_coe" "$dram_coe"; do
+    if [ ! -f "$coe_file" ]; then
+      echo "Required bitstream COE does not exist: $coe_file" >&2
+      exit 1
+    fi
+  done
+fi
 
 vivado_proj_home="$repo_root/jyd-vivado-proj"
 vivado_project="$vivado_proj_home/digital_twin.xpr"

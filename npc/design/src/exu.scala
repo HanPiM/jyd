@@ -164,24 +164,12 @@ class EXU(
 
   val isAdd = isTypArithmetic && func3t === 0.U && (isFmtI || func7t === 0.U)
 
-  alu.io.in.valid :=
-    io.in.valid && isTypArithmetic && !dinst.info.xlrevValid && !dinst.info.xstateValid && !dinst.info.xmsumValid
+  alu.io.in.valid := io.in.valid && isTypArithmetic && !dinst.info.xstateValid && !dinst.info.xmsumValid
 
   val xstate = Module(new CoremarkXstate)
   val isXstate = dinst.info.xstateValid
 
-  object XlrevState extends ChiselEnum {
-    val idle, loadRequest, loadResponse, storeRequest, storeResponse, done = Value
-  }
-  val xlrevState   = RegInit(XlrevState.idle)
-  val xlrevCurrent = Reg(Types.UWord)
-  val xlrevPrevious = Reg(Types.UWord)
-  val xlrevNext    = Reg(Types.UWord)
   val xaccelResult = Reg(Types.UWord)
-  val xlrevCacheStoreValid = RegInit(false.B)
-  val xlrevCacheStoreAddr  = Reg(Types.UWord)
-  val xlrevCacheStoreData  = Reg(Types.UWord)
-  val isXlrev      = dinst.info.xlrevValid
 
   object XmsumState extends ChiselEnum {
     val idle, request, response, finalizeResult, done = Value
@@ -268,35 +256,6 @@ class EXU(
   xstate.io.instrAddr  := reg_v1
   xstate.io.countsAddr := reg_v2
   xstate.io.memResp    := io.memResp
-
-  when(xlrevState === XlrevState.idle && io.in.valid && isXlrev) {
-    xlrevCurrent  := reg_v1
-    xlrevPrevious := 0.U
-    when(reg_v1 === 0.U) {
-      xaccelResult := 0.U
-      xlrevState  := XlrevState.done
-    }.otherwise {
-      xlrevState := XlrevState.loadRequest
-    }
-  }.elsewhen(xlrevState === XlrevState.loadRequest && io.memReq.fire) {
-    xlrevState := XlrevState.loadResponse
-  }.elsewhen(xlrevState === XlrevState.loadResponse && io.memResp.valid) {
-    xlrevNext  := io.memResp.bits
-    xlrevState := XlrevState.storeRequest
-  }.elsewhen(xlrevState === XlrevState.storeRequest && io.memReq.fire) {
-    xlrevState := XlrevState.storeResponse
-  }.elsewhen(xlrevState === XlrevState.storeResponse && io.memResp.valid) {
-    when(xlrevNext === 0.U) {
-      xaccelResult := xlrevCurrent
-      xlrevState  := XlrevState.done
-    }.otherwise {
-      xlrevPrevious := xlrevCurrent
-      xlrevCurrent  := xlrevNext
-      xlrevState    := XlrevState.loadRequest
-    }
-  }.elsewhen(xlrevState === XlrevState.done && io.out.fire) {
-    xlrevState := XlrevState.idle
-  }
 
   when(xmsumState === XmsumState.idle && io.in.valid && isXmsum) {
     val n = reg_v2(31, 16)
@@ -521,7 +480,7 @@ class EXU(
       !isTypArithmetic -> dinst.info.preMuxWrBackData
     )
   )
-  writeBackInfo.gpr.data := Mux(isXstate, xstate.io.result, Mux(isXlrev || isXmsum, xaccelResult, normalWriteBackData))
+  writeBackInfo.gpr.data := Mux(isXstate, xstate.io.result, Mux(isXmsum, xaccelResult, normalWriteBackData))
 
   // Fill in LSU stage
   writeBackInfo.isLoad        := false.B
@@ -535,18 +494,17 @@ class EXU(
   writeBackInfo.dcacheStoreEpoch := false.B
 
   val isMemOP        = isTypLoad || isTypStore
-  val xlrevDone = isXlrev && xlrevState === XlrevState.done
   val xstateDone = isXstate && xstate.io.done
   val xmsumDone = isXmsum && xmsumState === XmsumState.done
   val exuResultValid =
-    Mux(isXstate, xstateDone, Mux(isXlrev, xlrevDone, Mux(isXmsum, xmsumDone, (!isTypArithmetic || alu.io.out.valid) && (!hasLateLoadOperand || lateDataReady))))
+    Mux(isXstate, xstateDone, Mux(isXmsum, xmsumDone, (!isTypArithmetic || alu.io.out.valid) && (!hasLateLoadOperand || lateDataReady)))
   // Keep the same-cycle forwarding loop independent of the multi-cycle M/D/B
   // result mux.  A multi-cycle producer still advertises its destination while it is
   // in EXU, but its data remains unavailable to IDU; a dependent consumer
   // waits one cycle and receives the registered result from LSU instead.
   val isMExt = !isFmtI && func7t === "b0000001".U
   val useSingleCycleForward =
-    isTypArithmetic && !isMExt && !isBExt && !isXlrev && !isXstate && !isXmsum && !hasLateLoadOperand
+    isTypArithmetic && !isMExt && !isBExt && !isXstate && !isXmsum && !hasLateLoadOperand
   val useLateBitForward = (isLateLoadAndi1 || isLateLoadSrli1) && exuResultValid && lateDataReadyFromLSU
   val exuForwardData = Mux(
     useLateBitForward,
@@ -584,7 +542,6 @@ class EXU(
 
   val memWData = GenMemWData(reg1AddImm(1, 0), reg_v2)
 
-  val xlrevStoreRequest = xlrevState === XlrevState.storeRequest
   val xstateActive = xstate.io.busy
   io.dcache.queryIndex := reg1AddImm(11, 2)
   io.dcache.queryTag   := reg1AddImm(15, 11)
@@ -592,37 +549,29 @@ class EXU(
   xstate.io.cacheData := 0.U
   val cacheableStore = isTypStore && reg1AddImm(21, 20) === "b01".U
   val cacheableStoreFire = memReqFire && cacheableStore
-  val xlrevStoreFire = memReqFire && xlrevStoreRequest && xlrevCurrent(21, 20) === "b01".U
-  xlrevCacheStoreValid := xlrevStoreFire
-  when(xlrevStoreFire) {
-    xlrevCacheStoreAddr := xlrevCurrent
-    xlrevCacheStoreData := xlrevPrevious
-  }
   // DCache resolves a narrow-store hit locally. Keep its asynchronous tag
   // lookup out of this cross-module control and every data-memory write enable.
-  io.dcache.storeUpdate := cacheableStoreFire || xlrevCacheStoreValid
-  io.dcache.storeFull   := xlrevCacheStoreValid || (cacheableStoreFire && memWMask.andR)
-  io.dcache.storeAddr   := Mux(xlrevCacheStoreValid, xlrevCacheStoreAddr, reg1AddImm)
-  io.dcache.storeData   := Mux(xlrevCacheStoreValid, xlrevCacheStoreData, memWData)
-  io.dcache.storeMask   := Mux(xlrevCacheStoreValid, "b1111".U, memWMask)
+  io.dcache.storeUpdate := cacheableStoreFire
+  io.dcache.storeFull   := cacheableStoreFire && memWMask.andR
+  io.dcache.storeAddr   := reg1AddImm
+  io.dcache.storeData   := memWData
+  io.dcache.storeMask   := memWMask
   io.dcache.fullUpdate     := xstate.io.cacheStore
   io.dcache.fullUpdateAddr := xstate.io.cacheStoreAddr
   io.dcache.fullUpdateData := xstate.io.cacheStoreData
 
-  val xlrevLoadRequest = xlrevState === XlrevState.loadRequest
-  val xlrevRequest = xlrevLoadRequest || xlrevStoreRequest
   val xmsumRequest = xmsumState === XmsumState.request
   xstate.io.memReq.ready := io.memReq.ready && xstateActive
   val normalMemReq = Wire(new MemReq)
-  normalMemReq.addr  := Mux(xlrevRequest, xlrevCurrent, Mux(xmsumRequest, xmsumAddr, reg1AddImm))
-  normalMemReq.size  := Mux(xlrevRequest || xmsumRequest, 2.U, func3t(1, 0))
-  normalMemReq.wen   := Mux(xlrevRequest, xlrevStoreRequest, !xmsumRequest && isTypStore)
-  normalMemReq.wdata := Mux(xlrevStoreRequest, xlrevPrevious, Mux(xmsumRequest || xlrevLoadRequest, 0.U, memWData))
-  normalMemReq.wmask := Mux(xlrevStoreRequest, "b1111".U, Mux(xmsumRequest || xlrevLoadRequest, 0.U, memWMask))
+  normalMemReq.addr  := Mux(xmsumRequest, xmsumAddr, reg1AddImm)
+  normalMemReq.size  := Mux(xmsumRequest, 2.U, func3t(1, 0))
+  normalMemReq.wen   := !xmsumRequest && isTypStore
+  normalMemReq.wdata := Mux(xmsumRequest, 0.U, memWData)
+  normalMemReq.wmask := Mux(xmsumRequest, 0.U, memWMask)
   io.memReq.valid := Mux(
     xstateActive,
     xstate.io.memReq.valid,
-    xlrevRequest || xmsumRequest || (needMemReq && io.in.valid && io.out.ready)
+    xmsumRequest || (needMemReq && io.in.valid && io.out.ready)
   )
   io.memReq.bits := Mux(xstateActive, xstate.io.memReq.bits, normalMemReq)
 
@@ -632,8 +581,8 @@ class EXU(
   val normalValid = memReqFire || (
     io.in.valid && !needMemReq && exuResultValid
   )
-  io.in.ready := Mux(isXstate, xstateDone && io.out.ready, Mux(isXlrev, xlrevDone && io.out.ready, Mux(isXmsum, xmsumDone && io.out.ready, normalReady)))
-  io.out.valid := Mux(isXstate, xstateDone, Mux(isXlrev, xlrevDone, Mux(isXmsum, xmsumDone, normalValid)))
+  io.in.ready := Mux(isXstate, xstateDone && io.out.ready, Mux(isXmsum, xmsumDone && io.out.ready, normalReady))
+  io.out.valid := Mux(isXstate, xstateDone, Mux(isXmsum, xmsumDone, normalValid))
 
   writeBackInfo.iid := dinst.iid
 

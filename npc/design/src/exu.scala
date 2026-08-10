@@ -183,7 +183,7 @@ class EXU(
   val isXlrev      = dinst.info.xlrevValid
 
   object XmsumState extends ChiselEnum {
-    val idle, request, response, done = Value
+    val idle, request, response, finalizeResult, done = Value
   }
   val xmsumState  = RegInit(XmsumState.idle)
   val xmsumBase   = Reg(Types.UWord)
@@ -315,12 +315,14 @@ class EXU(
     xmsumPrev := current
     xmsumRet  := nextRet
     when(xmsumIndex + 1.U === xmsumCount) {
-      xaccelResult := Cat(Fill(16, nextRet(15)), nextRet)
-      xmsumState  := XmsumState.done
+      xmsumState := XmsumState.finalizeResult
     }.otherwise {
       xmsumIndex := xmsumIndex + 1.U
       xmsumState := XmsumState.request
     }
+  }.elsewhen(xmsumState === XmsumState.finalizeResult) {
+    xaccelResult := Cat(Fill(16, xmsumRet(15)), xmsumRet)
+    xmsumState   := XmsumState.done
   }.elsewhen(xmsumState === XmsumState.done && io.out.fire) {
     xmsumState := XmsumState.idle
   }

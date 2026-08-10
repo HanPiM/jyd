@@ -237,8 +237,6 @@ class EXU(
   val postRegisterRegV1 = Mux(dinst.info.prevExuFwdRs1, io.previousStageFwd.data, dinst.info.reg1)
   val postRegisterRegV2 = Mux(dinst.info.prevExuFwdRs2, io.previousStageFwd.data, dinst.info.reg2)
   val aluPostRegisterRegV2 = Mux(dinst.info.prevExuFwdRs2Alu, io.previousStageFwd.data, dinst.info.reg2)
-  val branchPostRegisterRegV1 = Mux(dinst.info.prevExuFwdRs1, io.previousStageFwd.data, dinst.info.branchReg1)
-  val branchPostRegisterRegV2 = Mux(dinst.info.prevExuFwdRs2, io.previousStageFwd.data, dinst.info.branchReg2)
 
   val (lateRs1Ready, lateRegV1) =
     resolveLateLoadOperand(dinst.info.lateLoadRs1, postRegisterRegV1)
@@ -415,8 +413,8 @@ class EXU(
     xmsumRetPending := false.B
   }
 
-  val branchLateRegV1 = Mux(dinst.info.lateLoadRs1, lateRegV1, branchPostRegisterRegV1)
-  val branchLateRegV2 = Mux(dinst.info.lateLoadRs2, lateRegV2, branchPostRegisterRegV2)
+  val equalityRegV1 = Mux(dinst.info.lateLoadRs1, lateRegV1, postRegisterRegV1)
+  val equalityRegV2 = Mux(dinst.info.lateLoadRs2, lateRegV2, postRegisterRegV2)
   // val pcAddImm   = dinst.pc + dinst.info.imm
   val pcAddImm   = dinst.info.pcAddImm
   val reg1AddImm = "h80".U(8.W) ## 0.U(2.W) ## dinst.info.reg1AddImm
@@ -507,14 +505,14 @@ class EXU(
 
   val isFmtB = InstFmt.hasSame(dinst.info.fmt, InstFmt.branch)
 
-  val equalityDiff = branchLateRegV1 ^ branchLateRegV2
+  val equalityDiff = equalityRegV1 ^ equalityRegV2
   dontTouch(equalityDiff)
   val equalityChunkNonZero = VecInit((0 until 4).map(i => equalityDiff(8 * i + 7, 8 * i).orR))
   dontTouch(equalityChunkNonZero)
   val extendedLoadEqual = !equalityChunkNonZero.asUInt.orR
   val isEqual     = extendedLoadEqual
-  val isLessThan  = branchPostRegisterRegV1.asSInt < branchPostRegisterRegV2.asSInt
-  val isLessThanU = branchPostRegisterRegV1 < branchPostRegisterRegV2
+  val isLessThan  = reg_v1.asSInt < reg_v2.asSInt
+  val isLessThanU = reg_v1 < reg_v2
 
   // val isEqual = dinst.info.isEqual
   // val isLessThan = dinst.info.isLessThan

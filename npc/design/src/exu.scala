@@ -164,8 +164,8 @@ class EXU(
   val isAdd = isTypArithmetic && func3t === 0.U && (isFmtI || func7t === 0.U)
 
   alu.io.in.valid :=
-    io.in.valid && isTypArithmetic && (!p.enableXlrev.B || !dinst.info.xlrevValid) && !dinst.info.xstateValid &&
-      !dinst.info.xmsumValid && !dinst.info.xstateWordValid
+    io.in.valid && isTypArithmetic && !dinst.info.xlrevValid && !dinst.info.xstateValid && !dinst.info.xmsumValid &&
+      !dinst.info.xstateWordValid
 
   val xstate = Module(new CoremarkXstate)
   val isXstate = dinst.info.xstateValid
@@ -174,16 +174,16 @@ class EXU(
   object XlrevState extends ChiselEnum {
     val idle, loadRequest, loadResponse, storeRequest, storeResponse, done = Value
   }
-  val xlrevState = if (p.enableXlrev) RegInit(XlrevState.idle) else WireDefault(XlrevState.idle)
-  val xlrevCurrent = if (p.enableXlrev) Reg(Types.UWord) else WireDefault(0.U(32.W))
-  val xlrevPrevious = if (p.enableXlrev) Reg(Types.UWord) else WireDefault(0.U(32.W))
-  val xlrevNext = if (p.enableXlrev) Reg(Types.UWord) else WireDefault(0.U(32.W))
+  val xlrevState   = RegInit(XlrevState.idle)
+  val xlrevCurrent = Reg(Types.UWord)
+  val xlrevPrevious = Reg(Types.UWord)
+  val xlrevNext    = Reg(Types.UWord)
   val xaccelResult = Reg(Types.UWord)
   // xlrev mutates memory behind the cache. Once it has run, bypass cached
   // loads until reset instead of updating every reversed node through the
   // cache RAM write ports.
-  val dcachePoisonedByXlrev = if (p.enableXlrev) RegInit(false.B) else WireDefault(false.B)
-  val isXlrev = if (p.enableXlrev) dinst.info.xlrevValid else false.B
+  val dcachePoisonedByXlrev = RegInit(false.B)
+  val isXlrev      = dinst.info.xlrevValid
 
   object XmsumState extends ChiselEnum {
     val idle, request, response, finalizeResult, done = Value
@@ -334,36 +334,34 @@ class EXU(
   xstate.io.countsAddr := reg_v2
   xstate.io.memResp    := io.memResp
 
-  if (p.enableXlrev) {
-    when(xlrevState === XlrevState.idle && io.in.valid && isXlrev) {
-      dcachePoisonedByXlrev := true.B
-      xlrevCurrent  := reg_v1
-      xlrevPrevious := 0.U
-      when(reg_v1 === 0.U) {
-        xaccelResult := 0.U
-        xlrevState  := XlrevState.done
-      }.otherwise {
-        xlrevState := XlrevState.loadRequest
-      }
-    }.elsewhen(xlrevState === XlrevState.loadRequest && io.memReq.fire) {
-      xlrevState := XlrevState.loadResponse
-    }.elsewhen(xlrevState === XlrevState.loadResponse && io.memResp.valid) {
-      xlrevNext  := io.memResp.bits
-      xlrevState := XlrevState.storeRequest
-    }.elsewhen(xlrevState === XlrevState.storeRequest && io.memReq.fire) {
-      xlrevState := XlrevState.storeResponse
-    }.elsewhen(xlrevState === XlrevState.storeResponse && io.memResp.valid) {
-      when(xlrevNext === 0.U) {
-        xaccelResult := xlrevCurrent
-        xlrevState  := XlrevState.done
-      }.otherwise {
-        xlrevPrevious := xlrevCurrent
-        xlrevCurrent  := xlrevNext
-        xlrevState    := XlrevState.loadRequest
-      }
-    }.elsewhen(xlrevState === XlrevState.done && io.out.fire) {
-      xlrevState := XlrevState.idle
+  when(xlrevState === XlrevState.idle && io.in.valid && isXlrev) {
+    dcachePoisonedByXlrev := true.B
+    xlrevCurrent  := reg_v1
+    xlrevPrevious := 0.U
+    when(reg_v1 === 0.U) {
+      xaccelResult := 0.U
+      xlrevState  := XlrevState.done
+    }.otherwise {
+      xlrevState := XlrevState.loadRequest
     }
+  }.elsewhen(xlrevState === XlrevState.loadRequest && io.memReq.fire) {
+    xlrevState := XlrevState.loadResponse
+  }.elsewhen(xlrevState === XlrevState.loadResponse && io.memResp.valid) {
+    xlrevNext  := io.memResp.bits
+    xlrevState := XlrevState.storeRequest
+  }.elsewhen(xlrevState === XlrevState.storeRequest && io.memReq.fire) {
+    xlrevState := XlrevState.storeResponse
+  }.elsewhen(xlrevState === XlrevState.storeResponse && io.memResp.valid) {
+    when(xlrevNext === 0.U) {
+      xaccelResult := xlrevCurrent
+      xlrevState  := XlrevState.done
+    }.otherwise {
+      xlrevPrevious := xlrevCurrent
+      xlrevCurrent  := xlrevNext
+      xlrevState    := XlrevState.loadRequest
+    }
+  }.elsewhen(xlrevState === XlrevState.done && io.out.fire) {
+    xlrevState := XlrevState.idle
   }
 
   when(xmsumState === XmsumState.idle && io.in.valid && isXmsum) {

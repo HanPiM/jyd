@@ -416,7 +416,7 @@ class IDU(
   res.bExtValid := isTypArithmetic && !isMExtArithmetic && isIterativeB
   res.crcValid := isCoremarkCrcU8
   res.xbmulValid := isCoremarkXbmul
-  res.xlrevValid := p.enableXlrev.B && isCoremarkXlrev
+  res.xlrevValid := isCoremarkXlrev
   res.xstateValid := false.B
   res.xmsumValid := isCoremarkXmsum
   res.xstateWordValid := isCoremarkXstateWord

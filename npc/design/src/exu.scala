@@ -177,9 +177,10 @@ class EXU(
   val xlrevPrevious = Reg(Types.UWord)
   val xlrevNext    = Reg(Types.UWord)
   val xaccelResult = Reg(Types.UWord)
-  val xlrevCacheStoreValid = RegInit(false.B)
-  val xlrevCacheStoreAddr  = Reg(Types.UWord)
-  val xlrevCacheStoreData  = Reg(Types.UWord)
+  // xlrev mutates memory behind the cache. Once it has run, bypass cached
+  // loads until reset instead of updating every reversed node through the
+  // cache RAM write ports.
+  val dcachePoisonedByXlrev = RegInit(false.B)
   val isXlrev      = dinst.info.xlrevValid
 
   object XmsumState extends ChiselEnum {
@@ -269,6 +270,7 @@ class EXU(
   xstate.io.memResp    := io.memResp
 
   when(xlrevState === XlrevState.idle && io.in.valid && isXlrev) {
+    dcachePoisonedByXlrev := true.B
     xlrevCurrent  := reg_v1
     xlrevPrevious := 0.U
     when(reg_v1 === 0.U) {
@@ -480,7 +482,7 @@ class EXU(
   val loadAddressAligned = Mux(func3t(1), reg1AddImm(1, 0) === 0.U, Mux(func3t(0), !reg1AddImm(0), true.B))
   lsuInfo.cacheableLoad :=
     isTypLoad && supportedLoadWidth && loadAddressAligned && reg1AddImm(21, 20) === "b01".U
-  lsuInfo.dcacheHit := lsuInfo.cacheableLoad && io.dcache.hit
+  lsuInfo.dcacheHit := lsuInfo.cacheableLoad && io.dcache.hit && !dcachePoisonedByXlrev
   // Capture the asynchronous shadow result without sign extension. Extending
   // byte/half loads before this register lets synthesis map the replicated
   // sign bit onto slow synchronous-set pins; registered offset/width metadata
@@ -585,29 +587,18 @@ class EXU(
 
   val xlrevStoreRequest = xlrevState === XlrevState.storeRequest
   val xstateActive = xstate.io.busy
-  val dcacheQueryAddr = Mux(
-    xlrevCacheStoreValid,
-    xlrevCacheStoreAddr,
-    reg1AddImm
-  )
-  io.dcache.queryIndex := dcacheQueryAddr(11, 2)
-  io.dcache.queryTag   := dcacheQueryAddr(15, 11)
+  io.dcache.queryIndex := reg1AddImm(11, 2)
+  io.dcache.queryTag   := reg1AddImm(15, 11)
   xstate.io.cacheHit  := false.B
   xstate.io.cacheData := 0.U
   val cacheableStore = isTypStore && reg1AddImm(21, 20) === "b01".U
   val cacheableStoreFire = memReqFire && cacheableStore
-  val xlrevStoreFire = memReqFire && xlrevStoreRequest && xlrevCurrent(21, 20) === "b01".U
-  xlrevCacheStoreValid := xlrevStoreFire
-  when(xlrevStoreFire) {
-    xlrevCacheStoreAddr := xlrevCurrent
-    xlrevCacheStoreData := xlrevPrevious
-  }
   // DCache resolves a narrow-store hit locally. Keep its asynchronous tag
   // lookup out of this cross-module control and every data-memory write enable.
-  io.dcache.storeUpdate := cacheableStoreFire || xlrevCacheStoreValid
-  io.dcache.storeFull   := xlrevCacheStoreValid || (cacheableStoreFire && memWMask.andR)
-  io.dcache.storeData   := Mux(xlrevCacheStoreValid, xlrevCacheStoreData, memWData)
-  io.dcache.storeMask   := Mux(xlrevCacheStoreValid, "b1111".U, memWMask)
+  io.dcache.storeUpdate := cacheableStoreFire
+  io.dcache.storeFull   := cacheableStoreFire && memWMask.andR
+  io.dcache.storeData   := memWData
+  io.dcache.storeMask   := memWMask
   io.dcache.fullUpdate     := xstate.io.cacheStore
   io.dcache.fullUpdateAddr := xstate.io.cacheStoreAddr
   io.dcache.fullUpdateData := xstate.io.cacheStoreData

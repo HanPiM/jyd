@@ -390,7 +390,10 @@ class ALU extends Module {
   // output is valid only for ADD/ADDI, so it can reuse the selected result
   // instead of keeping a second unconditional src1 + src2 cone alive.
   val addSubSrc2 = Mux(inbits.isSub, ~src2, src2)
-  val add_sub_res = src1 + addSubSrc2 + inbits.isSub
+  val addSubLow = src1(15, 0) +& addSubSrc2(15, 0) + inbits.isSub
+  val addSubHighCarry0 = src1(31, 16) + addSubSrc2(31, 16)
+  val addSubHighCarry1 = src1(31, 16) + addSubSrc2(31, 16) + 1.U
+  val add_sub_res = Cat(Mux(addSubLow(16), addSubHighCarry1, addSubHighCarry0), addSubLow(15, 0))
   io.addResult := add_sub_res
 
   val sltu_res = src1 < src2

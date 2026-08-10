@@ -187,10 +187,9 @@ class EXU(
     val idle, request, response, finalizeResult, done = Value
   }
   val xmsumState  = RegInit(XmsumState.idle)
-  val xmsumAddr   = Reg(Types.UWord)
-  val xmsumSize   = Reg(UInt(16.W))
-  val xmsumRow    = Reg(UInt(16.W))
-  val xmsumColumn = Reg(UInt(16.W))
+  val xmsumBase   = Reg(Types.UWord)
+  val xmsumIndex  = Reg(UInt(32.W))
+  val xmsumCount  = Reg(UInt(32.W))
   val xmsumClip   = Reg(SInt(32.W))
   val xmsumTmp    = Reg(UInt(32.W))
   val xmsumPreviousClipped = Reg(Bool())
@@ -301,10 +300,9 @@ class EXU(
 
   when(xmsumState === XmsumState.idle && io.in.valid && isXmsum) {
     val n = reg_v2(31, 16)
-    xmsumAddr   := reg_v1
-    xmsumSize   := n
-    xmsumRow    := 0.U
-    xmsumColumn := 0.U
+    xmsumBase  := reg_v1
+    xmsumIndex := 0.U
+    xmsumCount := n * n
     xmsumClip  := Cat(Fill(16, reg_v2(15)), reg_v2(15, 0)).asSInt
     xmsumTmp   := 0.U
     xmsumPreviousClipped := false.B
@@ -328,18 +326,10 @@ class EXU(
     xmsumPrev := current
     xmsumRetClipped := clipped
     xmsumRetIncreased := !clipped && current.asSInt > xmsumPrev.asSInt
-    val endOfRow    = xmsumColumn + 1.U === xmsumSize
-    val endOfMatrix = endOfRow && xmsumRow + 1.U === xmsumSize
-    when(endOfMatrix) {
+    when(xmsumIndex + 1.U === xmsumCount) {
       xmsumState := XmsumState.finalizeResult
     }.otherwise {
-      xmsumAddr := xmsumAddr + 4.U
-      when(endOfRow) {
-        xmsumRow    := xmsumRow + 1.U
-        xmsumColumn := 0.U
-      }.otherwise {
-        xmsumColumn := xmsumColumn + 1.U
-      }
+      xmsumIndex := xmsumIndex + 1.U
       xmsumRetPending := true.B
       xmsumState := XmsumState.request
     }
@@ -608,7 +598,7 @@ class EXU(
   val xmsumRequest = xmsumState === XmsumState.request
   xstate.io.memReq.ready := io.memReq.ready && xstateActive
   val normalMemReq = Wire(new MemReq)
-  normalMemReq.addr  := Mux(xlrevRequest, xlrevCurrent, Mux(xmsumRequest, xmsumAddr, reg1AddImm))
+  normalMemReq.addr  := Mux(xlrevRequest, xlrevCurrent, Mux(xmsumRequest, xmsumBase + (xmsumIndex << 2), reg1AddImm))
   normalMemReq.size  := Mux(xlrevRequest || xmsumRequest, 2.U, func3t(1, 0))
   normalMemReq.wen   := Mux(xlrevRequest, xlrevStoreRequest, !xmsumRequest && isTypStore)
   normalMemReq.wdata := Mux(xlrevStoreRequest, xlrevPrevious, Mux(xmsumRequest || xlrevLoadRequest, 0.U, memWData))

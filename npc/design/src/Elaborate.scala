@@ -43,6 +43,8 @@ object Elaborate extends App {
       CPUParameters(
         gprAddrWidth = 5,
         enableDCache = true,
+        enableZbc = false,
+        enableZbkx = false,
         skipDifftestAddrs = jyd.AddrSpace.needSkipDifftestGroup
       )
     ),

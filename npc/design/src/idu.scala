@@ -387,6 +387,8 @@ class IDU(
   bypassMux.io.allowPrevExuFwdRs2 := isTypArithmetic || isTypBranch || isTypStore
   res.lateLoadRs1 := bypassMux.io.lateLoadRs1
   res.lateLoadRs2 := bypassMux.io.lateLoadRs2
+  res.prevExuFwdRs1 := bypassMux.io.prevExuFwdRs1
+  res.prevExuFwdRs2 := bypassMux.io.prevExuFwdRs2
   // Only operations that still use the iterative B unit assert bExtValid.
   // Short B operations are evaluated by the ordinary ALU path so they retain
   // same-cycle forwarding and do not inherit the old universal 32-cycle cost.
@@ -399,11 +401,6 @@ class IDU(
   val isBXperm4 = !isFmtI && arithmeticFunc7 === "b0010100".U && arithmeticFunc3 === "b010".U
   val isBRor = arithmeticFunc7 === "b0110000".U && arithmeticFunc3 === "b101".U
   val isIterativeB = isBCount || isBClmul || isBOrcB || isBXperm4 || isBRor
-  val usesMultiplierOperandUnit = isTypArithmetic && isMExtArithmetic && !arithmeticFunc3(2)
-  res.prevExuFwdRs1 := bypassMux.io.prevExuFwdRs1 && !usesMultiplierOperandUnit
-  res.prevExuFwdRs2 := bypassMux.io.prevExuFwdRs2 && !usesMultiplierOperandUnit
-  res.prevExuFwdRs1MultiCycle := bypassMux.io.prevExuFwdRs1 && usesMultiplierOperandUnit
-  res.prevExuFwdRs2MultiCycle := bypassMux.io.prevExuFwdRs2 && usesMultiplierOperandUnit
   val isBShiftAdd = !isFmtI && arithmeticFunc7 === "b0010000".U &&
     (arithmeticFunc3 === "b010".U || arithmeticFunc3 === "b100".U || arithmeticFunc3 === "b110".U)
   val isBSext = isFmtI && arithmeticFunc7 === "b0110000".U && arithmeticFunc3 === "b001".U &&

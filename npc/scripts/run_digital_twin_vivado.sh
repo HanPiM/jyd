@@ -35,7 +35,7 @@ Parallelism policy:
                          e.g. AggressiveExplore.
   VIVADO_POST_ROUTE_PHYS_OPT_DIRECTIVE
                          Default "AggressiveExplore"; supported values are
-                         Default, Explore, and AggressiveExplore.
+                         Disabled, Default, Explore, and AggressiveExplore.
 EOF
 }
 
@@ -136,7 +136,7 @@ if [[ "$synth_keep_equivalent_registers" != 0 && "$synth_keep_equivalent_registe
   exit 2
 fi
 case "$post_route_phys_opt_directive" in
-  Default | Explore | AggressiveExplore) ;;
+  Disabled | Default | Explore | AggressiveExplore) ;;
   *)
     echo "Unsupported VIVADO_POST_ROUTE_PHYS_OPT_DIRECTIVE: $post_route_phys_opt_directive" >&2
     exit 2
@@ -260,7 +260,7 @@ if {$synth_global_retiming ni {0 1}} {
 if {$synth_keep_equivalent_registers ni {0 1}} {
   error "keep-equivalent-registers must be 0 or 1, got: $synth_keep_equivalent_registers"
 }
-if {$post_route_phys_opt_directive ni {Default Explore AggressiveExplore}} {
+if {$post_route_phys_opt_directive ni {Disabled Default Explore AggressiveExplore}} {
   error "unsupported post-route physopt directive: $post_route_phys_opt_directive"
 }
 if {$synth_flatten_hierarchy ni {"" none rebuilt full}} {
@@ -456,12 +456,15 @@ if {[llength [get_runs impl_1]] == 0} {
   error "Vivado run impl_1 was not found"
 }
 
-# The 270 MHz v6 design closes timing only after the post-route physical
-# optimization pass. Keep it inside impl_1 so timing reports and bitstreams are
-# produced from the same reproducible run rather than a standalone DCP edit.
 set impl_run [get_runs impl_1]
-set_property STEPS.POST_ROUTE_PHYS_OPT_DESIGN.IS_ENABLED true $impl_run
-set_property STEPS.POST_ROUTE_PHYS_OPT_DESIGN.ARGS.DIRECTIVE $post_route_phys_opt_directive $impl_run
+if {$post_route_phys_opt_directive eq "Disabled"} {
+  set_property STEPS.POST_ROUTE_PHYS_OPT_DESIGN.IS_ENABLED false $impl_run
+  puts "impl_1 post-route physopt: disabled"
+} else {
+  set_property STEPS.POST_ROUTE_PHYS_OPT_DESIGN.IS_ENABLED true $impl_run
+  set_property STEPS.POST_ROUTE_PHYS_OPT_DESIGN.ARGS.DIRECTIVE $post_route_phys_opt_directive $impl_run
+  puts "impl_1 post-route physopt: enabled, directive=$post_route_phys_opt_directive"
+}
 if {$place_directive ne ""} {
   set_property STEPS.PLACE_DESIGN.ARGS.DIRECTIVE $place_directive $impl_run
   puts "impl_1 place directive: $place_directive"
@@ -474,7 +477,6 @@ if {$pre_route_phys_opt_directive ne ""} {
   set_property STEPS.PHYS_OPT_DESIGN.ARGS.DIRECTIVE $pre_route_phys_opt_directive $impl_run
   puts "impl_1 pre-route physopt directive: $pre_route_phys_opt_directive"
 }
-puts "impl_1 post-route physopt: enabled, directive=$post_route_phys_opt_directive"
 
 proc clear_run_property_if_exists {run_name prop_name} {
   set run_obj [get_runs $run_name]
@@ -624,4 +626,55 @@ if [ "$ip_config_hash_before" != "$ip_config_hash_after" ]; then
   echo "  after:  $ip_config_hash_after" >&2
   exit 1
 fi
-exit "$vivado_status"
+if [ "$vivado_status" -ne 0 ]; then
+  exit "$vivado_status"
+fi
+
+if [ "$mode" = write_bitstream ]; then
+  impl_dir="$vivado_proj_home/digital_twin.runs/impl_1"
+  raw_bit="$impl_dir/top.bit"
+  if [ "$post_route_phys_opt_directive" = Disabled ]; then
+    routed_dcp="$impl_dir/top_routed.dcp"
+  else
+    routed_dcp="$impl_dir/top_postroute_physopt.dcp"
+  fi
+  replace_tool="$repo_root/coe_replace/coe_replace.py"
+  replaced_bit="$impl_dir/top.cur-coe.bit"
+  raw_saved_bit="$impl_dir/top.project-init.bit"
+  manifest="$impl_dir/top.bit.coe-manifest"
+  replace_workdir=$(mktemp -d "${TMPDIR:-/tmp}/coe-replace-flow.XXXXXX")
+
+  for required_file in "$raw_bit" "$routed_dcp" "$replace_tool"; do
+    if [ ! -f "$required_file" ]; then
+      echo "Required COE replacement input does not exist: $required_file" >&2
+      exit 1
+    fi
+  done
+
+  cp -- "$raw_bit" "$raw_saved_bit"
+  echo "# Replacing bitstream memories from explicit COE inputs"
+  sha256sum "$irom_coe" "$dram_coe"
+  python3 "$replace_tool" \
+    --dcp "$routed_dcp" \
+    --irom-coe "$irom_coe" \
+    --dram-coe "$dram_coe" \
+    --out "$replaced_bit" \
+    --bit "$raw_saved_bit" \
+    --vivado "$vivado_bin" \
+    --workdir "$replace_workdir"
+  mv -- "$replaced_bit" "$raw_bit"
+  {
+    echo "irom_coe=$irom_coe"
+    echo "irom_sha256=$(sha256sum "$irom_coe" | awk '{print $1}')"
+    echo "dram_coe=$dram_coe"
+    echo "dram_sha256=$(sha256sum "$dram_coe" | awk '{print $1}')"
+    echo "project_init_bit=$raw_saved_bit"
+    echo "project_init_bit_sha256=$(sha256sum "$raw_saved_bit" | awk '{print $1}')"
+    echo "output_bit=$raw_bit"
+    echo "output_bit_sha256=$(sha256sum "$raw_bit" | awk '{print $1}')"
+    echo "implementation_checkpoint=$routed_dcp"
+    echo "post_route_phys_opt_directive=$post_route_phys_opt_directive"
+  } >"$manifest"
+  echo "# Bitstream COE manifest: $manifest"
+  cat "$manifest"
+fi

@@ -177,8 +177,14 @@ int sdb_mainloop() {
   std::string cmd;
   bool quit = false;
   while (!sim_halted() && !quit) {
-    std::cout << "(sdb) ";
-    std::getline(std::cin, cmd);
+    std::cout << "(sdb) " << std::flush;
+    if (!std::getline(std::cin, cmd)) {
+      spdlog::error(
+          "SDB interactive input reached EOF. Run the program directory's "
+          "`make ARCH=... run` target, or add `ARGS=-b` when invoking "
+          "`make -C npc sim` manually.");
+      return 2;
+    }
     if (cmd == "sc") {
       sim_step_cycle();
       continue;

@@ -196,6 +196,8 @@ class DecodedInstInfo(implicit p : CPUParameters) extends InstMetaInfo with HasR
   val prevExuFwdRs2 = Bool()
   val prevExuFwdRs1MultiCycle = Bool()
   val prevExuFwdRs2MultiCycle = Bool()
+  val prevExuFwdRs1BExt = Bool()
+  val prevExuFwdRs2BExt = Bool()
 
   // IDU classifies every non-RV32I/non-M arithmetic encoding as a supported
   // multi-cycle B operation. The exact B operation is decoded locally after

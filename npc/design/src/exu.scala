@@ -153,8 +153,8 @@ class EXU(
   // cache RAM write ports.
   val dcachePoisonedByXlrev = RegInit(false.B)
   val isXlrev      = dinst.info.xlrevValid
-  val isXlrevSingle = isXlrev && func3t === 6.U
-  val isXlrevChain = isXlrevSingle && dinst.code(31, 25) === 1.U
+  val isXlrevSingle = dinst.info.xlrevSingle
+  val isXlrevChain = dinst.info.xlrevChain
 
   object XmsumState extends ChiselEnum {
     val idle, request, response, finalizeResult, done = Value

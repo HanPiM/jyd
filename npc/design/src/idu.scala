@@ -421,6 +421,8 @@ class IDU(
   res.crcValid := isCoremarkCrcU8
   res.xbmulValid := isCoremarkXbmul
   res.xlrevValid := isCoremarkXlrev
+  res.xlrevSingle := isCoremarkXlrev && arithmeticFunc3 === 6.U
+  res.xlrevChain := isCoremarkXlrev && arithmeticFunc3 === 6.U && inst(31, 25) === 1.U
   res.xstateValid := false.B
   res.xmsumValid := isCoremarkXmsum
   res.xstateWordValid := isCoremarkXstateWord

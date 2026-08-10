@@ -209,6 +209,8 @@ class DecodedInstInfo(implicit p : CPUParameters) extends InstMetaInfo with HasR
 
   // CoreMark list reversal is a blocking multi-cycle custom operation.
   val xlrevValid = Bool()
+  val xlrevSingle = Bool()
+  val xlrevChain = Bool()
 
   // CoreMark state parser is a blocking multi-cycle custom operation.
   val xstateValid = Bool()

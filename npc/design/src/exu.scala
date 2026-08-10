@@ -267,20 +267,34 @@ class EXU(
 
   val xstateCounters = RegInit(VecInit(Seq.fill(8)(0.U(32.W))))
   object XstateWordState extends ChiselEnum {
-    val idle, request, response, process, done = Value
+    val idle, request, response, processLow, processHigh, done = Value
   }
   val xstateWordState = RegInit(XstateWordState.idle)
   val xstateWordStartState = Reg(UInt(3.W))
   val xstateWordAddress = Reg(Types.UWord)
   val xstateWordStepResult = Reg(Types.UWord)
   val xstateWordResponseData = Reg(Types.UWord)
+  val xstateWordIntermediate = Reg(UInt(16.W))
   val isXstateWordStep = isXstateWord && func3t === 5.U
   val xstateWordOffset = xstateWordAddress(1, 0)
-  val xstateWord4 = Module(new CoremarkXstate4)
+  val xstateWordLow = Module(new CoremarkXstate2Chunk)
+  val xstateWordHigh = Module(new CoremarkXstate2Chunk)
   val xstateWord4ShiftedData = xstateWordResponseData >> (xstateWordOffset << 3)
-  xstateWord4.io.state := xstateWordStartState
-  xstateWord4.io.symbols := xstateWord4ShiftedData
-  xstateWord4.io.available := 4.U - xstateWordOffset
+  val xstateWordAvailable = 4.U(3.W) - xstateWordOffset
+  xstateWordLow.io.state := xstateWordStartState
+  xstateWordLow.io.mask := 0.U
+  xstateWordLow.io.consumed := 0.U
+  xstateWordLow.io.active := true.B
+  xstateWordLow.io.stopped := false.B
+  xstateWordLow.io.symbols := xstateWord4ShiftedData(15, 0)
+  xstateWordLow.io.available := Mux(xstateWordAvailable > 2.U, 2.U, xstateWordAvailable)(1, 0)
+  xstateWordHigh.io.state := xstateWordIntermediate(2, 0)
+  xstateWordHigh.io.consumed := xstateWordIntermediate(5, 3)
+  xstateWordHigh.io.active := xstateWordIntermediate(6)
+  xstateWordHigh.io.stopped := xstateWordIntermediate(7)
+  xstateWordHigh.io.mask := xstateWordIntermediate(15, 8)
+  xstateWordHigh.io.symbols := xstateWord4ShiftedData(31, 16)
+  xstateWordHigh.io.available := Mux(xstateWordAvailable > 2.U, xstateWordAvailable - 2.U, 0.U)(1, 0)
   val xstateCounterRead = xstateCounters(reg_v1(2, 0))
   val xstateWordResult = Mux(func3t === 2.U, xstateCounterRead, Mux(isXstateWordStep, xstateWordStepResult, 0.U))
 
@@ -292,9 +306,13 @@ class EXU(
     xstateWordState := XstateWordState.response
   }.elsewhen(xstateWordState === XstateWordState.response && io.memResp.valid) {
     xstateWordResponseData := io.memResp.bits
-    xstateWordState := XstateWordState.process
-  }.elsewhen(xstateWordState === XstateWordState.process) {
-    xstateWordStepResult := xstateWord4.io.result
+    xstateWordState := XstateWordState.processLow
+  }.elsewhen(xstateWordState === XstateWordState.processLow) {
+    xstateWordIntermediate := xstateWordLow.io.result
+    xstateWordState := XstateWordState.processHigh
+  }.elsewhen(xstateWordState === XstateWordState.processHigh) {
+    xstateWordStepResult := Cat(0.U(17.W), xstateWordHigh.io.result(15, 8), xstateWordHigh.io.result(7),
+      xstateWordHigh.io.result(5, 3), xstateWordHigh.io.result(2, 0))
     xstateWordState := XstateWordState.done
   }.elsewhen(xstateWordState === XstateWordState.done && io.out.fire) {
     xstateWordState := XstateWordState.idle

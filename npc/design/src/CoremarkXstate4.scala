@@ -3,12 +3,16 @@ package cpu
 import chisel3._
 import chisel3.util._
 
-class CoremarkXstate4 extends Module {
+class CoremarkXstate2Chunk extends Module {
   val io = IO(new Bundle {
     val state     = Input(UInt(3.W))
-    val symbols   = Input(UInt(32.W))
-    val available = Input(UInt(3.W))
-    val result    = Output(UInt(32.W))
+    val mask      = Input(UInt(8.W))
+    val consumed  = Input(UInt(3.W))
+    val active    = Input(Bool())
+    val stopped   = Input(Bool())
+    val symbols   = Input(UInt(16.W))
+    val available = Input(UInt(2.W))
+    val result    = Output(UInt(16.W))
   })
 
   private def isDigit(c: UInt): Bool = c >= '0'.U && c <= '9'.U
@@ -26,7 +30,7 @@ class CoremarkXstate4 extends Module {
         7.U -> Mux(digit, 7.U, 1.U)
       )
     )
-    val mask = MuxLookup(state, 0.U(8.W))(
+    val transitionMask = MuxLookup(state, 0.U(8.W))(
       Seq(
         0.U -> (1.U(8.W) | Mux(next === 1.U, 2.U(8.W), 0.U(8.W))),
         2.U -> 4.U(8.W),
@@ -37,21 +41,21 @@ class CoremarkXstate4 extends Module {
         7.U -> Mux(next === 1.U, 2.U(8.W), 0.U(8.W))
       )
     )
-    (next, mask)
+    (next, transitionMask)
   }
 
-  val states = Wire(Vec(5, UInt(3.W)))
-  val masks = Wire(Vec(5, UInt(8.W)))
-  val consumed = Wire(Vec(5, UInt(3.W)))
-  val active = Wire(Vec(5, Bool()))
-  val stopped = Wire(Vec(5, Bool()))
+  val states = Wire(Vec(3, UInt(3.W)))
+  val masks = Wire(Vec(3, UInt(8.W)))
+  val consumed = Wire(Vec(3, UInt(3.W)))
+  val active = Wire(Vec(3, Bool()))
+  val stopped = Wire(Vec(3, Bool()))
   states(0) := io.state
-  masks(0) := 0.U
-  consumed(0) := 0.U
-  active(0) := true.B
-  stopped(0) := false.B
+  masks(0) := io.mask
+  consumed(0) := io.consumed
+  active(0) := io.active
+  stopped(0) := io.stopped
 
-  for (i <- 0 until 4) {
+  for (i <- 0 until 2) {
     val symbol = io.symbols(8 * i + 7, 8 * i)
     val zero = symbol === 0.U
     val comma = symbol === ','.U
@@ -67,5 +71,5 @@ class CoremarkXstate4 extends Module {
     active(i + 1) := take && !terminal && (i + 1).U < io.available
   }
 
-  io.result := Cat(0.U(17.W), masks(4), stopped(4), consumed(4), states(4))
+  io.result := Cat(masks(2), stopped(2), active(2), consumed(2), states(2))
 }

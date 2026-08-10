@@ -4,7 +4,7 @@
 #
 # Automates the manual setup steps used for JYD timing/performance candidates:
 #   * git worktree add under $JYD_DATA_ROOT/worktrees/
-#   * link local ignored/untracked dependencies (am-kernels, npc/deps,
+#   * link local ignored/untracked dependencies (am-kernels sources, npc/deps,
 #     coremark build outputs, rt-thread-am)
 #   * make ../riscv-arch-test-am-jyd resolve from the worktree's parent
 #   * install a proven prebuilt NEMU dependency tree
@@ -18,7 +18,7 @@
 # Usage:
 #   npc/scripts/create-opt-worktree.sh [--commit <ref>] [--branch <name>]
 #       [--name <dir>] [--src <main-repo>] [--nemu-ref <dir>]
-#       [--coe-dir <dir>] [--skip-coe-check]
+#       [--coe-dir <dir>] [--skip-coe-check] [--verify-sim]
 
 set -euo pipefail
 
@@ -54,6 +54,9 @@ Options:
                        (default: <src>/jyd-tests/coremark-official/build/
                        iter10000-data2000-z_zba_zbb_zbc_zbs-cdefault-lto0-pf1/).
   --skip-coe-check     Do not warn when COE hashes differ from the frozen pair.
+  --verify-sim         Build and run the riscv32-jyd add smoke test, then verify
+                       its simulator banner and image path belong to this
+                       worktree.
   -h|--help            Show this help.
 EOF
 }
@@ -68,6 +71,7 @@ NAME=""
 NEMU_REF=""
 COE_DIR=""
 SKIP_COE_CHECK=0
+VERIFY_SIM=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -78,6 +82,7 @@ while [[ $# -gt 0 ]]; do
     --nemu-ref|--difftest-ref) NEMU_REF="$2"; shift 2 ;;
     --coe-dir) COE_DIR="$2"; shift 2 ;;
     --skip-coe-check) SKIP_COE_CHECK=1; shift ;;
+    --verify-sim) VERIFY_SIM=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "unknown option: $1" >&2; usage; exit 1 ;;
   esac
@@ -130,7 +135,35 @@ link_dep() { # link_dep <src> <dst>
   fi
 }
 
-link_dep "$SRC/am-kernels" "$WT_DIR/am-kernels"
+# Keep the am-kernels directory hierarchy local to the worktree.  GNU make
+# resolves `-C am-kernels/...` through a directory symlink, which makes CURDIR
+# point into SRC and causes Abstract Machine to select SRC/npc as its simulator.
+# A symlink farm shares the source files while preserving worktree-local build
+# directories, generated Makefiles, and repository-relative AM/NPC paths.
+if [[ -d "$SRC/am-kernels" ]]; then
+  mkdir -p "$WT_DIR/am-kernels"
+  while IFS= read -r -d '' source_dir; do
+    relative_dir="${source_dir#"$SRC/am-kernels"/}"
+    [[ "$source_dir" == "$SRC/am-kernels" ]] && relative_dir=""
+    mkdir -p "$WT_DIR/am-kernels/$relative_dir"
+  done < <(find "$SRC/am-kernels" \
+    \( -name .git -o -name build -o -name out \) -prune -o \
+    -type d -print0)
+  while IFS= read -r -d '' source_file; do
+    relative_file="${source_file#"$SRC/am-kernels"/}"
+    ln -s "$source_file" "$WT_DIR/am-kernels/$relative_file"
+  done < <(find "$SRC/am-kernels" \
+    \( -name .git -o -name build -o -name out \) -prune -o \
+    \( -name .result -o -name 'Makefile.*' \) -prune -o \
+    \( -type f -o -type l \) -print0)
+  if [[ -L "$WT_DIR/am-kernels" || -L "$WT_DIR/am-kernels/tests/cpu-tests" ]]; then
+    echo "error: am-kernels directory hierarchy must remain worktree-local" >&2
+    exit 1
+  fi
+  echo "   linked am-kernels source files into $WT_DIR/am-kernels"
+else
+  echo "   skipped (source missing): $SRC/am-kernels"
+fi
 link_dep "$SRC/npc/deps" "$WT_DIR/npc/deps"
 link_dep "$SRC/jyd-tests/coremark-official/build" \
   "$WT_DIR/jyd-tests/coremark-official/build"
@@ -274,6 +307,33 @@ if [[ "$SKIP_COE_CHECK" -eq 0 ]]; then
   fi
 fi
 
+# --- optional simulator identity smoke test ---------------------------------
+if [[ "$VERIFY_SIM" -eq 1 ]]; then
+  VERIFY_DIR="$JYD_DATA_ROOT/tmp/create-opt-worktree-verification"
+  VERIFY_LOG="$VERIFY_DIR/$NAME-add.log"
+  mkdir -p "$VERIFY_DIR"
+  echo "== verifying worktree-local simulator identity"
+  (
+    cd "$WT_DIR"
+    make -C am-kernels/tests/cpu-tests run ARCH=riscv32-jyd ALL=add
+  ) 2>&1 | tee "$VERIFY_LOG"
+  if ! grep -Fq "Git commit hash: $COMMIT_FULL" "$VERIFY_LOG"; then
+    echo "error: simulator banner does not match worktree HEAD $COMMIT_FULL" >&2
+    exit 1
+  fi
+  if ! grep -Fq "load image $WT_DIR/am-kernels/tests/cpu-tests/" "$VERIFY_LOG"; then
+    echo "error: simulator did not load the worktree-local cpu-test image" >&2
+    exit 1
+  fi
+  if [[ -z "$(find "$WT_DIR/npc/build/bin" -maxdepth 1 -type f -executable \
+      -name 'JYDSoC-jyd-*' -print -quit 2>/dev/null)" ]]; then
+    echo "error: worktree-local simulator was not built under $WT_DIR/npc/build/bin" >&2
+    exit 1
+  fi
+  echo "   verified simulator commit: $COMMIT_FULL"
+  echo "   verification log: $VERIFY_LOG"
+fi
+
 # --- summary -----------------------------------------------------------------
 echo ""
 echo "== worktree ready: $WT_DIR"
@@ -285,4 +345,4 @@ git -C "$WT_DIR" status --short | sed 's/^/     /' || true
 echo ""
 echo "Next: cd $WT_DIR"
 echo "  make -C am-kernels/tests/cpu-tests run ARCH=riscv32-jyd ALL=add"
-echo "  ./npc/scripts/run_digital_twin_vivado.sh impl --jobs 16 --ip-jobs 1"
+echo "  ./npc/scripts/run_digital_twin_vivado.sh impl --jobs 16 --ip-jobs 4"

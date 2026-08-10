@@ -62,7 +62,17 @@
 #define MASK_COREMARK_XSTATE MASK_COREMARK_XACCEL
 #define MASK_COREMARK_XMSUM  MASK_COREMARK_XACCEL
 
+#define MATCH_COREMARK_XSTATEC_INIT 0x0000005b
+#define MATCH_COREMARK_XSTATEC_INC  0x0000105b
+#define MATCH_COREMARK_XSTATEC_READ 0x0000205b
+#define MASK_COREMARK_XSTATEC       0xfe00707f
+#define MASK_COREMARK_XSTATEC_INIT  MASK_COREMARK_XSTATEC
+#define MASK_COREMARK_XSTATEC_INC   MASK_COREMARK_XSTATEC
+#define MASK_COREMARK_XSTATEC_READ  MASK_COREMARK_XSTATEC
+
 enum { XA_MAC16, XA_DOT16, XA_BMUL, XA_LREV, XA_STATE, XA_MSUM };
+
+static uint32_t coremark_state_counters[8];
 
 static word_t coremark_crc(word_t data, word_t crc, unsigned bytes) {
   crc &= 0xffffu;
@@ -406,6 +416,24 @@ static int decode_exec(Decode *s) {
     uint64_t elements;
     R(rd) = coremark_matrix_sum(R(rs1), R(rs2), &elements);
     riscv_profile_record_xaccel(XA_MSUM, elements, 8 + 2 * elements);
+    matched = true;
+  }
+  if (IS_INST(COREMARK_XSTATEC_INIT)) {
+    memset(coremark_state_counters, 0, sizeof(coremark_state_counters));
+    riscv_profile_record_xstatec(0);
+    matched = true;
+  }
+  if (IS_INST(COREMARK_XSTATEC_INC)) {
+    word_t state = R(rs1);
+    if (state < 8)
+      coremark_state_counters[state]++;
+    riscv_profile_record_xstatec(1);
+    matched = true;
+  }
+  if (IS_INST(COREMARK_XSTATEC_READ)) {
+    word_t state = R(rs1);
+    R(rd) = state < 8 ? coremark_state_counters[state] : 0;
+    riscv_profile_record_xstatec(2);
     matched = true;
   }
 

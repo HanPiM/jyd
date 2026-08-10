@@ -8,6 +8,125 @@ typedef uint32_t ee_u32;
 typedef int16_t MATDAT;
 typedef int32_t MATRES;
 
+enum {
+    __CM_STATE_START = 0, __CM_STATE_INVALID = 1, __CM_STATE_S1 = 2,
+    __CM_STATE_S2 = 3, __CM_STATE_INT = 4, __CM_STATE_FLOAT = 5,
+    __CM_STATE_EXPONENT = 6, __CM_STATE_SCIENTIFIC = 7
+};
+
+static inline __attribute__((always_inline)) void
+__cm_xstatec_init(void)
+{
+    asm volatile(".insn r 0x5b, 0, 0, x0, x0, x0" ::: "memory");
+}
+
+static inline __attribute__((always_inline)) void
+__cm_xstatec_inc(ee_u32 state)
+{
+    asm volatile(".insn r 0x5b, 1, 0, x0, %0, x0" :: "r"(state) : "memory");
+}
+
+static inline __attribute__((always_inline)) ee_u32
+__cm_xstatec_read(ee_u32 state)
+{
+    ee_u32 value;
+    asm volatile(".insn r 0x5b, 2, 0, %0, %1, x0"
+                 : "=r"(value) : "r"(state) : "memory");
+    return value;
+}
+
+static inline __attribute__((always_inline)) int
+__cm_isdigit(ee_u8 c)
+{
+    return (ee_u8)(c - (ee_u8)'0') <= 9;
+}
+
+static __attribute__((noinline)) ee_u32
+__cm_xstatec_transition(ee_u8 **instr)
+{
+    ee_u8 *str = *instr;
+    ee_u32 state = __CM_STATE_START;
+    for (; *str && state != __CM_STATE_INVALID; str++) {
+        ee_u8 c = *str;
+        if (c == ',') { str++; break; }
+        switch (state) {
+        case __CM_STATE_START:
+            if (__cm_isdigit(c)) state = __CM_STATE_INT;
+            else if (c == '+' || c == '-') state = __CM_STATE_S1;
+            else if (c == '.') state = __CM_STATE_FLOAT;
+            else { state = __CM_STATE_INVALID; __cm_xstatec_inc(__CM_STATE_INVALID); }
+            __cm_xstatec_inc(__CM_STATE_START);
+            break;
+        case __CM_STATE_S1:
+            if (__cm_isdigit(c)) state = __CM_STATE_INT;
+            else if (c == '.') state = __CM_STATE_FLOAT;
+            else state = __CM_STATE_INVALID;
+            __cm_xstatec_inc(__CM_STATE_S1);
+            break;
+        case __CM_STATE_INT:
+            if (c == '.') { state = __CM_STATE_FLOAT; __cm_xstatec_inc(__CM_STATE_INT); }
+            else if (!__cm_isdigit(c)) { state = __CM_STATE_INVALID; __cm_xstatec_inc(__CM_STATE_INT); }
+            break;
+        case __CM_STATE_FLOAT:
+            if (c == 'E' || c == 'e') { state = __CM_STATE_S2; __cm_xstatec_inc(__CM_STATE_FLOAT); }
+            else if (!__cm_isdigit(c)) { state = __CM_STATE_INVALID; __cm_xstatec_inc(__CM_STATE_FLOAT); }
+            break;
+        case __CM_STATE_S2:
+            state = (c == '+' || c == '-') ? __CM_STATE_EXPONENT : __CM_STATE_INVALID;
+            __cm_xstatec_inc(__CM_STATE_S2);
+            break;
+        case __CM_STATE_EXPONENT:
+            state = __cm_isdigit(c) ? __CM_STATE_SCIENTIFIC : __CM_STATE_INVALID;
+            __cm_xstatec_inc(__CM_STATE_EXPONENT);
+            break;
+        case __CM_STATE_SCIENTIFIC:
+            if (!__cm_isdigit(c)) { state = __CM_STATE_INVALID; __cm_xstatec_inc(__CM_STATE_INVALID); }
+            break;
+        default: break;
+        }
+    }
+    *instr = str;
+    return state;
+}
+
+static inline __attribute__((always_inline)) ee_u16
+__cm_crc32_u8(ee_u32 data, ee_u16 crc)
+{
+    for (unsigned i = 0; i < 4; i++) {
+        ee_u32 next;
+        asm volatile(".insn r 0x0b, 0, 0, %0, %1, %2"
+                     : "=r"(next) : "r"(data), "r"((ee_u32)crc));
+        crc = (ee_u16)next;
+        data >>= 8;
+    }
+    return crc;
+}
+
+static __attribute__((noinline, used)) ee_u16
+__cm_xstatec_bench(ee_u32 blksize, ee_u8 *memblock, ee_s16 seed1,
+                   ee_s16 seed2, ee_s16 step, ee_u16 crc)
+{
+    ee_u32 final_counts[8] = {0};
+    ee_u8 *p = memblock;
+    __cm_xstatec_init();
+    while (*p != 0) final_counts[__cm_xstatec_transition(&p)]++;
+    p = memblock;
+    while (p < memblock + blksize) { if (*p != ',') *p ^= (ee_u8)seed1; p += step; }
+    p = memblock;
+    while (*p != 0) final_counts[__cm_xstatec_transition(&p)]++;
+    p = memblock;
+    while (p < memblock + blksize) { if (*p != ',') *p ^= (ee_u8)seed2; p += step; }
+    for (ee_u32 i = 0; i < 8; i++) {
+        crc = __cm_crc32_u8(final_counts[i], crc);
+        crc = __cm_crc32_u8(__cm_xstatec_read(i), crc);
+    }
+    return crc;
+}
+
+#ifdef COREMARK_XSTATEC_CALLSITE
+#define core_bench_state __cm_xstatec_bench
+#endif
+
 static inline ee_s32
 xmac16(ee_s32 acc, ee_s16 a, ee_s16 b)
 {

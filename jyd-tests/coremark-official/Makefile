@@ -73,6 +73,9 @@ $(COREMARK_BENCH_OBJS): $(COREMARK_ACCEL_PLUGIN)
 $(COREMARK_BENCH_OBJS): CFLAGS += -fplugin=$(COREMARK_ACCEL_PLUGIN) \
 	-fplugin-arg-coremark_accel_plugin-accels=$(COREMARK_ACCELS) \
 	-include $(CURDIR)/accel/coremark_accel.c
+ifneq ($(filter xstatec,$(subst $(comma), ,$(COREMARK_ACCELS))),)
+$(DST_DIR)/src/core_list_join.o: CFLAGS += -DCOREMARK_XSTATEC_CALLSITE=1
+endif
 endif
 
 ifneq ($(COREMARK_CRC_ACCEL),none)

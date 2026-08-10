@@ -102,15 +102,6 @@ COREMARK_FP12_FLAGS = -include $(CURDIR)/accel/float_dump.h
 $(COREMARK_BENCH_OBJS): $(COREMARK_ACCEL_PLUGIN) accel/xaccel_wrappers.c
 $(COREMARK_BENCH_OBJS): $(COREMARK_FLAGS_HEADER)
 $(COREMARK_BENCH_OBJS): CFLAGS += $(COREMARK_BENCH_FLAGS)
-ifneq ($(filter xstatec,$(COREMARK_ACCEL_WORDS)),)
-$(DST_DIR)/src/core_list_join.o: CFLAGS += -DCOREMARK_XSTATEC_CALLSITE=1
-endif
-ifneq ($(filter xstate2,$(COREMARK_ACCEL_WORDS)),)
-$(DST_DIR)/src/core_list_join.o: CFLAGS += -DCOREMARK_XSTATE2_CALLSITE=1
-endif
-ifneq ($(filter xstate4,$(COREMARK_ACCEL_WORDS)),)
-$(DST_DIR)/src/core_list_join.o: CFLAGS += -DCOREMARK_XSTATE4_CALLSITE=1
-endif
 $(COREMARK_O3_OBJS): CFLAGS += $(COREMARK_O3_FLAGS)
 ifeq ($(PSEUDO_FLOAT),1)
 $(COREMARK_MAIN_OBJ): CFLAGS += $(COREMARK_FP12_FLAGS)

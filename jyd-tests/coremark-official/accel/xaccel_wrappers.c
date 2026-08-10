@@ -165,7 +165,7 @@ __cm_crc32_u8(ee_u32 data, ee_u16 crc)
     return crc;
 }
 
-static __attribute__((noinline, used)) ee_u16
+static __attribute__((noinline, used, optimize("O3"))) ee_u16
 __cm_xstatec_bench(ee_u32 blksize, ee_u8 *memblock, ee_s16 seed1,
                    ee_s16 seed2, ee_s16 step, ee_u16 crc)
 {
@@ -186,7 +186,7 @@ __cm_xstatec_bench(ee_u32 blksize, ee_u8 *memblock, ee_s16 seed1,
     return crc;
 }
 
-static __attribute__((noinline, used)) ee_u16
+static __attribute__((noinline, used, optimize("O3"))) ee_u16
 core_bench_state_xstate2(ee_u32 blksize, ee_u8 *memblock, ee_s16 seed1,
                          ee_s16 seed2, ee_s16 step, ee_u16 crc)
 {
@@ -207,7 +207,7 @@ core_bench_state_xstate2(ee_u32 blksize, ee_u8 *memblock, ee_s16 seed1,
     return crc;
 }
 
-static __attribute__((noinline, used)) ee_u16
+static __attribute__((noinline, used, optimize("O3"))) ee_u16
 core_bench_state_xstate4(ee_u32 blksize, ee_u8 *memblock, ee_s16 seed1,
                          ee_s16 seed2, ee_s16 step, ee_u16 crc)
 {
@@ -227,16 +227,6 @@ core_bench_state_xstate4(ee_u32 blksize, ee_u8 *memblock, ee_s16 seed1,
     }
     return crc;
 }
-
-#ifdef COREMARK_XSTATEC_CALLSITE
-#define core_bench_state __cm_xstatec_bench
-#endif
-#ifdef COREMARK_XSTATE2_CALLSITE
-#define core_bench_state core_bench_state_xstate2
-#endif
-#ifdef COREMARK_XSTATE4_CALLSITE
-#define core_bench_state core_bench_state_xstate4
-#endif
 
 static inline ee_s32
 xmac16(ee_s32 acc, ee_s16 a, ee_s16 b)

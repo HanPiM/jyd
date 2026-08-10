@@ -191,6 +191,7 @@ class EXU(
   val xmsumCount  = Reg(UInt(32.W))
   val xmsumClip   = Reg(SInt(32.W))
   val xmsumTmp    = Reg(UInt(32.W))
+  val xmsumPreviousClipped = Reg(Bool())
   val xmsumPrev   = Reg(UInt(32.W))
   val xmsumRet    = Reg(UInt(16.W))
   val isXmsum     = dinst.info.xmsumValid
@@ -295,6 +296,7 @@ class EXU(
     xmsumCount := n * n
     xmsumClip  := Cat(Fill(16, reg_v2(15)), reg_v2(15, 0)).asSInt
     xmsumTmp   := 0.U
+    xmsumPreviousClipped := false.B
     xmsumPrev  := 0.U
     xmsumRet   := 0.U
     when(n === 0.U) {
@@ -307,11 +309,12 @@ class EXU(
     xmsumState := XmsumState.response
   }.elsewhen(xmsumState === XmsumState.response && io.memResp.valid) {
     val current = io.memResp.bits
-    val sum     = xmsumTmp + current
+    val sum     = Mux(xmsumPreviousClipped, 0.U, xmsumTmp) + current
     val clipped = sum.asSInt > xmsumClip
     val nextRet = Wire(UInt(16.W))
     nextRet := Mux(clipped, xmsumRet + 10.U, xmsumRet + (current.asSInt > xmsumPrev.asSInt))
-    xmsumTmp  := Mux(clipped, 0.U, sum)
+    xmsumTmp  := sum
+    xmsumPreviousClipped := clipped
     xmsumPrev := current
     xmsumRet  := nextRet
     when(xmsumIndex + 1.U === xmsumCount) {

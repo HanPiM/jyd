@@ -287,14 +287,14 @@ class EXU(
   xstateWordLow.io.active := true.B
   xstateWordLow.io.stopped := false.B
   xstateWordLow.io.symbols := xstateWord4ShiftedData(15, 0)
-  xstateWordLow.io.available := Mux(xstateWordAvailable > 2.U, 2.U, xstateWordAvailable)(1, 0)
+  xstateWordLow.io.available := xstateWordAvailable
   xstateWordHigh.io.state := xstateWordIntermediate(2, 0)
   xstateWordHigh.io.consumed := xstateWordIntermediate(5, 3)
   xstateWordHigh.io.active := xstateWordIntermediate(6)
   xstateWordHigh.io.stopped := xstateWordIntermediate(7)
   xstateWordHigh.io.mask := xstateWordIntermediate(15, 8)
   xstateWordHigh.io.symbols := xstateWord4ShiftedData(31, 16)
-  xstateWordHigh.io.available := Mux(xstateWordAvailable > 2.U, xstateWordAvailable - 2.U, 0.U)(1, 0)
+  xstateWordHigh.io.available := Mux(xstateWordAvailable > 2.U, xstateWordAvailable - 2.U, 0.U)
   val xstateCounterRead = xstateCounters(reg_v1(2, 0))
   val xstateWordResult = Mux(func3t === 2.U, xstateCounterRead, Mux(isXstateWordStep, xstateWordStepResult, 0.U))
 

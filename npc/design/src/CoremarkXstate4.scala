@@ -11,7 +11,7 @@ class CoremarkXstate2Chunk extends Module {
     val active    = Input(Bool())
     val stopped   = Input(Bool())
     val symbols   = Input(UInt(16.W))
-    val available = Input(UInt(2.W))
+    val available = Input(UInt(3.W))
     val result    = Output(UInt(16.W))
   })
 

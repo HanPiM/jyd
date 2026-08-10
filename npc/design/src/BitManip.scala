@@ -24,7 +24,7 @@ class BExtensionInput extends Bundle {
   * iterative; their result is registered before it becomes visible on the
   * output, keeping the iterative datapath out of the EXU-to-LSU path.
   */
-class BExtensionUnit extends Module {
+class BExtensionUnit(implicit p: CPUParameters) extends Module {
   val io = IO(new Bundle {
     val in  = Flipped(Decoupled(new BExtensionInput))
     val out = Decoupled(Types.UWord)
@@ -69,14 +69,17 @@ class BExtensionUnit extends Module {
     io.in.bits.isImm && io.in.bits.func3t === "b001".U && io.in.bits.func7t === "b0110000".U && immLow5 === 1.U
   val isCpop =
     io.in.bits.isImm && io.in.bits.func3t === "b001".U && io.in.bits.func7t === "b0110000".U && immLow5 === 2.U
-  val isClmul =
+  val isClmul = if (p.enableZbc) {
     !io.in.bits.isImm && io.in.bits.func3t === "b001".U && io.in.bits.func7t === "b0000101".U
-  val isClmulh =
+  } else false.B
+  val isClmulh = if (p.enableZbc) {
     !io.in.bits.isImm && io.in.bits.func3t === "b011".U && io.in.bits.func7t === "b0000101".U
+  } else false.B
   val isOrcB =
     io.in.bits.isImm && io.in.bits.func3t === "b101".U && io.in.bits.func7t === "b0010100".U && immLow5 === 7.U
-  val isXperm4 =
+  val isXperm4 = if (p.enableZbkx) {
     !io.in.bits.isImm && io.in.bits.func3t === "b010".U && io.in.bits.func7t === "b0010100".U
+  } else false.B
   val isRor =
     !io.in.bits.isImm && io.in.bits.func3t === "b101".U && io.in.bits.func7t === "b0110000".U
   val isRori =

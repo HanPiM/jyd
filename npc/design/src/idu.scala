@@ -397,10 +397,14 @@ class IDU(
   val bImmLow5 = inst(24, 20)
   val isBCount = isFmtI && arithmeticFunc3 === "b001".U && arithmeticFunc7 === "b0110000".U &&
     (bImmLow5 === 0.U || bImmLow5 === 1.U || bImmLow5 === 2.U)
-  val isBClmul = !isFmtI && arithmeticFunc7 === "b0000101".U &&
-    (arithmeticFunc3 === "b001".U || arithmeticFunc3 === "b011".U)
+  val isBClmul = if (p.enableZbc) {
+    !isFmtI && arithmeticFunc7 === "b0000101".U &&
+      (arithmeticFunc3 === "b001".U || arithmeticFunc3 === "b011".U)
+  } else false.B
   val isBOrcB = isFmtI && arithmeticFunc3 === "b101".U && arithmeticFunc7 === "b0010100".U && bImmLow5 === 7.U
-  val isBXperm4 = !isFmtI && arithmeticFunc7 === "b0010100".U && arithmeticFunc3 === "b010".U
+  val isBXperm4 = if (p.enableZbkx) {
+    !isFmtI && arithmeticFunc7 === "b0010100".U && arithmeticFunc3 === "b010".U
+  } else false.B
   val isBRor = arithmeticFunc7 === "b0110000".U && arithmeticFunc3 === "b101".U
   val isIterativeB = isBCount || isBClmul || isBOrcB || isBXperm4 || isBRor
   val isBShiftAdd = !isFmtI && arithmeticFunc7 === "b0010000".U &&

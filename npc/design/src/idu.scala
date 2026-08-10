@@ -354,8 +354,12 @@ class IDU(
     )
   )
 
+  val isXlrevLoopEncoding = inst(31, 25) === 2.U && inst(14, 12) === 6.U && inst(6, 0) === "b0001011".U
   val bypassMux = Module(new ByPassMux())
-  bypassMux.io.rs1        := res.rs1
+  // The looping xlrev form advances from EXU's private chain state after its
+  // init instruction.  Its encoded rs1 only names the eventual destination;
+  // treating it as a source creates a false loop-carried RAW dependency.
+  bypassMux.io.rs1        := Mux(isXlrevLoopEncoding, 0.U, res.rs1)
   bypassMux.io.rs2        := res.rs2
   bypassMux.io.regData1   := io.rvec.data(0)
   bypassMux.io.regData2   := io.rvec.data(1)
@@ -382,8 +386,10 @@ class IDU(
   // These consumers either complete combinationally or capture operands in
   // their execution unit on the first fire. Address and store-data consumers
   // use the same narrow post-register token rather than a wide IDU bypass.
-  val isXlrevEncoding = (inst(31, 25) === 0.U || inst(31, 25) === 1.U) &&
-    (arithmeticFunc3 === 6.U || arithmeticFunc3 === 7.U) && inst(6, 0) === "b0001011".U
+  val isXlrevEncoding = inst(6, 0) === "b0001011".U &&
+    ((arithmeticFunc3 === 6.U &&
+      (inst(31, 25) === 0.U || inst(31, 25) === 1.U || inst(31, 25) === 2.U)) ||
+      (arithmeticFunc3 === 7.U && inst(31, 25) === 0.U))
   bypassMux.io.allowPrevExuFwdRs1 :=
     (isTypArithmetic && !isMExtArithmetic && !isXlrevEncoding) || isTypBranch || isTypSys || needReg1AddImm
   bypassMux.io.allowPrevExuFwdRs2 := isTypArithmetic || isTypBranch || isTypStore
@@ -423,6 +429,7 @@ class IDU(
   res.xlrevValid := isCoremarkXlrev
   res.xlrevSingle := isCoremarkXlrev && arithmeticFunc3 === 6.U
   res.xlrevChain := isCoremarkXlrev && arithmeticFunc3 === 6.U && inst(31, 25) === 1.U
+  res.xlrevLoop := isCoremarkXlrev && isXlrevLoopEncoding
   res.xstateValid := false.B
   res.xmsumValid := isCoremarkXmsum
   res.xstateWordValid := isCoremarkXstateWord

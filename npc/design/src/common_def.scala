@@ -211,6 +211,7 @@ class DecodedInstInfo(implicit p : CPUParameters) extends InstMetaInfo with HasR
   val xlrevValid = Bool()
   val xlrevSingle = Bool()
   val xlrevChain = Bool()
+  val xlrevLoop = Bool()
 
   // CoreMark state parser is a blocking multi-cycle custom operation.
   val xstateValid = Bool()

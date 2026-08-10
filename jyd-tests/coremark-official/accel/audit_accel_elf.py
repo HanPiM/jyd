@@ -9,6 +9,7 @@ ENCODINGS = {
     "xmac16": 0x0000300B,
     "xdot16": 0x0000400B,
     "xbmul": 0x0000500B,
+    "xlrev2": 0x0400600B,
     "xlrev1": 0x0000600B,
     "xlrev": 0x0000700B,
     "xstate": 0x0200700B,

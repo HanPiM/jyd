@@ -291,6 +291,19 @@ __cm_xlrev1(void *list)
     return list;
 }
 
+static inline __attribute__((always_inline, used)) void *
+__cm_xlrev2(void *list)
+{
+    if (!list)
+        return 0;
+    asm volatile(".insn r 0x0b, 6, 0, %0, %0, zero\n\t"
+                 ".insn r 0x0b, 6, 2, %0, %0, zero"
+                 : "+r"(list)
+                 :
+                 : "memory");
+    return list;
+}
+
 static inline __attribute__((always_inline, used)) int
 __cm_xstate(ee_u8 **instr, ee_u32 *transition_count)
 {

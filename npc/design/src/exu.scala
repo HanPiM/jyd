@@ -155,6 +155,8 @@ class EXU(
   val isXlrev      = dinst.info.xlrevValid
   val isXlrevSingle = dinst.info.xlrevSingle
   val isXlrevChain = dinst.info.xlrevChain
+  val isXlrevLoop = dinst.info.xlrevLoop
+  val xlrevLoopTaken = RegInit(false.B)
 
   object XmsumState extends ChiselEnum {
     val idle, request, response, finalizeResult, done = Value
@@ -237,6 +239,7 @@ class EXU(
   )
   val reg_v1       = postRegisterRegV1
   val reg_v2       = postRegisterRegV2
+  val xlrevActiveCurrent = Mux(isXlrevLoop, xaccelResult, reg_v1)
 
   val xstateCounters = RegInit(VecInit(Seq.fill(8)(0.U(32.W))))
   object XstateWordState extends ChiselEnum {
@@ -311,16 +314,18 @@ class EXU(
     when(!isXlrevSingle) {
       dcachePoisonedByXlrev := true.B
     }
-    xlrevCurrent  := reg_v1
-    xlrevPrevious := Mux(isXlrevChain, xlrevChainPrevious, Mux(isXlrevSingle, reg_v2, 0.U))
+    xlrevCurrent  := xlrevActiveCurrent
+    xlrevPrevious := Mux(isXlrevChain || isXlrevLoop, xlrevChainPrevious, Mux(isXlrevSingle, reg_v2, 0.U))
     when(isXlrevSingle) {
-      xlrevChainPrevious := reg_v1
+      xlrevChainPrevious := xlrevActiveCurrent
     }
-    when(reg_v1 === 0.U) {
-      xaccelResult := Mux(isXlrevChain, xlrevChainPrevious, 0.U)
+    when(xlrevActiveCurrent === 0.U) {
+      xaccelResult := Mux(isXlrevChain || isXlrevLoop, xlrevChainPrevious, 0.U)
+      xlrevLoopTaken := false.B
       xlrevState  := XlrevState.done
     }.elsewhen(isXlrevSingle && io.dcache.hit) {
       xlrevNext := io.dcache.lateReadData
+      xlrevLoopTaken := isXlrevLoop && io.dcache.lateReadData =/= 0.U
       xlrevState := XlrevState.storeRequest
     }.otherwise {
       xlrevState := XlrevState.loadRequest
@@ -329,10 +334,11 @@ class EXU(
     xlrevState := XlrevState.loadResponse
   }.elsewhen(xlrevState === XlrevState.loadResponse && io.memResp.valid) {
     xlrevNext  := io.memResp.bits
+    xlrevLoopTaken := isXlrevLoop && io.memResp.bits =/= 0.U
     xlrevState := XlrevState.storeRequest
   }.elsewhen(xlrevState === XlrevState.storeRequest && io.memReq.fire) {
     when(isXlrevSingle) {
-      xaccelResult := xlrevNext
+      xaccelResult := Mux(isXlrevLoop && !xlrevLoopTaken, xlrevCurrent, xlrevNext)
       xlrevState   := XlrevState.done
     }.otherwise {
       xlrevState := XlrevState.storeResponse
@@ -417,7 +423,7 @@ class EXU(
 
   // Branches/JAL use PC+imm, while a JALR BTB entry must learn the resolved
   // rs1+imm target.  The BTB stores only the same trimmed PC bits either way.
-  io.branchTarget   := Mux(isTypJALR, reg1AddImm, pcAddImm)
+  io.branchTarget   := Mux(isXlrevLoop, dinst.pc, Mux(isTypJALR, reg1AddImm, pcAddImm))
 
   alu_in.src1   := reg_v1
   // alu_in.src2   := Mux(isFmtI, dinst.info.imm, reg_v2)
@@ -545,7 +551,7 @@ class EXU(
   lsuInfo.dcacheStoreEpoch := io.dcache.storeEpoch
 
   val snpc = dinst.info.staticNextPCOrCSRTarget
-  io.staticTarget := snpc
+  io.staticTarget := Mux(isXlrevLoop, dinst.pc, snpc)
 
   writeBackInfo.gpr.en   := dinst.info.rdWrEn
   writeBackInfo.gpr.addr := dinst.info.rd
@@ -641,7 +647,13 @@ class EXU(
   // xlrev's operand is held in the IDU/EXU payload for the instruction's
   // entire residence in EXU.  Its decoder disables the previous-EXU direct
   // bypass, so this registered value cannot create a forwarding-to-tag path.
-  val dcacheQueryAddr = Mux(isXlrevSingle, dinst.info.reg1, reg1AddImm)
+  // xlrevLoop always consumes the preceding xlrev result: first the init
+  // result, then the result of its previous self-iteration.  The raw decoded
+  // operand can therefore lag behind even when the dependency has already
+  // reached LSU/WBU.  Query from the local result register for every loop
+  // iteration without reconnecting the global forwarding path to the tag RAM.
+  val xlrevQueryAddr = Mux(isXlrevLoop, xaccelResult, dinst.info.reg1)
+  val dcacheQueryAddr = Mux(isXlrevSingle, xlrevQueryAddr, reg1AddImm)
   io.dcache.queryIndex := dcacheQueryAddr(11, 2)
   io.dcache.queryTag   := dcacheQueryAddr(17, 11)
   xstate.io.cacheHit  := false.B
@@ -696,7 +708,9 @@ class EXU(
 
   // --- Next PC ---
   val isJmpCsr = is_ecall || is_mret
-  val willJmp  = (isTypBranch && takeBranch) || isTypJALR || isTypJAL || isJmpCsr
+  val xlrevLoopBranch = isXlrevLoop && xlrevDone
+  val willJmp  = (isTypBranch && takeBranch) || isTypJALR || isTypJAL || isJmpCsr ||
+    (xlrevLoopBranch && xlrevLoopTaken)
 
   val normalNxtPC = Wire(Types.UWord)
   val nxtPC       = Wire(Types.UWord)
@@ -712,7 +726,7 @@ class EXU(
       )
     )
   )
-  nxtPC       := normalNxtPC
+  nxtPC       := Mux(xlrevLoopBranch && xlrevLoopTaken, dinst.pc, normalNxtPC)
   io.nxtPC    := nxtPC
   io.pc       := dinst.pc
 
@@ -720,12 +734,16 @@ class EXU(
   // Reuse the existing unconditional-entry bit for direct JAL and the exact
   // return encoding that IDU can validate without an address-add dependency.
   io.isJAL       := isTypJAL || dinst.code === "h00008067".U
-  io.isBranch    := isTypBranch
+  io.isBranch    := isTypBranch || xlrevLoopBranch
   io.isReturn    := isTypJALR && dinst.code === "h00008067".U
   io.isCall      := (isTypJAL || isTypJALR) && dinst.info.rd =/= 0.U
-  io.branchTaken := takeBranch
-  io.btbUpdateEn := isTypBranch || isTypJAL || isTypJALR
-  io.predWrong := exuResultValid && ((isFmtB && (takeBranch ^ dinst.predTake)) || io.in.bits.info.notBranchPredWrong)
+  io.branchTaken := Mux(xlrevLoopBranch, xlrevLoopTaken, takeBranch)
+  io.btbUpdateEn := isTypBranch || isTypJAL || isTypJALR || xlrevLoopBranch
+  io.predWrong := exuResultValid && Mux(
+    xlrevLoopBranch,
+    xlrevLoopTaken ^ dinst.predTake,
+    (isFmtB && (takeBranch ^ dinst.predTake)) || io.in.bits.info.notBranchPredWrong
+  )
 
   StageLogger(
     clock,

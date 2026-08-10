@@ -194,7 +194,14 @@ class EXU(
   val xmsumPreviousClipped = Reg(Bool())
   val xmsumPrev   = Reg(UInt(32.W))
   val xmsumRet    = Reg(UInt(16.W))
+  val xmsumRetClipped = Reg(Bool())
+  val xmsumRetIncreased = Reg(Bool())
+  val xmsumRetPending = RegInit(false.B)
   val isXmsum     = dinst.info.xmsumValid
+
+  val xmsumRetPlusOne = xmsumRet + 1.U
+  val xmsumRetPlusTen = xmsumRet + 10.U
+  val xmsumNextRet = Mux(xmsumRetClipped, xmsumRetPlusTen, Mux(xmsumRetIncreased, xmsumRetPlusOne, xmsumRet))
 
   // DCache hits still resolve a dependent consumer in this cycle.  A miss or
   // peripheral load reaches WBU later; capture that response first so the
@@ -299,6 +306,7 @@ class EXU(
     xmsumPreviousClipped := false.B
     xmsumPrev  := 0.U
     xmsumRet   := 0.U
+    xmsumRetPending := false.B
     when(n === 0.U) {
       xaccelResult := 0.U
       xmsumState  := XmsumState.done
@@ -311,25 +319,28 @@ class EXU(
     val current = io.memResp.bits
     val sum     = Mux(xmsumPreviousClipped, 0.U, xmsumTmp) + current
     val clipped = sum.asSInt > xmsumClip
-    val increasedByOne = xmsumRet + 1.U
-    val increasedByTen = xmsumRet + 10.U
-    val nextRet = Wire(UInt(16.W))
-    nextRet := Mux(clipped, increasedByTen, Mux(current.asSInt > xmsumPrev.asSInt, increasedByOne, xmsumRet))
     xmsumTmp  := sum
     xmsumPreviousClipped := clipped
     xmsumPrev := current
-    xmsumRet  := nextRet
+    xmsumRetClipped := clipped
+    xmsumRetIncreased := !clipped && current.asSInt > xmsumPrev.asSInt
     when(xmsumIndex + 1.U === xmsumCount) {
       xmsumState := XmsumState.finalizeResult
     }.otherwise {
       xmsumIndex := xmsumIndex + 1.U
+      xmsumRetPending := true.B
       xmsumState := XmsumState.request
     }
   }.elsewhen(xmsumState === XmsumState.finalizeResult) {
-    xaccelResult := Cat(Fill(16, xmsumRet(15)), xmsumRet)
+    xaccelResult := Cat(Fill(16, xmsumNextRet(15)), xmsumNextRet)
     xmsumState   := XmsumState.done
   }.elsewhen(xmsumState === XmsumState.done && io.out.fire) {
     xmsumState := XmsumState.idle
+  }
+
+  when(xmsumState === XmsumState.request && xmsumRetPending) {
+    xmsumRet        := xmsumNextRet
+    xmsumRetPending := false.B
   }
 
   val equalityRegV1 = Mux(dinst.info.lateLoadRs1, lateRegV1, postRegisterRegV1)

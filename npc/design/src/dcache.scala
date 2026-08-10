@@ -14,6 +14,7 @@ class DCache extends Module {
 
     val storeUpdate = Input(Bool())
     val storeFull   = Input(Bool())
+    val storeAddr   = Input(UInt(32.W))
     val storeData   = Input(UInt(32.W))
     val storeMask   = Input(UInt(4.W))
     val update     = Input(Bool())
@@ -65,9 +66,9 @@ class DCache extends Module {
   // only drives the valid data bit instead of the RAM write enable.
   val updateTagData = Cat(0.U(2.W), io.updateAddr(15, 11), 1.U(1.W))
   val storeTagValid = io.storeFull || io.hit
-  val storeTagData  = Cat(0.U(2.W), io.queryTag, storeTagValid)
+  val storeTagData  = Cat(0.U(2.W), io.storeAddr(15, 11), storeTagValid)
   val tagWrite      = io.storeUpdate || io.update
-  val tagWriteIndex = Mux(io.storeUpdate, io.queryIndex, io.updateAddr(11, 2))
+  val tagWriteIndex = Mux(io.storeUpdate, io.storeAddr(11, 2), io.updateAddr(11, 2))
   val tagWriteBank  = tagWriteIndex(9)
   val tagWriteAddr  = tagWriteIndex(8, 0)
   val tagWriteData  = Mux(io.storeUpdate, storeTagData, updateTagData)
@@ -80,7 +81,7 @@ class DCache extends Module {
 
   val dataWrite = io.storeUpdate || io.update
   val dataWriteMask = Mux(io.storeUpdate, io.storeMask, Mux(io.update, io.updateMask, 0.U))
-  val dataWriteIndex = Mux(io.storeUpdate, io.queryIndex, io.updateAddr(11, 2))
+  val dataWriteIndex = Mux(io.storeUpdate, io.storeAddr(11, 2), io.updateAddr(11, 2))
   val dataWriteBank  = dataWriteIndex(9)
   val dataWriteAddr  = dataWriteIndex(8, 0)
   val dataWriteData = Mux(io.storeUpdate, io.storeData, io.updateData)

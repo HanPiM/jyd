@@ -22,13 +22,15 @@ module blk_mem_gen_dram (
     output reg [31:0] douta
 );
     (* ram_style = "block" *) reg [31:0] storage [0:16383];
+    reg [31:0] memory_output;
     integer i;
     initial begin
         for (i=0; i<16384; i=i+1) storage[i]=0;
         $readmemh("dram.mem", storage);
     end
     always @(posedge clka) if (ena) begin
-        douta <= storage[addra[13:0]];
+        memory_output <= storage[addra[13:0]];
+        douta <= memory_output;
         if (wea[0]) storage[addra[13:0]][7:0]   <= dina[7:0];
         if (wea[1]) storage[addra[13:0]][15:8]  <= dina[15:8];
         if (wea[2]) storage[addra[13:0]][23:16] <= dina[23:16];

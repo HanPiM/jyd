@@ -48,7 +48,6 @@ static ee_u16 state_known_crc[]  = { (ee_u16)0x5e47,
                                     (ee_u16)0xe5a4,
                                     (ee_u16)0x8e3a,
                                     (ee_u16)0x8d84 };
-__attribute__((optimize("O3")))
 void *
 iterate(void *pres)
 {
@@ -358,19 +357,7 @@ for (i = 0; i < MULTITHREAD; i++)
     /* and report results */
     ee_printf("CoreMark Size    : %lu\n", (long unsigned)results[0].size);
     ee_printf("Total ticks      : %lu\n", (long unsigned)total_time);
-#if COREMARK_PSEUDO_FLOAT
-    ee_print_ratio("Total time (secs): ",
-                   total_time,
-                   COREMARK_TICKS_PER_SEC,
-                   1,
-                   1);
-    if (total_time > 0)
-        ee_print_ratio("Iterations/Sec   : ",
-                       default_num_contexts * results[0].iterations,
-                       total_time,
-                       COREMARK_TICKS_PER_SEC,
-                       1);
-#elif HAS_FLOAT
+#if HAS_FLOAT
     ee_printf("Total time (secs): %f\n", time_in_secs(total_time));
     if (time_in_secs(total_time) > 0)
         ee_printf("Iterations/Sec   : %f\n",
@@ -416,26 +403,7 @@ for (i = 0; i < MULTITHREAD; i++)
         ee_printf(
             "Correct operation validated. See README.md for run and reporting "
             "rules.\n");
-#if COREMARK_PSEUDO_FLOAT
-        if (known_id == 3)
-        {
-            ee_print_ratio("CoreMark 1.0 : ",
-                           default_num_contexts * results[0].iterations,
-                           total_time,
-                           COREMARK_TICKS_PER_SEC,
-                           0);
-            ee_printf(" / %s %s", COMPILER_VERSION, COMPILER_FLAGS);
-#if defined(MEM_LOCATION) && !defined(MEM_LOCATION_UNSPEC)
-            ee_printf(" / %s", MEM_LOCATION);
-#else
-            ee_printf(" / %s", mem_name[MEM_METHOD]);
-#endif
-#if (MULTITHREAD > 1)
-            ee_printf(" / %d:%s", default_num_contexts, PARALLEL_METHOD);
-#endif
-            ee_printf("\n");
-        }
-#elif HAS_FLOAT
+#if HAS_FLOAT
         if (known_id == 3)
         {
             ee_printf("CoreMark 1.0 : %f / %s %s",

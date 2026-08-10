@@ -1,6 +1,8 @@
 #include "gcc-plugin.h"
 #include "plugin-version.h"
 #include "tree.h"
+#include "stringpool.h"
+#include "attribs.h"
 #include "tree-pass.h"
 #include "context.h"
 #include "function.h"
@@ -16,17 +18,90 @@
 int plugin_is_GPL_compatible;
 
 static std::string enabled;
+static bool fp12_report;
 static unsigned replacements;
+
+static const char *function_optimization(const char *name) {
+  if (!std::strcmp(name, "core_list_init") ||
+      !std::strcmp(name, "core_init_matrix") ||
+      !std::strcmp(name, "core_init_state") ||
+      !std::strcmp(name, "get_seed_32") ||
+      !std::strcmp(name, "check_data_types"))
+    return "Os";
+  if (!std::strcmp(name, "iterate")) return "O3";
+  return nullptr;
+}
+
+static void apply_function_optimization(void *event_data, void *) {
+  tree decl = static_cast<tree>(event_data);
+  if (!decl || !DECL_NAME(decl)) return;
+  const char *optimization =
+      function_optimization(IDENTIFIER_POINTER(DECL_NAME(decl)));
+  if (!optimization) return;
+  tree argument = build_string(std::strlen(optimization) + 1, optimization);
+  tree arguments = tree_cons(NULL_TREE, argument, NULL_TREE);
+  tree attributes = tree_cons(get_identifier("optimize"), arguments, NULL_TREE);
+  decl_attributes(&decl, attributes, 0);
+}
 
 static tree find_replacement(const char *name) {
   cgraph_node *node;
-  FOR_EACH_DEFINED_FUNCTION(node) {
+  FOR_EACH_FUNCTION(node) {
     tree decl = node->decl;
     if (DECL_NAME(decl) &&
         !std::strcmp(IDENTIFIER_POINTER(DECL_NAME(decl)), name))
       return decl;
   }
   return NULL_TREE;
+}
+
+static tree declare_replacement(const char *name, tree old_decl) {
+  tree decl = build_fn_decl(name, TREE_TYPE(old_decl));
+  DECL_EXTERNAL(decl) = 1;
+  TREE_PUBLIC(decl) = 1;
+  cgraph_node::get_create(decl);
+  return decl;
+}
+
+static const char *call_string_argument(gcall *call) {
+  if (gimple_call_num_args(call) == 0) return nullptr;
+  tree argument = gimple_call_arg(call, 0);
+  STRIP_NOPS(argument);
+  if (TREE_CODE(argument) == ADDR_EXPR) argument = TREE_OPERAND(argument, 0);
+  return TREE_CODE(argument) == STRING_CST ? TREE_STRING_POINTER(argument)
+                                           : nullptr;
+}
+
+static bool is_report_function(function *fun) {
+  if (!fp12_report || !DECL_NAME(fun->decl)) return false;
+  const char *name = IDENTIFIER_POINTER(DECL_NAME(fun->decl));
+  return !std::strcmp(name, "main") || !std::strcmp(name, "coremark_main");
+}
+
+static const char *report_replacement(function *fun, gcall *call,
+                                      const char *old_name) {
+  if (!is_report_function(fun)) return nullptr;
+  if (!std::strcmp(old_name, "time_in_secs"))
+    return "__fp12_time_in_secs";
+  if (std::strcmp(old_name, "ee_printf")) return nullptr;
+
+  const char *fmt = call_string_argument(call);
+  if (!fmt) return nullptr;
+  if (std::strstr(fmt, "run parameters for coremark.\n"))
+    return "__fp12_banner";
+  if (!std::strcmp(fmt, "Total time (secs): %d\n") ||
+      !std::strcmp(fmt, "Iterations/Sec   : %d\n"))
+    return "__fp12_suppress_value";
+  if (!std::strcmp(
+          fmt, "ERROR! Must execute for at least 10 secs for a valid result!\n"))
+    return "__fp12_short_run";
+  if (!std::strcmp(fmt, "Iterations       : %lu\n"))
+    return "__fp12_iterations";
+  if (!std::strcmp(fmt,
+                   "Correct operation validated. See README.md for run and "
+                   "reporting rules.\n"))
+    return "__fp12_validated";
+  return nullptr;
 }
 
 static bool has(const char *name) {
@@ -51,7 +126,7 @@ static const char *replacement_for(const char *name) {
 
 namespace {
 const pass_data accel_pass_data = {
-  GIMPLE_PASS, "coremark_accel", OPTGROUP_NONE, TV_NONE,
+  GIMPLE_PASS, "xaccel", OPTGROUP_NONE, TV_NONE,
   PROP_gimple_any, 0, 0, 0, 0
 };
 
@@ -67,11 +142,14 @@ class accel_pass : public gimple_opt_pass {
         tree old_decl = gimple_call_fndecl(call);
         if (!old_decl || !DECL_NAME(old_decl)) continue;
         const char *old_name = IDENTIFIER_POINTER(DECL_NAME(old_decl));
-        const char *new_name = replacement_for(old_name);
+        const char *new_name = report_replacement(fun, call, old_name);
+        if (!new_name) new_name = replacement_for(old_name);
         if (!new_name) continue;
         tree new_decl = find_replacement(new_name);
+        if (!new_decl && !std::strncmp(new_name, "__fp12_", 7))
+          new_decl = declare_replacement(new_name, old_decl);
         if (!new_decl) {
-          std::fprintf(stderr, "coremark-accel-plugin: missing inline wrapper %s\n", new_name);
+          std::fprintf(stderr, "xaccel-plugin: missing inline wrapper %s\n", new_name);
           continue;
         }
         cgraph_node *caller = cgraph_node::get(fun->decl);
@@ -88,16 +166,19 @@ class accel_pass : public gimple_opt_pass {
 }
 
 static void finish(void *, void *) {
-  std::fprintf(stderr, "coremark-accel-plugin: enabled=%s replacements=%u\n",
+  std::fprintf(stderr, "xaccel-plugin: enabled=%s replacements=%u\n",
                enabled.c_str(), replacements);
 }
 
 int plugin_init(plugin_name_args *info, plugin_gcc_version *version) {
   if (!plugin_default_version_check(version, &gcc_version)) return 1;
   enabled = ",";
+  fp12_report = false;
   for (int i = 0; i < info->argc; i++)
     if (!std::strcmp(info->argv[i].key, "accels") && info->argv[i].value)
       enabled += std::string(info->argv[i].value) + ",";
+    else if (!std::strcmp(info->argv[i].key, "report") && info->argv[i].value)
+      fp12_report = !std::strcmp(info->argv[i].value, "fp12");
 
   register_pass_info pass_info;
   pass_info.pass = new accel_pass(g);
@@ -105,6 +186,8 @@ int plugin_init(plugin_name_args *info, plugin_gcc_version *version) {
   pass_info.ref_pass_instance_number = 1;
   pass_info.pos_op = PASS_POS_INSERT_BEFORE;
   register_callback(info->base_name, PLUGIN_PASS_MANAGER_SETUP, nullptr, &pass_info);
+  register_callback(info->base_name, PLUGIN_FINISH_PARSE_FUNCTION,
+                    apply_function_optimization, nullptr);
   register_callback(info->base_name, PLUGIN_FINISH, finish, nullptr);
   return 0;
 }

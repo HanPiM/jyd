@@ -17,10 +17,6 @@ Original Author: Shay Gal-on
 */
 
 #include "coremark.h"
-
-#pragma GCC optimize("O3")
-#define COREMARK_HOT __attribute__((optimize("O3")))
-#define COREMARK_COLD __attribute__((optimize("Os")))
 /*
 Topic: Description
         Matrix manipulation benchmark
@@ -92,7 +88,7 @@ printmatC(MATRES *C, ee_u32 N, char *name)
         Iterate <matrix_test> N times,
         changing the matrix values slightly by a constant amount each time.
 */
-COREMARK_HOT ee_u16
+ee_u16
 core_bench_matrix(mat_params *p, ee_s16 seed, ee_u16 crc)
 {
     ee_u32  N   = p->N;
@@ -130,7 +126,7 @@ core_bench_matrix(mat_params *p, ee_s16 seed, ee_u16 crc)
 
         After the last step, matrix A is back to original contents.
 */
-COREMARK_HOT ee_s16
+ee_s16
 matrix_test(ee_u32 N, MATRES *C, MATDAT *A, MATDAT *B, MATDAT val)
 {
     ee_u16 crc     = 0;
@@ -181,7 +177,7 @@ matrix_test(ee_u32 N, MATRES *C, MATDAT *A, MATDAT *B, MATDAT val)
         The seed parameter MUST be supplied from a source that cannot be
    determined at compile time
 */
-COREMARK_COLD ee_u32
+ee_u32
 core_init_matrix(ee_u32 blksize, void *memblk, ee_s32 seed, mat_params *p)
 {
     ee_u32  N = 0;
@@ -238,7 +234,7 @@ core_init_matrix(ee_u32 blksize, void *memblk, ee_s32 seed, mat_params *p)
 
         Otherwise, reset the accumulator and add 10 to the result.
 */
-COREMARK_HOT ee_s16
+ee_s16
 matrix_sum(ee_u32 N, MATRES *C, MATDAT clipval)
 {
     MATRES tmp = 0, prev = 0, cur = 0;
@@ -269,7 +265,7 @@ matrix_sum(ee_u32 N, MATRES *C, MATDAT clipval)
         Multiply a matrix by a constant.
         This could be used as a scaler for instance.
 */
-COREMARK_HOT void
+void
 matrix_mul_const(ee_u32 N, MATRES *C, MATDAT *A, MATDAT val)
 {
     ee_u32 i, j;
@@ -285,7 +281,7 @@ matrix_mul_const(ee_u32 N, MATRES *C, MATDAT *A, MATDAT val)
 /* Function: matrix_add_const
         Add a constant value to all elements of a matrix.
 */
-COREMARK_HOT void
+void
 matrix_add_const(ee_u32 N, MATDAT *A, MATDAT val)
 {
     ee_u32 i, j;
@@ -303,7 +299,7 @@ matrix_add_const(ee_u32 N, MATDAT *A, MATDAT val)
         This is common in many simple filters (e.g. fir where a vector of
    coefficients is applied to the matrix.)
 */
-COREMARK_HOT void
+void
 matrix_mul_vect(ee_u32 N, MATRES *C, MATDAT *A, MATDAT *B)
 {
     ee_u32 i, j;
@@ -322,7 +318,7 @@ matrix_mul_vect(ee_u32 N, MATRES *C, MATDAT *A, MATDAT *B)
         Basic code is used in many algorithms, mostly with minor changes such as
    scaling.
 */
-COREMARK_HOT void
+void
 matrix_mul_matrix(ee_u32 N, MATRES *C, MATDAT *A, MATDAT *B)
 {
     ee_u32 i, j, k;
@@ -344,7 +340,7 @@ matrix_mul_matrix(ee_u32 N, MATRES *C, MATDAT *A, MATDAT *B)
         Basic code is used in many algorithms, mostly with minor changes such as
    scaling.
 */
-COREMARK_HOT void
+void
 matrix_mul_matrix_bitextract(ee_u32 N, MATRES *C, MATDAT *A, MATDAT *B)
 {
     ee_u32 i, j, k;

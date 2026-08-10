@@ -17,10 +17,6 @@ Original Author: Shay Gal-on
 */
 
 #include "coremark.h"
-
-#pragma GCC optimize("O3")
-#define COREMARK_HOT __attribute__((optimize("O3")))
-#define COREMARK_COLD __attribute__((optimize("Os")))
 /* Function: get_seed
         Get a values that cannot be determined at compile time.
 
@@ -43,7 +39,7 @@ extern volatile ee_s32 seed2_volatile;
 extern volatile ee_s32 seed3_volatile;
 extern volatile ee_s32 seed4_volatile;
 extern volatile ee_s32 seed5_volatile;
-COREMARK_COLD ee_s32
+ee_s32
 get_seed_32(int i)
 {
     ee_s32 retval;
@@ -165,7 +161,7 @@ get_seed_32(int i)
         Service functions to calculate 16b CRC code.
 
 */
-COREMARK_HOT ee_u16
+ee_u16
 crcu8(ee_u8 data, ee_u16 crc)
 {
     ee_u8 i = 0, x16 = 0, carry = 0;
@@ -190,14 +186,14 @@ crcu8(ee_u8 data, ee_u16 crc)
     }
     return crc;
 }
-COREMARK_HOT ee_u16
+ee_u16
 crcu16(ee_u16 newval, ee_u16 crc)
 {
     crc = crcu8((ee_u8)(newval), crc);
     crc = crcu8((ee_u8)((newval) >> 8), crc);
     return crc;
 }
-COREMARK_HOT ee_u16
+ee_u16
 crcu32(ee_u32 newval, ee_u16 crc)
 {
     crc = crc16((ee_s16)newval, crc);
@@ -210,7 +206,7 @@ crc16(ee_s16 newval, ee_u16 crc)
     return crcu16((ee_u16)newval, crc);
 }
 
-COREMARK_COLD ee_u8
+ee_u8
 check_data_types()
 {
     ee_u8 retval = 0;

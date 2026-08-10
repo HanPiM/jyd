@@ -17,10 +17,6 @@ Original Author: Shay Gal-on
 */
 
 #include "coremark.h"
-
-#pragma GCC optimize("O3")
-#define COREMARK_HOT __attribute__((optimize("O3")))
-#define COREMARK_COLD __attribute__((optimize("Os")))
 /*
 Topic: Description
         Benchmark using a linked list.
@@ -159,7 +155,7 @@ copy_info(list_data *to, list_data *from)
         - Single remove/reinsert
         * At the end of this function, the list is back to original state
 */
-COREMARK_HOT ee_u16
+ee_u16
 core_bench_list(core_results *res, ee_s16 finder_idx)
 {
     ee_u16     retval = 0;
@@ -251,7 +247,7 @@ core_bench_list(core_results *res, ee_s16 finder_idx)
         Pointer to the head of the list.
 
 */
-COREMARK_COLD list_head *
+list_head *
 core_list_init(ee_u32 blksize, list_head *memblock, ee_s16 seed)
 {
     /* calculated pointers for the list */
@@ -500,7 +496,7 @@ core_list_reverse(list_head *list)
         but the algorithm could theoretically modify where the list starts.
 
  */
-COREMARK_HOT list_head *
+list_head *
 core_list_mergesort(list_head *list, list_cmp cmp, core_results *res)
 {
     list_head *p, *q, *e, *tail;

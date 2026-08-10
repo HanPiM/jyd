@@ -17,10 +17,6 @@ Original Author: Shay Gal-on
 */
 
 #include "coremark.h"
-
-#pragma GCC optimize("O3")
-#define COREMARK_HOT __attribute__((optimize("O3")))
-#define COREMARK_COLD __attribute__((optimize("Os")))
 /* local functions */
 enum CORE_STATE core_state_transition(ee_u8 **instr, ee_u32 *transition_count);
 
@@ -46,7 +42,7 @@ the switch/if behaviour, we are using a small moore machine.
         Go over the input twice, once direct, and once after introducing some
    corruption.
 */
-COREMARK_HOT ee_u16
+ee_u16
 core_bench_state(ee_u32 blksize,
                  ee_u8 *memblock,
                  ee_s16 seed1,
@@ -140,7 +136,7 @@ static ee_u8 *errpat[4]   = { (ee_u8 *)"T0.3e-1F",
         The seed parameter MUST be supplied from a source that cannot be
    determined at compile time
 */
-COREMARK_COLD void
+void
 core_init_state(ee_u32 size, ee_s16 seed, ee_u8 *p)
 {
     ee_u32 total = 0, next = 0, i;
@@ -217,7 +213,7 @@ ee_isdigit(ee_u8 c)
    end state is returned (either specific format determined or invalid).
 */
 
-COREMARK_HOT enum CORE_STATE
+enum CORE_STATE
 core_state_transition(ee_u8 **instr, ee_u32 *transition_count)
 {
     ee_u8 *         str = *instr;

@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 import argparse
+import re
 import subprocess
 
 
 ENCODINGS = {
+    "xcrcu8": 0x0000000B,
     "xmac16": 0x0000300B,
     "xdot16": 0x0000400B,
     "xbmul": 0x0000500B,
@@ -25,6 +27,7 @@ def main():
     parser = argparse.ArgumentParser(description="Audit inlined CoreMark custom instructions")
     parser.add_argument("--elf", required=True)
     parser.add_argument("--accels", default="")
+    parser.add_argument("--fp12-report", action="store_true")
     args = parser.parse_args()
 
     enabled = [name for name in args.accels.split(",") if name]
@@ -36,6 +39,17 @@ def main():
     wrappers = [line for line in symbols.splitlines() if "__cm_" in line]
     if wrappers:
         raise SystemExit("wrapper symbols survived final link:\n" + "\n".join(wrappers))
+    if args.fp12_report:
+        float_helpers = [
+            line
+            for line in symbols.splitlines()
+            if re.search(r"(?:softfloat|__[a-z]+(?:df|sf|tf)3)\b", line, re.IGNORECASE)
+        ]
+        if float_helpers:
+            raise SystemExit(
+                "floating-point helper symbols survived fp12 reporting:\n"
+                + "\n".join(float_helpers)
+            )
 
     disassembly = output("riscv64-linux-gnu-objdump", "-d", args.elf)
     counts = dict.fromkeys(enabled, 0)
@@ -70,6 +84,8 @@ def main():
     if missing:
         raise SystemExit("enabled instructions absent from final ELF: " + ", ".join(missing))
     print("no __cm_ wrapper symbols or calls remain")
+    if args.fp12_report:
+        print("no floating-point helper symbols remain")
     for name, count in counts.items():
         print(f"{name}: {count} static instruction site(s)")
     if "xstate2" in counts or "xstate4" in counts:

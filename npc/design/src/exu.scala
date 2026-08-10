@@ -311,8 +311,10 @@ class EXU(
     val current = io.memResp.bits
     val sum     = Mux(xmsumPreviousClipped, 0.U, xmsumTmp) + current
     val clipped = sum.asSInt > xmsumClip
+    val increasedByOne = xmsumRet + 1.U
+    val increasedByTen = xmsumRet + 10.U
     val nextRet = Wire(UInt(16.W))
-    nextRet := Mux(clipped, xmsumRet + 10.U, xmsumRet + (current.asSInt > xmsumPrev.asSInt))
+    nextRet := Mux(clipped, increasedByTen, Mux(current.asSInt > xmsumPrev.asSInt, increasedByOne, xmsumRet))
     xmsumTmp  := sum
     xmsumPreviousClipped := clipped
     xmsumPrev := current

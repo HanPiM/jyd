@@ -404,11 +404,11 @@ class IDU(
 
   bypassMux.io.allowAdjacentFastRs1 := isFastIntegerArithmetic || isTypBranch
   bypassMux.io.allowAdjacentFastRs2 := isFastIntegerArithmetic || isTypBranch || isTypStore
-  res.fastAluRs1 := bypassMux.io.adjacentFastRs1 && isFastIntegerArithmetic
-  res.fastAluRs2 := bypassMux.io.adjacentFastRs2 && isFastIntegerArithmetic
-  res.fastBranchRs1 := bypassMux.io.adjacentFastRs1 && isTypBranch
-  res.fastBranchRs2 := bypassMux.io.adjacentFastRs2 && isTypBranch
-  res.fastStoreRs2 := bypassMux.io.adjacentFastRs2 && isTypStore
+  res.fastAluRs1 := Fill(32, bypassMux.io.adjacentFastRs1 && isFastIntegerArithmetic)
+  res.fastAluRs2 := Fill(32, bypassMux.io.adjacentFastRs2 && isFastIntegerArithmetic)
+  res.fastBranchRs1 := Fill(32, bypassMux.io.adjacentFastRs1 && isTypBranch)
+  res.fastBranchRs2 := Fill(32, bypassMux.io.adjacentFastRs2 && isTypBranch)
+  res.fastStoreRs2 := Fill(32, bypassMux.io.adjacentFastRs2 && isTypStore)
   res.resultKind := Mux(
     isTypLoad,
     ResultKind.load,
@@ -460,7 +460,8 @@ class IDU(
   res.reg1AddImm := addAddrImm(addressBase)
 
   when(io.in.valid && needReg1AddImm) {
-    assert(!res.fastAluRs1 && !res.fastBranchRs1, "address instructions must not carry a generic rs1 fast token")
+    assert(!res.fastAluRs1.orR && !res.fastBranchRs1.orR,
+      "address instructions must not carry a generic rs1 fast token")
   }
 
   res.isECall := inst === "h73".U

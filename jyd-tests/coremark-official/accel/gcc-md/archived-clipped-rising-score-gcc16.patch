@@ -1,0 +1,462 @@
+diff --git a/gcc/Makefile.in b/gcc/Makefile.in
+index 8ecef4ccd..e26943123 100644
+--- a/gcc/Makefile.in
++++ b/gcc/Makefile.in
+@@ -1762,6 +1762,7 @@ OBJS = \
+ 	tree-iterator.o \
+ 	tree-logical-location.o \
+ 	tree-loop-distribution.o \
++	tree-clipped-rising-score.o \
+ 	crc-verification.o \
+ 	gimple-crc-optimization.o \
+ 	sym-exec/sym-exec-expression.o \
+diff --git a/gcc/config/riscv/bitmanip.md b/gcc/config/riscv/bitmanip.md
+index 0d16d79df..6c75513b1 100644
+--- a/gcc/config/riscv/bitmanip.md
++++ b/gcc/config/riscv/bitmanip.md
+@@ -1217,6 +1217,26 @@
+   [(set_attr "type" "clmul")])
+ 
+ ;; Reversed CRC 8, 16, 32 for TARGET_64
++(define_insn "byte_crc16_hi"
++  [(set (match_operand:HI 0 "register_operand" "=r")
++	(unspec:HI [(match_operand:HI 1 "register_operand" "r")
++		    (match_operand:QI 2 "register_operand" "r")]
++		   UNSPEC_XCRCU8))]
++  "riscv_xcrcu8 && !TARGET_64BIT"
++  ".insn r 0x0b, 0, 0, %0, %2, %1"
++  [(set_attr "type" "bitmanip")
++   (set_attr "mode" "HI")])
++
++(define_insn "byte_crc16_si"
++  [(set (match_operand:SI 0 "register_operand" "=r")
++	(unspec:SI [(match_operand:SI 1 "register_operand" "r")
++		    (match_operand:QI 2 "register_operand" "r")]
++		   UNSPEC_XCRCU8))]
++  "riscv_xcrcu8 && !TARGET_64BIT"
++  ".insn r 0x0b, 0, 0, %0, %2, %1"
++  [(set_attr "type" "bitmanip")
++   (set_attr "mode" "SI")])
++
+ (define_expand "crc_rev<ANYI1:mode><ANYI:mode>4"
+ 	;; return value (calculated CRC)
+   [(set (match_operand:ANYI 0 "register_operand")
+@@ -1230,6 +1250,17 @@
+   /* We don't support the case when data's size is bigger than CRC's size.  */
+   "<ANYI:MODE>mode >= <ANYI1:MODE>mode"
+ {
++  if (riscv_xcrcu8 && <ANYI1:MODE>mode == QImode
++      && (UINTVAL (operands[3]) & 0xffff) == 0x8005
++      && (<ANYI:MODE>mode == HImode || <ANYI:MODE>mode == SImode))
++    {
++      if (<ANYI:MODE>mode == HImode)
++        emit_insn (gen_byte_crc16_hi (operands[0], operands[1], operands[2]));
++      else
++        emit_insn (gen_byte_crc16_si (operands[0], operands[1], operands[2]));
++      DONE;
++    }
++
+   /* If we have the ZBC or ZBKC extension (ie, clmul) and
+      it is possible to store the quotient within a single variable
+      (E.g.  CRC64's quotient may need 65 bits,
+diff --git a/gcc/config/riscv/peephole.md b/gcc/config/riscv/peephole.md
+index e49bc0426..ecd3c5648 100644
+--- a/gcc/config/riscv/peephole.md
++++ b/gcc/config/riscv/peephole.md
+@@ -19,6 +19,67 @@
+ ;; <http://www.gnu.org/licenses/>.
+ 
+ ;; Simplify (unsigned long)(unsigned int)a << const
++(define_insn "packed_field_mul"
++  [(set (match_operand:SI 0 "register_operand" "=r")
++	(unspec:SI [(match_operand:SI 1 "register_operand" "r")]
++		   UNSPEC_XBMUL))]
++  "TARGET_XBMUL && !TARGET_64BIT"
++  ".insn r 0x0b, 5, 0, %0, %1, x0"
++  [(set_attr "type" "imul")
++   (set_attr "mode" "SI")])
++
++(define_insn "clipped_rising_score_reducesi3"
++  [(set (match_operand:SI 0 "register_operand" "=r")
++	(unspec:SI [(match_operand:SI 1 "register_operand" "r")
++		    (match_operand:SI 2 "register_operand" "r")]
++                 UNSPEC_CLIPPED_RISING_SCORE_REDUCE))
++   (clobber (mem:BLK (scratch)))]
++  "riscv_clipped_rising_score_reduce && !TARGET_64BIT"
++  ".insn r 0x0b, 7, 2, %0, %1, %2"
++  [(set_attr "type" "multi")
++     (set_attr "mode" "SI")])
++
++(define_expand "clipped_rising_score_reducesi4"
++  [(set (match_operand:SI 0 "register_operand")
++        (unspec:SI [(match_operand:SI 1 "register_operand")
++                    (match_operand:SI 2 "register_operand")
++                    (match_operand:SI 3 "register_operand")]
++                   UNSPEC_CLIPPED_RISING_SCORE_REDUCE))]
++  "riscv_clipped_rising_score_reduce && !TARGET_64BIT"
++{
++  rtx high = gen_reg_rtx (SImode);
++  rtx low = gen_reg_rtx (SImode);
++  rtx config = gen_reg_rtx (SImode);
++  emit_insn (gen_ashlsi3 (high, operands[2], GEN_INT (16)));
++  emit_insn (gen_andsi3 (low, operands[3], GEN_INT (65535)));
++  emit_insn (gen_iorsi3 (config, high, low));
++  emit_insn (gen_clipped_rising_score_reducesi3
++             (operands[0], operands[1], config));
++  DONE;
++})
++
++(define_code_iterator packed_field_shiftrt [ashiftrt lshiftrt])
++
++(define_peephole2
++  [(set (match_operand:SI 0 "register_operand")
++	(packed_field_shiftrt:SI (match_operand:SI 1 "register_operand")
++		      (const_int 2)))
++   (set (match_operand:SI 3 "register_operand")
++	(packed_field_shiftrt:SI (match_dup 1) (const_int 5)))
++   (set (match_operand:SI 2 "register_operand")
++	(and:SI (match_dup 0) (const_int 15)))
++   (set (match_operand:SI 4 "register_operand")
++	(and:SI (match_dup 3) (const_int 127)))
++   (set (match_operand:SI 5 "register_operand")
++	(mult:SI (match_dup 2) (match_dup 4)))]
++  "TARGET_XBMUL && !TARGET_64BIT
++   && (rtx_equal_p (operands[2], operands[5])
++       || peep2_reg_dead_p (5, operands[2]))
++   && (rtx_equal_p (operands[4], operands[5])
++       || peep2_reg_dead_p (5, operands[4]))"
++  [(set (match_dup 5)
++	(unspec:SI [(match_dup 1)] UNSPEC_XBMUL))])
++
+ (define_peephole2
+   [(set (match_operand:DI 0 "register_operand")
+ 	(ashift:DI (match_operand:DI 1 "register_operand")
+diff --git a/gcc/config/riscv/riscv.md b/gcc/config/riscv/riscv.md
+index d2883ef9f..5f330d67c 100644
+--- a/gcc/config/riscv/riscv.md
++++ b/gcc/config/riscv/riscv.md
+@@ -100,6 +100,11 @@
+   UNSPEC_CRC
+   UNSPEC_CRC_REV
+ 
++  ;; Packed bit-field multiply and byte-wise CRC16.
++  UNSPEC_XBMUL
++  UNSPEC_XCRCU8
++  UNSPEC_CLIPPED_RISING_SCORE_REDUCE
++
+   ;; Stack Smash Protector
+   UNSPEC_SSP_SET
+   UNSPEC_SSP_TEST
+diff --git a/gcc/config/riscv/riscv.opt b/gcc/config/riscv/riscv.opt
+index 2c26ee996..d6123324b 100644
+--- a/gcc/config/riscv/riscv.opt
++++ b/gcc/config/riscv/riscv.opt
+@@ -81,6 +81,18 @@ mdiv
+ Target Mask(DIV)
+ Use hardware instructions for integer division.
+ 
++mxbmul
++Target Mask(XBMUL)
++Recognize packed bit-field multiply expressions and use the custom xbmul instruction.
++
++mxcrcu8
++Target Var(riscv_xcrcu8) Init(0)
++Use the custom byte-wise CRC16 instruction.
++
++mclipped-rising-score-reduce
++Target Var(riscv_clipped_rising_score_reduce) Init(0)
++Use the clipped rising-score sequence reduction instruction.
++
+ march=
+ Target RejectNegative Joined Negative(march=) Var(riscv_arch_string) Save
+ -march=	Generate code for given RISC-V ISA (e.g. RV64IM).  ISA strings must be
+diff --git a/gcc/internal-fn.def b/gcc/internal-fn.def
+index d14241672..ac2719d35 100644
+--- a/gcc/internal-fn.def
++++ b/gcc/internal-fn.def
+@@ -204,6 +204,8 @@ along with GCC; see the file COPYING3.  If not see
+ 
+ DEF_INTERNAL_OPTAB_FN (CRC, ECF_CONST | ECF_NOTHROW, crc, crc)
+ DEF_INTERNAL_OPTAB_FN (CRC_REV, ECF_CONST | ECF_NOTHROW, crc_rev, crc)
++DEF_INTERNAL_OPTAB_FN (CLIPPED_RISING_SCORE_REDUCE, ECF_PURE | ECF_NOTHROW,
++                       clipped_rising_score_reduce, ternary)
+ DEF_INTERNAL_OPTAB_FN (MASK_LOAD, ECF_PURE, maskload, mask_load)
+ DEF_INTERNAL_OPTAB_FN (LOAD_LANES, ECF_CONST, vec_load_lanes, load_lanes)
+ DEF_INTERNAL_OPTAB_FN (MASK_LOAD_LANES, ECF_PURE,
+diff --git a/gcc/optabs.def b/gcc/optabs.def
+index 193f42a72..7a6e0af4b 100644
+--- a/gcc/optabs.def
++++ b/gcc/optabs.def
+@@ -226,6 +226,7 @@ OPTAB_NC(sync_lock_test_and_set_optab, "sync_lock_test_and_set$I$a", UNKNOWN)
+ OPTAB_DC(mov_optab, "mov$a", SET)
+ OPTAB_DC(movstrict_optab, "movstrict$a", STRICT_LOW_PART)
+ OPTAB_D (movmisalign_optab, "movmisalign$a")
++OPTAB_D (clipped_rising_score_reduce_optab, "clipped_rising_score_reduce$a4")
+ OPTAB_D (storent_optab, "storent$a")
+ OPTAB_D (insv_optab, "insv$a")
+ OPTAB_D (extv_optab, "extv$a")
+diff --git a/gcc/passes.def b/gcc/passes.def
+index cdddb8730..b2e228086 100644
+--- a/gcc/passes.def
++++ b/gcc/passes.def
+@@ -94,6 +94,7 @@ along with GCC; see the file COPYING3.  If not see
+ 	  NEXT_PASS (pass_phiprop);
+ 	  NEXT_PASS (pass_fre, true /* may_iterate */);
+ 	  NEXT_PASS (pass_early_vrp);
++	  NEXT_PASS (pass_clipped_rising_score);
+ 	  NEXT_PASS (pass_merge_phi);
+           NEXT_PASS (pass_dse);
+ 	  NEXT_PASS (pass_cd_dce, false /* update_address_taken_p */, true /* remove_unused_locals */);
+diff --git a/gcc/tree-clipped-rising-score.cc b/gcc/tree-clipped-rising-score.cc
+new file mode 100644
+index 000000000..f92a057af
+--- /dev/null
++++ b/gcc/tree-clipped-rising-score.cc
+@@ -0,0 +1,235 @@
++/* Recognize a clipped rising-score reduction and expose it to the target.  */
++
++#include "config.h"
++#include "system.h"
++#include "coretypes.h"
++#include "backend.h"
++#include "tree.h"
++#include "gimple.h"
++#include "gimple-iterator.h"
++#include "tree-pass.h"
++#include "ssa.h"
++#include "tree-cfg.h"
++#include "cfghooks.h"
++#include "cfgloop.h"
++#include "internal-fn.h"
++#include "diagnostic-core.h"
++
++namespace {
++
++/* Follow the small scalar expression graphs produced for this reduction.  */
++static bool
++depends_on (tree value, tree root, unsigned depth = 0)
++{
++  if (value == root)
++    return true;
++  if (TREE_CODE (value) == SSA_NAME && SSA_NAME_VAR (value) == root)
++    return true;
++  if (depth == 10 || TREE_CODE (value) != SSA_NAME)
++    return false;
++  gimple *def = SSA_NAME_DEF_STMT (value);
++  if (!def || gimple_nop_p (def))
++    return false;
++  if (is_gimple_assign (def))
++    {
++      for (unsigned i = 1; i < gimple_num_ops (def); ++i)
++	if (gimple_op (def, i)
++	    && depends_on (gimple_op (def, i), root, depth + 1))
++	  return true;
++    }
++  else if (gimple_code (def) == GIMPLE_PHI)
++    for (unsigned i = 0; i < gimple_phi_num_args (def); ++i)
++      if (depends_on (gimple_phi_arg_def (def, i), root, depth + 1))
++	return true;
++  return false;
++}
++
++static bool
++zero_cst_p (tree x)
++{
++  return x && TREE_CODE (x) == INTEGER_CST && integer_zerop (x);
++}
++
++static bool
++phi_has (tree phi_name, tree value, bool want_zero)
++{
++  if (TREE_CODE (phi_name) != SSA_NAME)
++    return false;
++  gimple *def = SSA_NAME_DEF_STMT (phi_name);
++  if (!def || gimple_code (def) != GIMPLE_PHI)
++    return false;
++  bool found_value = false, found_zero = false;
++  for (unsigned i = 0; i < gimple_phi_num_args (def); ++i)
++    {
++      tree arg = gimple_phi_arg_def (def, i);
++      found_value |= arg == value;
++      found_zero |= zero_cst_p (arg);
++    }
++  return found_value && (!want_zero || found_zero);
++}
++
++static bool
++clipped_rising_score_p (tree n, tree base, tree clip)
++{
++  tree cur = NULL_TREE, sum = NULL_TREE, reset_phi = NULL_TREE;
++  tree rise = NULL_TREE, ten_add = NULL_TREE;
++  unsigned n_loop_tests = 0;
++  basic_block bb;
++  FOR_EACH_BB_FN (bb, cfun)
++    for (gimple_stmt_iterator gsi = gsi_start_bb (bb);
++	 !gsi_end_p (gsi); gsi_next (&gsi))
++      {
++	gimple *s = gsi_stmt (gsi);
++	if (is_gimple_assign (s))
++	  {
++	    tree lhs = gimple_assign_lhs (s);
++	    enum tree_code code = gimple_assign_rhs_code (s);
++	    if (code == MEM_REF
++		&& depends_on (TREE_OPERAND (gimple_assign_rhs1 (s), 0), base))
++	      {
++		if (cur)
++		  return false;
++		cur = lhs;
++	      }
++	    if (code == PLUS_EXPR && cur
++		&& (gimple_assign_rhs1 (s) == cur
++		    || gimple_assign_rhs2 (s) == cur))
++	      {
++		tree other = (gimple_assign_rhs1 (s) == cur
++			      ? gimple_assign_rhs2 (s) : gimple_assign_rhs1 (s));
++		if (TREE_CODE (other) == SSA_NAME
++		    && gimple_code (SSA_NAME_DEF_STMT (other)) == GIMPLE_PHI)
++		  sum = lhs, reset_phi = other;
++	      }
++	    if (code == PLUS_EXPR)
++	      {
++		tree a = gimple_assign_rhs1 (s), b = gimple_assign_rhs2 (s);
++		if ((TREE_CODE (a) == INTEGER_CST && wi::to_wide (a) == 10)
++		    || (TREE_CODE (b) == INTEGER_CST && wi::to_wide (b) == 10))
++		  ten_add = lhs;
++	      }
++	    if (code == LT_EXPR && cur && gimple_assign_rhs2 (s) == cur
++		&& TREE_CODE (gimple_assign_rhs1 (s)) == SSA_NAME
++		&& gimple_code (SSA_NAME_DEF_STMT (gimple_assign_rhs1 (s)))
++		   == GIMPLE_PHI)
++	      rise = lhs;
++	  }
++	else if (gimple_code (s) == GIMPLE_COND)
++	  {
++	    tree a = gimple_cond_lhs (s), b = gimple_cond_rhs (s);
++	    enum tree_code code = gimple_cond_code (s);
++	    if (((code == GT_EXPR && a == sum && depends_on (b, clip))
++		 || (code == LT_EXPR && b == sum && depends_on (a, clip))))
++	      ;
++	    else if (code == GT_EXPR && cur
++		     && (a == cur || b == cur))
++	      rise = cur;
++	    else if ((code == GT_EXPR || code == LT_EXPR || code == NE_EXPR)
++		     && (depends_on (a, n) || depends_on (b, n)))
++	      ++n_loop_tests;
++	  }
++      }
++
++  if (sum)
++    FOR_EACH_BB_FN (bb, cfun)
++      for (gphi_iterator psi = gsi_start_phis (bb);
++	   !gsi_end_p (psi); gsi_next (&psi))
++	{
++	  tree lhs = gimple_phi_result (*psi);
++	  if (phi_has (lhs, sum, true))
++	    reset_phi = lhs;
++	}
++
++  if (!cur || !sum || !reset_phi || !rise || !ten_add || n_loop_tests < 2)
++    return false;
++  if (!phi_has (reset_phi, sum, true))
++    return false;
++
++  /* Require the threshold and rising comparisons explicitly.  */
++  bool threshold = false, rising = rise != NULL_TREE;
++  FOR_EACH_BB_FN (bb, cfun)
++    for (gimple_stmt_iterator gsi = gsi_start_bb (bb);
++	 !gsi_end_p (gsi); gsi_next (&gsi))
++      if (gimple_code (gsi_stmt (gsi)) == GIMPLE_COND)
++	{
++	  gcond *c = as_a<gcond *> (gsi_stmt (gsi));
++	  tree a = gimple_cond_lhs (c), b = gimple_cond_rhs (c);
++	  threshold |= ((gimple_cond_code (c) == GT_EXPR && a == sum
++			 && depends_on (b, clip))
++			|| (gimple_cond_code (c) == LT_EXPR && b == sum
++			    && depends_on (a, clip)));
++	}
++  return threshold && rising;
++}
++
++static void
++replace_with_internal_call (tree n, tree base, tree clip)
++{
++  tree u32 = unsigned_type_node;
++  basic_block bb = create_empty_bb (ENTRY_BLOCK_PTR_FOR_FN (cfun));
++  if (loops_for_fn (cfun))
++    add_bb_to_loop (bb, loops_for_fn (cfun)->tree_root);
++  edge entry_edge = single_succ_edge (ENTRY_BLOCK_PTR_FOR_FN (cfun));
++  redirect_edge_succ (entry_edge, bb);
++  make_edge (bb, EXIT_BLOCK_PTR_FOR_FN (cfun), 0);
++  gimple_stmt_iterator gsi = gsi_start_bb (bb);
++
++  tree clip16 = make_ssa_name (short_unsigned_type_node);
++  gsi_insert_before (&gsi, gimple_build_assign (clip16, NOP_EXPR, clip),
++		     GSI_SAME_STMT);
++  tree clip32 = make_ssa_name (u32);
++  gsi_insert_before (&gsi, gimple_build_assign (clip32, NOP_EXPR, clip16),
++		     GSI_SAME_STMT);
++  tree raw = make_ssa_name (u32);
++  gcall *call = gimple_build_call_internal
++    (IFN_CLIPPED_RISING_SCORE_REDUCE, 3, base, n, clip32);
++  gimple_call_set_lhs (call, raw);
++  gsi_insert_before (&gsi, call, GSI_SAME_STMT);
++  tree result = make_ssa_name (TREE_TYPE (TREE_TYPE (cfun->decl)));
++  gsi_insert_before (&gsi, gimple_build_assign (result, NOP_EXPR, raw),
++		     GSI_SAME_STMT);
++  gsi_insert_before (&gsi, gimple_build_return (result), GSI_SAME_STMT);
++}
++
++const pass_data pass_data_clipped_rising_score = {
++  GIMPLE_PASS, "clippedscore", OPTGROUP_NONE, TV_TREE_LOOP,
++  PROP_cfg | PROP_ssa, 0, 0, 0, TODO_cleanup_cfg | TODO_update_ssa
++};
++
++class pass_clipped_rising_score : public gimple_opt_pass
++{
++public:
++  pass_clipped_rising_score (gcc::context *ctxt)
++    : gimple_opt_pass (pass_data_clipped_rising_score, ctxt) {}
++  bool gate (function *) final override
++  { return direct_internal_fn_supported_p
++      (IFN_CLIPPED_RISING_SCORE_REDUCE, unsigned_type_node,
++	OPTIMIZE_FOR_SPEED); }
++  unsigned int execute (function *) final override
++  {
++    tree args = DECL_ARGUMENTS (cfun->decl);
++    if (!args || !DECL_CHAIN (args) || !DECL_CHAIN (DECL_CHAIN (args))
++	|| DECL_CHAIN (DECL_CHAIN (DECL_CHAIN (args))))
++      return 0;
++    tree n = args, base = DECL_CHAIN (n), clip = DECL_CHAIN (base);
++    if (TYPE_PRECISION (TREE_TYPE (n)) != 32
++	|| !POINTER_TYPE_P (TREE_TYPE (base))
++	|| TYPE_PRECISION (TREE_TYPE (TREE_TYPE (base))) != 32
++	|| TYPE_PRECISION (TREE_TYPE (clip)) != 16
++	|| TYPE_PRECISION (TREE_TYPE (TREE_TYPE (cfun->decl))) != 16
++	|| !clipped_rising_score_p (n, base, clip))
++      return 0;
++    replace_with_internal_call (n, base, clip);
++    if (dump_file)
++      fprintf (dump_file, "recognized clipped rising-score reduction\n");
++    return TODO_cleanup_cfg | TODO_update_ssa;
++  }
++};
++
++} // anonymous namespace
++
++gimple_opt_pass *
++make_pass_clipped_rising_score (gcc::context *ctxt)
++{
++  return new pass_clipped_rising_score (ctxt);
++}
+diff --git a/gcc/tree-pass.h b/gcc/tree-pass.h
+index b3c97658a..7dfd8c76b 100644
+--- a/gcc/tree-pass.h
++++ b/gcc/tree-pass.h
+@@ -389,6 +389,7 @@ extern gimple_opt_pass *make_pass_graphite_transforms (gcc::context *ctxt);
+ extern gimple_opt_pass *make_pass_if_conversion (gcc::context *ctxt);
+ extern gimple_opt_pass *make_pass_if_to_switch (gcc::context *ctxt);
+ extern gimple_opt_pass *make_pass_loop_distribution (gcc::context *ctxt);
++extern gimple_opt_pass *make_pass_clipped_rising_score (gcc::context *ctxt);
+ extern gimple_opt_pass *make_pass_crc_optimization (gcc::context *ctxt);
+ extern gimple_opt_pass *make_pass_vectorize (gcc::context *ctxt);
+ extern gimple_opt_pass *make_pass_simduid_cleanup (gcc::context *ctxt);

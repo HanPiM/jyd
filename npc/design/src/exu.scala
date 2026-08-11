@@ -244,7 +244,7 @@ class EXU(
   val xstateFinalCounters = RegInit(VecInit(Seq.fill(8)(0.U(32.W))))
   val xstatePendingMask = RegInit(0.U(8.W))
   object XstateWordState extends ChiselEnum {
-    val idle, request, response, processLow, processHigh, done = Value
+    val idle, request, response, processLow, processHigh, commit, done = Value
   }
   val xstateWordState = RegInit(XstateWordState.idle)
   val xstateWordStartState = Reg(UInt(3.W))
@@ -252,6 +252,8 @@ class EXU(
   val xstateWordStepResult = Reg(Types.UWord)
   val xstateWordResponseData = Reg(Types.UWord)
   val xstateWordIntermediate = Reg(UInt(16.W))
+  val xstateCommitMask = Reg(UInt(8.W))
+  val xstateCommitFinalState = Reg(UInt(3.W))
   val isXstateWordStep = isXstateWord && func3t === 5.U
   val isXstateWordCounted = isXstateWordStep && func7t === 1.U
   val xstateWordOffset = xstateWordAddress(1, 0)
@@ -294,16 +296,24 @@ class EXU(
       xstateWordHigh.io.result(5, 3), xstateWordHigh.io.result(2, 0))
     when(isXstateWordCounted) {
       when(xstateWordHigh.io.result(7)) {
-        for (state <- 0 until 8) {
-          when(combinedMask(state)) {
-            xstateCounters(state) := xstateCounters(state) + 1.U
-          }
-        }
-        val finalState = xstateWordHigh.io.result(2, 0)
-        xstateFinalCounters(finalState) := xstateFinalCounters(finalState) + 1.U
+        xstateCommitMask := combinedMask
+        xstateCommitFinalState := xstateWordHigh.io.result(2, 0)
         xstatePendingMask := 0.U
+        xstateWordState := XstateWordState.commit
       }.otherwise {
         xstatePendingMask := combinedMask
+        xstateWordState := XstateWordState.done
+      }
+    }.otherwise {
+      xstateWordState := XstateWordState.done
+    }
+  }.elsewhen(xstateWordState === XstateWordState.commit) {
+    for (state <- 0 until 8) {
+      when(xstateCommitMask(state)) {
+        xstateCounters(state) := xstateCounters(state) + 1.U
+      }
+      when(xstateCommitFinalState === state.U) {
+        xstateFinalCounters(state) := xstateFinalCounters(state) + 1.U
       }
     }
     xstateWordState := XstateWordState.done

@@ -52,7 +52,7 @@ Options:
   --difftest-ref <dir> Backward-compatible alias for --nemu-ref.
   --coe-dir <dir>      Directory with coremark-official-riscv32-jyd.{text,data}.coe
                        (default: <src>/jyd-tests/coremark-official/build/
-                       iter10000-...-x_xbmul_xcrcu8_xlrev2_xmsum_xstate4-...).
+                       iter10000-...-x_xbmul_xcrcu8_xlrev2_xmsum_xdfa4h-...).
   --skip-coe-check     Allow COE hashes to differ from the frozen formal pair.
   --verify-sim         Build and run the riscv32-jyd add smoke test, then verify
                        its simulator banner and image path belong to this
@@ -277,7 +277,7 @@ echo "   interpreter-so sha256: $(sha256sum "$WT_DIR/nemu/build/riscv32-nemu-int
 
 # --- formal COE pair ---------------------------------------------------------
 if [[ -z "$COE_DIR" ]]; then
-  COE_DIR="$SRC/jyd-tests/coremark-official/build/iter10000-data2000-z_zba_zbb_zbc_zbs_zbkb_zbkx-x_xbmul_xcrcu8_xlrev2_xmsum_xstate4-cdefault-lto0-pf1"
+  COE_DIR="$SRC/jyd-tests/coremark-official/build/iter10000-data2000-z_zba_zbb_zbc_zbs_zbkb_zbkx-x_xbmul_xcrcu8_xlrev2_xmsum_xdfa4h-cdefault-lto0-pf1"
 fi
 case "/$COE_DIR/" in
   */iter10000-*) ;;
@@ -310,8 +310,8 @@ echo "   cur_coe/dram.coe sha256: $COE_DATA"
 echo "   cur_coe workload: ITERATIONS=10000"
 
 if [[ "$SKIP_COE_CHECK" -eq 0 ]]; then
-  FROZEN_TEXT="eea86014704e94af7164fb9c2e655810682fa29cc51d38e950e1fd5d9fa966ae"
-  FROZEN_DATA="32d1a05274fdc4fa12121c3377c3d5f791209f70841a00a6c693c30e28b99fb0"
+  FROZEN_TEXT="3867cfc979c4e452b5f77be6ce568ea36cc2014bef6fe8fb68011ad0a451bf2b"
+  FROZEN_DATA="83fecbb32572a559fd3d9f09b8835cafb5ef70e5bd36aaf0cbd0289488fe56f4"
   HIST_TEXT="5067088dee8da04cc366d6334f5e8dda2cd97f13679ae8d377f146d6a3e008f9"
   HIST_DATA="07b2cff9328da907f4db3510ebfb1c441f509ceae6c8c70cf3075c94a41a8254"
   if [[ "$COE_TEXT" != "$FROZEN_TEXT" || "$COE_DATA" != "$FROZEN_DATA" ]]; then

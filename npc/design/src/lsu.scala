@@ -25,12 +25,14 @@ object ExtractFwdInfoFromLSU {
     implicit p: CPUParameters
   ): WrBackForwardInfo = {
     val wrBack = info.bits.exuWriteBack
+    val loadData = ExtLoadData(info.bits.lateLoadData, info.bits.destAddr(1, 0), info.bits.func3t)
+    val loadDataValid = info.bits.isLoad && info.bits.cacheableLoad && info.bits.dcacheHit
     val out = Wire(new WrBackForwardInfo)
-    out.addr      := wrBack.gpr.addr
-    out.enWr      := wrBack.gpr.en && info.valid
-    out.dataVaild := !info.bits.isLoad
-    out.data      := SelectGprData(wrBack)
-    out.useFastLane := wrBack.useFastGprData
+    out.addr      := ResultLaneSelect.rd(wrBack)
+    out.enWr      := ResultLaneSelect.anyValid(wrBack) && info.valid
+    out.dataVaild := info.valid && (!info.bits.isLoad || loadDataValid)
+    out.data      := Mux(info.bits.isLoad, loadData, ResultLaneSelect.nonLoadData(wrBack))
+    out.kind      := wrBack.resultKind
 
     out.enWrCSR := wrBack.csr.en && info.valid
 
@@ -44,11 +46,11 @@ object ExtractFastFwdInfoFromLSU {
   ): WrBackForwardInfo = {
     val wrBack = info.bits.exuWriteBack
     val out = Wire(new WrBackForwardInfo)
-    out.addr      := wrBack.gpr.addr
-    out.enWr      := wrBack.gpr.en && info.valid && wrBack.useFastGprData
-    out.dataVaild := info.valid && wrBack.useFastGprData
-    out.data      := wrBack.fastGprData
-    out.useFastLane := true.B
+    out.addr      := wrBack.fastResult.rd
+    out.enWr      := wrBack.fastResult.valid && info.valid
+    out.dataVaild := wrBack.fastResult.valid && info.valid
+    out.data      := wrBack.fastResult.data
+    out.kind      := ResultKind.fastInt
     out.enWrCSR   := false.B
     out
   }
@@ -127,11 +129,12 @@ class LSU(
   outWriteBackInfo.csr.addr      := activeReq.exuWriteBack.csr.addr
   outWriteBackInfo.csr.data      := activeReq.exuWriteBack.csr.data
   outWriteBackInfo.csr_ecallflag := activeReq.exuWriteBack.csr_ecallflag
-  outWriteBackInfo.gpr.addr      := activeReq.exuWriteBack.gpr.addr
-  outWriteBackInfo.gpr.en        := activeReq.exuWriteBack.gpr.en
-  outWriteBackInfo.gpr.data      := activeReq.exuWriteBack.gpr.data
-  outWriteBackInfo.fastGprData   := activeReq.exuWriteBack.fastGprData
-  outWriteBackInfo.useFastGprData := activeReq.exuWriteBack.useFastGprData
+  outWriteBackInfo.resultKind    := activeReq.exuWriteBack.resultKind
+  outWriteBackInfo.fastResult    := activeReq.exuWriteBack.fastResult
+  outWriteBackInfo.directResult  := activeReq.exuWriteBack.directResult
+  outWriteBackInfo.longResult    := activeReq.exuWriteBack.longResult
+  outWriteBackInfo.acceleratorResult := activeReq.exuWriteBack.acceleratorResult
+  outWriteBackInfo.loadResult    := activeReq.exuWriteBack.loadResult
   outWriteBackInfo.isLoad        := activeReq.isLoad
   outWriteBackInfo.isMemOp       := isMemOp
   outWriteBackInfo.lsuResult     := io.dcacheReadData
@@ -142,6 +145,10 @@ class LSU(
   outWriteBackInfo.cacheableLoad := activeReq.cacheableLoad
   outWriteBackInfo.dcacheHit     := activeReq.dcacheHit
   outWriteBackInfo.dcacheStoreEpoch := activeReq.dcacheStoreEpoch
+
+  when(io.in.valid) {
+    assert(PopCount(ResultLaneSelect.validVec(activeReq.exuWriteBack)) <= 1.U, "LSU result lanes must be one-hot")
+  }
 
   StageLogger(
     clock,

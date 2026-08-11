@@ -86,8 +86,6 @@ class EXU(
     val lateLoadWBUFunc3   = Input(UInt(3.W))
     val lateLoadWBUOffset  = Input(UInt(2.W))
     val previousStageFwd = Input(new WrBackForwardInfo)
-    val previousLsuFastData = Input(Types.UWord)
-    val previousLsuDeferredData = Input(Types.UWord)
 
     val dcache = new Bundle {
       val hit        = Input(Bool())
@@ -110,11 +108,16 @@ class EXU(
     val out    = Decoupled(new LSUInput)
   })
 
-  val alu = Module(new ALU)
+  val fastInteger = Module(new FastIntegerALU)
+  // Keep the historical instance name for simulator hierarchy probes. This
+  // module is now only the special cluster; fast integer execution is separate.
+  val alu = Module(new SpecialExecutionCluster)
 
+  fastInteger.io.out.ready := io.out.ready
   alu.io.out.ready := io.out.ready
 
-  val alu_in = alu.io.in.bits
+  val fast_in = fastInteger.io.in.bits
+  val special_in = alu.io.in.bits
   val dinst  = io.in.bits
   val func3t = dinst.code(14, 12)
   val func7t = dinst.code(31, 25)
@@ -131,9 +134,6 @@ class EXU(
   val isTypLUI        = InstType.hasSame(dinst.info.typ, InstType.lui)
 
   val isAdd = isTypArithmetic && func3t === 0.U && (isFmtI || func7t === 0.U)
-
-  alu.io.in.valid :=
-    io.in.valid && isTypArithmetic && !dinst.info.xlrevValid && !dinst.info.xmsumValid && !dinst.info.numericDfaValid
 
   val isNumericDfa = dinst.info.numericDfaValid
 
@@ -208,26 +208,18 @@ class EXU(
     (ready, data)
   }
 
-  val previousLsuRegV1 = Mux(dinst.info.prevLsuDeferredRs1, io.previousLsuDeferredData, io.previousLsuFastData)
-  val previousLsuRegV2 = Mux(dinst.info.prevLsuDeferredRs2, io.previousLsuDeferredData, io.previousLsuFastData)
-  val currentProducerRegV1 = Mux(
-    dinst.info.prevExuFwdRs1,
-    io.previousStageFwd.data,
-    Mux(dinst.info.prevLsuFwdRs1, previousLsuRegV1, dinst.info.reg1)
-  )
-  val currentProducerRegV2 = Mux(
-    dinst.info.prevExuFwdRs2,
-    io.previousStageFwd.data,
-    Mux(dinst.info.prevLsuFwdRs2, previousLsuRegV2, dinst.info.reg2)
-  )
-  val postRegisterRegV1 = currentProducerRegV1
-  val postRegisterRegV2 = currentProducerRegV2
-  val aluPostRegisterRegV2 = Mux(dinst.info.prevExuFwdRs2Alu, io.previousStageFwd.data, postRegisterRegV2)
+  val baseRegV1 = dinst.info.reg1
+  val baseRegV2 = dinst.info.reg2
+  val fastRegV1 = Mux(dinst.info.fastAluRs1, io.previousStageFwd.data, baseRegV1)
+  val fastRegV2 = Mux(dinst.info.fastAluRs2, io.previousStageFwd.data, baseRegV2)
+  val branchRegV1 = Mux(dinst.info.fastBranchRs1, io.previousStageFwd.data, baseRegV1)
+  val branchRegV2 = Mux(dinst.info.fastBranchRs2, io.previousStageFwd.data, baseRegV2)
+  val storeRegV2 = Mux(dinst.info.fastStoreRs2, io.previousStageFwd.data, baseRegV2)
 
   val (lateRs1Ready, lateRegV1) =
-    resolveLateLoadOperand(dinst.info.lateLoadRs1, postRegisterRegV1)
+    resolveLateLoadOperand(dinst.info.lateLoadRs1, branchRegV1)
   val (lateRs2Ready, lateRegV2) =
-    resolveLateLoadOperand(dinst.info.lateLoadRs2, postRegisterRegV2)
+    resolveLateLoadOperand(dinst.info.lateLoadRs2, branchRegV2)
   val hasLateLoadOperand = dinst.info.lateLoadRs1 || dinst.info.lateLoadRs2
   val lateDataReady = lateRs1Ready && lateRs2Ready
   val lateDataReadyFromLSU = hasLateLoadOperand && io.lateLoadLSU.dataValid
@@ -249,8 +241,8 @@ class EXU(
     Cat(0.U(31.W), lateForwardRegV1(0)),
     Cat(0.U(1.W), lateForwardRegV1(31, 1))
   )
-  val reg_v1       = postRegisterRegV1
-  val reg_v2       = postRegisterRegV2
+  val reg_v1       = baseRegV1
+  val reg_v2       = baseRegV2
   val xlrevActiveCurrent = Mux(isXlrevLoop, xlrevResult, reg_v1)
 
   // A numeric-token scan consumes at most the configured data-region size, so 16-bit
@@ -467,11 +459,11 @@ class EXU(
     lateOtherOperandCaptured := false.B
   }.elsewhen(hasLateLoadOperand && !lateOtherOperandCaptured) {
     lateOtherOperandCaptured := true.B
-    capturedLateOtherRegV1 := postRegisterRegV1
-    capturedLateOtherRegV2 := postRegisterRegV2
+    capturedLateOtherRegV1 := branchRegV1
+    capturedLateOtherRegV2 := branchRegV2
   }
-  val stableLateOtherRegV1 = Mux(lateOtherOperandCaptured, capturedLateOtherRegV1, postRegisterRegV1)
-  val stableLateOtherRegV2 = Mux(lateOtherOperandCaptured, capturedLateOtherRegV2, postRegisterRegV2)
+  val stableLateOtherRegV1 = Mux(lateOtherOperandCaptured, capturedLateOtherRegV1, branchRegV1)
+  val stableLateOtherRegV2 = Mux(lateOtherOperandCaptured, capturedLateOtherRegV2, branchRegV2)
   val equalityRegV1 = Mux(dinst.info.lateLoadRs1, lateRegV1, stableLateOtherRegV1)
   val equalityRegV2 = Mux(dinst.info.lateLoadRs2, lateRegV2, stableLateOtherRegV2)
   // val pcAddImm   = dinst.pc + dinst.info.imm
@@ -482,25 +474,56 @@ class EXU(
   // rs1+imm target.  The BTB stores only the same trimmed PC bits either way.
   io.branchTarget   := Mux(isXlrevLoop, dinst.pc, Mux(isTypJALR, reg1AddImm, pcAddImm))
 
-  alu_in.src1   := reg_v1
-  // alu_in.src2   := Mux(isFmtI, dinst.info.imm, reg_v2)
-  alu_in.src2   := aluPostRegisterRegV2
-  alu_in.mulRawSrc1 := reg_v1
-  alu_in.mulRawSrc2 := reg_v2
-  alu_in.mulPrevData := 0.U
-  alu_in.mulPrevRs1 := false.B
-  alu_in.mulPrevRs2 := false.B
-  alu_in.mulNoLate := !dinst.info.lateLoadRs1 && !dinst.info.lateLoadRs2
-  alu_in.is_imm := isFmtI
-  alu_in.isSub   := dinst.info.aluIsSub
-  alu_in.func3t := func3t
-  alu_in.func7t := func7t
-  val isBExt = dinst.info.bExtValid
-  alu_in.bExtValid := isBExt
-  alu_in.crcValid := dinst.info.crcValid
-  alu_in.xbmulValid := dinst.info.xbmulValid
+  fast_in.src1   := fastRegV1
+  fast_in.src2   := fastRegV2
+  fast_in.isImm  := isFmtI
+  fast_in.isSub  := dinst.info.aluIsSub
+  fast_in.func3t := func3t
+  fast_in.func7t := func7t
 
-  val aluOut = alu.io.out.bits
+  special_in.src1   := baseRegV1
+  special_in.src2   := baseRegV2
+  special_in.mulRawSrc1 := baseRegV1
+  special_in.mulRawSrc2 := baseRegV2
+  special_in.mulPrevData := 0.U
+  special_in.mulPrevRs1 := false.B
+  special_in.mulPrevRs2 := false.B
+  special_in.mulNoLate := true.B
+  special_in.is_imm := isFmtI
+  special_in.isSub   := dinst.info.aluIsSub
+  special_in.func3t := func3t
+  special_in.func7t := func7t
+  val isBExt = dinst.info.bExtValid
+  special_in.bExtValid := isBExt
+  special_in.crcValid := dinst.info.crcValid
+  special_in.xbmulValid := dinst.info.xbmulValid
+
+  val fastIntegerOut = fastInteger.io.out.bits
+  val specialExecutionOut = alu.io.out.bits
+  val resultIsFast = dinst.info.resultKind === ResultKind.fastInt
+  val resultIsLong = dinst.info.resultKind === ResultKind.longArithmetic
+  val resultIsAccelerator = dinst.info.resultKind === ResultKind.accelerator
+  val simpleAccelerator = dinst.info.crcValid || dinst.info.xbmulValid
+
+  fastInteger.io.in.valid := io.in.valid && isTypArithmetic && resultIsFast && !hasLateLoadOperand
+  alu.io.in.valid :=
+    io.in.valid && isTypArithmetic && (resultIsLong || (resultIsAccelerator && simpleAccelerator))
+
+  when(io.in.valid && (dinst.info.fastAluRs1 || dinst.info.fastAluRs2)) {
+    assert(resultIsFast && isTypArithmetic, "fast ALU token used by a non-fast consumer")
+    assert(io.previousStageFwd.dataVaild && io.previousStageFwd.kind === ResultKind.fastInt,
+      "deferred result entered the fast integer cluster")
+  }
+  when(io.in.valid && (dinst.info.fastBranchRs1 || dinst.info.fastBranchRs2)) {
+    assert(isTypBranch, "fast branch token used by a non-branch consumer")
+    assert(io.previousStageFwd.dataVaild && io.previousStageFwd.kind === ResultKind.fastInt,
+      "deferred result entered the branch fast path")
+  }
+  when(io.in.valid && dinst.info.fastStoreRs2) {
+    assert(isTypStore, "fast store-data token used by a non-store consumer")
+    assert(io.previousStageFwd.dataVaild && io.previousStageFwd.kind === ResultKind.fastInt,
+      "deferred result entered the store-data fast path")
+  }
 
   // --- CSR ---
   val is_mret  = dinst.info.isMRet
@@ -570,8 +593,8 @@ class EXU(
   dontTouch(equalityChunkNonZero)
   val extendedLoadEqual = !equalityChunkNonZero.asUInt.orR
   val isEqual     = extendedLoadEqual
-  val isLessThan  = reg_v1.asSInt < reg_v2.asSInt
-  val isLessThanU = reg_v1 < reg_v2
+  val isLessThan  = branchRegV1.asSInt < branchRegV2.asSInt
+  val isLessThanU = branchRegV1 < branchRegV2
 
   // val isEqual = dinst.info.isEqual
   // val isLessThan = dinst.info.isLessThan
@@ -610,48 +633,41 @@ class EXU(
   val snpc = dinst.info.staticNextPCOrCSRTarget
   io.staticTarget := Mux(isXlrevLoop, dinst.pc, snpc)
 
-  writeBackInfo.gpr.en   := dinst.info.rdWrEn
-  writeBackInfo.gpr.addr := dinst.info.rd
-
-  val isMExt = !isFmtI && func7t === "b0000001".U
-  val useSingleCycleForward =
-    isTypArithmetic && !isMExt && !isBExt && !isXlrev && !isXmsum && !isNumericDfaStep && !hasLateLoadOperand
-
-  // writeBackInfo.gpr.data := Mux1H(
-  //   Seq(
-  //     isTypArithmetic         -> aluOut,
-  //     isTypLUI                -> dinst.info.imm,
-  //     isTypAUIPC              -> pcAddImm,
-  //     (isTypJALR || isTypJAL) -> snpc,
-  //     isTypSys                -> csr_rdata
-  //   )
-  // )
-
-  // Late ADD data crosses the EXU-to-LSU boundary in its dedicated lane.
-  // Only the wiring-only late bit operations still use the ordinary GPR
-  // writeback-data field here.
-  // Flatten the writeback data selection into a single 3-way one-hot mux so a
-  // normal arithmetic result crosses only one LUT level on its way to the
-  // EXU-to-LSU payload register.  The three selects are mutually exclusive:
-  // ordinary arithmetic, late-load ANDI/SRLI bit result, or decode-provided
-  // data (LUI/AUIPC/JAL/CSR...).
+  val useSingleCycleForward = isTypArithmetic && resultIsFast && !hasLateLoadOperand
   val isLateLoadBit = isLateLoadAndi1 || isLateLoadSrli1
-  val normalWriteBackData = Mux1H(
-    Seq(
-      (isTypArithmetic && !isLateLoadBit) -> aluOut,
-      isLateLoadBit -> lateBitResult,
-      !isTypArithmetic -> dinst.info.preMuxWrBackData
-    )
+  val acceleratorData = Mux(
+    isNumericDfa,
+    xdfaWordResult,
+    Mux(isXlrev, xlrevResult, Mux(isXmsum, xmsumResult, specialExecutionOut))
   )
-  writeBackInfo.gpr.data := Mux(isNumericDfa, xdfaWordResult,
-    Mux(isXlrev, xlrevResult, Mux(isXmsum, xmsumResult, normalWriteBackData)))
-  writeBackInfo.fastGprData := Mux(isNumericDfa, xdfaWordResult,
-    Mux(
-      isLateLoadBit,
-      lateBitResult,
-      Mux(dinst.info.aluUseSpecialResult, alu.io.singleCycleResult, alu.io.baseResult)
-    ))
-  writeBackInfo.useFastGprData := useSingleCycleForward || isLateLoadBit
+
+  writeBackInfo.resultKind := dinst.info.resultKind
+  writeBackInfo.fastResult.valid := dinst.info.rdWrEn && resultIsFast
+  writeBackInfo.fastResult.rd := dinst.info.rd
+  writeBackInfo.fastResult.data := Mux(isLateLoadBit, lateBitResult, fastIntegerOut)
+  writeBackInfo.directResult.valid := dinst.info.rdWrEn && dinst.info.resultKind === ResultKind.direct
+  writeBackInfo.directResult.rd := dinst.info.rd
+  writeBackInfo.directResult.data := dinst.info.preMuxWrBackData
+  writeBackInfo.longResult.valid := dinst.info.rdWrEn && resultIsLong
+  writeBackInfo.longResult.rd := dinst.info.rd
+  writeBackInfo.longResult.data := specialExecutionOut
+  writeBackInfo.acceleratorResult.valid := dinst.info.rdWrEn && resultIsAccelerator
+  writeBackInfo.acceleratorResult.rd := dinst.info.rd
+  writeBackInfo.acceleratorResult.data := acceleratorData
+  writeBackInfo.loadResult.valid := dinst.info.rdWrEn && isTypLoad
+  writeBackInfo.loadResult.rd := dinst.info.rd
+
+  when(io.in.valid) {
+    assert(PopCount(ResultLaneSelect.validVec(writeBackInfo)) <= 1.U, "EXU result lanes must be one-hot")
+    assert(!writeBackInfo.fastResult.valid || writeBackInfo.resultKind === ResultKind.fastInt)
+    assert(!writeBackInfo.directResult.valid || writeBackInfo.resultKind === ResultKind.direct)
+    assert(!writeBackInfo.longResult.valid || writeBackInfo.resultKind === ResultKind.longArithmetic)
+    assert(!writeBackInfo.acceleratorResult.valid || writeBackInfo.resultKind === ResultKind.accelerator)
+    assert(!writeBackInfo.loadResult.valid || writeBackInfo.resultKind === ResultKind.load)
+    when(dinst.info.rdWrEn) {
+      assert(PopCount(ResultLaneSelect.validVec(writeBackInfo)) === 1.U, "GPR producer must select exactly one lane")
+    }
+  }
 
   // Fill in LSU stage
   writeBackInfo.isLoad        := false.B
@@ -671,22 +687,15 @@ class EXU(
   val exuResultValid =
     Mux(isNumericDfaStep, xdfaWordDone,
       Mux(isXlrev, xlrevDone, Mux(isXmsum, xmsumDone,
-        (!isTypArithmetic || isNumericDfa || alu.io.out.valid) && (!hasLateLoadOperand || lateDataReady))))
+        (!isTypArithmetic || isNumericDfa ||
+          Mux(resultIsFast, Mux(hasLateLoadOperand, lateDataReady, fastInteger.io.out.valid), alu.io.out.valid)) &&
+          (!hasLateLoadOperand || lateDataReady))))
   // Keep the same-cycle forwarding loop independent of the multi-cycle M/D/B
   // result mux.  A multi-cycle producer still advertises its destination while it is
   // in EXU, but its data remains unavailable to IDU; a dependent consumer
   // waits one cycle and receives the registered result from LSU instead.
   val useLateBitForward = (isLateLoadAndi1 || isLateLoadSrli1) && exuResultValid && lateDataReadyFromLSU
-  val regularExuForwardData = Mux(
-    useLateBitForward,
-    lateBitForwardResult,
-    Mux(
-      isTypArithmetic,
-      Mux(dinst.info.aluUseSpecialResult, alu.io.singleCycleResult, alu.io.baseResult),
-      dinst.info.preMuxWrBackData
-    )
-  )
-  val exuForwardData = Mux(isNumericDfa, xdfaWordResult, regularExuForwardData)
+  val exuForwardData = Mux(useLateBitForward, lateBitForwardResult, fastIntegerOut)
   // Only producers carried by the dedicated fast lane may arm the adjacent
   // EXU bypass token. Other single-cycle results wait one cycle and use the
   // ordinary LSU-to-IDU bypass, keeping them out of the ALU recurrence.
@@ -701,7 +710,7 @@ class EXU(
 
   val memWMask = GenMemWMask(reg1AddImm(1, 0), func3t)
 
-  val memWData = GenMemWData(reg1AddImm(1, 0), reg_v2)
+  val memWData = GenMemWData(reg1AddImm(1, 0), storeRegV2)
 
   val xlrevStoreRequest = xlrevState === XlrevState.storeRequest
   // xlrev's operand is held in the IDU/EXU payload for the instruction's

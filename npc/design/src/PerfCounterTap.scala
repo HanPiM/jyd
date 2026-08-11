@@ -69,7 +69,10 @@ class RAWStallPerfTap(
 
   io.isNeedStallEXU := needStallFrom(io.wrBackInfo.exu)
   io.isNeedStallLSU := needStallFrom(io.wrBackInfo.lsu)
-  io.isNeedStallWBU := needStallFrom(io.wrBackInfo.wbu)
+  // WBU is observed through GPR write-through and never creates an operand
+  // interlock. Keep conflict visibility for diagnostics without counting it
+  // as a stall source.
+  io.isNeedStallWBU := false.B
   io.isAnyStall     := io.isNeedStallEXU || io.isNeedStallLSU || io.isNeedStallWBU
 
   io.isNeedStallOnlyEXU := io.isNeedStallEXU && !io.isNeedStallLSU && !io.isNeedStallWBU

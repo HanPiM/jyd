@@ -1,7 +1,7 @@
 package cpu
 
 import chisel3._
-import chisel3.util.{Cat, Decoupled, DecoupledIO, Enum, Fill, MuxLookup, Valid}
+import chisel3.util.{Cat, Decoupled, DecoupledIO, Enum, Fill, Mux1H, MuxLookup, PopCount, Valid}
 
 import chisel3.experimental.dataview._
 
@@ -12,12 +12,29 @@ import busfsm._
 
 import chisel3.util.circt.dpi._
 
+class ResultLane(implicit p: CPUParameters) extends Bundle {
+  val valid = Bool()
+  val rd    = p.GPRAddr
+  val data  = Types.UWord
+}
+
+class FastResultLane(implicit p: CPUParameters) extends ResultLane
+class DirectResultLane(implicit p: CPUParameters) extends ResultLane
+class LongResultLane(implicit p: CPUParameters) extends ResultLane
+class AcceleratorResultLane(implicit p: CPUParameters) extends ResultLane
+
+class LoadResultLane(implicit p: CPUParameters) extends Bundle {
+  val valid = Bool()
+  val rd    = p.GPRAddr
+}
+
 class WriteBackInfo(implicit p:CPUParameters) extends Bundle {
-  val gpr = GPRegReqIO.WriteTX
-  // Keep the common single-cycle integer result out of the deferred result
-  // lane until the final writeback/IDU bypass selection.
-  val fastGprData    = Types.UWord
-  val useFastGprData = Bool()
+  val resultKind    = ResultKind()
+  val fastResult    = new FastResultLane
+  val directResult  = new DirectResultLane
+  val longResult    = new LongResultLane
+  val acceleratorResult = new AcceleratorResultLane
+  val loadResult    = new LoadResultLane
   val isLoad        = Bool()
   val isMemOp       = Bool()
   val lsuResult     = Types.UWord
@@ -38,6 +55,37 @@ class WriteBackInfo(implicit p:CPUParameters) extends Bundle {
   // val nxt_pc = Types.UWord
 
   val iid = Types.InstID
+}
+
+object ResultLaneSelect {
+  def validVec(wrBack: WriteBackInfo): Seq[Bool] = Seq(
+    wrBack.fastResult.valid,
+    wrBack.directResult.valid,
+    wrBack.longResult.valid,
+    wrBack.acceleratorResult.valid,
+    wrBack.loadResult.valid
+  )
+
+  def anyValid(wrBack: WriteBackInfo): Bool = validVec(wrBack).reduce(_ || _)
+
+  def rd(wrBack: WriteBackInfo): UInt = Mux1H(
+    Seq(
+      wrBack.fastResult.valid -> wrBack.fastResult.rd,
+      wrBack.directResult.valid -> wrBack.directResult.rd,
+      wrBack.longResult.valid -> wrBack.longResult.rd,
+      wrBack.acceleratorResult.valid -> wrBack.acceleratorResult.rd,
+      wrBack.loadResult.valid -> wrBack.loadResult.rd
+    )
+  )
+
+  def nonLoadData(wrBack: WriteBackInfo): UInt = Mux1H(
+    Seq(
+      wrBack.fastResult.valid -> wrBack.fastResult.data,
+      wrBack.directResult.valid -> wrBack.directResult.data,
+      wrBack.longResult.valid -> wrBack.longResult.data,
+      wrBack.acceleratorResult.valid -> wrBack.acceleratorResult.data
+    )
+  )
 }
 
 object ExtLoadData {
@@ -67,11 +115,6 @@ object ExtLoadData {
   }
 }
 
-object SelectGprData {
-  def apply(wrBack: WriteBackInfo): UInt =
-    Mux(wrBack.useFastGprData, wrBack.fastGprData, wrBack.gpr.data)
-}
-
 object ExtractFwdInfoFromWrBack {
   def apply(info: DecoupledIO[WriteBackInfo], memResp: Valid[UInt])(implicit p:CPUParameters): WrBackForwardInfo = {
     val wrBack = info.bits
@@ -87,16 +130,12 @@ object ExtractFwdInfoFromWrBack {
     // val respLoadHalf = Cat(Fill(16, respLoadDataRaw(15) && (~wrBack.lsuFunc3t(2))), respLoadDataRaw(15, 0))
     // val loadResult   = Mux(wrBack.lsuFunc3t(1), respLoadDataRaw, Mux(wrBack.lsuFunc3t(0), respLoadHalf, respLoadByte))
 
-    val cachedLoadResult = ExtLoadData(wrBack.lsuResult, wrBack.lsuAddrOffset, wrBack.lsuFunc3t)
-    val canForwardLoad   = wrBack.isLoad && wrBack.cacheableLoad && wrBack.dcacheHit
-
     val out = Wire(new WrBackForwardInfo)
-    out.addr      := wrBack.gpr.addr
-    out.enWr      := wrBack.gpr.en && info.valid
-    // WBU has no response-wait state; its assertion below checks alignment.
-    out.dataVaild := info.valid && (!wrBack.isLoad || canForwardLoad)
-    out.data      := Mux(canForwardLoad, cachedLoadResult, SelectGprData(wrBack))
-    out.useFastLane := !canForwardLoad && wrBack.useFastGprData
+    out.addr      := ResultLaneSelect.rd(wrBack)
+    out.enWr      := ResultLaneSelect.anyValid(wrBack) && info.valid
+    out.dataVaild := false.B
+    out.data      := 0.U
+    out.kind      := wrBack.resultKind
 
     out.enWrCSR := wrBack.csr.en && info.valid
 
@@ -135,6 +174,9 @@ class WBU(implicit p:CPUParameters) extends Module {
   //
 
   val loadResult = ExtLoadData(io.memResp.bits, wbinfo.lsuAddrOffset, wbinfo.lsuFunc3t)
+  val resultValid = ResultLaneSelect.anyValid(wbinfo)
+  val selectedRd = ResultLaneSelect.rd(wbinfo)
+  val selectedData = Mux(wbinfo.loadResult.valid, loadResult, ResultLaneSelect.nonLoadData(wbinfo))
 
   io.in.ready := true.B
 
@@ -147,10 +189,13 @@ class WBU(implicit p:CPUParameters) extends Module {
       p"DCache hit data mismatch: addr=${wbinfo.memAddr} cache=${wbinfo.lsuResult} mem=${io.memResp.bits}"
     )
   }
+  when(valid) {
+    assert(PopCount(ResultLaneSelect.validVec(wbinfo)) <= 1.U, "writeback result lanes must be one-hot")
+  }
 
-  io.gpr.en   := wbinfo.gpr.en && valid
-  io.gpr.addr := wbinfo.gpr.addr
-  io.gpr.data := Mux(wbinfo.isLoad, loadResult, SelectGprData(wbinfo))
+  io.gpr.en   := resultValid && valid
+  io.gpr.addr := selectedRd
+  io.gpr.data := selectedData
 
   io.csr.en   := wbinfo.csr.en && valid
   io.csr.addr := wbinfo.csr.addr

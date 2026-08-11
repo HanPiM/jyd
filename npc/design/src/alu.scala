@@ -23,6 +23,47 @@ class ALUInput extends Bundle {
   val mulNoLate = Bool()
 }
 
+class FastIntegerALUInput extends Bundle {
+  val isImm  = Bool()
+  val isSub  = Bool()
+  val func3t = UInt(3.W)
+  val func7t = UInt(7.W)
+  val src1   = Types.UWord
+  val src2   = Types.UWord
+}
+
+class FastIntegerALU extends Module {
+  val io = IO(new Bundle {
+    val in  = Flipped(Decoupled(new FastIntegerALUInput))
+    val out = Decoupled(Types.UWord)
+  })
+
+  val src1 = io.in.bits.src1
+  val src2 = io.in.bits.src2
+  val shamt = src2(4, 0)
+  val addSubSrc2 = Mux(io.in.bits.isSub, ~src2, src2)
+  val addSubLow = src1(15, 0) +& addSubSrc2(15, 0) + io.in.bits.isSub
+  val addSubHighCarry0 = src1(31, 16) + addSubSrc2(31, 16)
+  val addSubHighCarry1 = src1(31, 16) + addSubSrc2(31, 16) + 1.U
+  val addSubResult = Cat(Mux(addSubLow(16), addSubHighCarry1, addSubHighCarry0), addSubLow(15, 0))
+  val isPack = !io.in.bits.isImm && io.in.bits.func3t === "b100".U && io.in.bits.func7t === "b0000100".U
+
+  io.out.bits := MuxLookup(io.in.bits.func3t, 0.U)(
+    Seq(
+      0.U -> addSubResult,
+      1.U -> (src1 << shamt),
+      2.U -> (src1.asSInt < src2.asSInt),
+      3.U -> (src1 < src2),
+      4.U -> Mux(isPack, Cat(src2(15, 0), src1(15, 0)), src1 ^ src2),
+      5.U -> Mux(io.in.bits.func7t(5), (src1.asSInt >> shamt).asUInt, src1 >> shamt),
+      6.U -> (src1 | src2),
+      7.U -> (src1 & src2)
+    )
+  )
+  io.in.ready := io.out.ready
+  io.out.valid := io.in.valid
+}
+
 class ALU_foo extends Module {
   val io = IO(new Bundle {
     val in  = Flipped(Decoupled(new ALUInput))
@@ -363,13 +404,10 @@ class Divider extends Module {
   }
 }
 
-class ALU extends Module {
+class SpecialExecutionCluster extends Module {
   val io = IO(new Bundle {
-    val in        = Flipped(Decoupled(new ALUInput))
-    val out       = Decoupled(Types.UWord)
-    val addResult = Output(Types.UWord)
-    val baseResult = Output(Types.UWord)
-    val singleCycleResult = Output(Types.UWord)
+    val in  = Flipped(Decoupled(new ALUInput))
+    val out = Decoupled(Types.UWord)
   })
 
   // alias
@@ -378,66 +416,6 @@ class ALU extends Module {
   val src2   = inbits.src2
 
   val func3t = inbits.func3t
-
-  val s_src1 = src1.asSInt
-  val s_src2 = src2.asSInt
-
-  val shamt = src2(4, 0)
-
-  val isOpAlt = inbits.func7t(5)
-
-  // Share one carry chain between ADD and SUB.  The dedicated address-forward
-  // output is valid only for ADD/ADDI, so it can reuse the selected result
-  // instead of keeping a second unconditional src1 + src2 cone alive.
-  val addSubSrc2 = Mux(inbits.isSub, ~src2, src2)
-  val addSubLow = src1(15, 0) +& addSubSrc2(15, 0) + inbits.isSub
-  val addSubHighCarry0 = src1(31, 16) + addSubSrc2(31, 16)
-  val addSubHighCarry1 = src1(31, 16) + addSubSrc2(31, 16) + 1.U
-  val add_sub_res = Cat(Mux(addSubLow(16), addSubHighCarry1, addSubHighCarry0), addSubLow(15, 0))
-  io.addResult := add_sub_res
-
-  val sltu_res = src1 < src2
-  val slt_res = s_src1 < s_src2
-
-  val rShiftResult = Wire(Types.UWord)
-  val lShiftResult = Wire(Types.UWord)
-
-  rShiftResult := Mux(isOpAlt, (s_src1 >> shamt).asUInt, src1 >> shamt)
-  lShiftResult := src1 << shamt
-
-
-  val defaultRes = Wire(Types.UWord)
-  defaultRes := DontCare
-
-  // left shift here
-  // expilcitly tell chisel that width is 32
-  // to avoid use 64-bit as result leads to big case
-  //
-  // can make alu alone module area smaller
-  // but when considering whole cpu module
-  // seems no difference ???
-  // val leftShiftRes = Wire(Types.UWord)
-  // leftShiftRes := src1 << shamt
-
-  val logic_and = src1 & src2
-  val logic_xor = src1 ^ src2
-  val logic_or  = src1 | src2
-  val isPack = !inbits.is_imm && inbits.func3t === "b100".U && inbits.func7t === "b0000100".U
-  val packResult = Cat(src2(15, 0), src1(15, 0))
-
-  val baseAluResult = MuxLookup(inbits.func3t, defaultRes)(
-    Seq(
-      0.U -> add_sub_res,                        // 000: add/sub/addi
-      1.U -> lShiftResult,                       // 001: sll/slli
-      2.U -> slt_res,                            // 010: slt/slti
-      3.U -> sltu_res,                           // 011: sltu/sltiu
-      4.U -> Mux(isPack, packResult, logic_xor), // 100: pack/xor/xori
-      5.U -> rShiftResult,                       // 101: srl/srli/sra/srai
-      6.U -> logic_or,                           // 110: or/ori
-      7.U -> logic_and                           // 111: and/andi
-    )
-  )
-  io.baseResult := baseAluResult
 
   val isSh1Add = !inbits.is_imm && inbits.func7t === "b0010000".U && inbits.func3t === "b010".U
   val isSh2Add = !inbits.is_imm && inbits.func7t === "b0010000".U && inbits.func3t === "b100".U
@@ -469,7 +447,7 @@ class ALU extends Module {
   val xbmulResult = (((src1(5, 2) * src1(11, 5))).pad(32))
 
   val aluResult = MuxCase(
-    baseAluResult,
+    0.U,
     Seq(
       isSh1Add -> sh1AddResult,
       isSh2Add -> sh2AddResult,
@@ -482,7 +460,6 @@ class ALU extends Module {
       inbits.xbmulValid -> xbmulResult
     )
   )
-  io.singleCycleResult := aluResult
 
   val isBExt = inbits.bExtValid
 

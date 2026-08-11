@@ -111,6 +111,16 @@ object InstType extends ChiselEnum {
   }
 }
 
+object ResultKind extends ChiselEnum {
+  val fastInt, direct, longArithmetic, accelerator, load = Value
+}
+
+class RedirectPacket extends Bundle {
+  val valid  = Bool()
+  val target = UInt(15.W)
+  val epoch  = Bool()
+}
+
 class PredBundle extends Bundle {
   val pc = Types.UWord
   val hit = Bool()
@@ -189,16 +199,15 @@ class DecodedInstInfo(implicit p : CPUParameters) extends InstMetaInfo with HasR
   val lateLoadRs1 = Bool()
   val lateLoadRs2 = Bool()
 
-  // An immediately preceding ready EXU producer crosses into LSU on the
-  // same edge as this consumer enters EXU. Carry only the dependency choice;
-  // the registered producer data is selected locally in EXU.
-  val prevExuFwdRs1 = Bool()
-  val prevExuFwdRs2 = Bool()
-  val prevExuFwdRs2Alu = Bool()
-  val prevLsuFwdRs1 = Bool()
-  val prevLsuFwdRs2 = Bool()
-  val prevLsuDeferredRs1 = Bool()
-  val prevLsuDeferredRs2 = Bool()
+  // Adjacent fast-result tokens are local to their physical consumer. All
+  // other consumers capture an LSU lane into reg1/reg2 before entering EXU.
+  val fastAluRs1    = Bool()
+  val fastAluRs2    = Bool()
+  val fastBranchRs1 = Bool()
+  val fastBranchRs2 = Bool()
+  val fastStoreRs2  = Bool()
+
+  val resultKind = ResultKind()
 
   // IDU classifies every non-RV32I/non-M arithmetic encoding as a supported
   // multi-cycle B operation. The exact B operation is decoded locally after
@@ -227,10 +236,6 @@ class DecodedInstInfo(implicit p : CPUParameters) extends InstMetaInfo with HasR
   // Predecode the ALU add/sub carry polarity before the IDU/EXU register so
   // the instruction-code bus does not drive the carry chain directly.
   val aluIsSub = Bool()
-
-  // Short B operations select the extended ALU result. Ordinary RV32I
-  // forwarding can otherwise use the base result without crossing that mux.
-  val aluUseSpecialResult = Bool()
 
   val isECall = Bool()
   val isMRet  = Bool()

@@ -215,14 +215,8 @@ class CPUCore(
   dontTouch(io)
   io := DontCare
 
-  val redirectNow         = Wire(Bool())
-  val activeRedirectValid = Wire(Bool())
-  val redirectPendingFire = Wire(Bool())
-  val redirectPendingReg  = RegInit(false.B)
-  val pipelineEpoch       = RegInit(false.B)
-  val redirectUseTargetReg = Reg(Bool())
-  val redirectTargetReg    = Reg(UInt(15.W))
-  val redirectFallthroughReg = Reg(UInt(15.W))
+  val pipelineEpoch    = RegInit(false.B)
+  val redirectPacketReg = RegInit(0.U.asTypeOf(new RedirectPacket))
 
   val gprs = Module(new RegisterFile(READ_PORTS = 2))
   val csrs = Module(new ControlStatusRegisterFile())
@@ -274,27 +268,30 @@ class CPUCore(
   btb.io.update.isReturn   := RegNext(exu.io.isReturn)
   btb.io.update.actualTaken := RegNext(exu.io.branchTaken)
 
-  redirectNow         := exu.io.out.valid && exu.io.predWrong
-  redirectPendingFire := ifu.io.pc.fire && redirectPendingReg
-
-  // Capture both redirect candidates every cycle. The branch comparator only
-  // registers the narrow choice bit, so it cannot enter either address lane.
-  val redirectFallthrough = TrimmedPC.trim(exu.io.pc) + 1.U
-  redirectUseTargetReg := !exu.io.isBranch || exu.io.branchTaken
-  redirectTargetReg := TrimmedPC.trim(
-    Mux(exu.io.btbUpdateEn, exu.io.branchTarget, exu.io.staticTarget)
+  val redirectNow = exu.io.out.valid && exu.io.predWrong
+  val redirectPendingFire = ifu.io.pc.fire && redirectPacketReg.valid
+  val redirectTakenTarget = Mux(exu.io.btbUpdateEn, exu.io.branchTarget, exu.io.staticTarget)
+  val redirectTarget = Mux(
+    exu.io.isBranch && !exu.io.branchTaken,
+    exu.io.pc + 4.U,
+    redirectTakenTarget
   )
-  redirectFallthroughReg := redirectFallthrough
 
   when(redirectNow) {
-    redirectPendingReg := true.B
+    redirectPacketReg.valid := true.B
+    redirectPacketReg.target := TrimmedPC.trim(redirectTarget)
+    redirectPacketReg.epoch := ~pipelineEpoch
     pipelineEpoch := ~pipelineEpoch
   }.elsewhen(redirectPendingFire) {
-    redirectPendingReg := false.B
+    redirectPacketReg.valid := false.B
   }
 
-  activeRedirectValid := redirectPendingReg
+  val activeRedirectValid = Wire(Bool())
+  activeRedirectValid := redirectPacketReg.valid
   dontTouch(activeRedirectValid)
+  when(activeRedirectValid) {
+    assert(redirectPacketReg.epoch === pipelineEpoch, "redirect packet epoch must match the active pipeline epoch")
+  }
 
   // The resolving branch only toggles the epoch and fills the registered PC
   // mailbox. Younger instructions are discarded by local epoch filters.
@@ -303,8 +300,8 @@ class CPUCore(
   )
 
   pcFeedToIFU := Mux(
-    redirectPendingReg,
-    TrimmedPC.expand(Mux(redirectUseTargetReg, redirectTargetReg, redirectFallthroughReg)),
+    redirectPacketReg.valid,
+    TrimmedPC.expand(redirectPacketReg.target),
     pc
   )
 
@@ -313,7 +310,7 @@ class CPUCore(
   // the same cycle; prediction resumes normally from the fall-through PC.
   val fetchPrediction = Wire(new PredBundle)
   fetchPrediction := bp.io.pred
-  when(redirectPendingReg) {
+  when(redirectPacketReg.valid) {
     fetchPrediction.hit  := false.B
     fetchPrediction.take := false.B
     fetchPrediction.pc   := pcFeedToIFU + 4.U
@@ -412,18 +409,11 @@ class CPUCore(
   val lsuFastFwdInfo = ExtractFastFwdInfoFromLSU(lsu.io.in)
   val lsuLateLoadData =
     ExtLoadData(lsu.io.in.bits.lateLoadData, lsu.io.in.bits.destAddr(1, 0), lsu.io.in.bits.func3t)
-  val dcacheFwdInfo = Wire(new DCacheForwardInfo)
-  dcacheFwdInfo.valid := lsu.io.in.valid && lsu.io.in.bits.isLoad && lsu.io.in.bits.cacheableLoad && lsu.io.in.bits.dcacheHit
-  dcacheFwdInfo.addr := lsu.io.in.bits.exuWriteBack.gpr.addr
-  dcacheFwdInfo.data := lsuLateLoadData
   idu.io.wrBackInfo.exu := exu.io.fwd
   idu.io.lateLoadProducer := exu.io.lateLoadProducer
   idu.io.wrBackInfo.lsu := lsuFwdInfo
   idu.io.wrBackInfo.wbu := ExtractFwdInfoFromWrBack(wbu.io.in, wbu.io.memResp)
-  idu.io.dcacheFwd := dcacheFwdInfo
   exu.io.previousStageFwd := lsuFastFwdInfo
-  exu.io.previousLsuFastData := wbu.io.in.bits.fastGprData
-  exu.io.previousLsuDeferredData := wbu.io.in.bits.gpr.data
 
   val lateLoadLSUWidthSupported =
     lsu.io.in.bits.func3t === "b000".U || lsu.io.in.bits.func3t === "b001".U ||

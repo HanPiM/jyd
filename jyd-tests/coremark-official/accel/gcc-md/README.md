@@ -41,3 +41,14 @@ That operation has no ordinary scalar RTL expression or standard optab for an
 MD file to match; migrating it without a named-call substitution requires a
 middle-end loop-idiom recognizer (or a narrower hardware instruction), not a
 standalone `define_peephole2`.
+
+An experimental semantic loop recognizer was implemented and evaluated, then
+archived as `archived-clipped-rising-score-gcc16.patch`.  Its neutral semantic
+name is `clipped_rising_score_reduce`; it recognizes the loop without checking
+source identifiers and lowers through an IFN, optab, and RISC-V MD pattern.
+`clipped-rising-score-pattern.c` and `check-clipped-rising-score.sh` retain the
+positive and negative selection tests.  The experiment is deliberately not in
+`active-accel-gcc16.patch`: the recognizer and its memory-ordering model are too
+complex for the measured result, and the fair NEMU run remained slower than the
+existing plugin path.  Production xmsum selection therefore stays in the
+plugin.

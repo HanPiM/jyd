@@ -40,61 +40,61 @@
 
 #define R(i) gpr(i)
 
-#define MATCH_COREMARK_CRCU8  0x0000000b
-#define MATCH_COREMARK_CRCU16 0x0000100b
-#define MATCH_COREMARK_CRCU32 0x0000200b
-#define MASK_COREMARK_CRC     0xfe00707f
-#define MASK_COREMARK_CRCU8   MASK_COREMARK_CRC
-#define MASK_COREMARK_CRCU16  MASK_COREMARK_CRC
-#define MASK_COREMARK_CRCU32  MASK_COREMARK_CRC
+#define MATCH_XACCEL_CRCU8  0x0000000b
+#define MATCH_XACCEL_CRCU16 0x0000100b
+#define MATCH_XACCEL_CRCU32 0x0000200b
+#define MASK_XACCEL_CRC     0xfe00707f
+#define MASK_XACCEL_CRCU8   MASK_XACCEL_CRC
+#define MASK_XACCEL_CRCU16  MASK_XACCEL_CRC
+#define MASK_XACCEL_CRCU32  MASK_XACCEL_CRC
 
-#define MATCH_COREMARK_XMAC16 0x0000300b
-#define MATCH_COREMARK_XDOT16 0x0000400b
-#define MATCH_COREMARK_XBMUL  0x0000500b
-#define MATCH_COREMARK_XLREV  0x0000700b
-#define MATCH_COREMARK_XLREV1 0x0000600b
-#define MATCH_COREMARK_XLREV1_CHAIN 0x0200600b
-#define MATCH_COREMARK_XLREV2 0x0400600b
-#define MATCH_COREMARK_XSTATE 0x0200700b
-#define MATCH_COREMARK_XMSUM  0x0400700b
-#define MASK_COREMARK_XACCEL  0xfe00707f
-#define MASK_COREMARK_XMAC16 MASK_COREMARK_XACCEL
-#define MASK_COREMARK_XDOT16 MASK_COREMARK_XACCEL
-#define MASK_COREMARK_XBMUL  MASK_COREMARK_XACCEL
-#define MASK_COREMARK_XLREV  MASK_COREMARK_XACCEL
-#define MASK_COREMARK_XLREV1 MASK_COREMARK_XACCEL
-#define MASK_COREMARK_XLREV1_CHAIN MASK_COREMARK_XACCEL
-#define MASK_COREMARK_XLREV2 MASK_COREMARK_XACCEL
-#define MASK_COREMARK_XSTATE MASK_COREMARK_XACCEL
-#define MASK_COREMARK_XMSUM  MASK_COREMARK_XACCEL
+#define MATCH_XACCEL_XMAC16 0x0000300b
+#define MATCH_XACCEL_XDOT16 0x0000400b
+#define MATCH_XACCEL_XBMUL  0x0000500b
+#define MATCH_XACCEL_XLREV  0x0000700b
+#define MATCH_XACCEL_XLREV1 0x0000600b
+#define MATCH_XACCEL_XLREV1_CHAIN 0x0200600b
+#define MATCH_XACCEL_XLREV2 0x0400600b
+#define MATCH_XACCEL_XDFA 0x0200700b
+#define MATCH_XACCEL_XMSUM  0x0400700b
+#define MASK_XACCEL_XACCEL  0xfe00707f
+#define MASK_XACCEL_XMAC16 MASK_XACCEL_XACCEL
+#define MASK_XACCEL_XDOT16 MASK_XACCEL_XACCEL
+#define MASK_XACCEL_XBMUL  MASK_XACCEL_XACCEL
+#define MASK_XACCEL_XLREV  MASK_XACCEL_XACCEL
+#define MASK_XACCEL_XLREV1 MASK_XACCEL_XACCEL
+#define MASK_XACCEL_XLREV1_CHAIN MASK_XACCEL_XACCEL
+#define MASK_XACCEL_XLREV2 MASK_XACCEL_XACCEL
+#define MASK_XACCEL_XDFA MASK_XACCEL_XACCEL
+#define MASK_XACCEL_XMSUM  MASK_XACCEL_XACCEL
 
-static vaddr_t coremark_xlrev1_previous;
+static vaddr_t list_reverse_previous;
 
-#define MATCH_COREMARK_XSTATEC_INIT 0x0000005b
-#define MATCH_COREMARK_XSTATEC_INC  0x0000105b
-#define MATCH_COREMARK_XSTATEC_READ 0x0000205b
-#define MATCH_COREMARK_XSTATEC_COMMIT 0x0000305b
-#define MATCH_COREMARK_XSTATE2_STEP 0x0000405b
-#define MATCH_COREMARK_XSTATE4_STEP 0x0000505b
-#define MATCH_COREMARK_XSTATE4C_FINAL_READ 0x0200205b
-#define MATCH_COREMARK_XSTATE4C_STEP 0x0200505b
-#define MASK_COREMARK_XSTATEC       0xfe00707f
-#define MASK_COREMARK_XSTATEC_INIT  MASK_COREMARK_XSTATEC
-#define MASK_COREMARK_XSTATEC_INC   MASK_COREMARK_XSTATEC
-#define MASK_COREMARK_XSTATEC_READ  MASK_COREMARK_XSTATEC
-#define MASK_COREMARK_XSTATEC_COMMIT MASK_COREMARK_XSTATEC
-#define MASK_COREMARK_XSTATE2_STEP MASK_COREMARK_XSTATEC
-#define MASK_COREMARK_XSTATE4_STEP MASK_COREMARK_XSTATEC
-#define MASK_COREMARK_XSTATE4C_FINAL_READ MASK_COREMARK_XSTATEC
-#define MASK_COREMARK_XSTATE4C_STEP MASK_COREMARK_XSTATEC
+#define MATCH_XACCEL_XDFACNT_INIT 0x0000005b
+#define MATCH_XACCEL_XDFACNT_INC  0x0000105b
+#define MATCH_XACCEL_XDFACNT_READ 0x0000205b
+#define MATCH_XACCEL_XDFACNT_COMMIT 0x0000305b
+#define MATCH_XACCEL_XDFA2_STEP 0x0000405b
+#define MATCH_XACCEL_XDFA4_STEP 0x0000505b
+#define MATCH_XACCEL_XDFA4H_FINAL_READ 0x0200205b
+#define MATCH_XACCEL_XDFA4H_STEP 0x0200505b
+#define MASK_XACCEL_XDFACNT       0xfe00707f
+#define MASK_XACCEL_XDFACNT_INIT  MASK_XACCEL_XDFACNT
+#define MASK_XACCEL_XDFACNT_INC   MASK_XACCEL_XDFACNT
+#define MASK_XACCEL_XDFACNT_READ  MASK_XACCEL_XDFACNT
+#define MASK_XACCEL_XDFACNT_COMMIT MASK_XACCEL_XDFACNT
+#define MASK_XACCEL_XDFA2_STEP MASK_XACCEL_XDFACNT
+#define MASK_XACCEL_XDFA4_STEP MASK_XACCEL_XDFACNT
+#define MASK_XACCEL_XDFA4H_FINAL_READ MASK_XACCEL_XDFACNT
+#define MASK_XACCEL_XDFA4H_STEP MASK_XACCEL_XDFACNT
 
 enum { XA_MAC16, XA_DOT16, XA_BMUL, XA_LREV, XA_STATE, XA_MSUM };
 
-static uint32_t coremark_state_counters[8];
-static uint32_t coremark_state_final_counters[8];
-static uint32_t coremark_state_pending_mask;
+static uint32_t numeric_dfa_transition_counts[8];
+static uint32_t numeric_dfa_final_counts[8];
+static uint32_t numeric_dfa_pending_mask;
 
-static word_t coremark_xstate_word_step(word_t state, word_t symbols,
+static word_t numeric_dfa_word_step(word_t state, word_t symbols,
                                         unsigned width, bool format2) {
   word_t consumed = 0, mask = 0, stop = 0;
   for (unsigned i = 0; i < width && !stop; i++) {
@@ -154,7 +154,7 @@ static word_t coremark_xstate_word_step(word_t state, word_t symbols,
   return state | (consumed << 3) | (stop << 6) | (mask << 7);
 }
 
-static word_t coremark_crc(word_t data, word_t crc, unsigned bytes) {
+static word_t crc_update(word_t data, word_t crc, unsigned bytes) {
   crc &= 0xffffu;
   for (unsigned byte = 0; byte < bytes; byte++) {
     word_t value = data & 0xffu;
@@ -172,7 +172,7 @@ static word_t coremark_crc(word_t data, word_t crc, unsigned bytes) {
 
 static inline int32_t sx16(word_t value) { return (int16_t)(uint16_t)value; }
 
-static word_t coremark_list_reverse(vaddr_t list, uint64_t *nodes) {
+static word_t list_reverse(vaddr_t list, uint64_t *nodes) {
   vaddr_t next = 0;
   *nodes = 0;
   while (list) {
@@ -190,9 +190,9 @@ enum CoreState {
   CS_SCIENTIFIC
 };
 
-static inline bool coremark_digit(uint8_t c) { return c >= '0' && c <= '9'; }
+static inline bool ascii_digit(uint8_t c) { return c >= '0' && c <= '9'; }
 
-static word_t coremark_state_transition(vaddr_t instr_addr,
+static word_t numeric_token_transition(vaddr_t instr_addr,
                                         vaddr_t counts_addr,
                                         uint64_t *chars) {
   vaddr_t str = vaddr_read(instr_addr, 4);
@@ -211,7 +211,7 @@ static word_t coremark_state_transition(vaddr_t instr_addr,
     uint32_t count = vaddr_read(count_addr, 4);
     switch (state) {
     case CS_START:
-      if (coremark_digit(c)) state = CS_INT;
+      if (ascii_digit(c)) state = CS_INT;
       else if (c == '+' || c == '-') state = CS_S1;
       else if (c == '.') state = CS_FLOAT;
       else state = CS_INVALID;
@@ -222,7 +222,7 @@ static word_t coremark_state_transition(vaddr_t instr_addr,
       }
       break;
     case CS_S1:
-      if (coremark_digit(c)) state = CS_INT;
+      if (ascii_digit(c)) state = CS_INT;
       else if (c == '.') state = CS_FLOAT;
       else state = CS_INVALID;
       vaddr_write(count_addr, 4, count + 1);
@@ -231,7 +231,7 @@ static word_t coremark_state_transition(vaddr_t instr_addr,
       if (c == '.') {
         state = CS_FLOAT;
         vaddr_write(count_addr, 4, count + 1);
-      } else if (!coremark_digit(c)) {
+      } else if (!ascii_digit(c)) {
         state = CS_INVALID;
         vaddr_write(count_addr, 4, count + 1);
       }
@@ -240,7 +240,7 @@ static word_t coremark_state_transition(vaddr_t instr_addr,
       if (c == 'E' || c == 'e') {
         state = CS_S2;
         vaddr_write(count_addr, 4, count + 1);
-      } else if (!coremark_digit(c)) {
+      } else if (!ascii_digit(c)) {
         state = CS_INVALID;
         vaddr_write(count_addr, 4, count + 1);
       }
@@ -250,11 +250,11 @@ static word_t coremark_state_transition(vaddr_t instr_addr,
       vaddr_write(count_addr, 4, count + 1);
       break;
     case CS_EXPONENT:
-      state = coremark_digit(c) ? CS_SCIENTIFIC : CS_INVALID;
+      state = ascii_digit(c) ? CS_SCIENTIFIC : CS_INVALID;
       vaddr_write(count_addr, 4, count + 1);
       break;
     case CS_SCIENTIFIC:
-      if (!coremark_digit(c)) {
+      if (!ascii_digit(c)) {
         state = CS_INVALID;
         vaddr_t invalid_addr = counts_addr + CS_INVALID * 4;
         vaddr_write(invalid_addr, 4, vaddr_read(invalid_addr, 4) + 1);
@@ -269,7 +269,7 @@ static word_t coremark_state_transition(vaddr_t instr_addr,
   return state;
 }
 
-static word_t coremark_matrix_sum(vaddr_t data, word_t config,
+static word_t matrix_clipped_sum(vaddr_t data, word_t config,
                                   uint64_t *elements) {
   uint32_t n = config >> 16;
   int32_t clip = (int16_t)(config & 0xffffu);
@@ -450,70 +450,70 @@ static int decode_exec(Decode *s) {
     matched = true;
   }
 
-  if (IS_INST(COREMARK_CRCU8)) {
-    R(rd) = coremark_crc(R(rs1), R(rs2), 1);
+  if (IS_INST(XACCEL_CRCU8)) {
+    R(rd) = crc_update(R(rs1), R(rs2), 1);
     matched = true;
   }
-  if (IS_INST(COREMARK_CRCU16)) {
-    R(rd) = coremark_crc(R(rs1), R(rs2), 2);
+  if (IS_INST(XACCEL_CRCU16)) {
+    R(rd) = crc_update(R(rs1), R(rs2), 2);
     matched = true;
   }
-  if (IS_INST(COREMARK_CRCU32)) {
-    R(rd) = coremark_crc(R(rs1), R(rs2), 4);
+  if (IS_INST(XACCEL_CRCU32)) {
+    R(rd) = crc_update(R(rs1), R(rs2), 4);
     matched = true;
   }
-  if (IS_INST(COREMARK_XMAC16)) {
+  if (IS_INST(XACCEL_XMAC16)) {
     R(rd) = R(rd) + (word_t)(sx16(R(rs1)) * sx16(R(rs2)));
     riscv_profile_record_xaccel(XA_MAC16, 1, 3);
     matched = true;
   }
-  if (IS_INST(COREMARK_XDOT16)) {
+  if (IS_INST(XACCEL_XDOT16)) {
     int32_t lo = sx16(R(rs1)) * sx16(R(rs2));
     int32_t hi = (int16_t)(R(rs1) >> 16) * (int16_t)(R(rs2) >> 16);
     R(rd) = (word_t)(lo + hi);
     riscv_profile_record_xaccel(XA_DOT16, 2, 4);
     matched = true;
   }
-  if (IS_INST(COREMARK_XBMUL)) {
+  if (IS_INST(XACCEL_XBMUL)) {
     word_t value = R(rs1);
     R(rd) = ((value >> 2) & 0xfu) * ((value >> 5) & 0x7fu);
     riscv_profile_record_xaccel(XA_BMUL, 1, 1);
     matched = true;
   }
-  if (IS_INST(COREMARK_XLREV)) {
+  if (IS_INST(XACCEL_XLREV)) {
     uint64_t nodes;
-    R(rd) = coremark_list_reverse(R(rs1), &nodes);
+    R(rd) = list_reverse(R(rs1), &nodes);
     riscv_profile_record_xaccel(XA_LREV, nodes, 4 + 2 * nodes);
     matched = true;
   }
-  if (IS_INST(COREMARK_XLREV1)) {
+  if (IS_INST(XACCEL_XLREV1)) {
     vaddr_t current = R(rs1);
     R(rd) = vaddr_read(current, 4);
     vaddr_write(current, 4, 0);
-    coremark_xlrev1_previous = current;
+    list_reverse_previous = current;
     riscv_profile_record_xaccel(XA_LREV, 1, 4);
     matched = true;
   }
-  if (IS_INST(COREMARK_XLREV1_CHAIN)) {
+  if (IS_INST(XACCEL_XLREV1_CHAIN)) {
     vaddr_t current = R(rs1);
     if (current == 0) {
-      R(rd) = coremark_xlrev1_previous;
+      R(rd) = list_reverse_previous;
     } else {
       R(rd) = vaddr_read(current, 4);
-      vaddr_write(current, 4, coremark_xlrev1_previous);
-      coremark_xlrev1_previous = current;
+      vaddr_write(current, 4, list_reverse_previous);
+      list_reverse_previous = current;
     }
     riscv_profile_record_xaccel(XA_LREV, 1, 4);
     matched = true;
   }
-  if (IS_INST(COREMARK_XLREV2)) {
+  if (IS_INST(XACCEL_XLREV2)) {
     vaddr_t current = R(rs1);
     if (current == 0) {
-      R(rd) = coremark_xlrev1_previous;
+      R(rd) = list_reverse_previous;
     } else {
       vaddr_t next = vaddr_read(current, 4);
-      vaddr_write(current, 4, coremark_xlrev1_previous);
-      coremark_xlrev1_previous = current;
+      vaddr_write(current, 4, list_reverse_previous);
+      list_reverse_previous = current;
       if (next != 0) {
         R(rd) = next;
         s->dnpc = s->pc;
@@ -524,84 +524,84 @@ static int decode_exec(Decode *s) {
     riscv_profile_record_xaccel(XA_LREV, 1, 4);
     matched = true;
   }
-  if (IS_INST(COREMARK_XSTATE)) {
+  if (IS_INST(XACCEL_XDFA)) {
     uint64_t chars;
-    R(rd) = coremark_state_transition(R(rs1), R(rs2), &chars);
+    R(rd) = numeric_token_transition(R(rs1), R(rs2), &chars);
     riscv_profile_record_xaccel(XA_STATE, chars, 4 + 3 * chars);
     matched = true;
   }
-  if (IS_INST(COREMARK_XMSUM)) {
+  if (IS_INST(XACCEL_XMSUM)) {
     uint64_t elements;
-    R(rd) = coremark_matrix_sum(R(rs1), R(rs2), &elements);
+    R(rd) = matrix_clipped_sum(R(rs1), R(rs2), &elements);
     riscv_profile_record_xaccel(XA_MSUM, elements, 8 + 2 * elements);
     matched = true;
   }
-  if (IS_INST(COREMARK_XSTATEC_INIT)) {
-    memset(coremark_state_counters, 0, sizeof(coremark_state_counters));
-    memset(coremark_state_final_counters, 0, sizeof(coremark_state_final_counters));
-    coremark_state_pending_mask = 0;
-    riscv_profile_record_xstatec(0);
+  if (IS_INST(XACCEL_XDFACNT_INIT)) {
+    memset(numeric_dfa_transition_counts, 0, sizeof(numeric_dfa_transition_counts));
+    memset(numeric_dfa_final_counts, 0, sizeof(numeric_dfa_final_counts));
+    numeric_dfa_pending_mask = 0;
+    riscv_profile_record_xdfacnt(0);
     matched = true;
   }
-  if (IS_INST(COREMARK_XSTATEC_INC)) {
+  if (IS_INST(XACCEL_XDFACNT_INC)) {
     word_t state = R(rs1);
     if (state < 8)
-      coremark_state_counters[state]++;
-    riscv_profile_record_xstatec(1);
+      numeric_dfa_transition_counts[state]++;
+    riscv_profile_record_xdfacnt(1);
     matched = true;
   }
-  if (IS_INST(COREMARK_XSTATEC_READ)) {
+  if (IS_INST(XACCEL_XDFACNT_READ)) {
     word_t state = R(rs1);
-    R(rd) = state < 8 ? coremark_state_counters[state] : 0;
-    riscv_profile_record_xstatec(2);
+    R(rd) = state < 8 ? numeric_dfa_transition_counts[state] : 0;
+    riscv_profile_record_xdfacnt(2);
     matched = true;
   }
-  if (IS_INST(COREMARK_XSTATEC_COMMIT)) {
+  if (IS_INST(XACCEL_XDFACNT_COMMIT)) {
     word_t mask = R(rs1);
     for (unsigned state = 0; state < 8; state++)
       if (mask & (1u << state))
-        coremark_state_counters[state]++;
-    riscv_profile_record_xstatec(3);
+        numeric_dfa_transition_counts[state]++;
+    riscv_profile_record_xdfacnt(3);
     matched = true;
   }
-  if (IS_INST(COREMARK_XSTATE2_STEP)) {
+  if (IS_INST(XACCEL_XDFA2_STEP)) {
     vaddr_t address = R(rs2);
     unsigned offset = address & 3u;
     word_t symbols = vaddr_read(address & ~3u, 4) >> (8 * offset);
-    R(rd) = coremark_xstate_word_step(R(rs1), symbols, offset == 3 ? 1 : 2, true);
-    riscv_profile_record_xstatec(4);
+    R(rd) = numeric_dfa_word_step(R(rs1), symbols, offset == 3 ? 1 : 2, true);
+    riscv_profile_record_xdfacnt(4);
     matched = true;
   }
-  if (IS_INST(COREMARK_XSTATE4_STEP)) {
+  if (IS_INST(XACCEL_XDFA4_STEP)) {
     vaddr_t address = R(rs2);
     unsigned offset = address & 3u;
     word_t symbols = vaddr_read(address & ~3u, 4) >> (8 * offset);
-    R(rd) = coremark_xstate_word_step(R(rs1), symbols, 4 - offset, false);
-    riscv_profile_record_xstatec(5);
+    R(rd) = numeric_dfa_word_step(R(rs1), symbols, 4 - offset, false);
+    riscv_profile_record_xdfacnt(5);
     matched = true;
   }
-  if (IS_INST(COREMARK_XSTATE4C_FINAL_READ)) {
+  if (IS_INST(XACCEL_XDFA4H_FINAL_READ)) {
     word_t state = R(rs1);
-    R(rd) = state < 8 ? coremark_state_final_counters[state] : 0;
-    riscv_profile_record_xstatec(2);
+    R(rd) = state < 8 ? numeric_dfa_final_counts[state] : 0;
+    riscv_profile_record_xdfacnt(2);
     matched = true;
   }
-  if (IS_INST(COREMARK_XSTATE4C_STEP)) {
+  if (IS_INST(XACCEL_XDFA4H_STEP)) {
     vaddr_t address = R(rs2);
     unsigned offset = address & 3u;
     word_t symbols = vaddr_read(address & ~3u, 4) >> (8 * offset);
-    word_t result = coremark_xstate_word_step(R(rs1), symbols, 4 - offset, false);
+    word_t result = numeric_dfa_word_step(R(rs1), symbols, 4 - offset, false);
     word_t mask = result >> 7;
-    coremark_state_pending_mask |= mask;
+    numeric_dfa_pending_mask |= mask;
     if (result & (1u << 6)) {
       for (unsigned state = 0; state < 8; state++)
-        if (coremark_state_pending_mask & (1u << state))
-          coremark_state_counters[state]++;
-      coremark_state_final_counters[result & 7u]++;
-      coremark_state_pending_mask = 0;
+        if (numeric_dfa_pending_mask & (1u << state))
+          numeric_dfa_transition_counts[state]++;
+      numeric_dfa_final_counts[result & 7u]++;
+      numeric_dfa_pending_mask = 0;
     }
     R(rd) = result;
-    riscv_profile_record_xstatec(5);
+    riscv_profile_record_xdfacnt(5);
     matched = true;
   }
 

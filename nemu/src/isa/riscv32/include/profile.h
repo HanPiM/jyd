@@ -9,7 +9,7 @@ void riscv_profile_record(const Decode *s, word_t inst, word_t rs1_before,
                           word_t rs2_before);
 void riscv_profile_record_xaccel(unsigned op, uint64_t units,
                                  uint64_t modeled_cycles);
-void riscv_profile_record_xstatec(unsigned op);
+void riscv_profile_record_xdfacnt(unsigned op);
 void riscv_profile_finish(void);
 
 #endif

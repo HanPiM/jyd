@@ -3,7 +3,7 @@ package cpu
 import chisel3._
 import chisel3.util._
 
-class CoremarkXstate2Chunk extends Module {
+class NumericTokenDfa2ByteStep extends Module {
   val io = IO(new Bundle {
     val state     = Input(UInt(3.W))
     val mask      = Input(UInt(8.W))

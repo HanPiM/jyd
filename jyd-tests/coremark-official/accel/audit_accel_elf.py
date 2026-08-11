@@ -12,12 +12,12 @@ ENCODINGS = {
     "xlrev2": 0x0400600B,
     "xlrev1": 0x0000600B,
     "xlrev": 0x0000700B,
-    "xstate": 0x0200700B,
+    "xdfa": 0x0200700B,
     "xmsum": 0x0400700B,
-    "xstatec": 0x0000005B,
-    "xstate2": 0x0000405B,
-    "xstate4": 0x0000505B,
-    "xstate4c": 0x0200505B,
+    "xdfacnt": 0x0000005B,
+    "xdfa2": 0x0000405B,
+    "xdfa4": 0x0000505B,
+    "xdfa4h": 0x0200505B,
 }
 MASK = 0xFE00707F
 
@@ -27,7 +27,7 @@ def output(*args):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Audit inlined CoreMark custom instructions")
+    parser = argparse.ArgumentParser(description="Audit inlined custom accelerator instructions")
     parser.add_argument("--elf", required=True)
     parser.add_argument("--accels", default="")
     parser.add_argument("--fp12-report", action="store_true")
@@ -39,7 +39,7 @@ def main():
         parser.error("unknown accelerators: " + ", ".join(unknown))
 
     symbols = output("riscv64-linux-gnu-nm", args.elf)
-    wrappers = [line for line in symbols.splitlines() if "__cm_" in line]
+    wrappers = [line for line in symbols.splitlines() if "__xaccel_" in line]
     if wrappers:
         raise SystemExit("wrapper symbols survived final link:\n" + "\n".join(wrappers))
     if args.fp12_report:
@@ -68,7 +68,7 @@ def main():
             if instruction & MASK == ENCODINGS[name]:
                 counts[name] += 1
 
-    if "xstate2" in counts or "xstate4" in counts:
+    if "xdfa2" in counts or "xdfa4" in counts:
         commit_count = 0
         for line in disassembly.splitlines():
             fields = line.split()
@@ -81,9 +81,9 @@ def main():
             if instruction & MASK == 0x0000305B:
                 commit_count += 1
         if commit_count == 0:
-            raise SystemExit("xstate word image has no counter-mask commit instruction")
+            raise SystemExit("xdfa word image has no counter-mask commit instruction")
 
-    if "xstate4c" in counts:
+    if "xdfa4h" in counts:
         final_read_count = 0
         for line in disassembly.splitlines():
             fields = line.split()
@@ -96,20 +96,20 @@ def main():
             if instruction & MASK == 0x0200205B:
                 final_read_count += 1
         if final_read_count == 0:
-            raise SystemExit("xstate4c image has no final-counter read instruction")
+            raise SystemExit("xdfa4h image has no final-counter read instruction")
 
     missing = [name for name, count in counts.items() if count == 0]
     if missing:
         raise SystemExit("enabled instructions absent from final ELF: " + ", ".join(missing))
-    print("no __cm_ wrapper symbols or calls remain")
+    print("no __xaccel_ wrapper symbols or calls remain")
     if args.fp12_report:
         print("no floating-point helper symbols remain")
     for name, count in counts.items():
         print(f"{name}: {count} static instruction site(s)")
-    if "xstate2" in counts or "xstate4" in counts:
-        print(f"xstate word commit: {commit_count} static instruction site(s)")
-    if "xstate4c" in counts:
-        print(f"xstate4c final read: {final_read_count} static instruction site(s)")
+    if "xdfa2" in counts or "xdfa4" in counts:
+        print(f"xdfa word commit: {commit_count} static instruction site(s)")
+    if "xdfa4h" in counts:
+        print(f"xdfa4h final read: {final_read_count} static instruction site(s)")
 
 
 if __name__ == "__main__":

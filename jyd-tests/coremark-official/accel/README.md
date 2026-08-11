@@ -8,7 +8,7 @@ updates GCC's call graph; changing only the GIMPLE call can let later IPA
 passes inline the old callee and silently remove the intended instruction.
 
 The value uses an ISA-style suffix, for example
-`_xbmul_xcrcu8_xlrev_xmsum_xstate`.  GCC rejects unknown `x*` extensions in
+`_xbmul_xcrcu8_xlrev_xmsum_xdfa`.  GCC rejects unknown `x*` extensions in
 `-march`, so the standard extensions remain in the real `-march` option and
 the custom suffix is passed as the real compiler definition
 `-D__COREMARK_XEXTS=...`.  The automatically generated `COMPILER_FLAGS`
@@ -16,16 +16,16 @@ string reports the effective optimization and ISA options followed by the
 plugin and forced-include options used by the build.
 
 Supported names are `xmac16`, `xdot16`, `xbmul`, `xcrcu8`, `xlrev1`, `xlrev`,
-`xstate`, `xstatec`, `xstate2`, `xstate4`, `xstate4c`, and `xmsum`. The word-fed state
-instructions evaluate two or four characters. `xstate4c` accumulates a token's
+`xdfa`, `xdfacnt`, `xdfa2`, `xdfa4`, `xdfa4h`, and `xmsum`. The word-fed DFA
+instructions evaluate two or four characters. `xdfa4h` accumulates a token's
 transition mask and final-state count in hardware; it remains a bounded
 four-byte step rather than a whole-parser operation. For example:
 
 ```sh
 make ARCH=riscv32-nemu ITERATIONS=10000 \
-  COREMARK_XEXTS=_xbmul_xcrcu8_xlrev2_xmsum_xstate4 image
+  COREMARK_XEXTS=_xbmul_xcrcu8_xlrev2_xmsum_xdfa4h image
 make ARCH=riscv32-nemu ITERATIONS=10000 \
-  COREMARK_XEXTS=_xbmul_xcrcu8_xlrev2_xmsum_xstate4 audit-accel
+  COREMARK_XEXTS=_xbmul_xcrcu8_xlrev2_xmsum_xdfa4h audit-accel
 ```
 
 The GCC plugin headers require `gmp.h`.  Override
@@ -33,7 +33,7 @@ The GCC plugin headers require `gmp.h`.  Override
 host compiler's normal include path.
 
 `audit-accel` is mandatory for an accelerated image.  It fails if an enabled
-instruction is absent or if an `__cm_*` wrapper survives the final link.  This
+instruction is absent or if an `__xaccel_*` wrapper survives the final link.  This
 ensures the wrapper introduces no function call, stack frame, or associated
 save/restore loads and stores.  Inspect the reported instruction sites when
 adding a wrapper with enough register operands to cause compiler spills.

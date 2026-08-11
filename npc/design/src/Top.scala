@@ -411,7 +411,7 @@ class CPUCore(
   val lsuFwdInfo = ExtractFwdInfoFromLSU(lsu.io.in)
   val lsuFastFwdInfo = ExtractFastFwdInfoFromLSU(lsu.io.in)
   val lsuLateLoadData =
-    ExtLoadData(dcache.io.readData, lsu.io.in.bits.destAddr(1, 0), lsu.io.in.bits.func3t)
+    ExtLoadData(lsu.io.in.bits.lateLoadData, lsu.io.in.bits.destAddr(1, 0), lsu.io.in.bits.func3t)
   idu.io.wrBackInfo.exu := exu.io.fwd
   idu.io.lateLoadProducer := exu.io.lateLoadProducer
   idu.io.wrBackInfo.lsu := lsuFwdInfo
@@ -428,9 +428,8 @@ class CPUCore(
   exu.io.lateLoadLSU.valid := lateLoadLSUValid
   exu.io.lateLoadLSU.dataValid :=
     lateLoadLSUValid && lsu.io.in.bits.cacheableLoad && lsu.io.in.bits.dcacheHit
-  // The synchronous BRAM result arrives with the registered LSU metadata.
-  // Keeping it out of the EXU/LSU payload prevents a load-use chain from
-  // traversing two asynchronous cache mirrors in one cycle.
+  // The asynchronous shadow crossed the EXU-to-LSU pipeline register as raw
+  // data; extend it from the registered address/width metadata in C1.
   exu.io.lateLoadLSU.data := lsuLateLoadData
 
   val lateLoadWBUWidthSupported =

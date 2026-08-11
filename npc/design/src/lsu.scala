@@ -12,6 +12,9 @@ class LSUInput(
   val destAddr     = Types.UWord
   val cacheableLoad = Bool()
   val dcacheHit    = Bool()
+  // Raw asynchronous shadow data crosses the EXU-to-LSU payload register;
+  // registered address/width metadata selects and extends it in C1.
+  val lateLoadData = Types.UWord
   val dcacheStoreEpoch = Bool()
   val func3t       = UInt(3.W)
   val exuWriteBack = new WriteBackInfo

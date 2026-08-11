@@ -79,8 +79,6 @@ class EXU(
     val nxtPC = Output(Types.UWord)
 
     val fwd = Output(new WrBackForwardInfo)
-    val directFwd = Output(new WrBackForwardInfo)
-    val addFwd = Output(new AddForwardInfo)
     val lateLoadProducer = Output(new LateLoadProducerInfo)
     val lateLoadLSU = Input(new LateLoadSourceInfo)
     val lateLoadWBU = Input(new LateLoadSourceInfo)
@@ -88,6 +86,7 @@ class EXU(
     val lateLoadWBUFunc3   = Input(UInt(3.W))
     val lateLoadWBUOffset  = Input(UInt(2.W))
     val previousStageFwd = Input(new WrBackForwardInfo)
+    val previousLsuFwd = Input(new WrBackForwardInfo)
 
     val dcache = new Bundle {
       val hit        = Input(Bool())
@@ -208,9 +207,29 @@ class EXU(
     (ready, data)
   }
 
-  val postRegisterRegV1 = Mux(dinst.info.prevExuFwdRs1, io.previousStageFwd.data, dinst.info.reg1)
-  val postRegisterRegV2 = Mux(dinst.info.prevExuFwdRs2, io.previousStageFwd.data, dinst.info.reg2)
-  val aluPostRegisterRegV2 = Mux(dinst.info.prevExuFwdRs2Alu, io.previousStageFwd.data, dinst.info.reg2)
+  val currentProducerRegV1 = Mux(
+    dinst.info.prevExuFwdRs1,
+    io.previousStageFwd.data,
+    Mux(dinst.info.prevLsuFwdRs1, io.previousLsuFwd.data, dinst.info.reg1)
+  )
+  val currentProducerRegV2 = Mux(
+    dinst.info.prevExuFwdRs2,
+    io.previousStageFwd.data,
+    Mux(dinst.info.prevLsuFwdRs2, io.previousLsuFwd.data, dinst.info.reg2)
+  )
+  val producerOperandsCaptured = RegInit(false.B)
+  val capturedProducerRegV1 = Reg(Types.UWord)
+  val capturedProducerRegV2 = Reg(Types.UWord)
+  when(!io.in.valid || io.in.fire) {
+    producerOperandsCaptured := false.B
+  }.elsewhen(!producerOperandsCaptured) {
+    producerOperandsCaptured := true.B
+    capturedProducerRegV1 := currentProducerRegV1
+    capturedProducerRegV2 := currentProducerRegV2
+  }
+  val postRegisterRegV1 = Mux(producerOperandsCaptured, capturedProducerRegV1, currentProducerRegV1)
+  val postRegisterRegV2 = Mux(producerOperandsCaptured, capturedProducerRegV2, currentProducerRegV2)
+  val aluPostRegisterRegV2 = Mux(dinst.info.prevExuFwdRs2Alu, io.previousStageFwd.data, postRegisterRegV2)
 
   val (lateRs1Ready, lateRegV1) =
     resolveLateLoadOperand(dinst.info.lateLoadRs1, postRegisterRegV1)
@@ -452,7 +471,8 @@ class EXU(
   val equalityRegV2 = Mux(dinst.info.lateLoadRs2, lateRegV2, postRegisterRegV2)
   // val pcAddImm   = dinst.pc + dinst.info.imm
   val pcAddImm   = dinst.info.pcAddImm
-  val reg1AddImm = "h80".U(8.W) ## 0.U(2.W) ## dinst.info.reg1AddImm
+  val addrImm = dinst.info.addrImm.asSInt.pad(32).asUInt
+  val reg1AddImm = reg_v1 + addrImm
 
   // Branches/JAL use PC+imm, while a JALR BTB entry must learn the resolved
   // rs1+imm target.  The BTB stores only the same trimmed PC bits either way.
@@ -461,11 +481,11 @@ class EXU(
   alu_in.src1   := reg_v1
   // alu_in.src2   := Mux(isFmtI, dinst.info.imm, reg_v2)
   alu_in.src2   := aluPostRegisterRegV2
-  alu_in.mulRawSrc1 := dinst.info.reg1
-  alu_in.mulRawSrc2 := dinst.info.reg2
-  alu_in.mulPrevData := io.previousStageFwd.data
-  alu_in.mulPrevRs1 := dinst.info.prevExuFwdRs1
-  alu_in.mulPrevRs2 := dinst.info.prevExuFwdRs2
+  alu_in.mulRawSrc1 := reg_v1
+  alu_in.mulRawSrc2 := reg_v2
+  alu_in.mulPrevData := 0.U
+  alu_in.mulPrevRs1 := false.B
+  alu_in.mulPrevRs2 := false.B
   alu_in.mulNoLate := !dinst.info.lateLoadRs1 && !dinst.info.lateLoadRs2
   alu_in.is_imm := isFmtI
   alu_in.isSub   := dinst.info.aluIsSub
@@ -668,13 +688,6 @@ class EXU(
   // ordinary LSU-to-IDU bypass, keeping them out of the ALU recurrence.
   val exuForwardDataValid = useSingleCycleForward || useLateBitForward
   io.fwd := WrBackForwardInfo(io.in.valid, dinst, exuForwardDataValid, exuForwardData, csrWrEnable)
-  val directForwardDataValid = !isMemOP && !hasLateLoadOperand && !isTypArithmetic
-  io.directFwd :=
-    WrBackForwardInfo(io.in.valid, dinst, directForwardDataValid, exuForwardData, csrWrEnable)
-  io.addFwd.valid :=
-    io.in.valid && dinst.info.rdWrEn && dinst.info.rd =/= 0.U && isAdd && !hasLateLoadOperand
-  io.addFwd.data := alu.io.addResult(21, 0)
-
   // The producer token is decode-only.  In particular, do not feed the
   // current load address/cacheability back into IDU ready; cache hit only
   // decides whether the already-issued consumer completes in the next cycle.
@@ -695,7 +708,7 @@ class EXU(
   // operand can therefore lag behind even when the dependency has already
   // reached LSU/WBU.  Query from the local result register for every loop
   // iteration without reconnecting the global forwarding path to the tag RAM.
-  val xlrevQueryAddr = Mux(isXlrevLoop, xlrevResult, dinst.info.reg1)
+  val xlrevQueryAddr = Mux(isXlrevLoop, xlrevResult, reg_v1)
   val dcacheQueryAddr = Mux(isXlrevSingle, xlrevQueryAddr, reg1AddImm)
   io.dcache.queryIndex := dcacheQueryAddr(11, 2)
   io.dcache.queryTag   := dcacheQueryAddr(17, 11)

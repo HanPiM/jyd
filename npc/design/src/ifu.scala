@@ -8,6 +8,7 @@ import dpiwrap._
 class IFU extends Module {
   val io = IO(new Bundle {
     val pc              = Flipped(Decoupled(Types.UWord))
+    val epoch           = Input(Bool())
     val predNext = Input(new PredBundle)
     val mem             = SimpleBusIO.Master
     val out             = Decoupled(new FetchedInst)
@@ -26,9 +27,11 @@ class IFU extends Module {
   val pcReg          = Reg(Types.UWord)
   val predNextReg   = Reg(new PredBundle)
   val reqIIDReg      = Reg(UInt(Types.BitWidth.inst_id.W))
+  val reqEpochReg    = Reg(Bool())
   val pendingPCReg   = Reg(Types.UWord)
   val pendingPredReg = Reg(new PredBundle)
   val pendingIIDReg  = Reg(UInt(Types.BitWidth.inst_id.W))
+  val pendingEpochReg = Reg(Bool())
   dontTouch(pcReg)
 
   val instID = RegInit(0.U(Types.BitWidth.inst_id.W))
@@ -65,16 +68,19 @@ class IFU extends Module {
     pcReg        := io.pc.bits
     predNextReg := io.predNext
     reqIIDReg    := nextIID
+    reqEpochReg  := io.epoch
   }.elsewhen(pendingReqFire) {
     pcReg        := pendingPCReg
     predNextReg := pendingPredReg
     reqIIDReg    := pendingIIDReg
+    reqEpochReg  := pendingEpochReg
   }
 
   when(acceptInputReq && !inputReqFire) {
     pendingPCReg   := io.pc.bits
     pendingPredReg := io.predNext
     pendingIIDReg  := nextIID
+    pendingEpochReg := io.epoch
   }
 
   memIO.req_valid := inputReqValid || pendingReqValid
@@ -91,6 +97,7 @@ class IFU extends Module {
   io.out.bits.pred := predNextReg
 
   io.out.bits.iid             := reqIIDReg
+  io.out.bits.epoch           := reqEpochReg
   io.out.valid                := isWaitingRespMeetValid || (state === State.waitOut)
 
   val nxtStateWhenAcceptInput = Mux(

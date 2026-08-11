@@ -121,6 +121,7 @@ class Inst extends Bundle {
   val code            = Output(Types.UWord)
   val pc              = Output(Types.UWord)
   val iid             = Output(Types.InstID)
+  val epoch           = Output(Bool())
   val pred = Output(new PredBundle)
 }
 
@@ -178,10 +179,9 @@ class DecodedInstInfo(implicit p : CPUParameters) extends InstMetaInfo with HasR
   val staticNextPCOrCSRTarget = Types.UWord
 
   val pcAddImm = Types.UWord
-  // JYD instruction and data addresses always have fixed bits [31:22] =
-  // 0x800. Carry only the dynamic low bits across the IDU/EXU boundary and
-  // reconstruct the architectural address locally in EXU.
-  val reg1AddImm = UInt(22.W)
+  // Address operands cross the boundary as raw GPR data plus the compact
+  // instruction immediate. EXU applies producer tokens before adding them.
+  val addrImm = UInt(12.W)
 
   // A compact supported consumer may enter EXU before a load result is
   // available. EXU resolves these operands from the registered LSU/WBU
@@ -195,6 +195,8 @@ class DecodedInstInfo(implicit p : CPUParameters) extends InstMetaInfo with HasR
   val prevExuFwdRs1 = Bool()
   val prevExuFwdRs2 = Bool()
   val prevExuFwdRs2Alu = Bool()
+  val prevLsuFwdRs1 = Bool()
+  val prevLsuFwdRs2 = Bool()
 
   // IDU classifies every non-RV32I/non-M arithmetic encoding as a supported
   // multi-cycle B operation. The exact B operation is decoded locally after
@@ -247,6 +249,7 @@ class DecodedInst(implicit p : CPUParameters) extends Bundle {
   val code = Types.UWord
   val pc   = Types.UWord
   val iid  = Types.InstID
+  val epoch = Bool()
 
   // IDU consumes the predicted PC and BTB-hit flag when it resolves JALR.
   // EXU only needs the direction bit for conditional branches, so avoid

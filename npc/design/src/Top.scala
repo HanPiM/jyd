@@ -219,6 +219,7 @@ class CPUCore(
   val activeRedirectValid = Wire(Bool())
   val redirectPendingFire = Wire(Bool())
   val redirectPendingReg  = RegInit(false.B)
+  val pipelineEpoch       = RegInit(false.B)
   val redirectUseTargetReg = Reg(Bool())
   val redirectTargetReg    = Reg(UInt(15.W))
   val redirectFallthroughReg = Reg(UInt(15.W))
@@ -273,7 +274,7 @@ class CPUCore(
   btb.io.update.isReturn   := RegNext(exu.io.isReturn)
   btb.io.update.actualTaken := RegNext(exu.io.branchTaken)
 
-  redirectNow         := exu.io.in.valid && exu.io.predWrong
+  redirectNow         := exu.io.out.valid && exu.io.predWrong
   redirectPendingFire := ifu.io.pc.fire && redirectPendingReg
 
   // Capture both redirect candidates every cycle. The branch comparator only
@@ -287,17 +288,16 @@ class CPUCore(
 
   when(redirectNow) {
     redirectPendingReg := true.B
+    pipelineEpoch := ~pipelineEpoch
   }.elsewhen(redirectPendingFire) {
     redirectPendingReg := false.B
   }
 
-  activeRedirectValid := redirectNow || redirectPendingReg
+  activeRedirectValid := redirectPendingReg
   dontTouch(activeRedirectValid)
 
-  // redirectNow still flushes younger instructions in the resolving cycle,
-  // while the registered mailbox presents its target to IFU in the next
-  // cycle. This is the same earliest visible target cycle as writing pc here,
-  // but removes the branch comparator from pcReg's clock-enable path.
+  // The resolving branch only toggles the epoch and fills the registered PC
+  // mailbox. Younger instructions are discarded by local epoch filters.
   pc := TrimmedPC.expand(
     Mux(ifu.io.pc.ready, TrimmedPC.trim(nxtPredictedPC), TrimmedPC.trim(pc))
   )
@@ -367,19 +367,17 @@ class CPUCore(
 
   ifu.io.pc.bits  := pcFeedToIFU
   ifu.io.pc.valid := true.B
+  ifu.io.epoch    := pipelineEpoch
 
   layer.block(DifftestLayer) {
-    val iduOut = Wire(Decoupled(new DecodedInst))
-    iduOut.valid := idu.io.out.valid
-    iduOut.bits  := idu.io.out.bits
-
     val exuDifftest = Module(new EXUForDifftest)
     exuDifftest.io.actual.inReady  := exu.io.in.ready
     exuDifftest.io.actual.pc       := exu.io.pc
     exuDifftest.io.actual.nxtPC    := exu.io.nxtPC
     exuDifftest.io.actual.memAddr  := exu.io.out.bits.destAddr
     exuDifftest.io.actual.outValid := exu.io.out.valid
-    pipelineConnect(iduOut, exuDifftest.io.in, exuDifftest.io.out, kill = redirectNow)
+    exuDifftest.io.in.bits := exu.io.in.bits
+    exuDifftest.io.in.valid := exu.io.in.valid
 
     val lsuDifftest = Module(new LSUForDifftest)
     pipelineConnect(exuDifftest.io.out, lsuDifftest.io.in, lsuDifftest.io.out)
@@ -390,8 +388,19 @@ class CPUCore(
     pipelineConnect(lsuDifftest.io.out, wbuDifftest.io.in)
   }
 
-  pipelineConnect(ifu.io.out, idu.io.in, idu.io.out, kill = activeRedirectValid)
-  pipelineConnect(idu.io.out, exu.io.in, exu.io.out, kill = redirectNow)
+  val iduPipe = Wire(Decoupled(new FetchedInst))
+  pipelineConnect(ifu.io.out, iduPipe)
+  val iduEpochMatch = iduPipe.bits.epoch === pipelineEpoch
+  idu.io.in.bits := iduPipe.bits
+  idu.io.in.valid := iduPipe.valid && iduEpochMatch
+  iduPipe.ready := idu.io.in.ready || !iduEpochMatch
+
+  val exuPipe = Wire(Decoupled(new DecodedInst))
+  pipelineConnect(idu.io.out, exuPipe)
+  val exuEpochMatch = exuPipe.bits.epoch === pipelineEpoch
+  exu.io.in.bits := exuPipe.bits
+  exu.io.in.valid := exuPipe.valid && exuEpochMatch
+  exuPipe.ready := exu.io.in.ready || !exuEpochMatch
   pipelineConnect(exu.io.out, lsu.io.in, lsu.io.out)
 
   idu.io.rvec <> gprs.io.read
@@ -406,19 +415,13 @@ class CPUCore(
   val dcacheFwdInfo = Wire(new DCacheForwardInfo)
   dcacheFwdInfo.valid := lsu.io.in.valid && lsu.io.in.bits.cacheableLoad && lsu.io.in.bits.dcacheHit
   dcacheFwdInfo.addr  := lsu.io.in.bits.exuWriteBack.gpr.addr
-  dcacheFwdInfo.data  := lsuLateLoadData
-  val wbuRawFwdInfo = Wire(new Reg1AddImmWbuRawInfo)
-  wbuRawFwdInfo.dataValid := wbu.io.in.valid && !wbu.io.in.bits.isLoad
-  wbuRawFwdInfo.data      := SelectGprData(wbu.io.in.bits)(21, 0)
   idu.io.wrBackInfo.exu := exu.io.fwd
-  idu.io.exuDirectFwd := exu.io.directFwd
   idu.io.lateLoadProducer := exu.io.lateLoadProducer
-  idu.io.exuAddFwd := exu.io.addFwd
   idu.io.wrBackInfo.lsu := lsuFwdInfo
   idu.io.wrBackInfo.wbu := ExtractFwdInfoFromWrBack(wbu.io.in, wbu.io.memResp)
   exu.io.previousStageFwd := lsuFastFwdInfo
+  exu.io.previousLsuFwd := ExtractFwdInfoFromWrBack(wbu.io.in, wbu.io.memResp)
   idu.io.dcacheFwd := dcacheFwdInfo
-  idu.io.reg1AddImmWbuRawInfo := wbuRawFwdInfo
 
   val lateLoadLSUWidthSupported =
     lsu.io.in.bits.func3t === "b000".U || lsu.io.in.bits.func3t === "b001".U ||

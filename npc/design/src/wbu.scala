@@ -96,6 +96,7 @@ object ExtractFwdInfoFromWrBack {
     // WBU has no response-wait state; its assertion below checks alignment.
     out.dataVaild := info.valid && (!wrBack.isLoad || canForwardLoad)
     out.data      := Mux(canForwardLoad, cachedLoadResult, SelectGprData(wrBack))
+    out.useFastLane := !canForwardLoad && wrBack.useFastGprData
 
     out.enWrCSR := wrBack.csr.en && info.valid
 

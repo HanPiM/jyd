@@ -21,6 +21,7 @@ class WrBackForwardInfo(
   val enWr      = Bool()
   val dataVaild = Bool()
   val data      = Types.UWord
+  val useFastLane = Bool()
 
   val enWrCSR = Bool()
 }
@@ -37,6 +38,7 @@ object WrBackForwardInfo {
     res.enWr      := WrBack.enWr
     res.dataVaild := WrBack.dataVaild
     res.data      := newData
+    res.useFastLane := WrBack.useFastLane
     res.enWrCSR   := WrBack.enWrCSR
     res
   }
@@ -54,6 +56,7 @@ object WrBackForwardInfo {
     res.enWr      := dinstInfo.info.rdWrEn && infoValid
     res.dataVaild := dataVaild
     res.data      := data
+    res.useFastLane := dataVaild
     res.enWrCSR   := csrWrEn && infoValid
     res
   }
@@ -84,13 +87,6 @@ class WrBackInfoGroup(
   val exu = new WrBackForwardInfo
   val lsu = new WrBackForwardInfo
   val wbu = new WrBackForwardInfo
-}
-
-class DCacheForwardInfo(
-  implicit p: CPUParameters)
-    extends Bundle {
-  val valid = Bool()
-  val addr  = p.GPRAddr
 }
 
 class LateLoadProducerInfo(
@@ -140,22 +136,19 @@ object CacheAwareByPassMux {
     rs:         UInt,
     regData:    UInt,
     wrBacks:    Seq[WrBackForwardInfo],
-    dcacheFwd:  DCacheForwardInfo,
-    allowCache: Bool,
     lateLoadProducer: LateLoadProducerInfo,
     allowLateLoad: Bool,
     allowPrevExuFwd: Bool
-  ): (Bool, UInt, Bool, Bool, Bool) = {
+  ): (Bool, UInt, Bool, Bool, Bool, Bool) = {
     require(wrBacks.length == 3)
     val exuConflict = SingleByPassMux.conflict(rs, wrBacks(0).addr, wrBacks(0).enWr)
     val lsuConflict = SingleByPassMux.conflict(rs, wrBacks(1).addr, wrBacks(1).enWr)
-    val cacheSelect = allowCache && SingleByPassMux.conflict(rs, dcacheFwd.addr, dcacheFwd.valid) && !exuConflict
     // This exception is independent of the combinational DCache hit result.
     // The dependent ADD/ADDI is held in EXU if the registered LSU source later
     // reports a miss.
     val lateLoadSelect = allowLateLoad && exuConflict && lateLoadProducer.valid
     val prevExuFwdSelect = allowPrevExuFwd && exuConflict && wrBacks(0).dataVaild
-    val prevLsuFwdSelect = !exuConflict && lsuConflict && (wrBacks(1).dataVaild || cacheSelect)
+    val prevLsuFwdSelect = !exuConflict && lsuConflict && wrBacks(1).dataVaild
 
     val needStall = Mux(
       exuConflict,
@@ -167,7 +160,8 @@ object CacheAwareByPassMux {
     // consumer carries only prevExuFwdSelect and reads that result after the
     // existing EXU/LSU register; unsafe consumers wait for ordinary LSU
     // forwarding on the next cycle.
-    (needStall, regData, lateLoadSelect, prevExuFwdSelect, prevLsuFwdSelect)
+    val prevLsuDeferredSelect = prevLsuFwdSelect && !wrBacks(1).useFastLane
+    (needStall, regData, lateLoadSelect, prevExuFwdSelect, prevLsuFwdSelect, prevLsuDeferredSelect)
   }
 }
 
@@ -187,9 +181,7 @@ class ByPassMux(
     val regData2 = Input(Types.UWord)
 
     val wrBackInfo = Input(new WrBackInfoGroup)
-    val dcacheFwd  = Input(new DCacheForwardInfo)
     val lateLoadProducer = Input(new LateLoadProducerInfo)
-    val allowCacheRs1 = Input(Bool())
     val allowLateLoadRs1 = Input(Bool())
     val allowLateLoadRs2 = Input(Bool())
     val allowPrevExuFwdRs1 = Input(Bool())
@@ -201,6 +193,8 @@ class ByPassMux(
     val prevExuFwdRs2 = Output(Bool())
     val prevLsuFwdRs1 = Output(Bool())
     val prevLsuFwdRs2 = Output(Bool())
+    val prevLsuDeferredRs1 = Output(Bool())
+    val prevLsuDeferredRs2 = Output(Bool())
 
     val outData1 = Output(Types.UWord)
     val outData2 = Output(Types.UWord)
@@ -209,22 +203,18 @@ class ByPassMux(
   val wrBacks    = Seq(io.wrBackInfo.exu, io.wrBackInfo.lsu, io.wrBackInfo.wbu)
   val csrWrBacks = Seq(io.wrBackInfo.exu, io.wrBackInfo.lsu, io.wrBackInfo.wbu)
 
-  val (needStall1, outData1, lateLoadRs1, prevExuFwdRs1, prevLsuFwdRs1) = CacheAwareByPassMux(
+  val (needStall1, outData1, lateLoadRs1, prevExuFwdRs1, prevLsuFwdRs1, prevLsuDeferredRs1) = CacheAwareByPassMux(
     io.rs1,
     io.regData1,
     wrBacks,
-    io.dcacheFwd,
-    io.allowCacheRs1,
     io.lateLoadProducer,
     io.allowLateLoadRs1,
     io.allowPrevExuFwdRs1
   )
-  val (needStall2, outData2, lateLoadRs2, prevExuFwdRs2, prevLsuFwdRs2) = CacheAwareByPassMux(
+  val (needStall2, outData2, lateLoadRs2, prevExuFwdRs2, prevLsuFwdRs2, prevLsuDeferredRs2) = CacheAwareByPassMux(
     io.rs2,
     io.regData2,
     wrBacks,
-    io.dcacheFwd,
-    true.B,
     io.lateLoadProducer,
     io.allowLateLoadRs2,
     io.allowPrevExuFwdRs2
@@ -239,6 +229,8 @@ class ByPassMux(
   io.prevExuFwdRs2 := prevExuFwdRs2
   io.prevLsuFwdRs1 := prevLsuFwdRs1
   io.prevLsuFwdRs2 := prevLsuFwdRs2
+  io.prevLsuDeferredRs1 := prevLsuDeferredRs1
+  io.prevLsuDeferredRs2 := prevLsuDeferredRs2
   io.outData1  := outData1
   io.outData2  := outData2
 }
@@ -258,7 +250,6 @@ class IDU(
     val pipelineFlush = Input(Bool())
 
     val wrBackInfo           = Input(new WrBackInfoGroup)
-    val dcacheFwd            = Input(new DCacheForwardInfo)
     val lateLoadProducer     = Input(new LateLoadProducerInfo)
 
     val out = Decoupled(new DecodedInst)
@@ -348,18 +339,14 @@ class IDU(
   bypassMux.io.regData2   := io.rvec.data(1)
   bypassMux.io.wrBackInfo := io.wrBackInfo
   val needReg1AddImm = isTypLoad || isTypStore || isTypJALR
-  bypassMux.io.dcacheFwd := io.dcacheFwd
   bypassMux.io.lateLoadProducer := io.lateLoadProducer
-  // Cache-hit state only classifies a registered LSU producer token. Data is
-  // consumed by EXU's dedicated late-load lane, never by the IDU payload.
-  bypassMux.io.allowCacheRs1 := !needReg1AddImm || isTypLoad
   // Only compact dedicated results may consume a load whose hit/miss is not
   // known in IDU. The fixed-immediate forms cover the hot xibei bit-extraction
   // loop without placing a general AND or barrel shifter in the late path.
   val isLateLoadAndi1 = isTypArithmetic && isFmtI && inst(14, 12) === "b111".U && inst(31, 20) === 1.U
   val isLateLoadSrli1 = isTypArithmetic && isFmtI && inst(14, 12) === "b101".U && inst(31, 20) === 1.U
   val isEqualityBranch = isTypBranch && inst(14, 13) === 0.U
-  val allowLateLoadRs1 = isLateLoadAndi1 || isLateLoadSrli1 || isEqualityBranch
+  val allowLateLoadRs1 = isLateLoadAndi1 || isLateLoadSrli1 || isEqualityBranch || isTypLoad
   bypassMux.io.allowLateLoadRs1 := allowLateLoadRs1
   bypassMux.io.allowLateLoadRs2 := isEqualityBranch
   val arithmeticFunc3 = inst(14, 12)
@@ -382,6 +369,8 @@ class IDU(
   res.prevExuFwdRs2Alu := bypassMux.io.prevExuFwdRs2
   res.prevLsuFwdRs1 := bypassMux.io.prevLsuFwdRs1
   res.prevLsuFwdRs2 := bypassMux.io.prevLsuFwdRs2
+  res.prevLsuDeferredRs1 := bypassMux.io.prevLsuDeferredRs1
+  res.prevLsuDeferredRs2 := bypassMux.io.prevLsuDeferredRs2
   dontTouch(res.prevExuFwdRs2Alu)
   // Only operations that still use the iterative B unit assert bExtValid.
   // Short B operations are evaluated by the ordinary ALU path so they retain

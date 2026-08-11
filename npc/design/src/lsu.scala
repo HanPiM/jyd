@@ -30,6 +30,7 @@ object ExtractFwdInfoFromLSU {
     out.enWr      := wrBack.gpr.en && info.valid
     out.dataVaild := !info.bits.isLoad
     out.data      := SelectGprData(wrBack)
+    out.useFastLane := wrBack.useFastGprData
 
     out.enWrCSR := wrBack.csr.en && info.valid
 
@@ -47,6 +48,7 @@ object ExtractFastFwdInfoFromLSU {
     out.enWr      := wrBack.gpr.en && info.valid && wrBack.useFastGprData
     out.dataVaild := info.valid && wrBack.useFastGprData
     out.data      := wrBack.fastGprData
+    out.useFastLane := true.B
     out.enWrCSR   := false.B
     out
   }

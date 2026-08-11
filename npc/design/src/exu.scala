@@ -86,7 +86,8 @@ class EXU(
     val lateLoadWBUFunc3   = Input(UInt(3.W))
     val lateLoadWBUOffset  = Input(UInt(2.W))
     val previousStageFwd = Input(new WrBackForwardInfo)
-    val previousLsuFwd = Input(new WrBackForwardInfo)
+    val previousLsuFastData = Input(Types.UWord)
+    val previousLsuDeferredData = Input(Types.UWord)
 
     val dcache = new Bundle {
       val hit        = Input(Bool())
@@ -207,28 +208,20 @@ class EXU(
     (ready, data)
   }
 
+  val previousLsuRegV1 = Mux(dinst.info.prevLsuDeferredRs1, io.previousLsuDeferredData, io.previousLsuFastData)
+  val previousLsuRegV2 = Mux(dinst.info.prevLsuDeferredRs2, io.previousLsuDeferredData, io.previousLsuFastData)
   val currentProducerRegV1 = Mux(
     dinst.info.prevExuFwdRs1,
     io.previousStageFwd.data,
-    Mux(dinst.info.prevLsuFwdRs1, io.previousLsuFwd.data, dinst.info.reg1)
+    Mux(dinst.info.prevLsuFwdRs1, previousLsuRegV1, dinst.info.reg1)
   )
   val currentProducerRegV2 = Mux(
     dinst.info.prevExuFwdRs2,
     io.previousStageFwd.data,
-    Mux(dinst.info.prevLsuFwdRs2, io.previousLsuFwd.data, dinst.info.reg2)
+    Mux(dinst.info.prevLsuFwdRs2, previousLsuRegV2, dinst.info.reg2)
   )
-  val producerOperandsCaptured = RegInit(false.B)
-  val capturedProducerRegV1 = Reg(Types.UWord)
-  val capturedProducerRegV2 = Reg(Types.UWord)
-  when(!io.in.valid || io.in.fire) {
-    producerOperandsCaptured := false.B
-  }.elsewhen(!producerOperandsCaptured) {
-    producerOperandsCaptured := true.B
-    capturedProducerRegV1 := currentProducerRegV1
-    capturedProducerRegV2 := currentProducerRegV2
-  }
-  val postRegisterRegV1 = Mux(producerOperandsCaptured, capturedProducerRegV1, currentProducerRegV1)
-  val postRegisterRegV2 = Mux(producerOperandsCaptured, capturedProducerRegV2, currentProducerRegV2)
+  val postRegisterRegV1 = currentProducerRegV1
+  val postRegisterRegV2 = currentProducerRegV2
   val aluPostRegisterRegV2 = Mux(dinst.info.prevExuFwdRs2Alu, io.previousStageFwd.data, postRegisterRegV2)
 
   val (lateRs1Ready, lateRegV1) =
@@ -467,12 +460,25 @@ class EXU(
     xmsumRetPending := false.B
   }
 
-  val equalityRegV1 = Mux(dinst.info.lateLoadRs1, lateRegV1, postRegisterRegV1)
-  val equalityRegV2 = Mux(dinst.info.lateLoadRs2, lateRegV2, postRegisterRegV2)
+  val lateOtherOperandCaptured = RegInit(false.B)
+  val capturedLateOtherRegV1 = Reg(Types.UWord)
+  val capturedLateOtherRegV2 = Reg(Types.UWord)
+  when(!io.in.valid || io.in.fire) {
+    lateOtherOperandCaptured := false.B
+  }.elsewhen(hasLateLoadOperand && !lateOtherOperandCaptured) {
+    lateOtherOperandCaptured := true.B
+    capturedLateOtherRegV1 := postRegisterRegV1
+    capturedLateOtherRegV2 := postRegisterRegV2
+  }
+  val stableLateOtherRegV1 = Mux(lateOtherOperandCaptured, capturedLateOtherRegV1, postRegisterRegV1)
+  val stableLateOtherRegV2 = Mux(lateOtherOperandCaptured, capturedLateOtherRegV2, postRegisterRegV2)
+  val equalityRegV1 = Mux(dinst.info.lateLoadRs1, lateRegV1, stableLateOtherRegV1)
+  val equalityRegV2 = Mux(dinst.info.lateLoadRs2, lateRegV2, stableLateOtherRegV2)
   // val pcAddImm   = dinst.pc + dinst.info.imm
   val pcAddImm   = dinst.info.pcAddImm
   val addrImm = dinst.info.addrImm.asSInt.pad(32).asUInt
-  val reg1AddImm = reg_v1 + addrImm
+  val addressRegV1 = Mux(dinst.info.lateLoadRs1, lateRegV1, reg_v1)
+  val reg1AddImm = addressRegV1 + addrImm
 
   // Branches/JAL use PC+imm, while a JALR BTB entry must learn the resolved
   // rs1+imm target.  The BTB stores only the same trimmed PC bits either way.

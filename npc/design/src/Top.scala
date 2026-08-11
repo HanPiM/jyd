@@ -412,16 +412,13 @@ class CPUCore(
   val lsuFastFwdInfo = ExtractFastFwdInfoFromLSU(lsu.io.in)
   val lsuLateLoadData =
     ExtLoadData(lsu.io.in.bits.lateLoadData, lsu.io.in.bits.destAddr(1, 0), lsu.io.in.bits.func3t)
-  val dcacheFwdInfo = Wire(new DCacheForwardInfo)
-  dcacheFwdInfo.valid := lsu.io.in.valid && lsu.io.in.bits.cacheableLoad && lsu.io.in.bits.dcacheHit
-  dcacheFwdInfo.addr  := lsu.io.in.bits.exuWriteBack.gpr.addr
   idu.io.wrBackInfo.exu := exu.io.fwd
   idu.io.lateLoadProducer := exu.io.lateLoadProducer
   idu.io.wrBackInfo.lsu := lsuFwdInfo
   idu.io.wrBackInfo.wbu := ExtractFwdInfoFromWrBack(wbu.io.in, wbu.io.memResp)
   exu.io.previousStageFwd := lsuFastFwdInfo
-  exu.io.previousLsuFwd := ExtractFwdInfoFromWrBack(wbu.io.in, wbu.io.memResp)
-  idu.io.dcacheFwd := dcacheFwdInfo
+  exu.io.previousLsuFastData := wbu.io.in.bits.fastGprData
+  exu.io.previousLsuDeferredData := wbu.io.in.bits.gpr.data
 
   val lateLoadLSUWidthSupported =
     lsu.io.in.bits.func3t === "b000".U || lsu.io.in.bits.func3t === "b001".U ||

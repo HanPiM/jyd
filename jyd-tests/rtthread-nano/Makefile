@@ -12,6 +12,7 @@ COREMARK_DATA_SIZE ?= 2000
 COREMARK_OPT ?= -Os
 COREMARK_SUPPORT_OPT ?= -Os
 COREMARK_ENABLE ?= 1
+CAMERA_DEMO ?= 0
 # B-extension subset used ONLY for the embedded CoreMark benchmark sources
 # (same set as the official CoreMark image). The RT-Thread kernel and the AM
 # port stay on the base ISA.
@@ -27,6 +28,11 @@ NANO_REPO := https://github.com/RT-Thread/rtthread-nano.git
 NANO_COMMIT := $(shell tr -d '[:space:]' < $(ROOT_DIR)/SOURCE_COMMIT)
 NANO_CHECKOUT := $(ROOT_DIR)/upstream
 NANO_DIR := $(NANO_CHECKOUT)/rt-thread
+
+ifeq ($(CAMERA_DEMO),1)
+override COREMARK_ENABLE := 0
+JYD_LINKER_SCRIPT := $(JYD_HOME)/abstract-machine/am/src/riscv/jyd/linker_ax7035b_camera.ld
+endif
 
 ifeq ($(COREMARK_ENABLE),1)
 COREMARK_BENCH_SRCS := $(addprefix $(COREMARK_BENCH_DIR)/, \

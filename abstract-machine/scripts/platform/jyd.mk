@@ -3,6 +3,7 @@ AM_SRCS := riscv/jyd/start.S \
            riscv/jyd/ioe.c \
            riscv/jyd/timer.c \
            riscv/jyd/aht10.c \
+           riscv/jyd/camera.c \
            riscv/npc/cte.c \
            riscv/npc/trap.S 
            # riscv/npc/input.c \
@@ -12,7 +13,8 @@ AM_SRCS := riscv/jyd/start.S \
 CFLAGS += -g
 
 CFLAGS    += -fdata-sections -ffunction-sections
-LDSCRIPTS += $(JYD_AM_HOME)/am/src/riscv/jyd/linker.ld
+JYD_LINKER_SCRIPT ?= $(JYD_AM_HOME)/am/src/riscv/jyd/linker.ld
+LDSCRIPTS += $(JYD_LINKER_SCRIPT)
 
 MAINARGS_MAX_LEN = 64
 MAINARGS_PLACEHOLDER = the_insert-arg_rule_in_Makefile_will_insert_mainargs_here

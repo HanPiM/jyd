@@ -199,14 +199,13 @@ class DecodedInstInfo(implicit p : CPUParameters) extends InstMetaInfo with HasR
   val lateLoadRs1 = Bool()
   val lateLoadRs2 = Bool()
 
-  // Adjacent fast-result tokens are local bit masks for their physical
-  // consumer. Splitting the selector at the ID/EX register bounds each token
-  // bit's fanout while all other consumers capture an LSU lane into reg1/reg2.
-  val fastAluRs1    = Types.UWord
-  val fastAluRs2    = Types.UWord
-  val fastBranchRs1 = Types.UWord
-  val fastBranchRs2 = Types.UWord
-  val fastStoreRs2  = Types.UWord
+  // Adjacent fast-result tokens are local to their physical consumer. All
+  // other consumers capture an LSU lane into reg1/reg2 before entering EXU.
+  val fastAluRs1    = Bool()
+  val fastAluRs2    = Bool()
+  val fastBranchRs1 = Bool()
+  val fastBranchRs2 = Bool()
+  val fastStoreRs2  = Bool()
 
   val resultKind = ResultKind()
 

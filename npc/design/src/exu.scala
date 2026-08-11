@@ -240,8 +240,11 @@ class EXU(
   val reg_v2       = postRegisterRegV2
   val xlrevActiveCurrent = Mux(isXlrevLoop, xlrevResult, reg_v1)
 
-  val xstateCounters = RegInit(VecInit(Seq.fill(8)(0.U(32.W))))
-  val xstateFinalCounters = RegInit(VecInit(Seq.fill(8)(0.U(32.W))))
+  // A CoreMark state pass consumes at most DATA_SIZE bytes, so 16-bit
+  // counters retain the full architectural result while avoiding sixteen
+  // unnecessary 32-bit incrementers in the timing-sensitive EXU.
+  val xstateCounters = RegInit(VecInit(Seq.fill(8)(0.U(16.W))))
+  val xstateFinalCounters = RegInit(VecInit(Seq.fill(8)(0.U(16.W))))
   val xstatePendingMask = RegInit(0.U(8.W))
   object XstateWordState extends ChiselEnum {
     val idle, request, response, processLow, processHigh, commit, done = Value

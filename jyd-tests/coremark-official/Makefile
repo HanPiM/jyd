@@ -120,11 +120,7 @@ $(COREMARK_FLAGS_HEADER): FORCE accel/gen_flags_header.py
 		'$(COREMARK_OPT)' $(foreach flag,$(COREMARK_REPORT_COMMON_FLAGS),'$(flag)') \
 		'-fplugin=$(notdir $(COREMARK_ACCEL_PLUGIN))' \
 		'-fplugin-arg-xaccel_plugin-accels=$(COREMARK_PLUGIN_ACCELS)' \
-		'-fplugin-arg-xaccel_plugin-report=$(if $(filter 1,$(PSEUDO_FLOAT)),fp12,none)' \
-		'-include accel/xaccel_wrappers.c' \
-		'-include accel/force_o3.h' \
-		$(if $(filter xcrcu8,$(COREMARK_XEXT_WORDS)),'-include accel/xcrc_hw.h') \
-		$(if $(filter 1,$(PSEUDO_FLOAT)),'-include accel/float_dump.h')
+		'-fplugin-arg-xaccel_plugin-report=$(if $(filter 1,$(PSEUDO_FLOAT)),fp12,none)'
 
 ifeq ($(ENABLE_LTO),1)
 CFLAGS += -flto

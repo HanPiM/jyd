@@ -243,7 +243,7 @@ class EXU(
   // A CoreMark state pass consumes at most DATA_SIZE bytes, so 16-bit
   // counters retain the full architectural result while avoiding sixteen
   // unnecessary 32-bit incrementers in the timing-sensitive EXU.
-  val xstateCounters = RegInit(VecInit(Seq.fill(8)(0.U(16.W))))
+  val xstateCounters = RegInit(VecInit(Seq.fill(8)(0.U(12.W))))
   val xstateFinalCounters = RegInit(VecInit(Seq.fill(8)(0.U(16.W))))
   val xstatePendingMask = RegInit(0.U(8.W))
   object XstateWordState extends ChiselEnum {

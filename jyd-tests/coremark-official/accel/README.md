@@ -22,9 +22,9 @@ per token. For example:
 
 ```sh
 make ARCH=riscv32-nemu ITERATIONS=10000 \
-  COREMARK_XEXTS=_xbmul_xcrcu8_xlrev_xmsum_xstate image
+  COREMARK_XEXTS=_xbmul_xcrcu8_xlrev2_xmsum_xstate image
 make ARCH=riscv32-nemu ITERATIONS=10000 \
-  COREMARK_XEXTS=_xbmul_xcrcu8_xlrev_xmsum_xstate audit-accel
+  COREMARK_XEXTS=_xbmul_xcrcu8_xlrev2_xmsum_xstate audit-accel
 ```
 
 The GCC plugin headers require `gmp.h`.  Override

@@ -404,11 +404,11 @@ class IDU(
 
   bypassMux.io.allowAdjacentFastRs1 := isFastIntegerArithmetic || isTypBranch
   bypassMux.io.allowAdjacentFastRs2 := isFastIntegerArithmetic || isTypBranch || isTypStore
-  res.fastAluRs1 := bypassMux.io.adjacentFastRs1 && isFastIntegerArithmetic
-  res.fastAluRs2 := bypassMux.io.adjacentFastRs2 && isFastIntegerArithmetic
-  res.fastBranchRs1 := bypassMux.io.adjacentFastRs1 && isTypBranch
-  res.fastBranchRs2 := bypassMux.io.adjacentFastRs2 && isTypBranch
-  res.fastStoreRs2 := bypassMux.io.adjacentFastRs2 && isTypStore
+  val fastAluRs1Token = bypassMux.io.adjacentFastRs1 && isFastIntegerArithmetic
+  val fastAluRs2Token = bypassMux.io.adjacentFastRs2 && isFastIntegerArithmetic
+  val fastBranchRs1Token = bypassMux.io.adjacentFastRs1 && isTypBranch
+  val fastBranchRs2Token = bypassMux.io.adjacentFastRs2 && isTypBranch
+  val fastStoreRs2Token = bypassMux.io.adjacentFastRs2 && isTypStore
   res.resultKind := Mux(
     isTypLoad,
     ResultKind.load,
@@ -423,6 +423,11 @@ class IDU(
   // payload avoids a wide IDU payload mux/self-loop on the critical path.
   res.reg1                := bypassMux.io.outData1
   res.reg2                := Mux(isFmtI, immI, bypassMux.io.outData2) // For exu ALU src2
+  res.fastAluRs1          := Fill(8, fastAluRs1Token) ^ res.reg1(7, 0)
+  res.fastAluRs2          := Fill(8, fastAluRs2Token) ^ res.reg2(7, 0)
+  res.fastBranchRs1       := Fill(8, fastBranchRs1Token) ^ res.reg1(7, 0)
+  res.fastBranchRs2       := Fill(8, fastBranchRs2Token) ^ res.reg2(7, 0)
+  res.fastStoreRs2        := Fill(8, fastStoreRs2Token) ^ res.reg2(7, 0)
   res.csrReadData         := io.csrRead.data
 
   val addressExuConflict =
@@ -460,7 +465,8 @@ class IDU(
   res.reg1AddImm := addAddrImm(addressBase)
 
   when(io.in.valid && needReg1AddImm) {
-    assert(!res.fastAluRs1 && !res.fastBranchRs1, "address instructions must not carry a generic rs1 fast token")
+    assert(!fastAluRs1Token && !fastBranchRs1Token,
+      "address instructions must not carry a generic rs1 fast token")
   }
 
   res.isECall := inst === "h73".U

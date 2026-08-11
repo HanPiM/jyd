@@ -210,11 +210,22 @@ class EXU(
 
   val baseRegV1 = dinst.info.reg1
   val baseRegV2 = dinst.info.reg2
-  val fastRegV1 = Mux(dinst.info.fastAluRs1, io.previousStageFwd.data, baseRegV1)
-  val fastRegV2 = Mux(dinst.info.fastAluRs2, io.previousStageFwd.data, baseRegV2)
-  val branchRegV1 = Mux(dinst.info.fastBranchRs1, io.previousStageFwd.data, baseRegV1)
-  val branchRegV2 = Mux(dinst.info.fastBranchRs2, io.previousStageFwd.data, baseRegV2)
-  val storeRegV2 = Mux(dinst.info.fastStoreRs2, io.previousStageFwd.data, baseRegV2)
+  def decodeAdjacentFastGroups(encoded: UInt, base: UInt): UInt = encoded ^ base(7, 0)
+  def expandAdjacentFastGroups(groups: UInt): UInt = Cat((7 to 0 by -1).map(i => Fill(4, groups(i))))
+  def selectAdjacentFast(groups: UInt, base: UInt): UInt = {
+    val mask = expandAdjacentFastGroups(groups)
+    (io.previousStageFwd.data & mask) | (base & ~mask)
+  }
+  val fastAluRs1Groups = decodeAdjacentFastGroups(dinst.info.fastAluRs1, baseRegV1)
+  val fastAluRs2Groups = decodeAdjacentFastGroups(dinst.info.fastAluRs2, baseRegV2)
+  val fastBranchRs1Groups = decodeAdjacentFastGroups(dinst.info.fastBranchRs1, baseRegV1)
+  val fastBranchRs2Groups = decodeAdjacentFastGroups(dinst.info.fastBranchRs2, baseRegV2)
+  val fastStoreRs2Groups = decodeAdjacentFastGroups(dinst.info.fastStoreRs2, baseRegV2)
+  val fastRegV1 = selectAdjacentFast(fastAluRs1Groups, baseRegV1)
+  val fastRegV2 = selectAdjacentFast(fastAluRs2Groups, baseRegV2)
+  val branchRegV1 = selectAdjacentFast(fastBranchRs1Groups, baseRegV1)
+  val branchRegV2 = selectAdjacentFast(fastBranchRs2Groups, baseRegV2)
+  val storeRegV2 = selectAdjacentFast(fastStoreRs2Groups, baseRegV2)
   // Preserve each adjacent-result selector as a local 2:1 boundary. Without
   // these nets Vivado can absorb the selector into every downstream ALU or
   // comparator LUT, turning the one-bit token into a high-fanout control net.
@@ -517,17 +528,17 @@ class EXU(
   alu.io.in.valid :=
     io.in.valid && isTypArithmetic && (resultIsLong || (resultIsAccelerator && simpleAccelerator))
 
-  when(io.in.valid && (dinst.info.fastAluRs1 || dinst.info.fastAluRs2)) {
+  when(io.in.valid && (fastAluRs1Groups.orR || fastAluRs2Groups.orR)) {
     assert(resultIsFast && isTypArithmetic, "fast ALU token used by a non-fast consumer")
     assert(io.previousStageFwd.dataVaild && io.previousStageFwd.kind === ResultKind.fastInt,
       "deferred result entered the fast integer cluster")
   }
-  when(io.in.valid && (dinst.info.fastBranchRs1 || dinst.info.fastBranchRs2)) {
+  when(io.in.valid && (fastBranchRs1Groups.orR || fastBranchRs2Groups.orR)) {
     assert(isTypBranch, "fast branch token used by a non-branch consumer")
     assert(io.previousStageFwd.dataVaild && io.previousStageFwd.kind === ResultKind.fastInt,
       "deferred result entered the branch fast path")
   }
-  when(io.in.valid && dinst.info.fastStoreRs2) {
+  when(io.in.valid && fastStoreRs2Groups.orR) {
     assert(isTypStore, "fast store-data token used by a non-store consumer")
     assert(io.previousStageFwd.dataVaild && io.previousStageFwd.kind === ResultKind.fastInt,
       "deferred result entered the store-data fast path")

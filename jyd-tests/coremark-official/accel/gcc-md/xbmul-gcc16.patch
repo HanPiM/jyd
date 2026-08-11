@@ -1,0 +1,71 @@
+diff --git a/gcc/config/riscv/peephole.md b/gcc/config/riscv/peephole.md
+index e49bc0426..9b3becddb 100644
+--- a/gcc/config/riscv/peephole.md
++++ b/gcc/config/riscv/peephole.md
+@@ -19,6 +19,37 @@
+ ;; <http://www.gnu.org/licenses/>.
+ 
+ ;; Simplify (unsigned long)(unsigned int)a << const
++(define_insn "packed_field_mul"
++  [(set (match_operand:SI 0 "register_operand" "=r")
++	(unspec:SI [(match_operand:SI 1 "register_operand" "r")]
++		   UNSPEC_XBMUL))]
++  "TARGET_XBMUL && !TARGET_64BIT"
++  ".insn r 0x0b, 5, 0, %0, %1, x0"
++  [(set_attr "type" "imul")
++   (set_attr "mode" "SI")])
++
++(define_code_iterator packed_field_shiftrt [ashiftrt lshiftrt])
++
++(define_peephole2
++  [(set (match_operand:SI 0 "register_operand")
++	(packed_field_shiftrt:SI (match_operand:SI 1 "register_operand")
++		      (const_int 2)))
++   (set (match_operand:SI 3 "register_operand")
++	(packed_field_shiftrt:SI (match_dup 1) (const_int 5)))
++   (set (match_operand:SI 2 "register_operand")
++	(and:SI (match_dup 0) (const_int 15)))
++   (set (match_operand:SI 4 "register_operand")
++	(and:SI (match_dup 3) (const_int 127)))
++   (set (match_operand:SI 5 "register_operand")
++	(mult:SI (match_dup 2) (match_dup 4)))]
++  "TARGET_XBMUL && !TARGET_64BIT
++   && (rtx_equal_p (operands[2], operands[5])
++       || peep2_reg_dead_p (5, operands[2]))
++   && (rtx_equal_p (operands[4], operands[5])
++       || peep2_reg_dead_p (5, operands[4]))"
++  [(set (match_dup 5)
++	(unspec:SI [(match_dup 1)] UNSPEC_XBMUL))])
++
+ (define_peephole2
+   [(set (match_operand:DI 0 "register_operand")
+ 	(ashift:DI (match_operand:DI 1 "register_operand")
+diff --git a/gcc/config/riscv/riscv.md b/gcc/config/riscv/riscv.md
+index d2883ef9f..885f777d1 100644
+--- a/gcc/config/riscv/riscv.md
++++ b/gcc/config/riscv/riscv.md
+@@ -100,6 +100,9 @@
+   UNSPEC_CRC
+   UNSPEC_CRC_REV
+ 
++  ;; JYD packed bit-field multiply.
++  UNSPEC_XBMUL
++
+   ;; Stack Smash Protector
+   UNSPEC_SSP_SET
+   UNSPEC_SSP_TEST
+diff --git a/gcc/config/riscv/riscv.opt b/gcc/config/riscv/riscv.opt
+index 2c26ee996..7943180d9 100644
+--- a/gcc/config/riscv/riscv.opt
++++ b/gcc/config/riscv/riscv.opt
+@@ -81,6 +81,10 @@ mdiv
+ Target Mask(DIV)
+ Use hardware instructions for integer division.
+ 
++mxbmul
++Target Mask(XBMUL)
++Recognize packed bit-field multiply expressions and use the custom xbmul instruction.
++
+ march=
+ Target RejectNegative Joined Negative(march=) Var(riscv_arch_string) Save
+ -march=	Generate code for given RISC-V ISA (e.g. RV64IM).  ISA strings must be

@@ -29,10 +29,25 @@ object ExtractFwdInfoFromLSU {
     out.addr      := wrBack.gpr.addr
     out.enWr      := wrBack.gpr.en && info.valid
     out.dataVaild := !info.bits.isLoad
-    out.data      := wrBack.gpr.data
+    out.data      := SelectGprData(wrBack)
 
     out.enWrCSR := wrBack.csr.en && info.valid
 
+    out
+  }
+}
+
+object ExtractFastFwdInfoFromLSU {
+  def apply(info: DecoupledIO[LSUInput])(
+    implicit p: CPUParameters
+  ): WrBackForwardInfo = {
+    val wrBack = info.bits.exuWriteBack
+    val out = Wire(new WrBackForwardInfo)
+    out.addr      := wrBack.gpr.addr
+    out.enWr      := wrBack.gpr.en && info.valid && wrBack.useFastGprData
+    out.dataVaild := info.valid && wrBack.useFastGprData
+    out.data      := wrBack.fastGprData
+    out.enWrCSR   := false.B
     out
   }
 }
@@ -113,6 +128,8 @@ class LSU(
   outWriteBackInfo.gpr.addr      := activeReq.exuWriteBack.gpr.addr
   outWriteBackInfo.gpr.en        := activeReq.exuWriteBack.gpr.en
   outWriteBackInfo.gpr.data      := activeReq.exuWriteBack.gpr.data
+  outWriteBackInfo.fastGprData   := activeReq.exuWriteBack.fastGprData
+  outWriteBackInfo.useFastGprData := activeReq.exuWriteBack.useFastGprData
   outWriteBackInfo.isLoad        := activeReq.isLoad
   outWriteBackInfo.isMemOp       := isMemOp
   outWriteBackInfo.lsuResult     := io.dcacheReadData

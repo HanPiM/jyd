@@ -159,7 +159,8 @@ object CacheAwareByPassMux {
     allowCache: Bool,
     lateLoadProducer: LateLoadProducerInfo,
     allowLateLoad: Bool,
-    allowPrevExuFwd: Bool
+    allowPrevExuFwd: Bool,
+    exuDirectFwd: WrBackForwardInfo
   ): (Bool, UInt, Bool, Bool) = {
     require(wrBacks.length == 3)
     val exuConflict = SingleByPassMux.conflict(rs, wrBacks(0).addr, wrBacks(0).enWr)
@@ -170,11 +171,12 @@ object CacheAwareByPassMux {
     // The dependent ADD/ADDI is held in EXU if the registered LSU source later
     // reports a miss.
     val lateLoadSelect = allowLateLoad && exuConflict && lateLoadProducer.valid
+    val directSelect = exuConflict && exuDirectFwd.dataVaild
     val prevExuFwdSelect = allowPrevExuFwd && exuConflict && wrBacks(0).dataVaild
 
     val needStall = Mux(
       exuConflict,
-      !lateLoadSelect && !prevExuFwdSelect,
+      !lateLoadSelect && !directSelect && !prevExuFwdSelect,
       Mux(lsuConflict, !wrBacks(1).dataVaild && !cacheSelect, wbuConflict && !wrBacks(2).dataVaild)
     )
 
@@ -183,9 +185,10 @@ object CacheAwareByPassMux {
     // existing EXU/LSU register; unsafe consumers wait for ordinary LSU
     // forwarding on the next cycle.
     val outData = Mux(
-      cacheSelect,
-      dcacheFwd.data,
-      Mux(lsuConflict, wrBacks(1).data, Mux(wbuConflict, wrBacks(2).data, regData))
+      directSelect,
+      exuDirectFwd.data,
+      Mux(cacheSelect, dcacheFwd.data,
+        Mux(lsuConflict, wrBacks(1).data, Mux(wbuConflict, wrBacks(2).data, regData)))
     )
     (needStall, outData, lateLoadSelect, prevExuFwdSelect)
   }
@@ -207,6 +210,7 @@ class ByPassMux(
     val regData2 = Input(Types.UWord)
 
     val wrBackInfo = Input(new WrBackInfoGroup)
+    val exuDirectFwd = Input(new WrBackForwardInfo)
     val dcacheFwd  = Input(new DCacheForwardInfo)
     val lateLoadProducer = Input(new LateLoadProducerInfo)
     val allowCacheRs1 = Input(Bool())
@@ -235,7 +239,8 @@ class ByPassMux(
     io.allowCacheRs1,
     io.lateLoadProducer,
     io.allowLateLoadRs1,
-    io.allowPrevExuFwdRs1
+    io.allowPrevExuFwdRs1,
+    io.exuDirectFwd
   )
   val (needStall2, outData2, lateLoadRs2, prevExuFwdRs2) = CacheAwareByPassMux(
     io.rs2,
@@ -245,7 +250,8 @@ class ByPassMux(
     true.B,
     io.lateLoadProducer,
     io.allowLateLoadRs2,
-    io.allowPrevExuFwdRs2
+    io.allowPrevExuFwdRs2,
+    io.exuDirectFwd
   )
 
   val needStallCSR = CSRByPassNeedStall(csrWrBacks)
@@ -274,6 +280,7 @@ class IDU(
     val pipelineFlush = Input(Bool())
 
     val wrBackInfo           = Input(new WrBackInfoGroup)
+    val exuDirectFwd         = Input(new WrBackForwardInfo)
     val dcacheFwd            = Input(new DCacheForwardInfo)
     val lateLoadProducer     = Input(new LateLoadProducerInfo)
     val exuAddFwd            = Input(new AddForwardInfo)
@@ -364,6 +371,7 @@ class IDU(
   bypassMux.io.regData1   := io.rvec.data(0)
   bypassMux.io.regData2   := io.rvec.data(1)
   bypassMux.io.wrBackInfo := io.wrBackInfo
+  bypassMux.io.exuDirectFwd := io.exuDirectFwd
   val needReg1AddImm = isTypLoad || isTypStore || isTypJALR
   bypassMux.io.dcacheFwd := io.dcacheFwd
   bypassMux.io.lateLoadProducer := io.lateLoadProducer

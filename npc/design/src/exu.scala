@@ -79,6 +79,7 @@ class EXU(
     val nxtPC = Output(Types.UWord)
 
     val fwd = Output(new WrBackForwardInfo)
+    val directFwd = Output(new WrBackForwardInfo)
     val addFwd = Output(new AddForwardInfo)
     val lateLoadProducer = Output(new LateLoadProducerInfo)
     val lateLoadLSU = Input(new LateLoadSourceInfo)
@@ -588,6 +589,10 @@ class EXU(
   writeBackInfo.gpr.en   := dinst.info.rdWrEn
   writeBackInfo.gpr.addr := dinst.info.rd
 
+  val isMExt = !isFmtI && func7t === "b0000001".U
+  val useSingleCycleForward =
+    isTypArithmetic && !isMExt && !isBExt && !isXlrev && !isXmsum && !isNumericDfaStep && !hasLateLoadOperand
+
   // writeBackInfo.gpr.data := Mux1H(
   //   Seq(
   //     isTypArithmetic         -> aluOut,
@@ -616,6 +621,13 @@ class EXU(
   )
   writeBackInfo.gpr.data := Mux(isNumericDfa, xdfaWordResult,
     Mux(isXlrev, xlrevResult, Mux(isXmsum, xmsumResult, normalWriteBackData)))
+  writeBackInfo.fastGprData := Mux(isNumericDfa, xdfaWordResult,
+    Mux(
+      isLateLoadBit,
+      lateBitResult,
+      Mux(dinst.info.aluUseSpecialResult, alu.io.singleCycleResult, alu.io.baseResult)
+    ))
+  writeBackInfo.useFastGprData := useSingleCycleForward || isLateLoadBit
 
   // Fill in LSU stage
   writeBackInfo.isLoad        := false.B
@@ -640,9 +652,6 @@ class EXU(
   // result mux.  A multi-cycle producer still advertises its destination while it is
   // in EXU, but its data remains unavailable to IDU; a dependent consumer
   // waits one cycle and receives the registered result from LSU instead.
-  val isMExt = !isFmtI && func7t === "b0000001".U
-  val useSingleCycleForward =
-    isTypArithmetic && !isMExt && !isBExt && !isXlrev && !isXmsum && !isNumericDfaStep && !hasLateLoadOperand
   val useLateBitForward = (isLateLoadAndi1 || isLateLoadSrli1) && exuResultValid && lateDataReadyFromLSU
   val regularExuForwardData = Mux(
     useLateBitForward,
@@ -654,9 +663,14 @@ class EXU(
     )
   )
   val exuForwardData = Mux(isNumericDfa, xdfaWordResult, regularExuForwardData)
-  val exuForwardDataValid =
-    (!isMemOP && !hasLateLoadOperand && (!isTypArithmetic || useSingleCycleForward)) || useLateBitForward
+  // Only producers carried by the dedicated fast lane may arm the adjacent
+  // EXU bypass token. Other single-cycle results wait one cycle and use the
+  // ordinary LSU-to-IDU bypass, keeping them out of the ALU recurrence.
+  val exuForwardDataValid = useSingleCycleForward || useLateBitForward
   io.fwd := WrBackForwardInfo(io.in.valid, dinst, exuForwardDataValid, exuForwardData, csrWrEnable)
+  val directForwardDataValid = !isMemOP && !hasLateLoadOperand && !isTypArithmetic
+  io.directFwd :=
+    WrBackForwardInfo(io.in.valid, dinst, directForwardDataValid, exuForwardData, csrWrEnable)
   io.addFwd.valid :=
     io.in.valid && dinst.info.rdWrEn && dinst.info.rd =/= 0.U && isAdd && !hasLateLoadOperand
   io.addFwd.data := alu.io.addResult(21, 0)

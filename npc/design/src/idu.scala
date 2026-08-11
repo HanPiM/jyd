@@ -430,7 +430,8 @@ class IDU(
   res.xlrevSingle := isCoremarkXlrev && arithmeticFunc3 === 6.U
   res.xlrevChain := isCoremarkXlrev && arithmeticFunc3 === 6.U && inst(31, 25) === 1.U
   res.xlrevLoop := isCoremarkXlrev && isXlrevLoopEncoding
-  res.xstateValid := false.B
+  // Legacy custom-0 xstate was a whole-parser state machine and is intentionally unsupported.
+  // Use the custom-2 xstate4 word-fed operations decoded by xstateWordValid below.
   res.xmsumValid := isCoremarkXmsum
   res.xstateWordValid := isCoremarkXstateWord
   res.aluIsSub  := !isFmtI && inst(30)

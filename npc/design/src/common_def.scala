@@ -213,13 +213,11 @@ class DecodedInstInfo(implicit p : CPUParameters) extends InstMetaInfo with HasR
   val xlrevChain = Bool()
   val xlrevLoop = Bool()
 
-  // CoreMark state parser is a blocking multi-cycle custom operation.
-  val xstateValid = Bool()
-
   // CoreMark matrix reduction is a blocking multi-cycle custom operation.
   val xmsumValid = Bool()
 
-  // CoreMark word-fed parser and implicit counter operations are custom-2.
+  // CoreMark xstate4 word-fed parser and implicit counter operations are custom-2.
+  // Do not reintroduce the removed legacy whole-parser xstate operation.
   val xstateWordValid = Bool()
 
   // Predecode the ALU add/sub carry polarity before the IDU/EXU register so

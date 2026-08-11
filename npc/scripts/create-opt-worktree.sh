@@ -207,6 +207,20 @@ if [[ -d "$VIVADO_REF_IP" && -d "$VIVADO_WT_IP" ]]; then
     done < <(find . -type f -name '*.xci' -print0 | sort -z)
   ) >"$WT_XCI_MANIFEST"
   if cmp -s "$REF_XCI_MANIFEST" "$WT_XCI_MANIFEST"; then
+    # Vivado emits some synthesis products beside each XCI instead of under
+    # digital_twin.gen. Copy those ignored files without ever replacing the
+    # target commit's tracked IP configuration.
+    while IFS= read -r -d '' generated_dir; do
+      relative_dir="${generated_dir#"$VIVADO_REF_IP"/}"
+      [[ "$generated_dir" == "$VIVADO_REF_IP" ]] && relative_dir=""
+      mkdir -p "$VIVADO_WT_IP/$relative_dir"
+    done < <(find "$VIVADO_REF_IP" -type d -print0)
+    while IFS= read -r -d '' generated_file; do
+      relative_file="${generated_file#"$VIVADO_REF_IP"/}"
+      cp -a "$generated_file" "$VIVADO_WT_IP/$relative_file"
+    done < <(find "$VIVADO_REF_IP" \( -type f -o -type l \) ! -name '*.xci' -print0)
+    echo "   copied Vivado IP in-tree output products"
+
     for cache_dir in digital_twin.gen digital_twin.cache digital_twin.ip_user_files; do
       if [[ -d "$VIVADO_REF_PROJECT/$cache_dir" ]]; then
         cp -a --reflink=auto "$VIVADO_REF_PROJECT/$cache_dir" "$VIVADO_WT_PROJECT/"

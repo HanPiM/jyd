@@ -215,6 +215,14 @@ class EXU(
   val branchRegV1 = Mux(dinst.info.fastBranchRs1, io.previousStageFwd.data, baseRegV1)
   val branchRegV2 = Mux(dinst.info.fastBranchRs2, io.previousStageFwd.data, baseRegV2)
   val storeRegV2 = Mux(dinst.info.fastStoreRs2, io.previousStageFwd.data, baseRegV2)
+  // Preserve each adjacent-result selector as a local 2:1 boundary. Without
+  // these nets Vivado can absorb the selector into every downstream ALU or
+  // comparator LUT, turning the one-bit token into a high-fanout control net.
+  dontTouch(fastRegV1)
+  dontTouch(fastRegV2)
+  dontTouch(branchRegV1)
+  dontTouch(branchRegV2)
+  dontTouch(storeRegV2)
 
   val (lateRs1Ready, lateRegV1) =
     resolveLateLoadOperand(dinst.info.lateLoadRs1, branchRegV1)
@@ -744,13 +752,18 @@ class EXU(
   val xmsumRequest = xmsumState === XmsumState.request
   val xdfaWordRequest = xdfaWordState === NumericDfaState.request
   val normalMemReq = Wire(new MemReq)
-  normalMemReq.addr  := Mux(xdfaWordRequest, xdfaWordAddress & ~3.U(32.W),
-    Mux(xlrevRequest, xlrevCurrent, Mux(xmsumRequest, xmsumAddress, reg1AddImm)))
-  normalMemReq.size  := Mux(xdfaWordRequest || xlrevRequest || xmsumRequest, 2.U, func3t(1, 0))
-  normalMemReq.wen   := Mux(xdfaWordRequest, false.B, Mux(xlrevRequest, xlrevStoreRequest, !xmsumRequest && isTypStore))
+  // The accelerator kind is held in ID/EX for the instruction's entire EXU
+  // residence. Use that registered identity to select the request payload;
+  // state-machine request bits only qualify valid. This keeps state decode out
+  // of the shared address/data network and does not change the handshake.
+  normalMemReq.addr  := Mux(isNumericDfaStep, xdfaWordAddress & ~3.U(32.W),
+    Mux(isXlrev, xlrevCurrent, Mux(isXmsum, xmsumAddress, reg1AddImm)))
+  normalMemReq.size  := Mux(isNumericDfaStep || isXlrev || isXmsum, 2.U, func3t(1, 0))
+  normalMemReq.wen   := Mux(isNumericDfaStep, false.B, Mux(isXlrev, xlrevStoreRequest, !isXmsum && isTypStore))
   normalMemReq.wdata := Mux(xlrevStoreRequest, xlrevPrevious,
-    Mux(xmsumRequest || xlrevLoadRequest, 0.U, memWData))
-  normalMemReq.wmask := Mux(xlrevStoreRequest, "b1111".U, Mux(xmsumRequest || xlrevLoadRequest, 0.U, memWMask))
+    Mux(isXmsum || (isXlrev && !xlrevStoreRequest), 0.U, memWData))
+  normalMemReq.wmask := Mux(xlrevStoreRequest, "b1111".U,
+    Mux(isXmsum || (isXlrev && !xlrevStoreRequest), 0.U, memWMask))
   io.memReq.valid := xdfaWordRequest || xlrevRequest || xmsumRequest || (needMemReq && io.in.valid && io.out.ready)
   io.memReq.bits := normalMemReq
 

@@ -277,9 +277,11 @@ class CPUCore(
     redirectTakenTarget
   )
 
+  // Sample the selected target every cycle so branch comparison cannot become
+  // the clock-enable for all target bits. Only valid/epoch are redirect-gated.
+  redirectPacketReg.target := TrimmedPC.trim(redirectTarget)
   when(redirectNow) {
     redirectPacketReg.valid := true.B
-    redirectPacketReg.target := TrimmedPC.trim(redirectTarget)
     redirectPacketReg.epoch := ~pipelineEpoch
     pipelineEpoch := ~pipelineEpoch
   }.elsewhen(redirectPendingFire) {

@@ -1,7 +1,7 @@
 package cpu
 
 import chisel3._
-import chisel3.util.{Cat, Decoupled, DecoupledIO, Enum, Fill, MuxLookup, PopCount, Valid}
+import chisel3.util.{Cat, Decoupled, DecoupledIO, Enum, Fill, Mux1H, MuxLookup, PopCount, Valid}
 
 import chisel3.experimental.dataview._
 
@@ -72,12 +72,12 @@ object ResultLaneSelect {
   // validity out of the address path; it is used only for the final write enable.
   def rd(wrBack: WriteBackInfo): UInt = wrBack.fastResult.rd
 
-  def nonLoadData(wrBack: WriteBackInfo): UInt = MuxLookup(wrBack.resultKind, wrBack.fastResult.data)(
+  def nonLoadData(wrBack: WriteBackInfo): UInt = Mux1H(
     Seq(
-      ResultKind.fastInt       -> wrBack.fastResult.data,
-      ResultKind.direct        -> wrBack.directResult.data,
-      ResultKind.longArithmetic -> wrBack.longResult.data,
-      ResultKind.accelerator   -> wrBack.acceleratorResult.data
+      wrBack.fastResult.valid -> wrBack.fastResult.data,
+      wrBack.directResult.valid -> wrBack.directResult.data,
+      wrBack.longResult.valid -> wrBack.longResult.data,
+      wrBack.acceleratorResult.valid -> wrBack.acceleratorResult.data
     )
   )
 }
@@ -170,7 +170,7 @@ class WBU(implicit p:CPUParameters) extends Module {
   val loadResult = ExtLoadData(io.memResp.bits, wbinfo.lsuAddrOffset, wbinfo.lsuFunc3t)
   val resultValid = ResultLaneSelect.anyValid(wbinfo)
   val selectedRd = ResultLaneSelect.rd(wbinfo)
-  val selectedData = Mux(wbinfo.resultKind === ResultKind.load, loadResult, ResultLaneSelect.nonLoadData(wbinfo))
+  val selectedData = Mux(wbinfo.loadResult.valid, loadResult, ResultLaneSelect.nonLoadData(wbinfo))
 
   io.in.ready := true.B
 

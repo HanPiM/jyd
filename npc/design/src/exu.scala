@@ -606,7 +606,6 @@ class EXU(
   // byte/half loads before this register lets synthesis map the replicated
   // sign bit onto slow synchronous-set pins; registered offset/width metadata
   // performs the extension in C1 instead.
-  lsuInfo.lateLoadData := io.dcache.lateReadData
   lsuInfo.dcacheStoreEpoch := io.dcache.storeEpoch
 
   val snpc = dinst.info.staticNextPCOrCSRTarget

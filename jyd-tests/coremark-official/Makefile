@@ -54,11 +54,10 @@ LIB_MAKE_ARGS_softfloat = \
 	SOFTFLOAT_MARCH=$(patsubst -march=%,%,$(filter -march=%,$(COMMON_CFLAGS))) \
 	SOFTFLOAT_MABI=$(patsubst -mabi=%,%,$(filter -mabi=%,$(COMMON_CFLAGS)))
 
-# Optimize the image for IROM size by default.  The benchmark translation
-# units (core_list_join/core_main/core_matrix/core_state/core_util) override
-# this with COREMARK_OPT (default -O3); setup, reporting and formatting stay
-# optimized for size.  Set COREMARK_OPT=-Os to reproduce the historical
-# all--Os image used by the 11.374198420 s board baseline.
+# Keep COREMARK_OPT at -Os for the formal image: the hot benchmark translation
+# units below still receive force_o3.h, while core_main stays smaller and saves
+# roughly 54 million instructions on the xlrev2+xstate4 workload.  Explicitly
+# pass COREMARK_OPT=-O3 only for comparison experiments.
 CFLAGS += -Os
 CFLAGS += -DITERATIONS=$(ITERATIONS) -DTOTAL_DATA_SIZE=$(TOTAL_DATA_SIZE)
 CFLAGS += -DCOREMARK_PSEUDO_FLOAT=$(PSEUDO_FLOAT)

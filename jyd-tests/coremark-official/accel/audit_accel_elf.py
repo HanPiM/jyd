@@ -17,6 +17,7 @@ ENCODINGS = {
     "xstatec": 0x0000005B,
     "xstate2": 0x0000405B,
     "xstate4": 0x0000505B,
+    "xstate4c": 0x0200505B,
 }
 MASK = 0xFE00707F
 
@@ -82,6 +83,21 @@ def main():
         if commit_count == 0:
             raise SystemExit("xstate word image has no counter-mask commit instruction")
 
+    if "xstate4c" in counts:
+        final_read_count = 0
+        for line in disassembly.splitlines():
+            fields = line.split()
+            if len(fields) < 2 or len(fields[1]) != 8:
+                continue
+            try:
+                instruction = int(fields[1], 16)
+            except ValueError:
+                continue
+            if instruction & MASK == 0x0200205B:
+                final_read_count += 1
+        if final_read_count == 0:
+            raise SystemExit("xstate4c image has no final-counter read instruction")
+
     missing = [name for name, count in counts.items() if count == 0]
     if missing:
         raise SystemExit("enabled instructions absent from final ELF: " + ", ".join(missing))
@@ -92,6 +108,8 @@ def main():
         print(f"{name}: {count} static instruction site(s)")
     if "xstate2" in counts or "xstate4" in counts:
         print(f"xstate word commit: {commit_count} static instruction site(s)")
+    if "xstate4c" in counts:
+        print(f"xstate4c final read: {final_read_count} static instruction site(s)")
 
 
 if __name__ == "__main__":

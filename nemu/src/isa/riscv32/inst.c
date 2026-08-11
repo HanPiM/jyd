@@ -76,6 +76,8 @@ static vaddr_t coremark_xlrev1_previous;
 #define MATCH_COREMARK_XSTATEC_COMMIT 0x0000305b
 #define MATCH_COREMARK_XSTATE2_STEP 0x0000405b
 #define MATCH_COREMARK_XSTATE4_STEP 0x0000505b
+#define MATCH_COREMARK_XSTATE4C_FINAL_READ 0x0200205b
+#define MATCH_COREMARK_XSTATE4C_STEP 0x0200505b
 #define MASK_COREMARK_XSTATEC       0xfe00707f
 #define MASK_COREMARK_XSTATEC_INIT  MASK_COREMARK_XSTATEC
 #define MASK_COREMARK_XSTATEC_INC   MASK_COREMARK_XSTATEC
@@ -83,10 +85,14 @@ static vaddr_t coremark_xlrev1_previous;
 #define MASK_COREMARK_XSTATEC_COMMIT MASK_COREMARK_XSTATEC
 #define MASK_COREMARK_XSTATE2_STEP MASK_COREMARK_XSTATEC
 #define MASK_COREMARK_XSTATE4_STEP MASK_COREMARK_XSTATEC
+#define MASK_COREMARK_XSTATE4C_FINAL_READ MASK_COREMARK_XSTATEC
+#define MASK_COREMARK_XSTATE4C_STEP MASK_COREMARK_XSTATEC
 
 enum { XA_MAC16, XA_DOT16, XA_BMUL, XA_LREV, XA_STATE, XA_MSUM };
 
 static uint32_t coremark_state_counters[8];
+static uint32_t coremark_state_final_counters[8];
+static uint32_t coremark_state_pending_mask;
 
 static word_t coremark_xstate_word_step(word_t state, word_t symbols,
                                         unsigned width, bool format2) {
@@ -532,6 +538,8 @@ static int decode_exec(Decode *s) {
   }
   if (IS_INST(COREMARK_XSTATEC_INIT)) {
     memset(coremark_state_counters, 0, sizeof(coremark_state_counters));
+    memset(coremark_state_final_counters, 0, sizeof(coremark_state_final_counters));
+    coremark_state_pending_mask = 0;
     riscv_profile_record_xstatec(0);
     matched = true;
   }
@@ -569,6 +577,30 @@ static int decode_exec(Decode *s) {
     unsigned offset = address & 3u;
     word_t symbols = vaddr_read(address & ~3u, 4) >> (8 * offset);
     R(rd) = coremark_xstate_word_step(R(rs1), symbols, 4 - offset, false);
+    riscv_profile_record_xstatec(5);
+    matched = true;
+  }
+  if (IS_INST(COREMARK_XSTATE4C_FINAL_READ)) {
+    word_t state = R(rs1);
+    R(rd) = state < 8 ? coremark_state_final_counters[state] : 0;
+    riscv_profile_record_xstatec(2);
+    matched = true;
+  }
+  if (IS_INST(COREMARK_XSTATE4C_STEP)) {
+    vaddr_t address = R(rs2);
+    unsigned offset = address & 3u;
+    word_t symbols = vaddr_read(address & ~3u, 4) >> (8 * offset);
+    word_t result = coremark_xstate_word_step(R(rs1), symbols, 4 - offset, false);
+    word_t mask = result >> 7;
+    coremark_state_pending_mask |= mask;
+    if (result & (1u << 6)) {
+      for (unsigned state = 0; state < 8; state++)
+        if (coremark_state_pending_mask & (1u << state))
+          coremark_state_counters[state]++;
+      coremark_state_final_counters[result & 7u]++;
+      coremark_state_pending_mask = 0;
+    }
+    R(rd) = result;
     riscv_profile_record_xstatec(5);
     matched = true;
   }

@@ -16,7 +16,7 @@ COREMARK_XEXTS ?=
 empty :=
 space := $(empty) $(empty)
 comma := ,
-COREMARK_SUPPORTED_XEXTS := xbmul xcrcu8 xdot16 xlrev xlrev1 xlrev2 xmac16 xmsum xstate xstatec xstate2 xstate4
+COREMARK_SUPPORTED_XEXTS := xbmul xcrcu8 xdot16 xlrev xlrev1 xlrev2 xmac16 xmsum xstate xstatec xstate2 xstate4 xstate4c
 COREMARK_XEXT_WORDS := $(filter x%,$(subst _, ,$(strip $(COREMARK_XEXTS))))
 COREMARK_UNKNOWN_XEXTS := $(filter-out $(COREMARK_SUPPORTED_XEXTS),$(COREMARK_XEXT_WORDS))
 ifneq ($(strip $(COREMARK_UNKNOWN_XEXTS)),)

@@ -60,6 +60,24 @@ __cm_xstate4_step(ee_u32 state, const ee_u8 *str)
     return result;
 }
 
+static inline __attribute__((always_inline)) ee_u32
+__cm_xstate4c_step(ee_u32 state, const ee_u8 *str)
+{
+    ee_u32 result;
+    asm volatile(".insn r 0x5b, 5, 1, %0, %1, %2"
+                 : "=r"(result) : "r"(state), "r"(str) : "memory");
+    return result;
+}
+
+static inline __attribute__((always_inline)) ee_u32
+__cm_xstate4c_final_read(ee_u32 state)
+{
+    ee_u32 value;
+    asm volatile(".insn r 0x5b, 2, 1, %0, %1, x0"
+                 : "=r"(value) : "r"(state) : "memory");
+    return value;
+}
+
 static inline __attribute__((always_inline)) int
 __cm_isdigit(ee_u8 c)
 {
@@ -152,6 +170,21 @@ __cm_xstate4_transition(ee_u8 **instr)
     return state;
 }
 
+static inline __attribute__((always_inline)) void
+__cm_xstate4c_transition(ee_u8 **instr)
+{
+    ee_u8 *str = *instr;
+    ee_u32 state = __CM_STATE_START;
+
+    for (;;) {
+        ee_u32 result = __cm_xstate4c_step(state, str);
+        state = result & 7u;
+        str += (result >> 3) & 7u;
+        if (result & (1u << 6)) break;
+    }
+    *instr = str;
+}
+
 static inline __attribute__((always_inline)) ee_u16
 __cm_crc32_u8(ee_u32 data, ee_u16 crc)
 {
@@ -223,6 +256,26 @@ core_bench_state_xstate4(ee_u32 blksize, ee_u8 *memblock, ee_s16 seed1,
     while (p < memblock + blksize) { if (*p != ',') *p ^= (ee_u8)seed2; p += step; }
     for (ee_u32 i = 0; i < 8; i++) {
         crc = __cm_crc32_u8(final_counts[i], crc);
+        crc = __cm_crc32_u8(__cm_xstatec_read(i), crc);
+    }
+    return crc;
+}
+
+static __attribute__((noinline, used, optimize("O3"))) ee_u16
+core_bench_state_xstate4c(ee_u32 blksize, ee_u8 *memblock, ee_s16 seed1,
+                          ee_s16 seed2, ee_s16 step, ee_u16 crc)
+{
+    ee_u8 *p = memblock;
+    __cm_xstatec_init();
+    while (*p != 0) __cm_xstate4c_transition(&p);
+    p = memblock;
+    while (p < memblock + blksize) { if (*p != ',') *p ^= (ee_u8)seed1; p += step; }
+    p = memblock;
+    while (*p != 0) __cm_xstate4c_transition(&p);
+    p = memblock;
+    while (p < memblock + blksize) { if (*p != ',') *p ^= (ee_u8)seed2; p += step; }
+    for (ee_u32 i = 0; i < 8; i++) {
+        crc = __cm_crc32_u8(__cm_xstate4c_final_read(i), crc);
         crc = __cm_crc32_u8(__cm_xstatec_read(i), crc);
     }
     return crc;

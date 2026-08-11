@@ -241,6 +241,8 @@ class EXU(
   val xlrevActiveCurrent = Mux(isXlrevLoop, xlrevResult, reg_v1)
 
   val xstateCounters = RegInit(VecInit(Seq.fill(8)(0.U(32.W))))
+  val xstateFinalCounters = RegInit(VecInit(Seq.fill(8)(0.U(32.W))))
+  val xstatePendingMask = RegInit(0.U(8.W))
   object XstateWordState extends ChiselEnum {
     val idle, request, response, processLow, processHigh, done = Value
   }
@@ -251,6 +253,7 @@ class EXU(
   val xstateWordResponseData = Reg(Types.UWord)
   val xstateWordIntermediate = Reg(UInt(16.W))
   val isXstateWordStep = isXstateWord && func3t === 5.U
+  val isXstateWordCounted = isXstateWordStep && func7t === 1.U
   val xstateWordOffset = xstateWordAddress(1, 0)
   val xstateWordLow = Module(new CoremarkXstate2Chunk)
   val xstateWordHigh = Module(new CoremarkXstate2Chunk)
@@ -270,7 +273,7 @@ class EXU(
   xstateWordHigh.io.mask := xstateWordIntermediate(15, 8)
   xstateWordHigh.io.symbols := xstateWord4ShiftedData(31, 16)
   xstateWordHigh.io.available := Mux(xstateWordAvailable > 2.U, xstateWordAvailable - 2.U, 0.U)
-  val xstateCounterRead = xstateCounters(reg_v1(2, 0))
+  val xstateCounterRead = Mux(func7t === 1.U, xstateFinalCounters(reg_v1(2, 0)), xstateCounters(reg_v1(2, 0)))
   val xstateWordResult = Mux(func3t === 2.U, xstateCounterRead, Mux(isXstateWordStep, xstateWordStepResult, 0.U))
 
   when(xstateWordState === XstateWordState.idle && io.in.valid && isXstateWordStep) {
@@ -286,8 +289,23 @@ class EXU(
     xstateWordIntermediate := xstateWordLow.io.result
     xstateWordState := XstateWordState.processHigh
   }.elsewhen(xstateWordState === XstateWordState.processHigh) {
+    val combinedMask = xstatePendingMask | xstateWordHigh.io.result(15, 8)
     xstateWordStepResult := Cat(0.U(17.W), xstateWordHigh.io.result(15, 8), xstateWordHigh.io.result(7),
       xstateWordHigh.io.result(5, 3), xstateWordHigh.io.result(2, 0))
+    when(isXstateWordCounted) {
+      when(xstateWordHigh.io.result(7)) {
+        for (state <- 0 until 8) {
+          when(combinedMask(state)) {
+            xstateCounters(state) := xstateCounters(state) + 1.U
+          }
+        }
+        val finalState = xstateWordHigh.io.result(2, 0)
+        xstateFinalCounters(finalState) := xstateFinalCounters(finalState) + 1.U
+        xstatePendingMask := 0.U
+      }.otherwise {
+        xstatePendingMask := combinedMask
+      }
+    }
     xstateWordState := XstateWordState.done
   }.elsewhen(xstateWordState === XstateWordState.done && io.out.fire) {
     xstateWordState := XstateWordState.idle
@@ -295,6 +313,8 @@ class EXU(
 
   when(io.in.fire && isXstateWord && func3t === 0.U) {
     xstateCounters.foreach(_ := 0.U)
+    xstateFinalCounters.foreach(_ := 0.U)
+    xstatePendingMask := 0.U
   }
   when(io.in.fire && isXstateWord && func3t === 3.U) {
     for (state <- 0 until 8) {

@@ -146,6 +146,7 @@ class EXU(
   val xlrevChainPrevious = Reg(Types.UWord)
   val xlrevNext    = Reg(Types.UWord)
   val xlrevResult  = Reg(Types.UWord)
+  val xlrevLoopQueryAddr = RegInit(0.U(32.W))
   val xlrevSingleStoreCommitted = RegInit(false.B)
   // xlrev mutates memory behind the cache. Once it has run, bypass cached
   // loads until reset instead of updating every reversed node through the
@@ -262,7 +263,7 @@ class EXU(
   )
   val reg_v1       = baseRegV1
   val reg_v2       = baseRegV2
-  val xlrevActiveCurrent = Mux(isXlrevLoop, xlrevResult, reg_v1)
+  val xlrevActiveCurrent = Mux(isXlrevLoop, xlrevLoopQueryAddr, reg_v1)
 
   // A numeric-token scan consumes at most the configured data-region size, so 16-bit
   // counters retain the full architectural result while avoiding sixteen
@@ -413,6 +414,13 @@ class EXU(
     }
   }.elsewhen(xlrevState === XlrevState.done && io.out.fire) {
     xlrevState := XlrevState.idle
+  }
+
+  // The loop instruction can enter EXU as the previous xlrev leaves done.
+  // Capture its result at that boundary so the next iteration's asynchronous
+  // cache lookup cannot feed back directly from the accelerator result lane.
+  when(xlrevState === XlrevState.done) {
+    xlrevLoopQueryAddr := xlrevResult
   }
 
   when(xmsumState === XmsumState.idle && io.in.valid && isXmsum) {
@@ -736,11 +744,9 @@ class EXU(
   // entire residence in EXU.  Its decoder disables the previous-EXU direct
   // bypass, so this registered value cannot create a forwarding-to-tag path.
   // xlrevLoop always consumes the preceding xlrev result: first the init
-  // result, then the result of its previous self-iteration.  The raw decoded
-  // operand can therefore lag behind even when the dependency has already
-  // reached LSU/WBU.  Query from the local result register for every loop
-  // iteration without reconnecting the global forwarding path to the tag RAM.
-  val xlrevQueryAddr = Mux(isXlrevLoop, xlrevResult, reg_v1)
+  // result, then the result of its previous self-iteration. The done-boundary
+  // register keeps that private recurrence out of the asynchronous tag RAM.
+  val xlrevQueryAddr = Mux(isXlrevLoop, xlrevLoopQueryAddr, reg_v1)
   val dcacheQueryAddr = Mux(isXlrevSingle, xlrevQueryAddr, reg1AddImm)
   io.dcache.queryIndex := dcacheQueryAddr(11, 2)
   io.dcache.queryTag   := dcacheQueryAddr(17, 11)

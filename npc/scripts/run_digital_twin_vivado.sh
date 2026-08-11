@@ -265,7 +265,17 @@ if ! command -v "$vivado_bin" >/dev/null 2>&1; then
 fi
 
 tcl_file=$(mktemp "${TMPDIR:-/tmp}/digital_twin_flow.XXXXXX.tcl")
-trap 'rm -f "$tcl_file"' EXIT
+xpr_backup=$(mktemp "${TMPDIR:-/tmp}/digital_twin_project.XXXXXX.xpr")
+cp -- "$vivado_project" "$xpr_backup"
+xpr_hash_before=$(sha256sum "$vivado_project" | awk '{print $1}')
+cleanup() {
+  if [ -n "${xpr_backup:-}" ] && [ -f "$xpr_backup" ]; then
+    cp -- "$xpr_backup" "$vivado_project"
+    rm -f -- "$xpr_backup"
+  fi
+  rm -f -- "$tcl_file"
+}
+trap cleanup EXIT
 
 cat >"$tcl_file" <<'EOF'
 if {$argc != 12} {
@@ -651,6 +661,21 @@ set +e
   "$pre_route_phys_opt_directive" "$post_route_phys_opt_directive"
 vivado_status=$?
 set -e
+
+# Opening a project from a worktree causes Vivado to persist relocated paths
+# in the XPR. Runs and reports are outputs, but the versioned project is an
+# input and must remain byte-identical for reproducible A/B comparisons.
+cp -- "$xpr_backup" "$vivado_project"
+rm -f -- "$xpr_backup"
+xpr_backup=""
+xpr_hash_after=$(sha256sum "$vivado_project" | awk '{print $1}')
+if [ "$xpr_hash_before" != "$xpr_hash_after" ]; then
+  echo "Vivado project file was not restored after the run:" >&2
+  echo "  before: $xpr_hash_before" >&2
+  echo "  after:  $xpr_hash_after" >&2
+  exit 1
+fi
+
 ip_config_hash_after=$(ip_config_hash)
 if [ "$ip_config_hash_before" != "$ip_config_hash_after" ]; then
   echo "Vivado IP configuration changed during the run:" >&2

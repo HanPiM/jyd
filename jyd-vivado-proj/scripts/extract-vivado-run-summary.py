@@ -33,7 +33,7 @@ CONGESTION_REPORT_PATTERNS = ("*congestion*.rpt",)
 RESOURCE_NAMES = ("RAM64M", "RAMD64E", "LUT", "FF", "BRAM")
 DEFAULT_RUN_PATH = Path("digital_twin.runs") / "impl_1"
 GOAL_WNS_NS = -0.3
-GOAL_RUNTIME_S = 10.75
+GOAL_RUNTIME_S = 6.8
 PER_PATH_NET_LIMIT = 5
 TIMING_COLUMNS = (
     "wns_ns",

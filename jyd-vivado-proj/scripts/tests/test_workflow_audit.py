@@ -71,7 +71,7 @@ def copy_sample(source: Path, destination: Path) -> None:
     shutil.copyfile(source, destination)
 
 
-def create_fixture(root: Path, runtime: float = 10.5) -> dict[str, object]:
+def create_fixture(root: Path, runtime: float = 6.5) -> dict[str, object]:
     run_dir = root / "impl_1"
     run_dir.mkdir(parents=True)
     report = run_dir / "top_timing_summary_postroute_physopted.rpt"
@@ -179,8 +179,8 @@ def sidecar_for(fixture: dict[str, object], experiment_id: str = "EXP-001") -> d
         },
         "goal_checks": {
             "wns": {"value": wns, "threshold": -0.3, "operator": ">", "passed": wns > -0.3},
-            "runtime": {"value": runtime, "threshold": 10.75, "operator": "<", "passed": runtime < 10.75},
-            "passed": wns > -0.3 and runtime < 10.75,
+            "runtime": {"value": runtime, "threshold": 6.8, "operator": "<", "passed": runtime < 6.8},
+            "passed": wns > -0.3 and runtime < 6.8,
         },
         "evidence_quality": summary["evidence"]["quality"],
         "promotion_level": "candidate",
@@ -334,11 +334,11 @@ class WorkflowAuditTest(unittest.TestCase):
         self.assertLess(len(json.dumps(view, sort_keys=True)), 12_000)
 
     def test_goal_boundaries_fail_strictly(self) -> None:
-        at_boundary = SUMMARY.goal_checks({"summary": {"wns_ns": -0.3}}, {"runtime_s": 10.75})
+        at_boundary = SUMMARY.goal_checks({"summary": {"wns_ns": -0.3}}, {"runtime_s": 6.8})
         self.assertFalse(at_boundary["passed"])
         self.assertFalse(at_boundary["wns"]["passed"])
         self.assertFalse(at_boundary["runtime"]["passed"])
-        passing = SUMMARY.goal_checks({"summary": {"wns_ns": -0.299}}, {"runtime_s": 10.749})
+        passing = SUMMARY.goal_checks({"summary": {"wns_ns": -0.299}}, {"runtime_s": 6.799})
         self.assertTrue(passing["passed"])
 
     def test_dual_logs_and_hard_constraint_error_are_audited(self) -> None:
@@ -412,7 +412,7 @@ class WorkflowAuditTest(unittest.TestCase):
                     "--wns-gt",
                     "-0.3",
                     "--runtime-lt",
-                    "10.75",
+                    "6.8",
                     "--audit-status",
                     "ok",
                     "--evidence-quality",

@@ -8,6 +8,7 @@
 #     coremark build outputs, rt-thread-am)
 #   * make ../riscv-arch-test-am-jyd resolve from the worktree's parent
 #   * install a proven prebuilt NEMU dependency tree
+#   * seed matching Vivado IP output products and completed OOC runs
 #   * import the formal CoreMark COE pair into cur_coe
 #
 # Conventions (AGENTS.md):
@@ -32,6 +33,7 @@ Automates the setup steps used for JYD optimization candidates:
     coremark build outputs, rt-thread-am)
   * make ../riscv-arch-test-am-jyd resolve from the worktree's parent
   * install a proven prebuilt NEMU dependency tree
+  * seed matching Vivado IP output products and completed OOC runs
   * import the formal CoreMark COE pair into cur_coe
 
 Usage:
@@ -177,6 +179,58 @@ if [[ -e "$ARCH_TEST_LINK" || -L "$ARCH_TEST_LINK" ]]; then
 else
   ln -sfn /home/hanpi/gitclone/riscv-arch-test-am-jyd "$ARCH_TEST_LINK"
   echo "   linked /home/hanpi/gitclone/riscv-arch-test-am-jyd -> $ARCH_TEST_LINK"
+fi
+
+# --- reusable Vivado IP/OOC state ------------------------------------------
+# These ignored products are independent of candidate RTL, but only when the
+# checked-out IP configurations match the source project. Vivado strips a
+# terminal newline while generating output products, so normalize only that
+# byte when comparing XCI manifests.
+VIVADO_REF_PROJECT="$SRC/jyd-vivado-proj"
+VIVADO_WT_PROJECT="$WT_DIR/jyd-vivado-proj"
+VIVADO_REF_IP="$VIVADO_REF_PROJECT/digital_twin.srcs/sources_1/ip"
+VIVADO_WT_IP="$VIVADO_WT_PROJECT/digital_twin.srcs/sources_1/ip"
+if [[ -d "$VIVADO_REF_IP" && -d "$VIVADO_WT_IP" ]]; then
+  REF_XCI_MANIFEST="$JYD_DATA_ROOT/tmp/create-opt-ref-xci.$$.sha256"
+  WT_XCI_MANIFEST="$JYD_DATA_ROOT/tmp/create-opt-wt-xci.$$.sha256"
+  mkdir -p "$JYD_DATA_ROOT/tmp"
+  (
+    cd "$VIVADO_REF_IP"
+    while IFS= read -r -d '' xci_file; do
+      printf '%s  %s\n' "$(sed -e '$a\' "$xci_file" | sha256sum | awk '{print $1}')" "$xci_file"
+    done < <(find . -type f -name '*.xci' -print0 | sort -z)
+  ) >"$REF_XCI_MANIFEST"
+  (
+    cd "$VIVADO_WT_IP"
+    while IFS= read -r -d '' xci_file; do
+      printf '%s  %s\n' "$(sed -e '$a\' "$xci_file" | sha256sum | awk '{print $1}')" "$xci_file"
+    done < <(find . -type f -name '*.xci' -print0 | sort -z)
+  ) >"$WT_XCI_MANIFEST"
+  if cmp -s "$REF_XCI_MANIFEST" "$WT_XCI_MANIFEST"; then
+    for cache_dir in digital_twin.gen digital_twin.cache digital_twin.ip_user_files; do
+      if [[ -d "$VIVADO_REF_PROJECT/$cache_dir" ]]; then
+        cp -a --reflink=auto "$VIVADO_REF_PROJECT/$cache_dir" "$VIVADO_WT_PROJECT/"
+        echo "   copied Vivado IP state: $cache_dir"
+      fi
+    done
+    if [[ -d "$VIVADO_REF_PROJECT/digital_twin.runs" ]]; then
+      mkdir -p "$VIVADO_WT_PROJECT/digital_twin.runs"
+      while IFS= read -r -d '' run_dir; do
+        if [[ -f "$run_dir/.vivado.end.rst" ]] && find "$run_dir" -maxdepth 1 -type f -name '*.dcp' -print -quit | grep -q .; then
+          cp -a --reflink=auto "$run_dir" "$VIVADO_WT_PROJECT/digital_twin.runs/"
+          echo "   copied completed Vivado OOC run: $(basename "$run_dir")"
+        else
+          echo "   skipped incomplete Vivado OOC run: $(basename "$run_dir")"
+        fi
+      done < <(find "$VIVADO_REF_PROJECT/digital_twin.runs" -mindepth 1 -maxdepth 1 \
+        -type d -name '*_synth_1' -print0 | sort -z)
+    fi
+  else
+    echo "   skipped Vivado IP/OOC state: source and target XCI manifests differ"
+  fi
+  rm -f "$REF_XCI_MANIFEST" "$WT_XCI_MANIFEST"
+else
+  echo "   skipped Vivado IP/OOC state: IP source directory missing"
 fi
 
 # --- prebuilt NEMU artifacts -------------------------------------------------

@@ -18,12 +18,17 @@ Treat `build/`, `out/`, generated Verilog, and cache directories as disposable o
 - `make -C npc pack-fpga`: refresh `npc/build/pack-fpga/` and `npc/build/pack-fpga.zip` for the digital twin FPGA project.
 - `make -C am-kernels/tests/cpu-tests run ARCH=riscv32-jyd ALL=add`: build and run a CPU test on the selected platform. Prefer `ARCH=riscv32-jyd` over `riscv32e-npc` when validating changes.
 - `make -C npc reformat` / `make -C npc checkformat`: apply or verify Scala formatting.
-- `make -C nemu menuconfig` then `make -C nemu`: configure and build NEMU only
-  after changing NEMU source or configuration.  Otherwise, an optimization
-  worktree must use the verified prebuilt `riscv32-nemu-interpreter` and
-  `riscv32-nemu-interpreter-so` installed by `create-opt-worktree.sh`; invoke
-  NEMU workloads through the owning AM project's `make ARCH=... run` target,
-  not by manually executing the interpreter, and do not rebuild NEMU there.
+- `make -C nemu menuconfig` then `make -C nemu`: configure and build NEMU after
+  changing its configuration; after changing only NEMU source, incrementally
+  build NEMU without rerunning `menuconfig`.  When NEMU source and configuration
+  are unchanged, an optimization worktree must instead use the verified prebuilt
+  `riscv32-nemu-interpreter` and `riscv32-nemu-interpreter-so` installed by
+  `create-opt-worktree.sh`.  A NEMU rebuild does not by itself authorize
+  refetching or rebuilding copied dependencies such as gen-inst, SoftFloat, or
+  sdb: reuse them unless the corresponding dependency source, configuration, or
+  generated input actually changed.  Invoke NEMU workloads through the owning
+  AM project's `make ARCH=... run` target, not by manually executing the
+  interpreter.
 - `make -C nemu/tools/gen-inst`: regenerate instruction semantics used by NEMU. F instruction patterns and semantics are generated here; do not hand-write generated instruction patterns in NEMU.
 - `make -C abstract-machine ARCH=riscv32-jyd`: build an AM image for a target architecture.
 - `./npc/scripts/run_digital_twin_vivado.sh [impl|write_bitstream|bitstream] [--jobs N] [--ip-jobs N]`: run `make -C npc pack-fpga`, replace `jyd-vivado-proj/digital_twin.srcs/sources_1/imports/pack-fpga`, then run the in-tree Vivado `digital_twin` project to implementation or bitstream. `JOBS`/`--jobs` controls top-level Vivado `launch_runs -jobs` and `general.maxThreads`; `IP_JOBS`/`--ip-jobs` controls IP/OOC concurrency. Top-level jobs must be at least 16 and IP/OOC jobs must be at least 4. Lower values are prohibited unless the user explicitly approves them; after that approval, pass `--user-approved-low-jobs` so the exception is visible in the run output.
@@ -113,7 +118,7 @@ such as `BENCH_ROOT` remain explicit overrides when needed. Historical `/tmp`
 paths in old optimization notes are records of past runs and should not be
 rewritten.
 
-For emulator/runtime changes, rebuild the affected module and run the local workload you changed. NEMU fetches a fixed Berkeley SoftFloat revision through `nemu/tools/softfloat`; keep that revision pinned and build it with the RISC-V specialization. Changes under `nemu/tools/gen-inst/repo` belong to the separate gen-inst repository and must be committed and pushed there. CI validates `npc/**`, `patch/**`, and `.github/**`, so changes there should be kept green.
+For emulator/runtime changes, rebuild the affected module and run the local workload you changed. A NEMU-only source change should incrementally rebuild NEMU while reusing the copied generated instruction files, SoftFloat library, sdb archive, and other unchanged dependencies. Rebuild or refetch one of those dependencies only when its own source, configuration, or generated input changed. NEMU fetches a fixed Berkeley SoftFloat revision through `nemu/tools/softfloat`; keep that revision pinned and build it with the RISC-V specialization when a SoftFloat change truly requires rebuilding it. Changes under `nemu/tools/gen-inst/repo` belong to the separate gen-inst repository and must be committed and pushed there. CI validates `npc/**`, `patch/**`, and `.github/**`, so changes there should be kept green.
 
 ## Optimization Experiment Documentation
 

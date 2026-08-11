@@ -33,7 +33,13 @@ void init_alarm();
 void send_key(uint8_t, bool);
 void vga_update_screen();
 
+static bool device_initialized = false;
+
 void device_update() {
+  if (!device_initialized) {
+    return;
+  }
+
   static uint64_t last = 0;
   uint64_t now = get_time();
   if (now - last < 1000000 / TIMER_HZ) {
@@ -86,10 +92,10 @@ void init_device() {
   IFDEF(CONFIG_HAS_SDCARD, init_sdcard());
 
   IFNDEF(CONFIG_TARGET_AM, init_alarm());
+  device_initialized = true;
 }
 
 void destroy_vga();
 void destroy_device(){
 	destroy_vga();
 }
-

@@ -16,7 +16,7 @@ COREMARK_XEXTS ?=
 empty :=
 space := $(empty) $(empty)
 comma := ,
-COREMARK_SUPPORTED_XEXTS := xbmul xcrcu8 xdot16 xlrev xlrev1 xlrev2 xmac16 xmsum xstate xstatec xstate2 xstate4
+COREMARK_SUPPORTED_XEXTS := xbmul xcrcu8 xdot16 xlrev xlrev1 xlrev2 xmac16 xmsum xdfa xdfacnt xdfa2 xdfa4 xdfa4h
 COREMARK_XEXT_WORDS := $(filter x%,$(subst _, ,$(strip $(COREMARK_XEXTS))))
 COREMARK_UNKNOWN_XEXTS := $(filter-out $(COREMARK_SUPPORTED_XEXTS),$(COREMARK_XEXT_WORDS))
 ifneq ($(strip $(COREMARK_UNKNOWN_XEXTS)),)
@@ -56,7 +56,7 @@ LIB_MAKE_ARGS_softfloat = \
 
 # Keep COREMARK_OPT at -Os for the formal image: the hot benchmark translation
 # units below still receive force_o3.h, while core_main stays smaller and saves
-# roughly 54 million instructions on the xlrev2+xstate4 workload.  Explicitly
+# roughly 54 million instructions on the xlrev2+xdfa4 workload.  Explicitly
 # pass COREMARK_OPT=-O3 only for comparison experiments.
 CFLAGS += -Os
 CFLAGS += -DITERATIONS=$(ITERATIONS) -DTOTAL_DATA_SIZE=$(TOTAL_DATA_SIZE)
@@ -120,11 +120,7 @@ $(COREMARK_FLAGS_HEADER): FORCE accel/gen_flags_header.py
 		'$(COREMARK_OPT)' $(foreach flag,$(COREMARK_REPORT_COMMON_FLAGS),'$(flag)') \
 		'-fplugin=$(notdir $(COREMARK_ACCEL_PLUGIN))' \
 		'-fplugin-arg-xaccel_plugin-accels=$(COREMARK_PLUGIN_ACCELS)' \
-		'-fplugin-arg-xaccel_plugin-report=$(if $(filter 1,$(PSEUDO_FLOAT)),fp12,none)' \
-		'-include accel/xaccel_wrappers.c' \
-		'-include accel/force_o3.h' \
-		$(if $(filter xcrcu8,$(COREMARK_XEXT_WORDS)),'-include accel/xcrc_hw.h') \
-		$(if $(filter 1,$(PSEUDO_FLOAT)),'-include accel/float_dump.h')
+		'-fplugin-arg-xaccel_plugin-report=$(if $(filter 1,$(PSEUDO_FLOAT)),fp12,none)'
 
 ifeq ($(ENABLE_LTO),1)
 CFLAGS += -flto

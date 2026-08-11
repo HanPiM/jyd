@@ -417,26 +417,28 @@ class IDU(
     (bImmLow5 === 4.U || bImmLow5 === 5.U)
   val isBMinu = !isFmtI && arithmeticFunc7 === "b0000101".U && arithmeticFunc3 === "b101".U
   val isBBext = arithmeticFunc7 === "b0100100".U && arithmeticFunc3 === "b101".U
-  val isCoremarkCrcU8 = inst(31, 25) === 0.U && arithmeticFunc3 === 0.U && inst(6, 0) === "b0001011".U
-  val isCoremarkXbmul = inst(31, 25) === 0.U && arithmeticFunc3 === 5.U && inst(6, 0) === "b0001011".U
-  val isCoremarkXlrev = isXlrevEncoding
-  val isCoremarkXmsum = inst(31, 25) === 2.U && arithmeticFunc3 === 7.U && inst(6, 0) === "b0001011".U
-  val isCoremarkXstateWord = inst(31, 25) === 0.U && inst(6, 0) === "b1011011".U &&
-    (arithmeticFunc3 === 0.U || arithmeticFunc3 === 2.U || arithmeticFunc3 === 3.U || arithmeticFunc3 === 5.U)
+  val isCrcU8Custom = inst(31, 25) === 0.U && arithmeticFunc3 === 0.U && inst(6, 0) === "b0001011".U
+  val isBitExtractMulCustom = inst(31, 25) === 0.U && arithmeticFunc3 === 5.U && inst(6, 0) === "b0001011".U
+  val isListReverseCustom = isXlrevEncoding
+  val isMatrixReduceCustom = inst(31, 25) === 2.U && arithmeticFunc3 === 7.U && inst(6, 0) === "b0001011".U
+  val isNumericDfaCustom = inst(6, 0) === "b1011011".U &&
+    ((inst(31, 25) === 0.U &&
+      (arithmeticFunc3 === 0.U || arithmeticFunc3 === 2.U || arithmeticFunc3 === 3.U || arithmeticFunc3 === 5.U)) ||
+     (inst(31, 25) === 1.U && (arithmeticFunc3 === 2.U || arithmeticFunc3 === 5.U)))
   res.bExtValid := isTypArithmetic && !isMExtArithmetic && isIterativeB
-  res.crcValid := isCoremarkCrcU8
-  res.xbmulValid := isCoremarkXbmul
-  res.xlrevValid := isCoremarkXlrev
-  res.xlrevSingle := isCoremarkXlrev && arithmeticFunc3 === 6.U
-  res.xlrevChain := isCoremarkXlrev && arithmeticFunc3 === 6.U && inst(31, 25) === 1.U
-  res.xlrevLoop := isCoremarkXlrev && isXlrevLoopEncoding
-  // Legacy custom-0 xstate was a whole-parser state machine and is intentionally unsupported.
-  // Use the custom-2 xstate4 word-fed operations decoded by xstateWordValid below.
-  res.xmsumValid := isCoremarkXmsum
-  res.xstateWordValid := isCoremarkXstateWord
+  res.crcValid := isCrcU8Custom
+  res.xbmulValid := isBitExtractMulCustom
+  res.xlrevValid := isListReverseCustom
+  res.xlrevSingle := isListReverseCustom && arithmeticFunc3 === 6.U
+  res.xlrevChain := isListReverseCustom && arithmeticFunc3 === 6.U && inst(31, 25) === 1.U
+  res.xlrevLoop := isListReverseCustom && isXlrevLoopEncoding
+  // The legacy custom-0 whole-parser state machine is intentionally unsupported.
+  // Use the custom-2 word-fed numeric DFA operations decoded below.
+  res.xmsumValid := isMatrixReduceCustom
+  res.numericDfaValid := isNumericDfaCustom
   res.aluIsSub  := !isFmtI && inst(30)
   res.aluUseSpecialResult :=
-    isTypArithmetic && (isBShiftAdd || isBSext || isBMinu || isBBext || isCoremarkCrcU8 || isCoremarkXbmul)
+    isTypArithmetic && (isBShiftAdd || isBSext || isBMinu || isBBext || isCrcU8Custom || isBitExtractMulCustom)
   // Loads consume rs1 only through the dedicated registered address payload
   // below.  Keeping cache-forwarded data out of the unused generic ALU
   // payload avoids a wide IDU payload mux/self-loop on the critical path.
@@ -475,7 +477,7 @@ class IDU(
   // res.snpc       := io.in.bits.pc + 4.U
   res.pcAddImm := io.in.bits.pc + res.imm
   // Keep the common address path narrow while preserving the two 64 KiB
-  // crossings used by CoreMark data and the JYD peripheral window.
+  // crossings used by benchmark data and the JYD peripheral window.
   def addAddrImm(base: UInt): UInt = {
     val lowSum = base(15, 0) +& addrImm(15, 0)
     val crossesIntoDram = !addrImm(15) && base(19, 12) === "hff".U && lowSum(16)

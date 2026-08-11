@@ -201,24 +201,24 @@ class DecodedInstInfo(implicit p : CPUParameters) extends InstMetaInfo with HasR
   // the B unit has registered its compact input fields.
   val bExtValid = Bool()
 
-  // CoreMark CRCU8 is a single-cycle custom-0 R-type operation.
+  // Byte-wise CRC is a single-cycle custom-0 R-type operation.
   val crcValid = Bool()
 
-  // CoreMark bit-extract multiply is a single-cycle custom-0 operation.
+  // Bit-extract multiply is a single-cycle custom-0 operation.
   val xbmulValid = Bool()
 
-  // CoreMark list reversal is a blocking multi-cycle custom operation.
+  // In-place list reversal is a blocking multi-cycle custom operation.
   val xlrevValid = Bool()
   val xlrevSingle = Bool()
   val xlrevChain = Bool()
   val xlrevLoop = Bool()
 
-  // CoreMark matrix reduction is a blocking multi-cycle custom operation.
+  // Clipped matrix reduction is a blocking multi-cycle custom operation.
   val xmsumValid = Bool()
 
-  // CoreMark xstate4 word-fed parser and implicit counter operations are custom-2.
-  // Do not reintroduce the removed legacy whole-parser xstate operation.
-  val xstateWordValid = Bool()
+  // Word-fed numeric-token DFA and histogram operations are custom-2.
+  // Do not reintroduce the removed legacy whole-parser operation.
+  val numericDfaValid = Bool()
 
   // Predecode the ALU add/sub carry polarity before the IDU/EXU register so
   // the instruction-code bus does not drive the carry chain directly.

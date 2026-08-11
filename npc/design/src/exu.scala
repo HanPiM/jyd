@@ -132,9 +132,9 @@ class EXU(
   val isAdd = isTypArithmetic && func3t === 0.U && (isFmtI || func7t === 0.U)
 
   alu.io.in.valid :=
-    io.in.valid && isTypArithmetic && !dinst.info.xlrevValid && !dinst.info.xmsumValid && !dinst.info.xstateWordValid
+    io.in.valid && isTypArithmetic && !dinst.info.xlrevValid && !dinst.info.xmsumValid && !dinst.info.numericDfaValid
 
-  val isXstateWord = dinst.info.xstateWordValid
+  val isNumericDfa = dinst.info.numericDfaValid
 
   object XlrevState extends ChiselEnum {
     val idle, loadRequest, loadResponse, storeRequest, storeResponse, done = Value
@@ -240,66 +240,99 @@ class EXU(
   val reg_v2       = postRegisterRegV2
   val xlrevActiveCurrent = Mux(isXlrevLoop, xlrevResult, reg_v1)
 
-  val xstateCounters = RegInit(VecInit(Seq.fill(8)(0.U(32.W))))
-  object XstateWordState extends ChiselEnum {
-    val idle, request, response, processLow, processHigh, done = Value
+  // A numeric-token scan consumes at most the configured data-region size, so 16-bit
+  // counters retain the full architectural result while avoiding sixteen
+  // unnecessary 32-bit incrementers in the timing-sensitive EXU.
+  val xdfaCounters = RegInit(VecInit(Seq.fill(8)(0.U(12.W))))
+  val xdfaFinalCounters = RegInit(VecInit(Seq.fill(8)(0.U(16.W))))
+  val xdfaPendingMask = RegInit(0.U(8.W))
+  object NumericDfaState extends ChiselEnum {
+    val idle, request, response, processLow, processHigh, commit, done = Value
   }
-  val xstateWordState = RegInit(XstateWordState.idle)
-  val xstateWordStartState = Reg(UInt(3.W))
-  val xstateWordAddress = Reg(Types.UWord)
-  val xstateWordStepResult = Reg(Types.UWord)
-  val xstateWordResponseData = Reg(Types.UWord)
-  val xstateWordIntermediate = Reg(UInt(16.W))
-  val isXstateWordStep = isXstateWord && func3t === 5.U
-  val xstateWordOffset = xstateWordAddress(1, 0)
-  val xstateWordLow = Module(new CoremarkXstate2Chunk)
-  val xstateWordHigh = Module(new CoremarkXstate2Chunk)
-  val xstateWord4ShiftedData = xstateWordResponseData >> (xstateWordOffset << 3)
-  val xstateWordAvailable = 4.U(3.W) - xstateWordOffset
-  xstateWordLow.io.state := xstateWordStartState
-  xstateWordLow.io.mask := 0.U
-  xstateWordLow.io.consumed := 0.U
-  xstateWordLow.io.active := true.B
-  xstateWordLow.io.stopped := false.B
-  xstateWordLow.io.symbols := xstateWord4ShiftedData(15, 0)
-  xstateWordLow.io.available := xstateWordAvailable
-  xstateWordHigh.io.state := xstateWordIntermediate(2, 0)
-  xstateWordHigh.io.consumed := xstateWordIntermediate(5, 3)
-  xstateWordHigh.io.active := xstateWordIntermediate(6)
-  xstateWordHigh.io.stopped := xstateWordIntermediate(7)
-  xstateWordHigh.io.mask := xstateWordIntermediate(15, 8)
-  xstateWordHigh.io.symbols := xstateWord4ShiftedData(31, 16)
-  xstateWordHigh.io.available := Mux(xstateWordAvailable > 2.U, xstateWordAvailable - 2.U, 0.U)
-  val xstateCounterRead = xstateCounters(reg_v1(2, 0))
-  val xstateWordResult = Mux(func3t === 2.U, xstateCounterRead, Mux(isXstateWordStep, xstateWordStepResult, 0.U))
+  val xdfaWordState = RegInit(NumericDfaState.idle)
+  val xdfaWordStartState = Reg(UInt(3.W))
+  val xdfaWordAddress = Reg(Types.UWord)
+  val xdfaWordStepResult = Reg(Types.UWord)
+  val xdfaWordResponseData = Reg(Types.UWord)
+  val xdfaWordIntermediate = Reg(UInt(16.W))
+  val xdfaCommitMask = Reg(UInt(8.W))
+  val xdfaCommitFinalState = Reg(UInt(3.W))
+  val isNumericDfaStep = isNumericDfa && func3t === 5.U
+  val isNumericDfaHistogramStep = isNumericDfaStep && func7t === 1.U
+  val xdfaWordOffset = xdfaWordAddress(1, 0)
+  val xdfaWordLow = Module(new NumericTokenDfa2ByteStep)
+  val xdfaWordHigh = Module(new NumericTokenDfa2ByteStep)
+  val xdfaWord4ShiftedData = xdfaWordResponseData >> (xdfaWordOffset << 3)
+  val xdfaWordAvailable = 4.U(3.W) - xdfaWordOffset
+  xdfaWordLow.io.state := xdfaWordStartState
+  xdfaWordLow.io.mask := 0.U
+  xdfaWordLow.io.consumed := 0.U
+  xdfaWordLow.io.active := true.B
+  xdfaWordLow.io.stopped := false.B
+  xdfaWordLow.io.symbols := xdfaWord4ShiftedData(15, 0)
+  xdfaWordLow.io.available := xdfaWordAvailable
+  xdfaWordHigh.io.state := xdfaWordIntermediate(2, 0)
+  xdfaWordHigh.io.consumed := xdfaWordIntermediate(5, 3)
+  xdfaWordHigh.io.active := xdfaWordIntermediate(6)
+  xdfaWordHigh.io.stopped := xdfaWordIntermediate(7)
+  xdfaWordHigh.io.mask := xdfaWordIntermediate(15, 8)
+  xdfaWordHigh.io.symbols := xdfaWord4ShiftedData(31, 16)
+  xdfaWordHigh.io.available := Mux(xdfaWordAvailable > 2.U, xdfaWordAvailable - 2.U, 0.U)
+  val xdfaCounterRead = Mux(func7t === 1.U, xdfaFinalCounters(reg_v1(2, 0)), xdfaCounters(reg_v1(2, 0)))
+  val xdfaWordResult = Mux(func3t === 2.U, xdfaCounterRead, Mux(isNumericDfaStep, xdfaWordStepResult, 0.U))
 
-  when(xstateWordState === XstateWordState.idle && io.in.valid && isXstateWordStep) {
-    xstateWordStartState := reg_v1(2, 0)
-    xstateWordAddress := reg_v2
-    xstateWordState := XstateWordState.request
-  }.elsewhen(xstateWordState === XstateWordState.request && io.memReq.fire) {
-    xstateWordState := XstateWordState.response
-  }.elsewhen(xstateWordState === XstateWordState.response && io.memResp.valid) {
-    xstateWordResponseData := io.memResp.bits
-    xstateWordState := XstateWordState.processLow
-  }.elsewhen(xstateWordState === XstateWordState.processLow) {
-    xstateWordIntermediate := xstateWordLow.io.result
-    xstateWordState := XstateWordState.processHigh
-  }.elsewhen(xstateWordState === XstateWordState.processHigh) {
-    xstateWordStepResult := Cat(0.U(17.W), xstateWordHigh.io.result(15, 8), xstateWordHigh.io.result(7),
-      xstateWordHigh.io.result(5, 3), xstateWordHigh.io.result(2, 0))
-    xstateWordState := XstateWordState.done
-  }.elsewhen(xstateWordState === XstateWordState.done && io.out.fire) {
-    xstateWordState := XstateWordState.idle
+  when(xdfaWordState === NumericDfaState.idle && io.in.valid && isNumericDfaStep) {
+    xdfaWordStartState := reg_v1(2, 0)
+    xdfaWordAddress := reg_v2
+    xdfaWordState := NumericDfaState.request
+  }.elsewhen(xdfaWordState === NumericDfaState.request && io.memReq.fire) {
+    xdfaWordState := NumericDfaState.response
+  }.elsewhen(xdfaWordState === NumericDfaState.response && io.memResp.valid) {
+    xdfaWordResponseData := io.memResp.bits
+    xdfaWordState := NumericDfaState.processLow
+  }.elsewhen(xdfaWordState === NumericDfaState.processLow) {
+    xdfaWordIntermediate := xdfaWordLow.io.result
+    xdfaWordState := NumericDfaState.processHigh
+  }.elsewhen(xdfaWordState === NumericDfaState.processHigh) {
+    val combinedMask = xdfaPendingMask | xdfaWordHigh.io.result(15, 8)
+    xdfaWordStepResult := Cat(0.U(17.W), xdfaWordHigh.io.result(15, 8), xdfaWordHigh.io.result(7),
+      xdfaWordHigh.io.result(5, 3), xdfaWordHigh.io.result(2, 0))
+    when(isNumericDfaHistogramStep) {
+      when(xdfaWordHigh.io.result(7)) {
+        xdfaCommitMask := combinedMask
+        xdfaCommitFinalState := xdfaWordHigh.io.result(2, 0)
+        xdfaPendingMask := 0.U
+        xdfaWordState := NumericDfaState.commit
+      }.otherwise {
+        xdfaPendingMask := combinedMask
+        xdfaWordState := NumericDfaState.done
+      }
+    }.otherwise {
+      xdfaWordState := NumericDfaState.done
+    }
+  }.elsewhen(xdfaWordState === NumericDfaState.commit) {
+    for (state <- 0 until 8) {
+      when(xdfaCommitMask(state)) {
+        xdfaCounters(state) := xdfaCounters(state) + 1.U
+      }
+      when(xdfaCommitFinalState === state.U) {
+        xdfaFinalCounters(state) := xdfaFinalCounters(state) + 1.U
+      }
+    }
+    xdfaWordState := NumericDfaState.done
+  }.elsewhen(xdfaWordState === NumericDfaState.done && io.out.fire) {
+    xdfaWordState := NumericDfaState.idle
   }
 
-  when(io.in.fire && isXstateWord && func3t === 0.U) {
-    xstateCounters.foreach(_ := 0.U)
+  when(io.in.fire && isNumericDfa && func3t === 0.U) {
+    xdfaCounters.foreach(_ := 0.U)
+    xdfaFinalCounters.foreach(_ := 0.U)
+    xdfaPendingMask := 0.U
   }
-  when(io.in.fire && isXstateWord && func3t === 3.U) {
+  when(io.in.fire && isNumericDfa && func3t === 3.U) {
     for (state <- 0 until 8) {
       when(reg_v1(state)) {
-        xstateCounters(state) := xstateCounters(state) + 1.U
+        xdfaCounters(state) := xdfaCounters(state) + 1.U
       }
     }
   }
@@ -581,7 +614,7 @@ class EXU(
       !isTypArithmetic -> dinst.info.preMuxWrBackData
     )
   )
-  writeBackInfo.gpr.data := Mux(isXstateWord, xstateWordResult,
+  writeBackInfo.gpr.data := Mux(isNumericDfa, xdfaWordResult,
     Mux(isXlrev, xlrevResult, Mux(isXmsum, xmsumResult, normalWriteBackData)))
 
   // Fill in LSU stage
@@ -598,18 +631,18 @@ class EXU(
   val isMemOP        = isTypLoad || isTypStore
   val xlrevDone = isXlrev && xlrevState === XlrevState.done
   val xmsumDone = isXmsum && xmsumState === XmsumState.done
-  val xstateWordDone = isXstateWordStep && xstateWordState === XstateWordState.done
+  val xdfaWordDone = isNumericDfaStep && xdfaWordState === NumericDfaState.done
   val exuResultValid =
-    Mux(isXstateWordStep, xstateWordDone,
+    Mux(isNumericDfaStep, xdfaWordDone,
       Mux(isXlrev, xlrevDone, Mux(isXmsum, xmsumDone,
-        (!isTypArithmetic || isXstateWord || alu.io.out.valid) && (!hasLateLoadOperand || lateDataReady))))
+        (!isTypArithmetic || isNumericDfa || alu.io.out.valid) && (!hasLateLoadOperand || lateDataReady))))
   // Keep the same-cycle forwarding loop independent of the multi-cycle M/D/B
   // result mux.  A multi-cycle producer still advertises its destination while it is
   // in EXU, but its data remains unavailable to IDU; a dependent consumer
   // waits one cycle and receives the registered result from LSU instead.
   val isMExt = !isFmtI && func7t === "b0000001".U
   val useSingleCycleForward =
-    isTypArithmetic && !isMExt && !isBExt && !isXlrev && !isXmsum && !isXstateWordStep && !hasLateLoadOperand
+    isTypArithmetic && !isMExt && !isBExt && !isXlrev && !isXmsum && !isNumericDfaStep && !hasLateLoadOperand
   val useLateBitForward = (isLateLoadAndi1 || isLateLoadSrli1) && exuResultValid && lateDataReadyFromLSU
   val regularExuForwardData = Mux(
     useLateBitForward,
@@ -620,7 +653,7 @@ class EXU(
       dinst.info.preMuxWrBackData
     )
   )
-  val exuForwardData = Mux(isXstateWord, xstateWordResult, regularExuForwardData)
+  val exuForwardData = Mux(isNumericDfa, xdfaWordResult, regularExuForwardData)
   val exuForwardDataValid =
     (!isMemOP && !hasLateLoadOperand && (!isTypArithmetic || useSingleCycleForward)) || useLateBitForward
   io.fwd := WrBackForwardInfo(io.in.valid, dinst, exuForwardDataValid, exuForwardData, csrWrEnable)
@@ -669,16 +702,16 @@ class EXU(
   val xlrevLoadRequest = xlrevState === XlrevState.loadRequest
   val xlrevRequest = xlrevLoadRequest || xlrevStoreRequest
   val xmsumRequest = xmsumState === XmsumState.request
-  val xstateWordRequest = xstateWordState === XstateWordState.request
+  val xdfaWordRequest = xdfaWordState === NumericDfaState.request
   val normalMemReq = Wire(new MemReq)
-  normalMemReq.addr  := Mux(xstateWordRequest, xstateWordAddress & ~3.U(32.W),
+  normalMemReq.addr  := Mux(xdfaWordRequest, xdfaWordAddress & ~3.U(32.W),
     Mux(xlrevRequest, xlrevCurrent, Mux(xmsumRequest, xmsumAddress, reg1AddImm)))
-  normalMemReq.size  := Mux(xstateWordRequest || xlrevRequest || xmsumRequest, 2.U, func3t(1, 0))
-  normalMemReq.wen   := Mux(xstateWordRequest, false.B, Mux(xlrevRequest, xlrevStoreRequest, !xmsumRequest && isTypStore))
+  normalMemReq.size  := Mux(xdfaWordRequest || xlrevRequest || xmsumRequest, 2.U, func3t(1, 0))
+  normalMemReq.wen   := Mux(xdfaWordRequest, false.B, Mux(xlrevRequest, xlrevStoreRequest, !xmsumRequest && isTypStore))
   normalMemReq.wdata := Mux(xlrevStoreRequest, xlrevPrevious,
     Mux(xmsumRequest || xlrevLoadRequest, 0.U, memWData))
   normalMemReq.wmask := Mux(xlrevStoreRequest, "b1111".U, Mux(xmsumRequest || xlrevLoadRequest, 0.U, memWMask))
-  io.memReq.valid := xstateWordRequest || xlrevRequest || xmsumRequest || (needMemReq && io.in.valid && io.out.ready)
+  io.memReq.valid := xdfaWordRequest || xlrevRequest || xmsumRequest || (needMemReq && io.in.valid && io.out.ready)
   io.memReq.bits := normalMemReq
 
   val normalReady = memReqFire || (
@@ -687,9 +720,9 @@ class EXU(
   val normalValid = memReqFire || (
     io.in.valid && !needMemReq && exuResultValid
   )
-  io.in.ready := Mux(isXstateWordStep, xstateWordDone && io.out.ready,
+  io.in.ready := Mux(isNumericDfaStep, xdfaWordDone && io.out.ready,
     Mux(isXlrev, xlrevDone && io.out.ready, Mux(isXmsum, xmsumDone && io.out.ready, normalReady)))
-  io.out.valid := Mux(isXstateWordStep, xstateWordDone,
+  io.out.valid := Mux(isNumericDfaStep, xdfaWordDone,
     Mux(isXlrev, xlrevDone, Mux(isXmsum, xmsumDone, normalValid)))
 
   writeBackInfo.iid := dinst.iid

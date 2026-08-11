@@ -110,19 +110,20 @@ static bool has(const char *name) {
 }
 
 static const char *replacement_for(const char *name) {
-  if (has("xstate4") && !std::strcmp(name, "core_bench_state")) return "core_bench_state_xstate4";
-  if (has("xstate2") && !std::strcmp(name, "core_bench_state")) return "core_bench_state_xstate2";
-  if (has("xstatec") && !std::strcmp(name, "core_bench_state")) return "__cm_xstatec_bench";
-  if (has("xlrev2") && !std::strcmp(name, "core_list_reverse")) return "__cm_xlrev2";
-  if (has("xlrev1") && !std::strcmp(name, "core_list_reverse")) return "__cm_xlrev1";
-  if (has("xlrev") && !std::strcmp(name, "core_list_reverse")) return "__cm_xlrev";
-  if (has("xstate") && !std::strcmp(name, "core_state_transition")) return "__cm_xstate";
-  if (has("xmsum") && !std::strcmp(name, "matrix_sum")) return "__cm_xmsum";
-  if (has("xbmul") && !std::strcmp(name, "matrix_mul_matrix_bitextract")) return "__cm_xbmul_matrix";
-  if (has("xdot16") && !std::strcmp(name, "matrix_mul_vect")) return "__cm_xdot_vect";
-  if (has("xdot16") && !std::strcmp(name, "matrix_mul_matrix")) return "__cm_xdot_matrix";
-  if (has("xmac16") && !std::strcmp(name, "matrix_mul_vect")) return "__cm_xmac_vect";
-  if (has("xmac16") && !std::strcmp(name, "matrix_mul_matrix")) return "__cm_xmac_matrix";
+  if (has("xdfa4h") && !std::strcmp(name, "core_bench_state")) return "numeric_token_scan_xdfa4h";
+  if (has("xdfa4") && !std::strcmp(name, "core_bench_state")) return "numeric_token_scan_xdfa4";
+  if (has("xdfa2") && !std::strcmp(name, "core_bench_state")) return "numeric_token_scan_xdfa2";
+  if (has("xdfacnt") && !std::strcmp(name, "core_bench_state")) return "__xaccel_xdfacnt_bench";
+  if (has("xlrev2") && !std::strcmp(name, "core_list_reverse")) return "__xaccel_xlrev2";
+  if (has("xlrev1") && !std::strcmp(name, "core_list_reverse")) return "__xaccel_xlrev1";
+  if (has("xlrev") && !std::strcmp(name, "core_list_reverse")) return "__xaccel_xlrev";
+  if (has("xdfa") && !std::strcmp(name, "core_state_transition")) return "__xaccel_xdfa";
+  if (has("xmsum") && !std::strcmp(name, "matrix_sum")) return "__xaccel_xmsum";
+  if (has("xbmul") && !std::strcmp(name, "matrix_mul_matrix_bitextract")) return "__xaccel_xbmul_matrix";
+  if (has("xdot16") && !std::strcmp(name, "matrix_mul_vect")) return "__xaccel_xdot_vect";
+  if (has("xdot16") && !std::strcmp(name, "matrix_mul_matrix")) return "__xaccel_xdot_matrix";
+  if (has("xmac16") && !std::strcmp(name, "matrix_mul_vect")) return "__xaccel_xmac_vect";
+  if (has("xmac16") && !std::strcmp(name, "matrix_mul_matrix")) return "__xaccel_xmac_matrix";
   return nullptr;
 }
 

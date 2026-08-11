@@ -291,7 +291,7 @@ void OptimizationDirectionPerfCounter::update() {
     }
     if (opcode == 0x33 && func7 == 0x05 && func3 == 0x03 &&
         exu->io_in_bits_info_reg2 == 0x00014002) {
-      coreMarkCRCClmulhCount++;
+      crcClmulhCount++;
     }
 
     const bool lateRs1 = exu->io_in_bits_info_lateLoadRs1;

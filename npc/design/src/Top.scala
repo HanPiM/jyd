@@ -215,8 +215,12 @@ class CPUCore(
   dontTouch(io)
   io := DontCare
 
-  val pipelineEpoch    = RegInit(false.B)
-  val redirectPacketReg = RegInit(0.U.asTypeOf(new RedirectPacket))
+  val pipelineEpoch              = RegInit(false.B)
+  val redirectPendingReg         = RegInit(false.B)
+  val redirectEpochReg           = RegInit(false.B)
+  val redirectUseTargetReg       = RegInit(false.B)
+  val redirectTargetReg          = RegInit(0.U(15.W))
+  val redirectFallthroughReg     = RegInit(0.U(15.W))
 
   val gprs = Module(new RegisterFile(READ_PORTS = 2))
   val csrs = Module(new ControlStatusRegisterFile())
@@ -268,31 +272,33 @@ class CPUCore(
   btb.io.update.isReturn   := RegNext(exu.io.isReturn)
   btb.io.update.actualTaken := RegNext(exu.io.branchTaken)
 
-  val redirectNow = exu.io.out.valid && exu.io.predWrong
-  val redirectPendingFire = ifu.io.pc.fire && redirectPacketReg.valid
-  val redirectTakenTarget = Mux(exu.io.btbUpdateEn, exu.io.branchTarget, exu.io.staticTarget)
-  val redirectTarget = Mux(
-    exu.io.isBranch && !exu.io.branchTaken,
-    exu.io.pc + 4.U,
-    redirectTakenTarget
-  )
+  val redirectNow         = exu.io.out.valid && exu.io.predWrong
+  val redirectPacket      = Wire(new RedirectPacket)
+  val redirectPendingFire = ifu.io.pc.fire && redirectPendingReg
 
-  // Sample the selected target every cycle so branch comparison cannot become
-  // the clock-enable for all target bits. Only valid/epoch are redirect-gated.
-  redirectPacketReg.target := TrimmedPC.trim(redirectTarget)
+  // Capture both address candidates every cycle. The branch comparator only
+  // registers the narrow choice bit and cannot enter either address lane.
+  redirectUseTargetReg   := !exu.io.isBranch || exu.io.branchTaken
+  redirectTargetReg      := TrimmedPC.trim(Mux(exu.io.btbUpdateEn, exu.io.branchTarget, exu.io.staticTarget))
+  redirectFallthroughReg := TrimmedPC.trim(exu.io.pc) + 1.U
+
   when(redirectNow) {
-    redirectPacketReg.valid := true.B
-    redirectPacketReg.epoch := ~pipelineEpoch
-    pipelineEpoch := ~pipelineEpoch
+    redirectPendingReg := true.B
+    redirectEpochReg   := ~pipelineEpoch
+    pipelineEpoch      := ~pipelineEpoch
   }.elsewhen(redirectPendingFire) {
-    redirectPacketReg.valid := false.B
+    redirectPendingReg := false.B
   }
 
+  redirectPacket.valid  := redirectPendingReg
+  redirectPacket.target := Mux(redirectUseTargetReg, redirectTargetReg, redirectFallthroughReg)
+  redirectPacket.epoch  := redirectEpochReg
+
   val activeRedirectValid = Wire(Bool())
-  activeRedirectValid := redirectPacketReg.valid
+  activeRedirectValid := redirectPacket.valid
   dontTouch(activeRedirectValid)
   when(activeRedirectValid) {
-    assert(redirectPacketReg.epoch === pipelineEpoch, "redirect packet epoch must match the active pipeline epoch")
+    assert(redirectPacket.epoch === pipelineEpoch, "redirect packet epoch must match the active pipeline epoch")
   }
 
   // The resolving branch only toggles the epoch and fills the registered PC
@@ -302,8 +308,8 @@ class CPUCore(
   )
 
   pcFeedToIFU := Mux(
-    redirectPacketReg.valid,
-    TrimmedPC.expand(redirectPacketReg.target),
+    redirectPacket.valid,
+    TrimmedPC.expand(redirectPacket.target),
     pc
   )
 
@@ -312,7 +318,7 @@ class CPUCore(
   // the same cycle; prediction resumes normally from the fall-through PC.
   val fetchPrediction = Wire(new PredBundle)
   fetchPrediction := bp.io.pred
-  when(redirectPacketReg.valid) {
+  when(redirectPacket.valid) {
     fetchPrediction.hit  := false.B
     fetchPrediction.take := false.B
     fetchPrediction.pc   := pcFeedToIFU + 4.U

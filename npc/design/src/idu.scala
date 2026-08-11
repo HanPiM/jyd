@@ -89,6 +89,14 @@ class WrBackInfoGroup(
   val wbu = new WrBackForwardInfo
 }
 
+class DCacheForwardInfo(
+  implicit p: CPUParameters)
+    extends Bundle {
+  val valid = Bool()
+  val addr  = p.GPRAddr
+  val data  = Types.UWord
+}
+
 class LateLoadProducerInfo(
   implicit p: CPUParameters)
     extends Bundle {
@@ -250,6 +258,7 @@ class IDU(
     val pipelineFlush = Input(Bool())
 
     val wrBackInfo           = Input(new WrBackInfoGroup)
+    val dcacheFwd            = Input(new DCacheForwardInfo)
     val lateLoadProducer     = Input(new LateLoadProducerInfo)
 
     val out = Decoupled(new DecodedInst)
@@ -333,12 +342,12 @@ class IDU(
   // The looping xlrev form advances from EXU's private chain state after its
   // init instruction.  Its encoded rs1 only names the eventual destination;
   // treating it as a source creates a false loop-carried RAW dependency.
-  bypassMux.io.rs1        := Mux(isXlrevLoopEncoding, 0.U, res.rs1)
+  val needReg1AddImm = isTypLoad || isTypStore || isTypJALR
+  bypassMux.io.rs1        := Mux(isXlrevLoopEncoding || needReg1AddImm, 0.U, res.rs1)
   bypassMux.io.rs2        := res.rs2
   bypassMux.io.regData1   := io.rvec.data(0)
   bypassMux.io.regData2   := io.rvec.data(1)
   bypassMux.io.wrBackInfo := io.wrBackInfo
-  val needReg1AddImm = isTypLoad || isTypStore || isTypJALR
   bypassMux.io.lateLoadProducer := io.lateLoadProducer
   // Only compact dedicated results may consume a load whose hit/miss is not
   // known in IDU. The fixed-immediate forms cover the hot xibei bit-extraction
@@ -346,7 +355,7 @@ class IDU(
   val isLateLoadAndi1 = isTypArithmetic && isFmtI && inst(14, 12) === "b111".U && inst(31, 20) === 1.U
   val isLateLoadSrli1 = isTypArithmetic && isFmtI && inst(14, 12) === "b101".U && inst(31, 20) === 1.U
   val isEqualityBranch = isTypBranch && inst(14, 13) === 0.U
-  val allowLateLoadRs1 = isLateLoadAndi1 || isLateLoadSrli1 || isEqualityBranch || isTypLoad
+  val allowLateLoadRs1 = isLateLoadAndi1 || isLateLoadSrli1 || isEqualityBranch
   bypassMux.io.allowLateLoadRs1 := allowLateLoadRs1
   bypassMux.io.allowLateLoadRs2 := isEqualityBranch
   val arithmeticFunc3 = inst(14, 12)
@@ -360,7 +369,7 @@ class IDU(
       (inst(31, 25) === 0.U || inst(31, 25) === 1.U || inst(31, 25) === 2.U)) ||
       (arithmeticFunc3 === 7.U && inst(31, 25) === 0.U))
   bypassMux.io.allowPrevExuFwdRs1 :=
-    (isTypArithmetic && !isXlrevEncoding) || isTypBranch || isTypSys || needReg1AddImm
+    (isTypArithmetic && !isXlrevEncoding) || isTypBranch || isTypSys
   bypassMux.io.allowPrevExuFwdRs2 := isTypArithmetic || isTypBranch || isTypStore
   res.lateLoadRs1 := bypassMux.io.lateLoadRs1
   res.lateLoadRs2 := bypassMux.io.lateLoadRs2
@@ -419,7 +428,15 @@ class IDU(
   res.reg2                := Mux(isFmtI, immI, bypassMux.io.outData2) // For exu ALU src2
   res.csrReadData         := io.csrRead.data
 
-  val needStall = bypassMux.io.needStall
+  val addressExuConflict =
+    needReg1AddImm && SingleByPassMux.conflict(res.rs1, io.wrBackInfo.exu.addr, io.wrBackInfo.exu.enWr)
+  val addressLsuConflict =
+    needReg1AddImm && SingleByPassMux.conflict(res.rs1, io.wrBackInfo.lsu.addr, io.wrBackInfo.lsu.enWr)
+  val addressDcacheReady =
+    SingleByPassMux.conflict(res.rs1, io.dcacheFwd.addr, io.dcacheFwd.valid)
+  val addressLsuReady = addressLsuConflict && io.wrBackInfo.lsu.dataVaild
+  val needStallAddress = addressExuConflict || (addressLsuConflict && !addressLsuReady && !addressDcacheReady)
+  val needStall = bypassMux.io.needStall || needStallAddress
 
   layer.block(PerfCounterLayer) {
     val rawStallPerfTap = Module(new RAWStallPerfTap())
@@ -436,7 +453,16 @@ class IDU(
 
   // res.snpc       := io.in.bits.pc + 4.U
   res.pcAddImm := io.in.bits.pc + res.imm
-  res.addrImm := addrImm12
+  def addAddrImm(base: UInt): UInt = {
+    val lowSum = base(15, 0) +& addrImm12.asSInt.pad(16).asUInt
+    val positiveOffset = !addrImm12(11)
+    val crossesIntoDram = positiveOffset && base(19, 12) === "hff".U && lowSum(16)
+    val crossesIntoPerip = positiveOffset && base(20, 12) === "h1ff".U && lowSum(16)
+    val high = Mux(crossesIntoPerip, "h20".U(6.W), Mux(crossesIntoDram, "h10".U(6.W), base(21, 16)))
+    high ## lowSum(15, 0)
+  }
+  val addressBase = Mux(addressLsuReady, io.wrBackInfo.lsu.data, Mux(addressDcacheReady, io.dcacheFwd.data, io.rvec.data(0)))
+  res.reg1AddImm := addAddrImm(addressBase)
 
   res.isECall := inst === "h73".U
   res.isMRet  := inst === "h30200073".U

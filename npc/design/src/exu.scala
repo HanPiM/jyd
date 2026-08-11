@@ -476,9 +476,7 @@ class EXU(
   val equalityRegV2 = Mux(dinst.info.lateLoadRs2, lateRegV2, stableLateOtherRegV2)
   // val pcAddImm   = dinst.pc + dinst.info.imm
   val pcAddImm   = dinst.info.pcAddImm
-  val addrImm = dinst.info.addrImm.asSInt.pad(32).asUInt
-  val addressRegV1 = Mux(dinst.info.lateLoadRs1, lateRegV1, reg_v1)
-  val reg1AddImm = addressRegV1 + addrImm
+  val reg1AddImm = "h80".U(8.W) ## 0.U(2.W) ## dinst.info.reg1AddImm
 
   // Branches/JAL use PC+imm, while a JALR BTB entry must learn the resolved
   // rs1+imm target.  The BTB stores only the same trimmed PC bits either way.

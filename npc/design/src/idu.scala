@@ -420,6 +420,7 @@ class IDU(
   val isCoremarkCrcU8 = inst(31, 25) === 0.U && arithmeticFunc3 === 0.U && inst(6, 0) === "b0001011".U
   val isCoremarkXbmul = inst(31, 25) === 0.U && arithmeticFunc3 === 5.U && inst(6, 0) === "b0001011".U
   val isCoremarkXlrev = isXlrevEncoding
+  val isCoremarkXstate = inst(31, 25) === 1.U && arithmeticFunc3 === 7.U && inst(6, 0) === "b0001011".U
   val isCoremarkXmsum = inst(31, 25) === 2.U && arithmeticFunc3 === 7.U && inst(6, 0) === "b0001011".U
   val isCoremarkXstateWord = inst(31, 25) === 0.U && inst(6, 0) === "b1011011".U &&
     (arithmeticFunc3 === 0.U || arithmeticFunc3 === 2.U || arithmeticFunc3 === 3.U || arithmeticFunc3 === 5.U)
@@ -430,7 +431,7 @@ class IDU(
   res.xlrevSingle := isCoremarkXlrev && arithmeticFunc3 === 6.U
   res.xlrevChain := isCoremarkXlrev && arithmeticFunc3 === 6.U && inst(31, 25) === 1.U
   res.xlrevLoop := isCoremarkXlrev && isXlrevLoopEncoding
-  res.xstateValid := false.B
+  res.xstateValid := isCoremarkXstate
   res.xmsumValid := isCoremarkXmsum
   res.xstateWordValid := isCoremarkXstateWord
   res.aluIsSub  := !isFmtI && inst(30)

@@ -130,8 +130,8 @@ the current user goal, current RTL, the frozen baseline commit, and current mach
 Consult a historical record only when a specific provenance or comparison question requires it. Copies of optimization
 documents on RTL branches are historical snapshots and must not be edited.
 
-Current active optimization goal (2026-08-09): at 300 MHz, achieve strict post-route setup `WNS > -0.3 ns` and
-CoreMark runtime `< 10.75 s`; equality at either boundary fails. Every candidate promoted to a new baseline must
+Current active optimization goal (2026-08-11): at 300 MHz, achieve strict post-route setup `WNS > -0.3 ns` and
+CoreMark runtime `< 6.8 s`; equality at either boundary fails. Every candidate promoted to a new baseline must
 normally be board-tested and recorded; every Vivado impl attempt must also be recorded (status, commands, results,
 archiving, and keep/revert decision). If board access is
 blocked by the network or board service, lack of a board run alone is not a rejection reason: a candidate with

@@ -210,6 +210,22 @@ for required in \
   fi
 done
 
+# Validate the reference tree before copying it.  The relocation step below
+# deliberately refreshes timestamps in the destination, so a destination-only
+# make -q check cannot detect a stale reference binary.
+if ! make -s -q -C "$NEMU_REF/nemu" \
+  "$NEMU_REF/nemu/build/riscv32-nemu-interpreter"; then
+  echo "error: --nemu-ref interpreter is older than its source/configuration: $NEMU_REF" >&2
+  echo "       rebuild it with: make -C $NEMU_REF/nemu" >&2
+  exit 1
+fi
+if ! make -s -q -C "$NEMU_REF/nemu" SHARE=1 \
+  "$NEMU_REF/nemu/build/riscv32-nemu-interpreter-so"; then
+  echo "error: --nemu-ref interpreter-so is older than its source/configuration: $NEMU_REF" >&2
+  echo "       rebuild it with: make -C $NEMU_REF/nemu SHARE=1" >&2
+  exit 1
+fi
+
 mkdir -p "$WT_DIR/nemu/build" "$WT_DIR/nemu/include" \
   "$WT_DIR/nemu/tools/fixdep" "$WT_DIR/nemu/tools/gen-inst" \
   "$WT_DIR/nemu/tools/softfloat/repo/source" \

@@ -779,7 +779,7 @@ class EXU(
   // result, then the result of its previous self-iteration. The done-boundary
   // register keeps that private recurrence out of the asynchronous tag RAM.
   val xlrevQueryAddr = Mux(isXlrevLoop, xlrevLoopQueryAddr, reg_v1)
-  val dcacheQueryAddr = Mux(isXlrevSingle, xlrevQueryAddr, reg1AddImm)
+  val dcacheQueryAddr = Mux(isXlrev, xlrevQueryAddr, reg1AddImm)
   io.dcache.queryIndex := dcacheQueryAddr(11, 2)
   io.dcache.queryTag   := dcacheQueryAddr(17, 11)
   val cacheableStore = isTypStore && reg1AddImm(21, 20) === "b01".U

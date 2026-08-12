@@ -101,6 +101,9 @@ class LateLoadSourceInfo(
   val valid     = Bool()
   val dataValid = Bool()
   val data      = Types.UWord
+  val rawData   = Types.UWord
+  val func3t    = UInt(3.W)
+  val offset    = UInt(2.W)
 }
 
 object SingleByPassMux {

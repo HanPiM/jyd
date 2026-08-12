@@ -349,12 +349,13 @@ class EXU(
     xdfaWordState := NumericDfaState.idle
   }
 
-  when(io.in.fire && isNumericDfa && func3t === 0.U) {
+  val numericDfaLocalFire = io.in.valid && io.out.ready && isNumericDfa && !isNumericDfaStep
+  when(numericDfaLocalFire && func3t === 0.U) {
     xdfaCounters.foreach(_ := 0.U)
     xdfaFinalCounters.foreach(_ := 0.U)
     xdfaPendingMask := 0.U
   }
-  when(io.in.fire && isNumericDfa && func3t === 3.U) {
+  when(numericDfaLocalFire && func3t === 3.U) {
     for (state <- 0 until 8) {
       when(reg_v1(state)) {
         xdfaCounters(state) := xdfaCounters(state) + 1.U
@@ -619,7 +620,38 @@ class EXU(
   val equalityChunkNonZero = VecInit((0 until 4).map(i => equalityDiff(8 * i + 7, 8 * i).orR))
   dontTouch(equalityChunkNonZero)
   val extendedLoadEqual = !equalityChunkNonZero.asUInt.orR
-  val isEqual     = extendedLoadEqual
+
+  def rawLoadEqual(rawData: UInt, offset: UInt, loadFunc3t: UInt, other: UInt): Bool = {
+    val selectedHalf = Mux(offset(1), rawData(31, 16), rawData(15, 0))
+    val selectedByte = MuxLookup(offset, rawData(7, 0))(
+      Seq(
+        1.U -> rawData(15, 8),
+        2.U -> rawData(23, 16),
+        3.U -> rawData(31, 24)
+      )
+    )
+    val unsignedLoad = loadFunc3t(2)
+    val byteUpperMatches = Mux(unsignedLoad, !other(31, 8).orR, other(31, 8) === Fill(24, selectedByte(7)))
+    val halfUpperMatches = Mux(unsignedLoad, !other(31, 16).orR, other(31, 16) === Fill(16, selectedHalf(15)))
+    Mux(
+      loadFunc3t(1),
+      rawData === other,
+      Mux(loadFunc3t(0), selectedHalf === other(15, 0) && halfUpperMatches,
+        selectedByte === other(7, 0) && byteUpperMatches)
+    )
+  }
+
+  val lsuLateEqual = Mux(
+    dinst.info.lateLoadRs1 && dinst.info.lateLoadRs2,
+    true.B,
+    Mux(
+      dinst.info.lateLoadRs1,
+      rawLoadEqual(io.lateLoadLSU.rawData, io.lateLoadLSU.offset, io.lateLoadLSU.func3t, stableLateOtherRegV2),
+      rawLoadEqual(io.lateLoadLSU.rawData, io.lateLoadLSU.offset, io.lateLoadLSU.func3t, stableLateOtherRegV1)
+    )
+  )
+  val useRegisteredRawLoadEqual = hasLateLoadOperand && io.lateLoadLSU.dataValid
+  val isEqual     = Mux(useRegisteredRawLoadEqual, lsuLateEqual, extendedLoadEqual)
   val isLessThan  = branchRegV1.asSInt < branchRegV2.asSInt
   val isLessThanU = branchRegV1 < branchRegV2
 

@@ -434,6 +434,9 @@ class CPUCore(
   // The asynchronous shadow crossed the EXU-to-LSU pipeline register as raw
   // data; extend it from the registered address/width metadata in C1.
   exu.io.lateLoadLSU.data := lsuLateLoadData
+  exu.io.lateLoadLSU.rawData := lsu.io.in.bits.lateLoadData
+  exu.io.lateLoadLSU.func3t  := lsu.io.in.bits.func3t
+  exu.io.lateLoadLSU.offset  := lsu.io.in.bits.destAddr(1, 0)
 
   val lateLoadWBUWidthSupported =
     wbu.io.in.bits.lsuFunc3t === "b000".U || wbu.io.in.bits.lsuFunc3t === "b001".U ||
@@ -445,6 +448,9 @@ class CPUCore(
   exu.io.lateLoadWBU.dataValid := lateLoadWBUValid
   exu.io.lateLoadWBU.data :=
     ExtLoadData(wbu.io.memResp.bits, wbu.io.in.bits.lsuAddrOffset, wbu.io.in.bits.lsuFunc3t)
+  exu.io.lateLoadWBU.rawData := wbu.io.memResp.bits
+  exu.io.lateLoadWBU.func3t  := wbu.io.in.bits.lsuFunc3t
+  exu.io.lateLoadWBU.offset  := wbu.io.in.bits.lsuAddrOffset
   exu.io.lateLoadWBURawData := wbu.io.memResp.bits
   exu.io.lateLoadWBUFunc3   := wbu.io.in.bits.lsuFunc3t
   exu.io.lateLoadWBUOffset  := wbu.io.in.bits.lsuAddrOffset

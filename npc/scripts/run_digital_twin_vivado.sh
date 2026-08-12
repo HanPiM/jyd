@@ -4,7 +4,7 @@ set -euo pipefail
 
 usage() {
   cat <<'EOF'
-Usage: run_digital_twin_vivado.sh [impl|write_bitstream|bitstream] [--jobs N] [--ip-jobs N] [--coe-dir DIR] [--isolated-profile NAME] [--archive-dir DIR] [--keep-workdir] [--project-root DIR] [--expected-cpu-mhz N] [--flow-profile NAME] [--reset-runs] [--reuse-ip] [--skip-pack] [--skip-vivado] [--user-approved-low-jobs]
+Usage: run_digital_twin_vivado.sh [impl|write_bitstream|bitstream] [--jobs N] [--ip-jobs N] [--coe-dir DIR] [--isolated-profile NAME] [--archive-dir DIR] [--prepare-only] [--keep-workdir] [--project-root DIR] [--expected-cpu-mhz N] [--flow-profile NAME] [--reset-runs] [--reuse-ip] [--skip-pack] [--skip-vivado] [--user-approved-low-jobs]
 
 Build npc pack-fpga, replace the Vivado project's imported pack-fpga directory,
 then run the digital_twin Vivado project to impl or write_bitstream.
@@ -23,6 +23,7 @@ Isolated diagnostic flow:
   --isolated-profile NAME
                          Build quick-75, default-200, or default-150 in a copied project.
   --archive-dir DIR      Archive isolated-flow logs, reports, DCPs, and bitstream in DIR.
+  --prepare-only         Stop after preparing an isolated project and configuring its clock.
   --keep-workdir         Retain the isolated Vivado project after completion.
   --project-root DIR     Use DIR as the Vivado project instead of the in-tree project.
   --expected-cpu-mhz N   Require the configured CPU clock to match N MHz.
@@ -66,6 +67,7 @@ flow_profile=project
 isolated_profile=""
 archive_dir=""
 keep_workdir=0
+prepare_only=0
 synth_global_retiming="${VIVADO_SYNTH_GLOBAL_RETIMING:-0}"
 synth_keep_equivalent_registers="${VIVADO_SYNTH_KEEP_EQUIVALENT_REGISTERS:-0}"
 synth_flatten_hierarchy="${VIVADO_SYNTH_FLATTEN_HIERARCHY:-}"
@@ -127,6 +129,11 @@ while [ "$#" -gt 0 ]; do
       shift 2
       ;;
     --keep-workdir)
+      keep_workdir=1
+      shift
+      ;;
+    --prepare-only)
+      prepare_only=1
       keep_workdir=1
       shift
       ;;
@@ -206,6 +213,10 @@ case "$isolated_profile" in
 esac
 if [ -n "$isolated_profile" ] && [ -n "$project_root" ]; then
   echo "--isolated-profile and --project-root are mutually exclusive" >&2
+  exit 2
+fi
+if [ "$prepare_only" -eq 1 ] && [ -z "$isolated_profile" ]; then
+  echo "--prepare-only requires --isolated-profile" >&2
   exit 2
 fi
 if [ "$reset_runs" -eq 1 ] && [ "$reuse_ip" -eq 1 ]; then
@@ -402,6 +413,18 @@ EOF
     echo "workdir=$isolated_workdir"
     echo "started_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   } >"$archive_dir/metadata.env"
+
+  if [ "$prepare_only" -eq 1 ]; then
+    {
+      echo "vivado_status=not-run"
+      echo "archive_dir=$archive_dir"
+      echo "finished_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    } >>"$archive_dir/metadata.env"
+    echo "ISOLATED_PROFILE=$isolated_profile"
+    echo "ISOLATED_ARCHIVE=$archive_dir"
+    echo "ISOLATED_WORKDIR=$isolated_workdir"
+    exit 0
+  fi
 
   set +e
   "$script_dir/run_digital_twin_vivado.sh" "$mode" \

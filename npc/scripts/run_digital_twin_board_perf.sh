@@ -306,23 +306,30 @@ execute_profile() {
   } >"$run_archive/metadata.env"
   git -C "$repo_root" status --short >"$run_archive/git-status.txt"
 
-  if [ "$prepare_only" -eq 1 ]; then
-    die "--prepare-only is no longer supported; use the main flow's --isolated-profile with --keep-workdir"
-  fi
-
   runner_log="$run_archive/vivado-runner.log"
   flow_start_ns=$(date +%s%N)
   set +e
-  "$vivado_runner" bitstream \
+  runner_args=(bitstream \
     --isolated-profile "$selected_profile" \
     --archive-dir "$run_archive" \
     --coe-dir "$coe_dir" \
-    --jobs "$jobs" --ip-jobs "$ip_jobs" 2>&1 | tee "$runner_log"
+    --jobs "$jobs" --ip-jobs "$ip_jobs")
+  if [ "$prepare_only" -eq 1 ]; then
+    runner_args+=(--prepare-only)
+  fi
+  "$vivado_runner" "${runner_args[@]}" 2>&1 | tee "$runner_log"
   vivado_status=${PIPESTATUS[0]}
   set -e
   flow_end_ns=$(date +%s%N)
   LAST_FLOW_SECONDS=$(awk -v start="$flow_start_ns" -v end="$flow_end_ns" \
     'BEGIN { printf "%.3f", (end - start) / 1000000000.0 }')
+
+  if [ "$prepare_only" -eq 1 ] && [ "$vivado_status" -eq 0 ]; then
+    LAST_WORKDIR=$(awk -F= '/^ISOLATED_WORKDIR=/ {value=$2} END {print value}' "$runner_log")
+    [ -n "$LAST_WORKDIR" ] || die "prepared project path missing from $runner_log"
+    echo "prepared_project=$LAST_WORKDIR/jyd-vivado-proj" | tee -a "$run_archive/metadata.env"
+    return 0
+  fi
 
   echo "vivado_status=$vivado_status" >>"$run_archive/metadata.env"
   if [ "$vivado_status" -ne 0 ]; then

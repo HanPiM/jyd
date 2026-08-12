@@ -704,6 +704,23 @@ if {$reset_runs} {
   reset_target all $project_ips
   generate_target all $project_ips
 }
+set guarded_mul16_ip [get_ips -quiet mult_gen_mul16_fast]
+set guard_mul16_ooc [expr {
+  [llength $guarded_mul16_ip] == 1 &&
+  [get_property CONFIG.PipeStages $guarded_mul16_ip] eq "1"
+}]
+if {$guard_mul16_ooc} {
+  # Vivado can report the XCI as Up-to-date/NEEDS_REFRESH=0 while restoring a
+  # structurally stale OOC DCP from IPCACHE. Let the native IP flow regenerate
+  # this configuration, but prevent it from reading a shared cached result.
+  config_ip_cache -disable_for_ip $guarded_mul16_ip
+  if {![config_ip_cache -is_ip_disabled $guarded_mul16_ip]} {
+    error "Failed to disable IPCACHE for latency-1 mult_gen_mul16_fast"
+  }
+  puts "OOC freshness: disabled IPCACHE for latency-1 mult_gen_mul16_fast"
+  reset_target all $guarded_mul16_ip
+  generate_target all $guarded_mul16_ip
+}
 set checkpoint_ip_files [list]
 foreach ip_obj $project_ips {
   set ip_name [get_property NAME $ip_obj]
@@ -725,7 +742,11 @@ foreach ip_file $checkpoint_ip_files {
   }
   set ip_run [get_runs -quiet $run_name]
   if {[llength $ip_run] == 1} {
-    lappend checkpoint_runs $ip_run
+    if {$guard_mul16_ooc && $ip_name eq "mult_gen_mul16_fast"} {
+      set guarded_run $ip_run
+    } else {
+      lappend checkpoint_runs $ip_run
+    }
   } elseif {$reset_runs} {
     error "Failed to create required clean IP synthesis run: $run_name"
   } else {
@@ -742,8 +763,21 @@ if {$reset_runs} {
 } else {
   puts "Reusing [llength $checkpoint_runs] completed project IP synthesis checkpoints"
 }
-if {[llength $checkpoint_runs] > 0} {
-  foreach run_obj $checkpoint_runs {
+if {$guard_mul16_ooc} {
+  if {[llength $guarded_run] != 1} {
+    error "Failed to create mult_gen_mul16_fast_synth_1 for native OOC regeneration"
+  }
+  puts "OOC freshness: regenerating mult_gen_mul16_fast_synth_1 through native flow without IPCACHE"
+  reset_run $guarded_run
+  launch_runs $guarded_run -jobs $ip_jobs
+  wait_on_run $guarded_run
+}
+set validated_checkpoint_runs $checkpoint_runs
+if {$guard_mul16_ooc} {
+  lappend validated_checkpoint_runs $guarded_run
+}
+if {[llength $validated_checkpoint_runs] > 0} {
+  foreach run_obj $validated_checkpoint_runs {
     set run_name [get_property NAME $run_obj]
     set run_status [get_property STATUS $run_obj]
     set run_progress [get_property PROGRESS $run_obj]
@@ -753,6 +787,57 @@ if {[llength $checkpoint_runs] > 0} {
       error "$run_name is not complete; rerun with --reset-runs"
     }
   }
+}
+
+# A completed OOC run is not sufficient proof that its checkpoint matches the
+# XCI. Vivado's IP cache has historically returned a latency-2 multiplier DCP
+# for this latency-1 configuration. After the native isolated rebuild above,
+# inspect the implemented DSP registers before allowing top-level synthesis.
+proc validate_mul16_fast_ooc {} {
+  set ip_name mult_gen_mul16_fast
+  set ip_obj [get_ips -quiet $ip_name]
+  if {[llength $ip_obj] == 0} {
+    puts "OOC identity check: $ip_name is not present; skipping"
+    return 1
+  }
+  if {[llength $ip_obj] != 1} {
+    error "OOC identity check expected one $ip_name IP, got [llength $ip_obj]"
+  }
+  set expected_latency [get_property CONFIG.PipeStages $ip_obj]
+  if {$expected_latency ne "1"} {
+    puts "OOC identity check: $ip_name PipeStages=$expected_latency does not require the latency-1 DSP gate"
+    return 1
+  }
+  set run_obj [get_runs -quiet ${ip_name}_synth_1]
+  if {[llength $run_obj] != 1} {
+    puts "OOC identity mismatch: missing ${ip_name}_synth_1"
+    return 0
+  }
+  set dcp_file [file join [get_property DIRECTORY $run_obj] ${ip_name}.dcp]
+  if {![file isfile $dcp_file]} {
+    puts "OOC identity mismatch: checkpoint does not exist: $dcp_file"
+    return 0
+  }
+  open_checkpoint $dcp_file
+  set dsp_cells [get_cells -quiet -hierarchical -filter {REF_NAME == DSP48E1}]
+  set valid [expr {[llength $dsp_cells] > 0}]
+  set signatures [list]
+  foreach dsp_cell $dsp_cells {
+    set signature [format "%s/%s/%s/%s" \
+      [get_property AREG $dsp_cell] [get_property BREG $dsp_cell] \
+      [get_property MREG $dsp_cell] [get_property PREG $dsp_cell]]
+    lappend signatures $signature
+    if {$signature ne "0/0/0/1"} {
+      set valid 0
+    }
+  }
+  close_design
+  puts "OOC identity check: $ip_name PipeStages=$expected_latency DSP AREG/BREG/MREG/PREG=[lsort -unique $signatures] DCP=$dcp_file"
+  return $valid
+}
+
+if {![validate_mul16_fast_ooc]} {
+  error "mult_gen_mul16_fast native OOC result does not implement latency-1 as DSP 0/0/0/1"
 }
 set locked_ips_after_generate [list]
 foreach ip_obj $project_ips {

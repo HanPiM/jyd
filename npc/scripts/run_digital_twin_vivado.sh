@@ -365,6 +365,8 @@ if [ -n "$isolated_profile" ]; then
   [ -d "$pack_src" ] || { echo "pack-fpga directory does not exist: $pack_src" >&2; exit 1; }
   mkdir -p -- "$isolated_project/digital_twin.srcs/sources_1/imports"
   cp -a -- "$pack_src" "$isolated_project/digital_twin.srcs/sources_1/imports/pack-fpga"
+  mkdir -p -- "$isolated_project/digital_twin.srcs/sources_1/imports/cur_coe"
+  cp -a -- "$irom_coe" "$dram_coe" "$isolated_project/digital_twin.srcs/sources_1/imports/cur_coe/"
 
   configure_tcl="$isolated_workdir/configure-clock.tcl"
   cat >"$configure_tcl" <<'EOF'

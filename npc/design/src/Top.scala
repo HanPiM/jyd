@@ -335,14 +335,6 @@ class CPUCore(
   dcache.io.queryTag   := exu.io.dcache.queryTag
   exu.io.dcache.hit    := dcache.io.hit && p.enableDCache.B
   exu.io.dcache.lateReadData := dcache.io.lateReadData
-  dcache.io.lateBranchPreviewValid := exu.io.lateBranchPreview.valid && exu.io.in.valid &&
-    exu.io.out.bits.cacheableLoad && dcache.io.hit && p.enableDCache.B
-  dcache.io.lateBranchOtherOperand := exu.io.lateBranchPreview.otherOperand
-  dcache.io.lateBranchBothOperands := exu.io.lateBranchPreview.bothLate
-  dcache.io.lateBranchLoadFunc3 := exu.io.in.bits.code(14, 12)
-  dcache.io.lateBranchLoadOffset := exu.io.out.bits.destAddr(1, 0)
-  exu.io.dcache.lateBranchEqualValid := dcache.io.lateBranchEqualValid
-  exu.io.dcache.lateBranchEqual := dcache.io.lateBranchEqual
   val dcacheStorePortMutation = exu.io.dcache.storeUpdate && p.enableDCache.B
   val dcacheStoreMutation = dcacheStorePortMutation || (exu.io.dcache.fullUpdate && p.enableDCache.B)
   val dcacheStoreEpoch    = RegInit(false.B)

@@ -17,7 +17,6 @@ class LSUInput(
   val lateLoadData = Types.UWord
   val dcacheStoreEpoch = Bool()
   val func3t       = UInt(3.W)
-  val addressResultData = Types.UWord
   val exuWriteBack = new WriteBackInfo
 }
 
@@ -32,7 +31,7 @@ object ExtractFwdInfoFromLSU {
     out.addr      := ResultLaneSelect.rd(wrBack)
     out.enWr      := ResultLaneSelect.anyValid(wrBack) && info.valid
     out.dataVaild := info.valid && (!info.bits.isLoad || loadDataValid)
-    out.data      := Mux(info.bits.isLoad, loadData, info.bits.addressResultData)
+    out.data      := Mux(info.bits.isLoad, loadData, ResultLaneSelect.nonLoadData(wrBack))
     out.kind      := wrBack.resultKind
 
     out.enWrCSR := wrBack.csr.en && info.valid

@@ -1,0 +1,41 @@
+\begin{figure}[H]\centering\resizebox{0.98\linewidth}{!}{%
+\begin{tikzpicture}[
+ b/.style={draw,rounded corners=1.2pt,align=center,text width=3.05cm,minimum height=0.86cm,fill=blue!6},
+ d/.style={draw,diamond,aspect=2.0,align=center,fill=orange!7},
+ a/.style={-Stealth,thick},font=\small]
+\node[b] (access) at (-3.7,4.5) {EXU 发起数据访问};
+\node[d] (kind) at (1.7,4.5) {按 tag 结果与访问类型分派};
+\draw[a] (access)--(kind);
+
+% 四种互斥情形各占一条泳道；总线只承担一次分派，不穿过任何节点。
+\coordinate (busc) at (1.7,3.2);
+\draw[thick] (kind)--(busc);
+\draw[thick] (-6.0,3.2)--(6.0,3.2);
+
+\node[b,fill=green!7] (normal) at (-6.0,1.8) {普通 load 命中\\主 BRAM C1 同步读};
+\node[b,fill=green!7] (lsu) at (-6.0,-0.2) {数据、地址与 bank 对齐\\LSU 扩展并前递};
+\draw[a] (-6.0,3.2)--(normal);
+\draw[a] (normal)--(lsu);
+
+\node[b,fill=cyan!8] (mirror) at (-2.0,1.8) {可放行的 late-load 命中\\异步镜像 C0 读原始字};
+\node[b,fill=cyan!8] (reg) at (-2.0,-0.2) {跨 EXU--LSU 寄存边界\\C1 扩展后供受限消费者};
+\draw[a] (-2.0,3.2)--(mirror);
+\draw[a] (mirror)--(reg);
+
+\node[b,fill=purple!7] (store) at (2.0,1.8) {store\\主 BRAM 与镜像同址更新};
+\node[b,fill=purple!7] (storepolicy) at (2.0,-0.2) {整字写入并分配 tag\\窄写入保守失效该行};
+\draw[a] (2.0,3.2)--(store);
+\draw[a] (store)--(storepolicy);
+
+\node[b,fill=gray!10] (miss) at (6.0,1.8) {load miss\\访问下级数据存储};
+\node[b,fill=gray!10] (response) at (6.0,-0.2) {响应先完成本次 load};
+\node[d] (epoch) at (6.0,-2.2) {store epoch\\仍一致？};
+\node[b,fill=gray!10] (fill) at (4.0,-4.2) {是：回填主 BRAM、\\镜像与 tag};
+\node[b,fill=gray!10] (drop) at (8.0,-4.2) {否：只交付响应，\\取消旧 miss 回填};
+\draw[a] (6.0,3.2)--(miss);
+\draw[a] (miss)--(response);
+\draw[a] (response)--(epoch);
+\draw[a] (epoch)--node[above left]{是}(fill);
+\draw[a] (epoch)--node[above right]{否}(drop);
+\end{tikzpicture}}
+\caption{D-cache 在命中、late-load、store 与 miss 情况下的处理流程}\end{figure}

@@ -1,5 +1,16 @@
 \section{指令扩展与硬件加速}\label{sec:extensions}
 
+% 本章算法框：保持自包含，避免为少量伪代码引入额外宏包。
+\newsavebox{\customalgbox}
+\newenvironment{customalgorithm}[1]{%
+  \begin{center}\setlength{\fboxsep}{7pt}%
+  \begin{lrbox}{\customalgbox}\begin{minipage}{0.91\linewidth}\small
+  \textbf{#1}\par\smallskip\hrule\smallskip
+}{%
+  \smallskip\hrule\end{minipage}\end{lrbox}%
+  \fbox{\usebox{\customalgbox}}\end{center}
+}
+
 \subsection{基础指令能力}
 
 处理器实现 RV32I 整数指令集、RV32M 乘除法指令、Zicsr CSR 访问指令以及机器态异常返回，
@@ -43,9 +54,9 @@ Zbkx&\code{xperm4}&逐半字节置换\\
 字段组织。GCC 支持生成这些自定义指令。表~\ref{tab:custom-encoding} 给出助记符与固定编码，随后给出
 其输入、输出、状态和访存副作用的完整定义。
 
-\begin{table}[H]\centering\tiny
+\begin{table}[H]\centering\scriptsize
 \caption{主要自定义指令编码}\label{tab:custom-encoding}
-\begin{tabularx}{\linewidth}{@{}p{0.15\linewidth}C{0.09\linewidth}C{0.09\linewidth}C{0.13\linewidth}Y@{}}
+\begin{tabular*}{\linewidth}{@{\extracolsep{\fill}}lcccl@{}}
 \toprule
 \textbf{助记符}&\textbf{opcode}&\textbf{funct7}&\textbf{funct3}&\textbf{操作形式}\\\midrule
 \code{xcrcu8}&\code{0001011}&\code{0000000}&\code{000}&\code{rd=f(rs1[7:0],rs2[15:0])}\\
@@ -60,7 +71,7 @@ Zbkx&\code{xperm4}&逐半字节置换\\
 \code{xdfa4h.step}&\code{1011011}&\code{0000001}&\code{101}&四字节处理并在终止时提交计数\\
 \code{xdfa4h.read}&\code{1011011}&\code{0000001}&\code{010}&读取指定终态计数\\
 \bottomrule
-\end{tabularx}
+\end{tabular*}
 \normalsize\end{table}
 
 \subsubsection{\texttt{xcrcu8}：单字节 CRC 状态变换}
@@ -71,13 +82,17 @@ $v=d\Vert c\in\mathbb{F}_2^{24}$。硬件用固定异或网络实现线性映射
   \mathrm{rd}[15:0]=M_{\mathrm{CRC}}v,\qquad \mathrm{rd}[31:16]=0,
 \end{equation}
 其中 $M_{\mathrm{CRC}}\in\mathbb{F}_2^{16\times24}$ 为 CRC 更新多项式展开后得到的常量矩阵，矩阵
-乘加均在 $\mathbb{F}_2$ 上进行。等价的逐位参考伪代码为：
-\begin{quote}\small\ttfamily
-next = crc \& 0xffff; value = data;\\
-for (i=0; i<8; i++) \{ x=(value xor next) \& 1; value>>=1;\\
-\quad if (x) next=next xor 0x4002; next=(next>>1)|(x<<15); \}\\
-rd = next \& 0xffff;
-\end{quote}
+乘加均在 $\mathbb{F}_2$ 上进行。等价的逐位参考算法如下；其中 $\oplus$ 表示按位异或。
+\begin{customalgorithm}{算法 1：单字节 CRC 状态更新}
+\begin{tabular}{@{}r@{\quad}l@{}}
+1 & $next\gets crc[15:0]$；$value\gets data[7:0]$\\
+2 & \textbf{for} $i\gets 0$ \textbf{to} $7$ \textbf{do}\\
+3 & \quad $x\gets (value\oplus next)[0]$；$value\gets value\gg1$\\
+4 & \quad \textbf{if} $x=1$ \textbf{then} $next\gets next\oplus\mathtt{0x4002}$\\
+5 & \quad $next\gets(next\gg1)\mathbin{|}(x\ll15)$\\
+6 & \textbf{return} $next[15:0]$
+\end{tabular}
+\end{customalgorithm}
 该指令不访问存储器、不保留跨指令状态，并在单周期结果通路写回。相同 ISA 配置和迭代数的板级对比
 中，它将运行时间由 10.07521570~s 降至 9.56506582~s，减少 0.51014988~s（5.0634\%）。
 
@@ -89,7 +104,7 @@ rd = next \& 0xffff;
 \end{equation}
 两个位域分别为 4 位和 7 位无符号数，因此 11 位结果不会溢出。这一组合数据通路不产生内存或内部
 状态副作用。以已经启用 B 扩展与 \code{xcrcu8} 的板级结果为基准，加入 \code{xbmul} 后运行时间由
-9.56506582~s 降至 9.07727378~s，减少 0.48779204~s（5.10\%）。
+9.56506582~s 降至 9.07727378~s，\textbf{减少 0.48779204~s（5.10\%）}。
 
 \input{src/tikz/custom-simple-datapath}
 
@@ -102,13 +117,17 @@ rd = next \& 0xffff;
 \end{equation}
 \code{xlistrev.init} 从 \code{rs1}、\code{rs2} 装入 $(cur,prev)$ 并完成第一步；
 \code{xlistrev.loop} 使用内部保存的 $(cur,prev)$ 继续推进。当 $next\neq0$ 时，硬件把 PC 重定向回当前
-\code{xlistrev.loop}，否则返回新的表头。其行为可写为：
-\begin{quote}\small\ttfamily
-init: cur=rs1; prev=rs2;\\
-while (cur != 0) \{ next=load32(cur); store32(cur,prev);\\
-\quad prev=cur; cur=next; \}\\
-rd=prev;
-\end{quote}
+\code{xlistrev.loop}，否则返回新的表头。其参考算法为：
+\begin{customalgorithm}{算法 2：单链表原地反转}
+\begin{tabular}{@{}r@{\quad}l@{}}
+1 & $cur\gets rs1$；$prev\gets rs2$\\
+2 & \textbf{while} $cur\ne0$ \textbf{do}\\
+3 & \quad $next\gets\operatorname{Load}_{32}(cur)$\\
+4 & \quad $\operatorname{Store}_{32}(cur,prev)$\\
+5 & \quad $prev\gets cur$；$cur\gets next$\\
+6 & \textbf{return} $prev$
+\end{tabular}
+\end{customalgorithm}
 读请求先查询 D-cache，未命中时转入统一数据总线；写请求同时更新主存可见数据与缓存副本。预取寄存器
 保存下一节点的查询结果，避免后继循环再次建立无关控制路径。状态转移按请求/响应边界分层，见
 图~\ref{fig:custom-listrev}，连线不穿越状态节点。
@@ -116,22 +135,30 @@ rd=prev;
 \input{src/tikz/custom-listrev}
 
 在相同组合的板级对比中，\code{xlistrev} 将运行时间由 7.45481628~s 降至 7.29058196~s。
-减少量为 0.16423432~s（约 2.20\%）；对应完整指令数减少 13.81\%，差异来自每个节点仍需要一次相关 load 和
+\textbf{减少量为 0.16423432~s（约 2.20\%）}；对应完整指令数减少 13.81\%，差异来自每个节点仍需要一次相关 load 和
 一次 store 的阻塞事务。
 
 \subsubsection{\texttt{xmsum}：带裁剪的矩阵序列归约}
 
 \code{rs1} 给出连续 32 位元素数组 $C$ 的首地址；$n=\mathrm{rs2}[31:16]$，
-$clip=\mathrm{sext}_{32}(\mathrm{rs2}[15:0])$，处理元素数 $N=n^2$。令 $C_i$ 为第 $i$ 个有符号元素，
-$S_{-1}=0$、$P_{-1}=0$、$R_{-1}=0$，逐元素递推：
-\begin{align}
- T_i&=(Q_{i-1}?0:S_{i-1})+C_i, & Q_i&=(T_i>clip),\\
- S_i&=T_i, &R_i&=R_{i-1}+\begin{cases}10,&Q_i\\1,&\neg Q_i\land C_i>P_{i-1}\\0,&\text{其他}\end{cases},\\
- P_i&=C_i.&&
-\end{align}
-完成后返回 $\mathrm{rd}=\mathrm{sext}_{32}(R_{N-1}[15:0])$；$n=0$ 时返回 0。控制器按
+$clip=\mathrm{sext}_{32}(\mathrm{rs2}[15:0])$，处理元素数 $N=n^2$。由于该操作包含跨元素状态和
+条件更新，用顺序伪代码比拆分的递推公式更直接地对应硬件控制：
+\begin{customalgorithm}{算法 3：带裁剪的矩阵序列归约}
+\begin{tabular}{@{}r@{\quad}l@{}}
+1 & $S\gets0$；$P\gets0$；$R\gets0$；$clipped\gets\mathbf{false}$\\
+2 & \textbf{for} $i\gets0$ \textbf{to} $n^2-1$ \textbf{do}\\
+3 & \quad $C\gets\operatorname{Load}_{32}(base+4i)$\\
+4 & \quad \textbf{if} $clipped$ \textbf{then} $S\gets C$ \textbf{else} $S\gets S+C$\\
+5 & \quad $clipped\gets(S>clip)$\\
+6 & \quad \textbf{if} $clipped$ \textbf{then} $R\gets R+10$\\
+7 & \quad \textbf{else if} $C>P$ \textbf{then} $R\gets R+1$\\
+8 & \quad $P\gets C$\\
+9 & \textbf{return} $\mathrm{sext}_{32}(R[15:0])$
+\end{tabular}
+\end{customalgorithm}
+当 $n=0$ 时循环体不执行，因而返回 0。控制器按
 “请求---响应---递推---完成”推进，只读内存，不修改数组。板级逐项实验中，在 \code{xbmul} 基础上
-加入 \code{xmsum} 后运行时间由 9.07727378~s 降至 8.57272290~s，减少 0.50455088~s（5.56\%）。
+加入 \code{xmsum} 后运行时间由 9.07727378~s 降至 8.57272290~s，\textbf{减少 0.50455088~s（5.56\%）}。
 
 \input{src/tikz/custom-xmsum}
 
@@ -140,14 +167,18 @@ $S_{-1}=0$、$P_{-1}=0$、$R_{-1}=0$，逐元素递推：
 该指令族实现八状态字符自动机。状态编码为起始、非法、符号后、指数标记后、整数、小数、指数符号后、
 科学计数；转移函数记为 $q'=\delta(q,ch)$。逗号、零字节或非法转移使本次有界步停止。对至多 $k$
 个可用字符（$k=2$ 或 4），硬件执行：
-\begin{quote}\small\ttfamily
-q=rs1[2:0]; mask=0; consumed=0; stopped=0;\\
-for i in [0,k): if (!stopped) \{ ch=Mem8[rs2+i];\\
-\quad if (ch==0 || ch==',' || delta(q,ch)==INVALID) stopped=1;\\
-\quad else \{ mask |= transitionMask(q,ch); q=delta(q,ch); \}\\
-\quad if (ch!=0) consumed++; \}\\
-rd = pack(mask, stopped, consumed, q);
-\end{quote}
+\begin{customalgorithm}{算法 4：有界字符状态推进}
+\begin{tabular}{@{}r@{\quad}l@{}}
+1 & $q\gets rs1[2:0]$；$mask\gets0$；$consumed\gets0$；$stopped\gets\mathbf{false}$\\
+2 & \textbf{for} $i\gets0$ \textbf{to} $k-1$ \textbf{do}\\
+3 & \quad \textbf{if} $\neg stopped$ \textbf{then}\\
+4 & \qquad $ch\gets\operatorname{Mem}_{8}[rs2+i]$；$q'\gets\delta(q,ch)$\\
+5 & \qquad \textbf{if} $ch\in\{0,\mathtt{','}\}$ 或 $q'=\mathrm{INVALID}$ \textbf{then} $stopped\gets\mathbf{true}$\\
+6 & \qquad \textbf{else} $mask\gets mask\mathbin{|}\operatorname{transitionMask}(q,ch)$；$q\gets q'$\\
+7 & \qquad \textbf{if} $ch\ne0$ \textbf{then} $consumed\gets consumed+1$\\
+8 & \textbf{return} $\operatorname{Pack}(mask,stopped,consumed,q)$
+\end{tabular}
+\end{customalgorithm}
 两字符组合步骤是四字符通路的内部基本模块；\code{xdfa4} 以两个串联步骤覆盖一个对齐字内至多四个
 字符。其返回字段为 $\mathrm{rd}[2:0]=q$、$\mathrm{rd}[5:3]=consumed$、
 $\mathrm{rd}[6]=stopped$、$\mathrm{rd}[14:7]=mask$。实际可用字符数为
@@ -166,7 +197,7 @@ $4-(\mathrm{rs2}\bmod4)$，因此访问不会越过当前对齐字。
 拆分估算。
 包含四字节推进与硬件计数提交的 \code{xdfa4h} 方案，在前一同组合版本上将完整动态指令数由
 1,459,284,065 降至 1,335,204,091，减少 124,079,974 条（8.50\%）；包含
-\code{xbmul+xcrcu8+xlistrev+xmsum+xdfa4h} 的组合板测时间为 6.69637186~s。该数值是组合结果，
+\code{xbmul+xcrcu8+xlistrev+xmsum+xdfa4h} 的\textbf{组合板测时间为 6.69637186~s}。该数值是组合结果，
 不归因于任一条单独指令。
 
 \subsection{一致性、阻塞与异常边界}
@@ -174,4 +205,4 @@ $4-(\mathrm{rs2}\bmod4)$，因此访问不会越过当前对齐字。
 无内部访存的 \code{xcrcu8/xbmul} 直接进入加速结果通路；其余单元在 EXU 保持当前指令，直至状态机
 完成并与后级握手。\code{xlistrev} 的 store、\code{xmsum} 的 load 及 DFA 的对齐字读取均复用统一
 数据总线。控制流冲刷不会提交年轻指令的请求；已经握手的链表写入则按普通 store 的可见顺序完成。
-最终结果经独立 accelerator lane 写回，使阻塞控制、访存副作用和普通整数结果选择保持清晰边界。
+\textbf{最终结果经独立硬件加速结果通路写回}，使阻塞控制、访存副作用和普通整数结果选择保持清晰边界。

@@ -2,16 +2,30 @@
   \centering
   \begin{tikzpicture}
     \begin{axis}[
-      width=0.88\textwidth,height=6.3cm,
-      symbolic x coords={BTB512,通路局部化,缓存与late-load,CRC字节更新,位乘矩阵,状态分拍,领域组合,状态计数},
+      width=0.88\textwidth,height=6.5cm,
+      symbolic x coords={BTB512,通路局部化,缓存与late-load,CRC字节更新,位乘矩阵,状态分拍,硬件组合,状态计数},
       xtick=data,x tick label style={rotate=28,anchor=east,font=\scriptsize},
-      ylabel={板测时间（s）},ymin=6.3,ymax=11.1,grid=major,
-      nodes near coords,nodes near coords style={font=\tiny,anchor=south}]
-      \addplot[blue!75!black,very thick,mark=*] coordinates {
+      ylabel={板测时间（s）},ymin=6.3,ymax=11.1,
+      axis y line*=left,axis x line*=bottom,grid=major,
+      legend style={at={(0,1.02)},anchor=south west,font=\scriptsize}]
+      \addplot[blue!75!black,mark=*] coordinates {
         (BTB512,10.695831) (通路局部化,10.695831) (缓存与late-load,10.078266)
         (CRC字节更新,9.565066) (位乘矩阵,8.572723) (状态分拍,7.745942)
-        (领域组合,7.106449) (状态计数,6.696372)};
+        (硬件组合,7.106449) (状态计数,6.696372)};
+      \addlegendentry{板测时间}
+    \end{axis}
+    \begin{axis}[
+      width=0.88\textwidth,height=6.5cm,
+      symbolic x coords={BTB512,通路局部化,缓存与late-load,CRC字节更新,位乘矩阵,状态分拍,硬件组合,状态计数},
+      xtick=\empty,ylabel={WNS（ns）},ymin=-0.85,ymax=-0.20,
+      axis y line*=right,axis x line=none,
+      legend style={at={(1,1.02)},anchor=south east,font=\scriptsize}]
+      \addplot[red!75!black,dashed,mark=square*] coordinates {
+        (BTB512,-0.776) (通路局部化,-0.452) (缓存与late-load,-0.285)
+        (CRC字节更新,-0.534) (位乘矩阵,-0.733) (状态分拍,-0.684)
+        (硬件组合,-0.615) (状态计数,-0.733)};
+      \addlegendentry{WNS}
     \end{axis}
   \end{tikzpicture}
-  \caption{关键优化里程碑的板测时间走向}
+  \caption{关键优化里程碑的板测时间与 WNS 走向}
 \end{figure}

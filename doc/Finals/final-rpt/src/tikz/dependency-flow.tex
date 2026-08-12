@@ -12,12 +12,12 @@
 \node[decision,below=of priority] (conflict) {命中未提交目的寄存器？};
 \node[block,below left=of conflict] (gpr) {否：使用 GPR 数据};
 \node[decision,below=of conflict] (valid) {结果已经有效？};
-\node[block,below right=of conflict] (stall) {否：请求流水线停顿};
+\node[block,right=2.5cm of valid] (stall) {否：请求流水线停顿};
 \node[block,below=1cm of valid] (forward) {是：选择前递结果送往 EXU};
 \draw[arrow] (src)--(exu); \draw[arrow] (src)--(lsu); \draw[arrow] (src)--(wbu);
 \draw[arrow] (exu)--(priority); \draw[arrow] (lsu)--(priority); \draw[arrow] (wbu)--(priority);
 \draw[arrow] (priority)--(conflict); \draw[arrow] (conflict)--node[above left]{否}(gpr);
-\draw[arrow] (conflict)--node[right]{是}(valid); \draw[arrow] (valid)--node[above right]{否}(stall);
+\draw[arrow] (conflict)--node[right]{是}(valid); \draw[arrow] (valid)--node[above]{否}(stall);
 \draw[arrow] (valid)--node[right]{是}(forward); \draw[arrow] (gpr.south)|-(forward.west);
 \end{tikzpicture}}
 \caption{IDU 旁路与停顿判定流程}\end{figure}

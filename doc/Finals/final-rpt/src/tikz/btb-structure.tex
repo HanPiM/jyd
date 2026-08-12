@@ -1,18 +1,28 @@
-\begin{figure}[H]\centering\resizebox{\linewidth}{!}{%
+\begin{figure}[H]\centering\resizebox{0.98\linewidth}{!}{%
 \begin{tikzpicture}[
  b/.style={draw,rounded corners=1.2pt,align=center,minimum height=0.82cm,fill=blue!6},
- mem/.style={draw,rounded corners=1.2pt,align=center,minimum width=1.35cm,minimum height=2.15cm,fill=green!7},
  a/.style={-Stealth,thick},font=\small]
-\node[b,minimum width=2.1cm] (pc) {推测 PC};
-\node[b,right=0.65cm of pc,minimum width=2.55cm] (split) {\texttt{pc[16:2]}\\tag / bank / 行号};
-\foreach \i in {0,...,7}{\node[mem,right=0.28cm of split,xshift=\i*1.42cm] (m\i) {bank \i\\64 项\\异步读};}
-\node[b,right=0.65cm of m7,minimum width=2.65cm] (pick) {bank 选择\\tag 相等且类型有效};
-\node[b,below=0.75cm of pick,minimum width=2.65cm,fill=orange!8] (decode) {类型译码\\JAL / branch / return};
-\node[b,below=0.75cm of m5,minimum width=2.6cm,fill=purple!7] (counter) {表项 2-bit 饱和计数器\\最高位给出 branch 方向};
-\node[b,below=0.75cm of m2,minimum width=2.55cm,fill=cyan!7] (ras) {2 项返回地址栈\\call 压入，return 弹出};
-\node[b,below=1.0cm of decode,minimum width=3.2cm,fill=gray!10] (next) {选择 BTB 目标 / RAS 栈顶 / $pc+4$\\形成 PredBundle};
-\draw[a](pc)--(split); \foreach \i in {0,...,7}{\draw[a](split.east)--(m\i.west);\draw[a](m\i.east)--(pick.west);}
-\draw[a](pick)--(decode); \draw[a](decode)--(next); \draw[a](counter.east)-|(next.north);
-\draw[a](ras.east)-|(next.west);
-\node[draw,dashed,rounded corners=1.2pt,fit=(m0)(m7),inner sep=4pt,label=above:{512 项查询阵列}] {};
-\end{tikzpicture}}\caption{512 项八 bank BTB 与返回预测结构}\end{figure}
+\node[b,minimum width=2.0cm] (pc) at (0,1.9) {推测 PC};
+\node[b,minimum width=2.45cm] (split) at (3.0,1.9) {\texttt{pc[16:2]}\\tag / bank / 行号};
+\node[b,minimum width=5.6cm,minimum height=1.9cm,fill=green!7] (array) at (8.3,1.9) {
+  \textbf{8-bank 并行查询阵列}\\[-0.1em]
+  bank 0 \quad bank 1 \quad $\cdots$ \quad bank 6 \quad bank 7\\
+  每 bank 64 项，LUTRAM 异步读};
+\node[b,minimum width=2.9cm] (pick) at (14.4,1.9) {\texttt{pc[10:8]} 选择 bank\\tag 比较并取出表项};
+
+\node[b,minimum width=3.2cm,fill=orange!8] (decode) at (8.0,-0.55) {类型译码\\JAL / branch / return};
+\node[b,minimum width=3.4cm,fill=purple!7] (counter) at (14.0,-0.55) {表项 2-bit 饱和计数器\\最高位给出 branch 方向};
+\node[b,minimum width=3.2cm,fill=cyan!7] (ras) at (8.0,-2.8) {2 项返回地址栈\\call 压入，return 弹出};
+\node[b,minimum width=4.4cm,fill=gray!10] (next) at (14.0,-2.8) {按类型、方向与 RAS 状态选择\\BTB 目标 / RAS 栈顶 / $pc+4$\\形成 PredBundle};
+
+\draw[a] (pc)--(split);
+\draw[a] (split)--(array);
+\draw[a] (array)--(pick);
+\draw[a] (pick.south west) -- ++(0,-0.42) -| (decode.north);
+\draw[a] (pick.south east) -- ++(0,-0.42) -| (counter.north);
+\draw[a] (decode)--(ras);
+\draw[a] (decode.south east) -- ++(0,-0.36) -| ([xshift=-0.75cm]next.north) -- (next.north);
+\draw[a] (counter.south) -- ++(0,-0.42) -| ([xshift=0.75cm]next.north);
+\draw[a] (ras)--(next);
+\end{tikzpicture}}
+\caption{512 项 8-bank BTB 与返回预测结构}\end{figure}

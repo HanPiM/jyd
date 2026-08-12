@@ -5,7 +5,8 @@
 \node[field,minimum width=1.5cm,fill=orange!10,right=0pt of tag] (bank) {10:8\\8 banks};
 \node[field,minimum width=1.7cm,fill=yellow!12,right=0pt of bank] (row) {7:2\\64 rows};
 \node[field,minimum width=1.2cm,fill=gray!10,right=0pt of row] (lo) {1:0\\00};
-\node[draw,rounded corners=1.2pt,below=1.0cm of bank,align=center,fill=blue!4] (keep) {BTB 保存/比较 \texttt{pc[16:2]}；目标也只保存 15 bit\\重构目标：\texttt{0x80000000 | (target[14:0] << 2)}};
+\coordinate (fieldcenter) at ($(hi.west)!0.5!(lo.east)$);
+\node[draw,rounded corners=1.2pt,below=1.0cm of fieldcenter,align=center,fill=blue!4] (keep) {BTB 保存/比较 \texttt{pc[16:2]}；目标也只保存 15 bit\\重构目标：\texttt{0x80000000 | (target[14:0] << 2)}};
 \draw[a]($(tag.south)!0.5!(row.south)$)--(keep.north);
 \end{tikzpicture}
 \caption{取指 PC 与 BTB 地址字段修剪}\end{figure}

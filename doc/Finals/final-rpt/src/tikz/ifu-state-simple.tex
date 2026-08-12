@@ -11,9 +11,9 @@
 \draw[a](req)--node[sloped,above]{请求端就绪}(resp);
 \draw[a](resp)--node[right]{响应到达、IDU 反压}(out);
 \draw[a](resp.north) -- ++(0,0.55) -| node[pos=0.25,above]{响应被消费且无新请求}(idle.north);
-\draw[a](out.south) -- ++(0,-0.55) -| node[pos=0.25,below]{结果被消费}(idle.south);
+\draw[a](out.east) -- ++(0.75,0) |- node[pos=0.28,right]{结果被消费} ([yshift=0.85cm]resp.north) -| (idle.north);
 \draw[a](resp) edge[loop right] node{响应未到} (resp);
 \draw[a](req) edge[loop left] node{仍未就绪} (req);
-\draw[a](out) edge[loop right] node{继续反压} (out);
+\draw[a](out) edge[loop below] node{继续反压} (out);
 \end{tikzpicture}
 \caption{IFU 四状态控制的简化关系}\end{figure}

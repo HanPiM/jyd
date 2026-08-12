@@ -12,14 +12,16 @@
     \node[ctrl,right=13mm of shadow] (token) {late-load token\\valid + rd + data};
     \node[use,right=13mm of bram] (normal) {普通消费者\\等待 LSU/WBU};
     \node[use,right=13mm of token] (near) {受控相邻消费者\\匹配 rd 后提前取数};
-    \node[ctrl,below=10mm of shadow] (write) {统一缓存写入\\整字分配/窄写失效/epoch 保护};
+    \node[ctrl,below=13mm of token] (write) {统一缓存写入\\整字分配/窄写失效/epoch 保护};
     \draw[arr] (addr) -- (bram);
     \draw[arr] (addr) -- (shadow);
     \draw[arr] (bram) -- (normal);
     \draw[arr] (shadow) -- (token);
     \draw[arr] (token) -- (near);
-    \draw[dasharr] (write) -- (bram);
-    \draw[dasharr] (write) -- (shadow);
+    % 两条一致性写线分别从下方和外侧上方进入，避免穿越数据通路与节点。
+    \draw[dasharr] (write.west) -- ++(-14mm,0) -| (shadow.south);
+    \coordinate (bramtop) at ($(bram.north)+(0,7mm)$);
+    \draw[dasharr] (write.east) -- ++(43mm,0) |- (bramtop) -- (bram.north);
   \end{tikzpicture}}
   \caption{主数据通路与 late-load 受控旁路机制}\label{fig:late-load}
 \end{figure}

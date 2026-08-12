@@ -18,16 +18,17 @@ load-use 延迟、执行结果分区、扩展指令和物理关键路径的协�
 \begin{table}[H]
 \centering
 \caption{从分赛区版本到总决赛设计的主要演进}\label{tab:evolution}
-\small
-\begin{tabularx}{\linewidth}{@{}p{0.15\linewidth}YY@{}}
+\footnotesize
+\setlength{\tabcolsep}{4pt}
+\begin{tabularx}{\linewidth}{@{}p{0.125\linewidth}YY@{}}
 \toprule
 \textbf{方向}&\textbf{分赛区阶段}&\textbf{总决赛阶段}\\\midrule
-控制流预测&较小容量 BTB 与基础方向预测&512 项八 bank BTB、表项 2-bit 动态预测、返回地址栈\\
+控制流预测&较小容量 BTB 与基础方向预测&512 项 8-bank BTB、表项 2-bit 动态预测、返回地址栈\\
 数据缓存&2\,KiB 直接映射缓存及早期窄加载副本&4\,KiB 双 bank 缓存，主 BRAM 与逐字节异步副本协同\\
 执行结构&普通 ALU 与多周期执行结果耦合较多&快速整数、直接、长算术、加速、加载五类结果通路\\
 相关处理&EXU/LSU/WBU 通用旁路与有限 late-load&分组编码的相邻结果选择、注册化 late-load 与专用地址通路\\
 整数扩展&RV32M 与部分位操作的多周期实现&窄乘法 DSP 快通路、短 B 操作与迭代 B 操作分流\\
-领域能力&以标准整数与机器态能力为主&CRC、位抽取乘法、链式变换、矩阵归约、流式状态处理指令\\
+硬件加速&以标准整数与机器态能力为主&CRC、位抽取乘法、链式变换、矩阵归约、流式状态处理指令\\
 板级接口&数码管与 LED 为主要观察手段&加入跨时钟 UART 通路，保留原始运行输出与身份信息\\
 工程闭环&基础打包和实现脚本&输入身份、并发配置、时序摘要、归档与板测流程相互关联\\
 \bottomrule

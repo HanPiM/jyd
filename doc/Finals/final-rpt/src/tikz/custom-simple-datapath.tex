@@ -5,7 +5,7 @@
 \node[n,below right=0.35cm and 1.1cm of rs] (bmul) {位域抽取\\4 位 $\times$ 7 位};
 \node[n,right=1.2cm of crc] (cz) {16 位 CRC\\高位补零};
 \node[n,right=1.2cm of bmul] (bz) {11 位乘积\\高位补零};
-\node[n,right=1.2cm of $(cz)!0.5!(bz)$] (wb) {accelerator lane\\单周期写回};
+\node[n,right=1.2cm of $(cz)!0.5!(bz)$] (wb) {硬件加速通路\\单周期写回};
 \draw[a](rs)--(crc); \draw[a](rs)--(bmul); \draw[a](crc)--(cz); \draw[a](bmul)--(bz);
 \draw[a](cz)--(wb); \draw[a](bz)--(wb);
 \end{tikzpicture}

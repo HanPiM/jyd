@@ -1,16 +1,20 @@
 \begin{figure}[H]\centering
 \begin{tikzpicture}[u/.style={draw,rounded corners=1.2pt,align=center,minimum width=2.55cm,minimum height=0.78cm},a/.style={-Stealth,thick},font=\small]
-\node[u,fill=blue!6] (d) {DecodedInst};
-\node[u,fill=green!7,right=1.25cm of d,yshift=2.25cm] (fi) {快速整数通路};
-\node[u,fill=green!7,right=1.25cm of d,yshift=1.12cm] (di) {直接结果通路};
-\node[u,fill=orange!8,right=1.25cm of d] (la) {长算术通路};
-\node[u,fill=purple!7,right=1.25cm of d,yshift=-1.12cm] (ac) {领域加速通路};
-\node[u,fill=cyan!7,right=1.25cm of d,yshift=-2.25cm] (ld) {加载结果通路};
-\node[u,fill=gray!10,right=3.0cm of la] (wb) {按 ResultKind\\局部汇聚与写回};
-\foreach \x in {fi,di,la,ac,ld}{\draw[a] (d.east)--(\x.west);}
-\draw[a] (fi.east) -- ++(0.5,0) |- (wb.north);
-\draw[a] (di.east) -- ++(0.8,0) |- ([xshift=-0.3cm]wb.north);
+\node[u,fill=blue!6,minimum height=5.25cm] (d) {DecodedInst\\按 ResultKind 分发};
+\node[u,fill=green!7,right=1.35cm of d,yshift=2.25cm] (fi) {快速整数通路};
+\node[u,fill=green!7,right=1.35cm of d,yshift=1.12cm] (di) {直接结果通路};
+\node[u,fill=orange!8,right=1.35cm of d] (la) {长算术通路};
+\node[u,fill=purple!7,right=1.35cm of d,yshift=-1.12cm] (ac) {硬件加速通路};
+\node[u,fill=cyan!7,right=1.35cm of d,yshift=-2.25cm] (ld) {加载结果通路};
+\node[u,fill=gray!10,right=2.35cm of la,minimum height=5.25cm] (wb) {按 ResultKind\\局部汇聚与写回};
+\draw[a] ([yshift=2.25cm]d.east)--(fi.west);
+\draw[a] ([yshift=1.12cm]d.east)--(di.west);
+\draw[a] (d.east)--(la.west);
+\draw[a] ([yshift=-1.12cm]d.east)--(ac.west);
+\draw[a] ([yshift=-2.25cm]d.east)--(ld.west);
+\draw[a] (fi.east)--([yshift=2.25cm]wb.west);
+\draw[a] (di.east)--([yshift=1.12cm]wb.west);
 \draw[a] (la.east)--(wb.west);
-\draw[a] (ac.east) -- ++(0.8,0) |- ([xshift=-0.3cm]wb.south);
-\draw[a] (ld.east) -- ++(0.5,0) |- (wb.south);
+\draw[a] (ac.east)--([yshift=-1.12cm]wb.west);
+\draw[a] (ld.east)--([yshift=-2.25cm]wb.west);
 \end{tikzpicture}\caption{EXU 与写回结果通路分区}\end{figure}

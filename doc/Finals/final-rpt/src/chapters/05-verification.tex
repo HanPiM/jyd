@@ -3,7 +3,8 @@
 本项目沿用分赛区阶段形成的分层验证方法，并针对总决赛新增的预测器、缓存、多周期扩展和自定义指令
 扩大回归范围。验证体系由指令级参考模型、周期级 SystemVerilog 仿真、Vivado Simulation、体系结构
 测试、完整程序、FPGA 实现和真实板测组成。各层分别回答“指令语义是否正确”“流水时序是否正确”
-“器件模型是否一致”“物理实现是否满足约束”以及“真实板级行为是否可复现”。
+“器件模型是否一致”“物理实现是否满足约束”以及“真实板级行为是否可复现”。\textbf{所有性能数据只有在
+结果校验和 CRC 正确后才有效，并由仿真、实现报告和板级原始输出形成可回查的证据链。}
 
 \input{src/tikz/verification-pyramid}
 
@@ -83,7 +84,7 @@ RT-Thread 测试进一步组合上下文切换、异常返回、串口输入、�
 
 \begin{table}[H]\centering
 \caption{验证层次、主要内容与判定标准}
-\small
+\footnotesize
 \begin{tabularx}{\linewidth}{@{}p{0.18\linewidth}YY@{}}
 \toprule
 \textbf{测试层次}&\textbf{主要内容}&\textbf{判定标准}\\\midrule
@@ -136,8 +137,8 @@ bank 连续访问、同步 BRAM bank 对齐，以及自定义访存单元产生�
   \caption{src0 仿真日志与性能统计}
 \end{figure}
 
-src0 完成 37 条功能测试并进入 halt。分赛区阶段记录为 1,988,372,516 周期、1,417M 条动态指令，
-IPC 0.7130、CPI 1.4025；按 280\,MHz 计算为 7.10133\,s，与当时板测显示一致。
+src0 完成 37 条功能测试并进入 halt。既有日志保留周期数与动态指令数作为回归过程记录；\textbf{IPC、
+CPI 与按目标频率换算的时间将在取得新的同口径仿真结果后统一填写。}
 
 \begin{figure}[H]
   \centering
@@ -151,14 +152,8 @@ IPC 0.7130、CPI 1.4025；按 280\,MHz 计算为 7.10133\,s，与当时板测显
   \caption{src1 仿真日志与性能统计}
 \end{figure}
 
-src1 记录为 1,973,306,668 周期、1,304M 条动态指令，IPC 0.6609、CPI 1.5131；280\,MHz 换算
-时间为 7.04752\,s。对应 Vivado Simulation 波形中，数码管写入 37000000，表明 37 条功能测试完成。
-
-\begin{figure}[H]
-  \centering
-  \includegraphics[width=\linewidth]{verify/image19.png}
-  \caption{src1 Vivado Simulation 波形}
-\end{figure}
+src1 既有日志保留周期数与动态指令数作为回归过程记录；IPC、CPI 与时间等待新的同口径仿真结果。
+Vivado Simulation 中数码管写入 37000000，表明 37 条功能测试完成；代表性波形统一见上图。
 
 \begin{figure}[H]
   \centering
@@ -166,46 +161,35 @@ src1 记录为 1,973,306,668 周期、1,304M 条动态指令，IPC 0.6609、CPI 
   \caption{src2 仿真日志与性能统计}
 \end{figure}
 
-src2 记录为 2,585,374,792 周期、1,849M 条动态指令，IPC 0.7152、CPI 1.3982；280\,MHz 换算
-时间为 9.23348\,s。其 Vivado Simulation 波形同样完成数码管结果写入。
-
-\begin{figure}[H]
-  \centering
-  \includegraphics[width=\linewidth]{verify/image21.png}
-  \caption{src2 Vivado Simulation 波形}
-\end{figure}
+src2 既有日志保留周期数与动态指令数作为回归过程记录；IPC、CPI 与时间等待新的同口径仿真结果。
+其 Vivado Simulation 同样完成数码管结果写入，波形判读口径与 src0 一致。
 
 \begin{table}[H]\centering
 \caption{src0、src1、src2 性能统计结果}
 \small
 \begin{tabularx}{\linewidth}{@{}lrrrrr@{}}\toprule
 \textbf{用例}&\textbf{周期数}&\textbf{指令数}&\textbf{IPC}&\textbf{CPI}&\textbf{280 MHz 时间/s}\\\midrule
-src0&1988M&1417M&0.7130&1.4025&7.10133\\
-src1&1973M&1304M&0.6609&1.5131&7.04752\\
-src2&2585M&1849M&0.7152&1.3982&9.23348\\
+src0&1988M&1417M&\MetricPending{新仿真}&\MetricPending{新仿真}&\MetricPending{新仿真}\\
+src1&1973M&1304M&\MetricPending{新仿真}&\MetricPending{新仿真}&\MetricPending{新仿真}\\
+src2&2585M&1849M&\MetricPending{新仿真}&\MetricPending{新仿真}&\MetricPending{新仿真}\\
 \bottomrule\end{tabularx}
 \end{table}
 
 \subsubsection{CoreMark 与 Dhrystone}
 
-\begin{figure}[H]
-  \centering
-  \includegraphics[width=0.82\linewidth,trim=0 440bp 0 0,clip]{verify/image22.png}
-  \caption{CoreMark 测试结果}
-\end{figure}
+\PlaceholderFigure{CoreMark 新仿真结果}{待补充迭代次数、周期数、指令数、IPC、CPI、目标频率、换算时间、CoreMark 得分与 CRC。}
 
-分赛区阶段 1000 次 CoreMark 迭代共执行 472,993,621 周期，IPC 0.6625、CPI 1.5094；按
-280\,MHz 计算运行时间为 1.68926\,s，对应 CoreMark 308、CoreMark/MHz 1.10。总决赛正式负载
-进一步以 10000 次迭代和四项 CRC 作为板测判据，其完整性能演进见第\ref{sec:performance}节。
+CoreMark 的内部统计项暂以占位符保留：周期数 \MetricPending{新仿真}，指令数
+\MetricPending{新仿真}，IPC \MetricPending{新仿真}，CPI \MetricPending{新仿真}，运行时间
+\MetricPending{新仿真}，CoreMark 得分 \MetricPending{新仿真}。\textbf{最终结果须同时给出迭代次数、
+目标频率和四项 CRC，确保性能值与正确性证据同口径。}
 
-\begin{figure}[H]
-  \centering
-  \includegraphics[width=0.82\linewidth,trim=0 545bp 0 0,clip]{verify/image23.png}
-  \caption{Dhrystone 测试结果}
-\end{figure}
+\PlaceholderFigure{Dhrystone 新仿真结果}{待补充迭代次数、周期数、指令数、IPC、CPI、目标频率、换算时间、Dhrystones/s 与 DMIPS。}
 
-Dhrystone 500000 次迭代执行 302,517,149 周期，IPC 0.7768、CPI 1.2873；按 280\,MHz 计算为
-1.08042\,s，对应约 462,784 Dhrystones/s、263.39 DMIPS 和 0.941 DMIPS/MHz。
+Dhrystone 的内部统计项暂以占位符保留：周期数 \MetricPending{新仿真}，指令数
+\MetricPending{新仿真}，IPC \MetricPending{新仿真}，CPI \MetricPending{新仿真}，运行时间
+\MetricPending{新仿真}，Dhrystones/s 与 DMIPS \MetricPending{新仿真}。新结果将统一注明迭代次数与
+目标频率。
 
 \subsubsection{RT-Thread 系统测试}
 
@@ -263,6 +247,6 @@ CSR 与 RT-Thread&完成&可进入 shell 并执行代表性命令\\
 
 \subsection{测评结果判读规则}
 
-性能时间仅在程序输出和 CRC 校验通过后有效；仿真周期换算注明目标频率以及是否包含启动和输出开销；
+\textbf{性能时间仅在程序输出和 CRC 校验通过后有效}；仿真周期换算注明目标频率以及是否包含启动和输出开销；
 板测优先使用硬件计时器与 UART 原始输出。WNS 注明时钟约束和报告阶段，routed 与 post-route physical
 optimization 不混称。正文中的最终表格与图均可通过附录证据编号回查到相应实现报告或测评记录。

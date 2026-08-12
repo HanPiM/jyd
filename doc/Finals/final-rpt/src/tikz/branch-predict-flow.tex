@@ -1,14 +1,29 @@
-\begin{figure}[H]\centering\resizebox{\linewidth}{!}{%
-\begin{tikzpicture}[b/.style={draw,rounded corners=1.2pt,align=center,minimum width=2.25cm,minimum height=0.8cm,fill=blue!6},d/.style={draw,diamond,aspect=1.9,align=center,fill=orange!7},a/.style={-Stealth,thick},font=\small,node distance=0.72cm and 1.0cm]
-\node[b] (pc) {当前推测 PC}; \node[b,right=of pc] (q) {八 bank BTB\\异步查询}; \node[d,right=of q] (hit) {tag 命中？};
-\node[d,above right=0.55cm and 1.0cm of hit] (ret) {return 且 RAS 非空？};
-\node[b,right=of ret] (rast) {预测 RAS 栈顶};
-\node[d,below right=0.55cm and 1.0cm of hit] (type) {JAL 或 branch\\计数器最高位为 1？};
-\node[b,right=of type] (btbt) {预测 BTB 目标};
-\node[b,below=1.1cm of type] (fall) {预测 $pc+4$};
-\node[b,right=1.25cm of btbt,yshift=0.55cm] (pred) {形成 PredBundle\\hit / take / next PC\\随指令进入流水线};
-\draw[a](pc)--(q);\draw[a](q)--(hit);\draw[a](hit)--node[above left]{是}(ret);\draw[a](ret)--node[above]{是}(rast);
-\draw[a](ret)--node[left]{否}(type);\draw[a](hit)--node[below left]{否}(fall);\draw[a](type)--node[above]{是}(btbt);\draw[a](type)--node[right]{否}(fall);
-\draw[a](rast)--(pred);\draw[a](btbt)--(pred);\draw[a](fall)-|(pred.south);
+\begin{figure}[H]\centering\resizebox{0.96\linewidth}{!}{%
+\begin{tikzpicture}[
+ b/.style={draw,rounded corners=1.2pt,align=center,text width=2.15cm,minimum height=0.8cm,fill=blue!6},
+ d/.style={draw,diamond,aspect=2.0,align=center,fill=orange!7,inner sep=1pt},
+ a/.style={-Stealth,thick},
+ lab/.style={fill=white,inner sep=1.5pt,font=\scriptsize},font=\small]
+\node[b] (pc) at (0,0) {当前推测 PC};
+\node[b] (q) at (3.0,0) {8 bank BTB\\异步查询};
+\node[d] (hit) at (6.0,0) {tag 命中？};
+\node[d] (ret) at (9.2,2.05) {return 且\\RAS 非空？};
+\node[d] (type) at (9.2,-1.25) {JAL 或 branch\\计数器最高位为 1？};
+\node[b] (fall) at (6.0,-3.25) {预测 $pc+4$};
+\node[b] (rast) at (12.4,2.05) {预测 RAS 栈顶};
+\node[b] (btbt) at (12.4,-1.25) {预测 BTB 目标};
+\node[b,text width=2.8cm] (pred) at (16.1,0.25) {形成 PredBundle\\hit / take / next PC\\随指令进入流水线};
+
+\draw[a] (pc)--(q);
+\draw[a] (q)--(hit);
+\draw[a] (hit)--node[lab,above left]{是}(ret);
+\draw[a] (hit)--node[lab,left]{否}(fall);
+\draw[a] (ret)--node[lab,above]{是}(rast);
+\draw[a] (ret)--node[lab,right]{否}(type);
+\draw[a] (type)--node[lab,above]{是}(btbt);
+\draw[a] (type.south) -- ++(0,-0.55) -| node[lab,pos=0.35,below]{否} (fall.east);
+\draw[a] (rast.east) -- ++(0.55,0) |- ([yshift=0.35cm]pred.west);
+\draw[a] (btbt.east) -- ++(0.75,0) |- (pred.west);
+\draw[a] (fall.east) -- ++(7.0,0) |- ([yshift=-0.35cm]pred.west);
 \end{tikzpicture}}
 \caption{BTB、动态方向计数器与 RAS 的前端预测流程}\end{figure}

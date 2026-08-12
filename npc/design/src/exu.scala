@@ -167,15 +167,16 @@ class EXU(
   val xmsumPreviousClipped = Reg(Bool())
   val xmsumPrev   = Reg(UInt(32.W))
   val xmsumRet    = Reg(UInt(16.W))
-  val xmsumRetClipped = Reg(Bool())
-  val xmsumRetIncreased = Reg(Bool())
-  val xmsumRetPending = RegInit(false.B)
+  val xmsumResponseData = Reg(UInt(32.W))
+  val xmsumResponsePending = RegInit(false.B)
   val xmsumResult = Reg(Types.UWord)
   val isXmsum     = dinst.info.xmsumValid
 
-  val xmsumRetPlusOne = xmsumRet + 1.U
-  val xmsumRetPlusTen = xmsumRet + 10.U
-  val xmsumNextRet = Mux(xmsumRetClipped, xmsumRetPlusTen, Mux(xmsumRetIncreased, xmsumRetPlusOne, xmsumRet))
+  val xmsumResponseSum = Mux(xmsumPreviousClipped, 0.U, xmsumTmp) + xmsumResponseData
+  val xmsumResponseClipped = xmsumResponseSum.asSInt > xmsumClip
+  val xmsumResponseIncreased = !xmsumResponseClipped && xmsumResponseData.asSInt > xmsumPrev.asSInt
+  val xmsumResponseNextRet = Mux(xmsumResponseClipped, xmsumRet + 10.U,
+    Mux(xmsumResponseIncreased, xmsumRet + 1.U, xmsumRet))
 
   // DCache hits still resolve a dependent consumer in this cycle.  A miss or
   // peripheral load reaches WBU later; capture that response first so the
@@ -424,7 +425,7 @@ class EXU(
     xmsumPreviousClipped := false.B
     xmsumPrev  := 0.U
     xmsumRet   := 0.U
-    xmsumRetPending := false.B
+    xmsumResponsePending := false.B
     when(n === 0.U) {
       xmsumResult := 0.U
       xmsumState  := XmsumState.done
@@ -434,14 +435,7 @@ class EXU(
   }.elsewhen(xmsumState === XmsumState.request && io.memReq.fire) {
     xmsumState := XmsumState.response
   }.elsewhen(xmsumState === XmsumState.response && io.memResp.valid) {
-    val current = io.memResp.bits
-    val sum     = Mux(xmsumPreviousClipped, 0.U, xmsumTmp) + current
-    val clipped = sum.asSInt > xmsumClip
-    xmsumTmp  := sum
-    xmsumPreviousClipped := clipped
-    xmsumPrev := current
-    xmsumRetClipped := clipped
-    xmsumRetIncreased := !clipped && current.asSInt > xmsumPrev.asSInt
+    xmsumResponseData := io.memResp.bits
     val endOfRow = xmsumColumn + 1.U === xmsumSize
     val endOfMatrix = endOfRow && xmsumRow + 1.U === xmsumSize
     when(endOfMatrix) {
@@ -454,19 +448,23 @@ class EXU(
       }.otherwise {
         xmsumColumn := xmsumColumn + 1.U
       }
-      xmsumRetPending := true.B
+      xmsumResponsePending := true.B
       xmsumState := XmsumState.request
     }
   }.elsewhen(xmsumState === XmsumState.finalizeResult) {
-    xmsumResult := Cat(Fill(16, xmsumNextRet(15)), xmsumNextRet)
+    xmsumResult := Cat(Fill(16, xmsumResponseNextRet(15)), xmsumResponseNextRet)
     xmsumState   := XmsumState.done
   }.elsewhen(xmsumState === XmsumState.done && io.out.fire) {
     xmsumState := XmsumState.idle
   }
 
-  when(xmsumState === XmsumState.request && xmsumRetPending) {
-    xmsumRet        := xmsumNextRet
-    xmsumRetPending := false.B
+  when((xmsumState === XmsumState.request && xmsumResponsePending) ||
+    xmsumState === XmsumState.finalizeResult) {
+    xmsumTmp := xmsumResponseSum
+    xmsumPreviousClipped := xmsumResponseClipped
+    xmsumPrev := xmsumResponseData
+    xmsumRet := xmsumResponseNextRet
+    xmsumResponsePending := false.B
   }
 
   val lateOtherOperandCaptured = RegInit(false.B)

@@ -171,7 +171,11 @@ static void finish(void *, void *) {
 }
 
 int plugin_init(plugin_name_args *info, plugin_gcc_version *version) {
-  if (!plugin_default_version_check(version, &gcc_version)) return 1;
+  // Distro cross compilers ship no plugin headers of their own, so this
+  // plugin may be built against a native plugin-dev package whose build
+  // datestamp differs from the loading compiler even when the base version
+  // is identical.  Only the base version string needs to match.
+  if (!version || strcmp(version->basever, gcc_version.basever)) return 1;
   enabled = ",";
   fp12_report = false;
   for (int i = 0; i < info->argc; i++)

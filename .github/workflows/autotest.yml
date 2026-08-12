@@ -134,7 +134,7 @@ jobs:
           MAKEFLAGS: ${{ needs.setup.outputs.MAKEFLAGS }}
 
       - name: Install dependency
-        run: sudo apt install -y gcc-13-plugin-dev libgmp-dev
+        run: sudo apt install -y g++-13 gcc-13-plugin-dev libgmp-dev
 
       - name: Build NPC sim
         run: |

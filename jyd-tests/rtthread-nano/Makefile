@@ -97,6 +97,28 @@ $(COREMARK_SUPPORT_OBJS): CFLAGS += -march=rv32im_zicsr$(COREMARK_ZEXTS)
 $(DST_DIR)/$(COREMARK_BENCH_DIR)/core_main.o: CFLAGS += -Dmain=coremark_main
 $(OBJS): | fetch
 
+# Parallel make decides whether an object can be built from the state of its
+# source at startup.  When the pinned checkout is fetched during the same make
+# run, the upstream sources are missing at that point and the objects are
+# silently skipped.  Declaring the sources as targets of a rule that performs
+# the fetch makes the build work with `make -j` from a clean tree.
+NANO_SRCS := $(NANO_DIR)/src/clock.c \
+             $(NANO_DIR)/src/cpu.c \
+             $(NANO_DIR)/src/idle.c \
+             $(NANO_DIR)/src/ipc.c \
+             $(NANO_DIR)/src/irq.c \
+             $(NANO_DIR)/src/kservice.c \
+             $(NANO_DIR)/src/mempool.c \
+             $(NANO_DIR)/src/object.c \
+             $(NANO_DIR)/src/scheduler.c \
+             $(NANO_DIR)/src/thread.c \
+             $(NANO_DIR)/src/timer.c \
+             $(NANO_DIR)/components/finsh/msh.c \
+             $(NANO_DIR)/components/finsh/shell.c
+
+$(NANO_SRCS): fetch
+	@test -f "$@"
+
 fetch: $(NANO_CHECKOUT)/.pinned-$(NANO_COMMIT)
 
 $(NANO_CHECKOUT)/.pinned-$(NANO_COMMIT):

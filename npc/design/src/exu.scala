@@ -148,9 +148,8 @@ class EXU(
   val xlrevResult  = Reg(Types.UWord)
   val xlrevLoopQueryAddr = RegInit(0.U(32.W))
   val xlrevSingleStoreCommitted = RegInit(false.B)
-  val isXlrev      = dinst.info.xlrevValid
-  val isXlrevSingle = dinst.info.xlrevSingle
-  val isXlrevLoop = dinst.info.xlrevLoop
+  val isXlrev = dinst.code(6, 0) === "b0001011".U && func3t === 6.U && (func7t === 0.U || func7t === 2.U)
+  val isXlrevLoop = isXlrev && func7t === 2.U
   val xlrevLoopTaken = RegInit(false.B)
 
   object XmsumState extends ChiselEnum {
@@ -366,14 +365,12 @@ class EXU(
     xlrevSingleStoreCommitted := false.B
     xlrevCurrent  := xlrevActiveCurrent
     xlrevPrevious := Mux(isXlrevLoop, xlrevChainPrevious, reg_v2)
-    when(isXlrevSingle) {
-      xlrevChainPrevious := xlrevActiveCurrent
-    }
+    xlrevChainPrevious := xlrevActiveCurrent
     when(xlrevActiveCurrent === 0.U) {
       xlrevResult := Mux(isXlrevLoop, xlrevChainPrevious, 0.U)
       xlrevLoopTaken := false.B
       xlrevState  := XlrevState.done
-    }.elsewhen(isXlrevSingle && io.dcache.hit) {
+    }.elsewhen(io.dcache.hit) {
       xlrevState := XlrevState.storeRequest
     }.otherwise {
       xlrevState := XlrevState.loadRequest
@@ -755,12 +752,12 @@ class EXU(
   // result, then the result of its previous self-iteration. The done-boundary
   // register keeps that private recurrence out of the asynchronous tag RAM.
   val xlrevQueryAddr = Mux(isXlrevLoop, xlrevLoopQueryAddr, reg_v1)
-  val dcacheQueryAddr = Mux(isXlrevSingle, xlrevQueryAddr, reg1AddImm)
+  val dcacheQueryAddr = Mux(isXlrev, xlrevQueryAddr, reg1AddImm)
   io.dcache.queryIndex := dcacheQueryAddr(11, 2)
   io.dcache.queryTag   := dcacheQueryAddr(17, 11)
   val cacheableStore = isTypStore && reg1AddImm(21, 20) === "b01".U
   val cacheableStoreFire = memReqFire && cacheableStore
-  val xlrevSingleCacheStore = isXlrevSingle && xlrevState === XlrevState.done && xlrevSingleStoreCommitted
+  val xlrevSingleCacheStore = xlrevState === XlrevState.done && xlrevSingleStoreCommitted
   // Keep the asynchronous tag lookup out of this cross-module control and
   // every data-memory write enable.
   io.dcache.storeUpdate := cacheableStoreFire

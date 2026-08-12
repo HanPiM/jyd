@@ -381,9 +381,6 @@ class IDU(
   res.bExtValid := isTypArithmetic && !isMExtArithmetic && isIterativeB
   res.crcValid := isCrcU8Custom
   res.xbmulValid := isBitExtractMulCustom
-  res.xlrevValid := isListReverseCustom
-  res.xlrevSingle := isListReverseCustom && arithmeticFunc3 === 6.U
-  res.xlrevLoop := isListReverseCustom && isXlrevLoopEncoding
   // The legacy custom-0 whole-parser state machine is intentionally unsupported.
   // Use the custom-2 word-fed numeric DFA operations decoded below.
   res.xmsumValid := isMatrixReduceCustom

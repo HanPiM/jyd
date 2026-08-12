@@ -98,7 +98,10 @@ class DividerInput extends Bundle {
 object MultiplierConfig {
   val latency       = 4
   val fastLatency   = 3
-  val narrowLatency = 1
+  // Vivado's one-stage 16x16 MultGen maps to registered DSP inputs and a
+  // registered product, so its result is externally visible two cycles after
+  // the operands are presented.
+  val narrowLatency = 2
 }
 
 class mult_gen_0 extends BlackBox with HasBlackBoxInline {
@@ -241,9 +244,9 @@ class Multiplier extends Module {
   // Lane 0 (raw/raw) completes in `narrowLatency` cycles; the prev-rs2 lane
   // first samples rawSrc1/prevData into local registers and therefore needs
   // one extra cycle.  Keeping the two lanes on the same DSP core lets the
-  // raw/raw case stay at latency 1 while the prev-rs2 case avoids the long
+  // raw/raw case retain the shortest valid latency while the prev-rs2 case avoids the long
   // WBU-to-DSP-B input route that was the previous worst setup path.
-  val narrowValidPipe = RegInit(0.U(2.W))
+  val narrowValidPipe = RegInit(0.U((MultiplierConfig.narrowLatency + 1).W))
   val multiplier      = Module(new mult_gen_0)
   val fastMultiplier = Module(new mult_gen_mul32_fast)
   val narrowMultiplier = Seq.fill(2)(Module(new mult_gen_mul16_fast))
@@ -272,7 +275,9 @@ class Multiplier extends Module {
   val product = multiplier.io.P
   val narrowProduct = Mux(narrowSelectReg, narrowMultiplier(1).io.P, narrowMultiplier(0).io.P)
   val result = Mux(isNarrowFastReg, narrowProduct, Mux(isFastReg, fastMultiplier.io.P, product(63, 32)))
-  val resultValid = Mux(isNarrowFastReg, Mux(narrowSelectReg, narrowValidPipe(1), narrowValidPipe(0)), Mux(
+  val resultValid = Mux(isNarrowFastReg,
+    Mux(narrowSelectReg, narrowValidPipe(MultiplierConfig.narrowLatency),
+      narrowValidPipe(MultiplierConfig.narrowLatency - 1)), Mux(
     isFastReg,
     fastValidPipe(MultiplierConfig.fastLatency - 1),
     slowValidPipe(MultiplierConfig.latency - 1)

@@ -8,6 +8,7 @@ class DCache extends Module {
   val io = IO(new Bundle {
     val queryIndex = Input(UInt(10.W))
     val queryTag   = Input(UInt(7.W))
+    val lateQueryIndex = Input(UInt(10.W))
     val hit       = Output(Bool())
     val readData  = Output(UInt(32.W))
     val lateReadData = Output(UInt(32.W))
@@ -54,11 +55,13 @@ class DCache extends Module {
   val readBank = RegNext(queryBank)
   io.readData := Mux(readBank, dataMem(1).io.doutb, dataMem(0).io.doutb)
 
+  val lateQueryBank = io.lateQueryIndex(9)
+  val lateQueryAddr = io.lateQueryIndex(8, 0)
   lateDataMem.flatten.foreach { bank =>
-    bank.io.dpra := queryAddr
+    bank.io.dpra := lateQueryAddr
   }
   val lateReadData = lateDataMem.map { banks => Cat(banks.reverse.map(_.io.dpo)) }
-  io.lateReadData := Mux(queryBank, lateReadData(1), lateReadData(0))
+  io.lateReadData := Mux(lateQueryBank, lateReadData(1), lateReadData(0))
 
   // A store wins over an older WBU refill/update. Full-word stores allocate a
   // complete line. A narrow store conservatively invalidates the line: feeding

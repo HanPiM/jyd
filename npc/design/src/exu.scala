@@ -97,6 +97,7 @@ class EXU(
       val storeEpoch = Input(Bool())
       val queryIndex = Output(UInt(10.W))
       val queryTag   = Output(UInt(7.W))
+      val lateQueryIndex = Output(UInt(10.W))
       val storeUpdate = Output(Bool())
       val storeFull   = Output(Bool())
       val storeData   = Output(Types.UWord)
@@ -190,6 +191,7 @@ class EXU(
   // the same cycle.
   val capturedLateLoadValid = RegInit(false.B)
   val capturedLateLoadData  = Reg(Types.UWord)
+  capturedLateLoadData := io.lateLoadWBU.data
   val captureLateLoadWBU =
     io.in.valid && (dinst.info.lateLoadRs1 || dinst.info.lateLoadRs2) &&
       !io.lateLoadLSU.valid && io.lateLoadWBU.valid && io.lateLoadWBU.dataValid && !capturedLateLoadValid
@@ -198,7 +200,6 @@ class EXU(
     capturedLateLoadValid := false.B
   }.elsewhen(captureLateLoadWBU) {
     capturedLateLoadValid := true.B
-    capturedLateLoadData  := io.lateLoadWBU.data
   }
 
   // A late-load operand first looks at LSU. This priority is required when an
@@ -801,6 +802,8 @@ class EXU(
   val dcacheQueryAddr = Mux(isListReverseStep, listReverseQueryAddress, reg1AddImm)
   io.dcache.queryIndex := dcacheQueryAddr(11, 2)
   io.dcache.queryTag   := dcacheQueryAddr(17, 11)
+  val lateDataQueryAddr = Mux(isListReverseStep && !isListReverseLoop, listReverseEntryAddress, reg1AddImm)
+  io.dcache.lateQueryIndex := lateDataQueryAddr(11, 2)
   val cacheableStore = isTypStore && reg1AddImm(21, 20) === "b01".U
   val cacheableStoreFire = memReqFire && cacheableStore
   val listReverseStepCacheStore = isListReverseStep && listReverseState === ListReverseState.done &&

@@ -1,7 +1,7 @@
 package cpu
 
 import chisel3._
-import chisel3.util.Cat
+import chisel3.util._
 import jyd.{BlkMemGen2KB, DistMemGen512x8}
 
 class DCache extends Module {
@@ -11,6 +11,13 @@ class DCache extends Module {
     val hit       = Output(Bool())
     val readData  = Output(UInt(32.W))
     val lateReadData = Output(UInt(32.W))
+    val lateBranchPreviewValid = Input(Bool())
+    val lateBranchOtherOperand = Input(UInt(32.W))
+    val lateBranchBothOperands = Input(Bool())
+    val lateBranchLoadFunc3 = Input(UInt(3.W))
+    val lateBranchLoadOffset = Input(UInt(2.W))
+    val lateBranchEqualValid = Output(Bool())
+    val lateBranchEqual = Output(Bool())
 
     val storeUpdate = Input(Bool())
     val storeFull   = Input(Bool())
@@ -59,6 +66,41 @@ class DCache extends Module {
   }
   val lateReadData = lateDataMem.map { banks => Cat(banks.reverse.map(_.io.dpo)) }
   io.lateReadData := Mux(queryBank, lateReadData(1), lateReadData(0))
+
+  // Resolve the speculative load-to-equality-branch case beside the
+  // asynchronous shadow RAM. Only the registered one-bit result leaves the
+  // cache cluster; the wide RAM output cannot drive EXU redirect logic.
+  val previewRawData = Mux(queryBank, lateReadData(1), lateReadData(0))
+  val previewHalf = Mux(io.lateBranchLoadOffset(1), previewRawData(31, 16), previewRawData(15, 0))
+  val previewByte = MuxLookup(io.lateBranchLoadOffset, previewRawData(7, 0))(
+    Seq(
+      1.U -> previewRawData(15, 8),
+      2.U -> previewRawData(23, 16),
+      3.U -> previewRawData(31, 24)
+    )
+  )
+  val previewUnsigned = io.lateBranchLoadFunc3(2)
+  val previewByteUpperMatches = Mux(
+    previewUnsigned,
+    !io.lateBranchOtherOperand(31, 8).orR,
+    io.lateBranchOtherOperand(31, 8) === Fill(24, previewByte(7))
+  )
+  val previewHalfUpperMatches = Mux(
+    previewUnsigned,
+    !io.lateBranchOtherOperand(31, 16).orR,
+    io.lateBranchOtherOperand(31, 16) === Fill(16, previewHalf(15))
+  )
+  val previewEqual = Mux(
+    io.lateBranchLoadFunc3(1),
+    previewRawData === io.lateBranchOtherOperand,
+    Mux(
+      io.lateBranchLoadFunc3(0),
+      previewHalf === io.lateBranchOtherOperand(15, 0) && previewHalfUpperMatches,
+      previewByte === io.lateBranchOtherOperand(7, 0) && previewByteUpperMatches
+    )
+  )
+  io.lateBranchEqualValid := RegNext(io.lateBranchPreviewValid, false.B)
+  io.lateBranchEqual := RegEnable(Mux(io.lateBranchBothOperands, true.B, previewEqual), io.lateBranchPreviewValid)
 
   // A store wins over an older WBU refill/update. Full-word stores allocate a
   // complete line. A narrow store conservatively invalidates the line: feeding

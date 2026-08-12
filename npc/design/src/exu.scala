@@ -91,6 +91,8 @@ class EXU(
     val dcache = new Bundle {
       val hit        = Input(Bool())
       val lateReadData = Input(Types.UWord)
+      val lateBranchEqualValid = Input(Bool())
+      val lateBranchEqual = Input(Bool())
       val storeEpoch = Input(Bool())
       val queryIndex = Output(UInt(10.W))
       val queryTag   = Output(UInt(7.W))
@@ -628,12 +630,6 @@ class EXU(
     )
   )
   val useRegisteredRawLoadEqual = hasLateLoadOperand && io.lateLoadLSU.dataValid
-  val previewRawLoadEqual = rawLoadEqual(
-    io.dcache.lateReadData,
-    reg1AddImm(1, 0),
-    func3t,
-    io.lateBranchPreview.otherOperand
-  )
   val previewLoadWidthSupported = func3t === "b000".U || func3t === "b001".U || func3t === "b010".U ||
     func3t === "b100".U || func3t === "b101".U
   val previewLoadAddressAligned =
@@ -641,12 +637,7 @@ class EXU(
   val lateBranchPreviewValid =
     io.in.valid && isTypLoad && previewLoadWidthSupported && previewLoadAddressAligned &&
       reg1AddImm(21, 20) === "b01".U && io.dcache.hit && io.lateBranchPreview.valid
-  val lateBranchEqualValid = RegNext(lateBranchPreviewValid, false.B)
-  val lateBranchEqual = RegEnable(
-    Mux(io.lateBranchPreview.bothLate, true.B, previewRawLoadEqual),
-    lateBranchPreviewValid
-  )
-  val isEqual     = Mux(lateBranchEqualValid, lateBranchEqual,
+  val isEqual     = Mux(io.dcache.lateBranchEqualValid, io.dcache.lateBranchEqual,
     Mux(useRegisteredRawLoadEqual, lsuLateEqual, extendedLoadEqual))
   val isLessThan  = branchRegV1.asSInt < branchRegV2.asSInt
   val isLessThanU = branchRegV1 < branchRegV2
@@ -672,6 +663,7 @@ class EXU(
   lsuInfo.isLoad    := isTypLoad
   lsuInfo.isStore   := isTypStore
   lsuInfo.func3t    := dinst.code(14, 12)
+  lsuInfo.addressResultData := ResultLaneSelect.nonLoadData(writeBackInfo)
   val supportedLoadWidth = func3t === "b000".U || func3t === "b001".U || func3t === "b010".U ||
     func3t === "b100".U || func3t === "b101".U
   val loadAddressAligned = Mux(func3t(1), reg1AddImm(1, 0) === 0.U, Mux(func3t(0), !reg1AddImm(0), true.B))

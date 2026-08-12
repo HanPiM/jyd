@@ -279,7 +279,9 @@ class CPUCore(
   btb.io.update.actualTaken := branchUpdateTakenReg
 
   val immediateRedirectNow = exu.io.out.valid && exu.io.immediatePredWrong
-  val lateRedirectNow = lsu.io.in.fire && lsu.io.in.bits.lateBranchResolve && lsu.io.in.bits.lateBranchMismatch
+  val lateRedirectDetected = lsu.io.in.fire && lsu.io.in.bits.lateBranchResolve && lsu.io.in.bits.lateBranchMismatch
+  val lateRedirectNow = RegNext(lateRedirectDetected, false.B)
+  val lateRedirectKill = lateRedirectDetected || lateRedirectNow
   val redirectNow = immediateRedirectNow || lateRedirectNow
   dontTouch(lateRedirectNow)
   val redirectPacket      = Wire(new RedirectPacket)
@@ -410,11 +412,11 @@ class CPUCore(
   pipelineConnect(idu.io.out, exuPipe)
   val exuEpochMatch = exuPipe.bits.epoch === pipelineEpoch
   exu.io.in.bits := exuPipe.bits
-  exu.io.in.valid := exuPipe.valid && exuEpochMatch && !lateRedirectNow
-  exuPipe.ready := exu.io.in.ready || !exuEpochMatch || lateRedirectNow
+  exu.io.in.valid := exuPipe.valid && exuEpochMatch && !lateRedirectKill
+  exuPipe.ready := exu.io.in.ready || !exuEpochMatch || lateRedirectKill
   pipelineConnect(exu.io.out, lsu.io.in, lsu.io.out)
 
-  when(lateRedirectNow) {
+  when(lateRedirectKill) {
     assert(!immediateRedirectNow, "late and immediate redirects must be mutually exclusive")
     assert(!exu.io.in.valid && !exu.io.out.valid, "a late redirect must discard the younger EXU instruction")
     assert(!exu.io.memReq.valid, "a late redirect must suppress the younger EXU memory request")

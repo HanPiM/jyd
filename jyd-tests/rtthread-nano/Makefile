@@ -67,7 +67,7 @@ SRCS := $(wildcard $(ROOT_DIR)/src/*.c) \
 INC_PATH += $(ROOT_DIR)/include $(NANO_DIR)/include $(NANO_DIR)/components/finsh \
             $(COREMARK_BENCH_DIR) $(COREMARK_PORT_DIR)
 CFLAGS += -DHAVE_CCONFIG_H -D__RTTHREAD__ -DCOREMARK_ENABLE=$(COREMARK_ENABLE) \
-          $(COREMARK_CFLAGS) -Wno-nonnull-compare
+          $(COREMARK_CFLAGS) -Wno-nonnull-compare -Wno-maybe-uninitialized
 LDFLAGS += -T $(ROOT_DIR)/extra.ld
 LIB_BUILD_DIR_softfloat := build/$(ARCH)-coremark-$(subst -O,,$(COREMARK_SUPPORT_OPT))
 LIB_MAKE_ARGS_softfloat = \

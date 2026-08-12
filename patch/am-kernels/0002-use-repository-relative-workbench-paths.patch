@@ -1,6 +1,6 @@
-From 960ef1c3506e8825238c064ec156e6c19a136479 Mon Sep 17 00:00:00 2001
+From 088060a2df2cdab17d8edddc52c08b6acc594312 Mon Sep 17 00:00:00 2001
 From: Wang Yi Jie <miwyj@mail.scut.edu.cn>
-Date: Tue, 24 Mar 2026 13:33:46 +0800
+Date: Thu, 13 Aug 2026 03:42:42 +0800
 Subject: [PATCH 2/2] use repository-relative workbench paths
 
 ---
@@ -203,13 +203,13 @@ index de6da42..cdf0198 100644
 -include $(AM_HOME)/Makefile
 +include $(abspath $(dir $(lastword $(MAKEFILE_LIST)))/../../../abstract-machine/Makefile)
 diff --git a/tests/cpu-tests/Makefile b/tests/cpu-tests/Makefile
-index b4499dc..cecc508 100644
+index add58c7..2970d25 100644
 --- a/tests/cpu-tests/Makefile
 +++ b/tests/cpu-tests/Makefile
 @@ -15,7 +15,7 @@ all: $(addprefix Makefile., $(ALL))
  $(ALL): %: Makefile.%
  
-Makefile.%: tests/%.c latest
+ Makefile.%: tests/%.c latest
 -	@/bin/echo -e "NAME = $*\nSRCS = $<\ninclude $${AM_HOME}/Makefile" > $@
 +	@/bin/echo -e 'NAME = $*\nSRCS = $<\ninclude $$(abspath $$(dir $$(lastword $$(MAKEFILE_LIST)))/../../../abstract-machine/Makefile)' > $@
  	@if make -s -f $@ ARCH=$(ARCH) $(MAKECMDGOALS); then \
@@ -217,3 +217,4 @@ Makefile.%: tests/%.c latest
  	else \
 -- 
 2.52.0
+

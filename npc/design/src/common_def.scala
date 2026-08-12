@@ -221,6 +221,11 @@ class DecodedInstInfo(implicit p : CPUParameters) extends InstMetaInfo with HasR
   // Bit-extract multiply is a single-cycle custom-0 operation.
   val xbmulValid = Bool()
 
+  // In-place list reversal is a blocking multi-cycle custom operation.
+  val xlrevValid = Bool()
+  val xlrevSingle = Bool()
+  val xlrevLoop = Bool()
+
   // Clipped matrix reduction is a blocking multi-cycle custom operation.
   val xmsumValid = Bool()
 

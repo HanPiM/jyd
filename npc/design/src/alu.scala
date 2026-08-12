@@ -186,7 +186,6 @@ class mult_gen_mul32_fast extends BlackBox with HasBlackBoxInline {
   */
 class mult_gen_mul16_fast extends BlackBox with HasBlackBoxInline {
   val io = IO(new Bundle {
-    val CLK = Input(Clock())
     val A   = Input(UInt(16.W))
     val B   = Input(UInt(16.W))
     val P   = Output(UInt(32.W))
@@ -195,7 +194,6 @@ class mult_gen_mul16_fast extends BlackBox with HasBlackBoxInline {
   setInline(
     "mult_gen_mul16_fast.sv",
     s"""module mult_gen_mul16_fast(
-      |  input         CLK,
       |  input  [15:0] A,
       |  input  [15:0] B,
       |  output [31:0] P
@@ -252,7 +250,6 @@ class Multiplier extends Module {
   fastMultiplier.io.CLK := clock
   fastMultiplier.io.A   := io.in.bits.src1
   fastMultiplier.io.B   := io.in.bits.src2
-  narrowMultiplier.foreach(_.io.CLK := clock)
   narrowMultiplier(0).io.A := narrowRawAReg
   narrowMultiplier(0).io.B := narrowRawBReg
   narrowMultiplier(1).io.A := narrowPrevAReg

@@ -218,9 +218,6 @@ class CPUCore(
   val pipelineEpoch              = RegInit(false.B)
   val redirectPendingReg         = RegInit(false.B)
   val redirectEpochReg           = RegInit(false.B)
-  val redirectUseTargetReg       = RegInit(false.B)
-  val redirectTargetReg          = RegInit(0.U(15.W))
-  val redirectFallthroughReg     = RegInit(0.U(15.W))
 
   val gprs = Module(new RegisterFile(READ_PORTS = 2))
   val csrs = Module(new ControlStatusRegisterFile())
@@ -288,16 +285,6 @@ class CPUCore(
   val redirectPacket      = Wire(new RedirectPacket)
   val redirectPendingFire = ifu.io.pc.fire && redirectPendingReg
 
-  when(lateRedirectNow) {
-    redirectUseTargetReg   := branchUpdateTakenReg
-    redirectTargetReg      := TrimmedPC.trim(branchUpdateTargetReg)
-    redirectFallthroughReg := TrimmedPC.trim(branchUpdatePcReg) + 1.U
-  }.elsewhen(immediateRedirectNow) {
-    redirectUseTargetReg   := !exu.io.isBranch || exu.io.branchTaken
-    redirectTargetReg      := TrimmedPC.trim(Mux(exu.io.btbUpdateEn, exu.io.branchTarget, exu.io.staticTarget))
-    redirectFallthroughReg := TrimmedPC.trim(exu.io.pc) + 1.U
-  }
-
   when(redirectNow) {
     redirectPendingReg := true.B
     redirectEpochReg   := ~pipelineEpoch
@@ -307,7 +294,8 @@ class CPUCore(
   }
 
   redirectPacket.valid  := redirectPendingReg
-  redirectPacket.target := Mux(redirectUseTargetReg, redirectTargetReg, redirectFallthroughReg)
+  redirectPacket.target := Mux(!branchUpdateIsBranchReg || branchUpdateTakenReg,
+    TrimmedPC.trim(branchUpdateTargetReg), TrimmedPC.trim(branchUpdatePcReg) + 1.U)
   redirectPacket.epoch  := redirectEpochReg
 
   val activeRedirectValid = Wire(Bool())
@@ -477,10 +465,6 @@ class CPUCore(
   exu.io.lateLoadWBU.rawData := wbu.io.memResp.bits
   exu.io.lateLoadWBU.func3t  := wbu.io.in.bits.lsuFunc3t
   exu.io.lateLoadWBU.offset  := wbu.io.in.bits.lsuAddrOffset
-  exu.io.lateLoadWBURawData := wbu.io.memResp.bits
-  exu.io.lateLoadWBUFunc3   := wbu.io.in.bits.lsuFunc3t
-  exu.io.lateLoadWBUOffset  := wbu.io.in.bits.lsuAddrOffset
-
   idu.io.pipelineFlush := activeRedirectValid
 
   StageLogger(

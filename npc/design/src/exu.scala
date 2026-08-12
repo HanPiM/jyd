@@ -62,7 +62,6 @@ class EXU(
     extends Module {
   val io = IO(new Bundle {
     val in          = Flipped(Decoupled(new DecodedInst))
-    val jmpHappen   = Output(Bool())
     val isJAL       = Output(Bool())
     val isBranch    = Output(Bool())
     val isReturn    = Output(Bool())
@@ -72,11 +71,8 @@ class EXU(
 
     val predWrong = Output(Bool())
     val immediatePredWrong = Output(Bool())
-    val lateBranchResolve = Output(Bool())
-    val lateBranchMismatch = Output(Bool())
 
-    val branchTarget   = Output(Types.UWord)
-    val staticTarget   = Output(Types.UWord)
+    val branchTarget = Output(Types.UWord)
 
     val pc    = Output(Types.UWord)
     val nxtPC = Output(Types.UWord)
@@ -85,9 +81,6 @@ class EXU(
     val lateLoadProducer = Output(new LateLoadProducerInfo)
     val lateLoadLSU = Input(new LateLoadSourceInfo)
     val lateLoadWBU = Input(new LateLoadSourceInfo)
-    val lateLoadWBURawData = Input(Types.UWord)
-    val lateLoadWBUFunc3   = Input(UInt(3.W))
-    val lateLoadWBUOffset  = Input(UInt(2.W))
     val previousStageFwd = Input(new WrBackForwardInfo)
 
     val dcache = new Bundle {
@@ -159,7 +152,6 @@ class EXU(
   val listReverseLoopTaken = RegInit(false.B)
   val listReversePrefetchValid = RegInit(false.B)
   val listReversePrefetchHit = Reg(Bool())
-  val listReversePrefetchAddress = Reg(Types.UWord)
   val listReversePrefetchData = Reg(Types.UWord)
 
   object XmsumState extends ChiselEnum {
@@ -371,9 +363,8 @@ class EXU(
     // Capture the asynchronous cache value for every list-reversal entry. Whether it
     // is consumed is decided by the state transition, keeping init decode out
     // of this register's timing-critical write-enable cone.
-    val usePrefetch = isListReverseLoop && listReversePrefetchValid &&
-      listReversePrefetchAddress === listReverseActiveCurrent
-    listReverseNext := Mux(usePrefetch, listReversePrefetchData, io.dcache.lateReadData)
+    val usePrefetch = isListReverseLoop && listReversePrefetchValid
+    listReverseNext := Mux(isListReverseLoop, listReversePrefetchData, io.dcache.lateReadData)
     listReversePrefetchValid := false.B
     listReverseStepStoreCommitted := false.B
     listReverseCurrent := listReverseActiveCurrent
@@ -385,7 +376,11 @@ class EXU(
       listReverseResult := Mux(isListReverseLoop, listReverseChainPrevious, 0.U)
       listReverseLoopTaken := false.B
       listReverseState := ListReverseState.done
-    }.elsewhen(isListReverseStep && Mux(usePrefetch, listReversePrefetchHit, io.dcache.hit)) {
+    }.elsewhen(isListReverseLoop && usePrefetch && listReversePrefetchHit) {
+      listReverseState := ListReverseState.storeRequest
+    }.elsewhen(isListReverseLoop) {
+      listReverseState := ListReverseState.loadRequest
+    }.elsewhen(isListReverseStep && io.dcache.hit) {
       listReverseState := ListReverseState.storeRequest
     }.otherwise {
       listReverseState := ListReverseState.loadRequest
@@ -397,7 +392,6 @@ class EXU(
     listReverseState := ListReverseState.storeRequest
   }.elsewhen(listReverseState === ListReverseState.storeRequest && io.memReq.fire) {
     listReverseStepStoreCommitted := true.B
-    listReversePrefetchAddress := listReverseNext
     listReversePrefetchHit := Mux(listReverseNext === listReverseCurrent, true.B, io.dcache.hit)
     val loopTaken = isListReverseLoop && listReverseNext =/= 0.U
     listReverseResult := Mux(isListReverseLoop && !loopTaken, listReverseCurrent, listReverseNext)
@@ -498,7 +492,7 @@ class EXU(
 
   // Branches/JAL use PC+imm, while a JALR BTB entry must learn the resolved
   // rs1+imm target.  The BTB stores only the same trimmed PC bits either way.
-  io.branchTarget   := Mux(isListReverseLoop, dinst.pc, Mux(isTypJALR, reg1AddImm, pcAddImm))
+  val controlFlowTarget = Mux(isListReverseLoop, dinst.pc, Mux(isTypJALR, reg1AddImm, pcAddImm))
 
   fast_in.src1   := fastRegV1
   fast_in.src2   := fastRegV2
@@ -709,7 +703,6 @@ class EXU(
   lsuInfo.dcacheStoreEpoch := io.dcache.storeEpoch
 
   val snpc = dinst.info.staticNextPCOrCSRTarget
-  io.staticTarget := Mux(isListReverseLoop, dinst.pc, snpc)
 
   val useSingleCycleForward = isTypArithmetic && resultIsFast && !hasLateLoadOperand
   val isLateLoadBit = isLateLoadAndi1 || isLateLoadSrli1
@@ -857,9 +850,6 @@ class EXU(
   // --- Next PC ---
   val isJmpCsr = is_ecall || is_mret
   val listReverseLoopBranch = isListReverseLoop && listReverseDone
-  val willJmp  = (isTypBranch && takeBranch) || isTypJALR || isTypJAL || isJmpCsr ||
-    (listReverseLoopBranch && listReverseLoopTaken)
-
   val normalNxtPC = Wire(Types.UWord)
   val nxtPC       = Wire(Types.UWord)
 
@@ -878,7 +868,8 @@ class EXU(
   io.nxtPC    := nxtPC
   io.pc       := dinst.pc
 
-  io.jmpHappen   := willJmp
+  io.branchTarget := Mux(isTypBranch || isTypJAL || isTypJALR || listReverseLoopBranch,
+    controlFlowTarget, snpc)
   // Reuse the existing unconditional-entry bit for direct JAL and the exact
   // return encoding that IDU can validate without an address-add dependency.
   io.isJAL       := isTypJAL || dinst.code === "h00008067".U
@@ -889,10 +880,8 @@ class EXU(
   io.btbUpdateEn := isTypBranch || isTypJAL || isTypJALR || listReverseLoopBranch
   val lateEqualityBranchResolve =
     isTypBranch && (dinst.info.is_beq || dinst.info.is_bne) && hasLateLoadOperand && useRegisteredRawLoadEqual
-  io.lateBranchResolve := exuResultValid && lateEqualityBranchResolve
-  io.lateBranchMismatch := takeBranch ^ dinst.predTake
-  lsuInfo.lateBranchResolve := io.lateBranchResolve
-  lsuInfo.lateBranchMismatch := io.lateBranchMismatch
+  lsuInfo.lateBranchResolve := exuResultValid && lateEqualityBranchResolve
+  lsuInfo.lateBranchMismatch := takeBranch ^ dinst.predTake
   io.predWrong := exuResultValid && Mux(
     listReverseLoopBranch,
     listReverseLoopTaken ^ dinst.predTake,

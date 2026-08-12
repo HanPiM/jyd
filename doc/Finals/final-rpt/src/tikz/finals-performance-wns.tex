@@ -1,0 +1,34 @@
+\begin{figure}[H]
+  \centering
+  \begin{tikzpicture}
+    \begin{axis}[
+      width=0.88\textwidth,height=7.0cm,
+      xmin=-0.4,xmax=17.4,xtick={0,...,17},xticklabels={P0,P1,P2,P3,P4,P5,P6,P7,P8,P9,P10,P11,P12,P13,P14,P15,P16,P17},
+      x tick label style={font=\scriptsize,rotate=35,anchor=east},
+      ylabel={板测时间（s）},ymin=6.2,ymax=11.1,
+      axis y line*=left,axis x line*=bottom,grid=major,
+      legend style={at={(0,1.02)},anchor=south west,font=\scriptsize}]
+      \addplot[blue!75!black,very thick,mark=*] coordinates {
+        (0,10.695831) (1,10.695831) (2,10.695831) (3,10.695831)
+        (4,10.695831) (5,10.695831) (6,10.695831) (7,10.695831)
+        (8,10.078266) (9,9.565066) (10,9.077274) (11,8.572723)
+        (12,7.745942) (13,7.516036) (14,7.160581) (15,7.106449)
+        (16,6.696372) (17,6.714951)};
+      \addlegendentry{板测时间}
+    \end{axis}
+    \begin{axis}[
+      width=0.88\textwidth,height=7.0cm,
+      xmin=-0.4,xmax=17.4,xtick=\empty,
+      ylabel={WNS（ns）},ymin=-0.9,ymax=0.05,
+      axis y line*=right,axis x line=none,
+      legend style={at={(1,1.02)},anchor=south east,font=\scriptsize}]
+      \draw[gray,dashed] (axis cs:-0.4,0) -- (axis cs:17.4,0);
+      \addplot[red!75!black,very thick,dashed,mark=square*] coordinates {
+        (0,-0.776) (1,-0.764) (2,-0.677) (3,-0.571) (4,-0.550) (5,-0.507)
+        (6,-0.495) (7,-0.452) (8,-0.285) (9,-0.534) (10,-0.520) (11,-0.733)
+        (12,-0.684) (13,-0.745) (14,-0.785) (15,-0.615) (16,-0.733) (17,-0.696)};
+      \addlegendentry{WNS}
+    \end{axis}
+  \end{tikzpicture}
+  \caption{总决赛阶段同口径板测性能与 WNS 完整演进}
+\end{figure}

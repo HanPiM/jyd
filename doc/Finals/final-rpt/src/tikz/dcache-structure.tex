@@ -1,8 +1,16 @@
-\begin{figure}[H]\centering\resizebox{0.96\linewidth}{!}{%
-\begin{tikzpicture}[m/.style={draw,rounded corners,align=center,minimum width=2.6cm,minimum height=0.9cm},a/.style={-Stealth,thick},font=\small]
-\node[m,fill=blue!6] (q) {地址\\bank/index/tag}; \node[m,fill=green!7,right=1.0cm of q] (tag) {2$\times$512 tag LUTRAM};
-\node[m,fill=green!7,right=1.0cm of tag] (bram) {2$\times$2 KiB BRAM\\同步主数据};
-\node[m,fill=orange!8,below=0.9cm of tag] (late) {2$\times$4 字节 LUTRAM\\异步数据镜像};
-\node[m,fill=gray!10,right=1.0cm of bram] (pipe) {EXU--LSU 注册边界};
-\draw[a](q)--(tag);\draw[a](tag)--node[above]{hit}(bram);\draw[a](bram)--(pipe);\draw[a](q)--(late);\draw[a](late)-|(pipe);
-\end{tikzpicture}}\caption{4 KiB 双 bank D-cache 主数据与异步副本}\end{figure}
+\begin{figure}[H]\centering\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[m/.style={draw,rounded corners=1.2pt,align=center,minimum height=0.9cm},a/.style={-Stealth,thick},font=\small]
+\node[m,fill=blue!6,minimum width=2.7cm] (addr) {访问地址\\tag=[17:11], bank=[11], 行=[10:2]};
+\node[m,fill=green!7,right=0.8cm of addr,minimum width=2.65cm] (tags) {双 bank tag LUTRAM\\valid + 7-bit tag\\C0 组合读与比较};
+\node[m,fill=green!7,right=0.8cm of tags,minimum width=2.85cm] (main) {双 bank 主数据 BRAM\\每 bank 512$\times$32 bit\\C1 同步读};
+\node[m,fill=gray!10,right=0.8cm of main,minimum width=2.8cm] (normal) {普通命中通路\\延迟 bank 选择\\LSU 取得数据并前递};
+\node[m,fill=orange!8,below=1.05cm of tags,minimum width=3.1cm] (shadow) {异步数据镜像\\每 bank 四个 512$\times$8 LUTRAM\\C0 读出原始 32-bit 字};
+\node[m,fill=cyan!8,right=1.15cm of shadow,minimum width=3.15cm] (late) {EXU--LSU 寄存边界\\注册 offset / 宽度 / 原始数据};
+\node[m,fill=cyan!8,right=1.15cm of late,minimum width=2.8cm] (consumer) {late-load 受限消费者\\C1 扩展后运算或比较};
+\node[m,fill=purple!7,below=1.15cm of late,minimum width=6.5cm] (write) {统一写广播：全字 store 分配；窄 store 写数据并失效；load miss 回填；加速单元更新};
+\draw[a](addr)--(tags); \draw[a](tags)--node[above]{hit}(main); \draw[a](main)--(normal);
+\draw[a](addr.south) -- ++(0,-0.42) -| (shadow.west); \draw[a](shadow)--(late); \draw[a](late)--(consumer);
+\draw[a](write.north) -- ++(0,0.35) -| (tags.south);
+\draw[a](write.north) -- ++(0,0.55) -| (main.south);
+\draw[a](write.west) -- ++(-0.35,0) |- (shadow.south);
+\end{tikzpicture}}\caption{4 KiB 双 bank D-cache：普通命中通路与 late-load 异步镜像}\end{figure}

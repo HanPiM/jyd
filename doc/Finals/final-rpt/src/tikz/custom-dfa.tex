@@ -1,0 +1,14 @@
+\begin{figure}[H]\centering
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[n/.style={draw,rounded corners=1.2pt,minimum height=0.82cm,minimum width=2.35cm,align=center,fill=purple!7},a/.style={-Stealth,thick},font=\small,node distance=0.68cm]
+\node[n] (addr) {地址对齐与字读取\\可用数 $4-offset$};
+\node[n,right=of addr] (reg) {响应移位寄存\\低地址字节在前};
+\node[n,right=of reg] (lo) {两字符步 0\\$q,mask,count,stop$};
+\node[n,right=of lo] (hi) {两字符步 1\\延续中间状态};
+\node[n,right=of hi] (pack) {打包返回\\或保存 pending mask};
+\node[n,right=of pack] (commit) {token 结束时\\独立提交计数};
+\foreach \x/\y in {addr/reg,reg/lo,lo/hi,hi/pack,pack/commit}{\draw[a](\x)--(\y);}
+\draw[a](pack.south)--++(0,-0.45)-|node[pos=0.25,below]{token 跨字：下一条继续}(addr.south);
+\end{tikzpicture}}
+\caption{四字节 DFA 推进与 \texttt{xdfa4h} 计数提交边界}
+\end{figure}

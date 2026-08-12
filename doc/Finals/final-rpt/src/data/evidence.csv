@@ -1,10 +1,9 @@
-id,metric,value,unit,commit,frequency_mhz,workload,source
-E-RF-01,regional_withmext_runtime,2.020,s,d41aa7495b7b5a19f666ad627f998debb232b5b0,280,withMext-v2,RegionalFinal optimization report
-E-RF-02,regional_final_runtime,1.607403,s,58f371d5dbff5e6a8c730ab59ea6d39048012159,280,withMext-v2,RegionalFinal optimization report
-E-RF-03,regional_xibei_baseline,6.866,s,11f93f5f4cb41e637056fc7b341461bc13a11af2,280,xibei sample,RegionalFinal optimization report
-E-RF-04,regional_xibei_final,6.184,s,58f371d5dbff5e6a8c730ab59ea6d39048012159,280,xibei sample,RegionalFinal optimization report
-E-FAB-250,post_route_physopt_wns,0.009,ns,fabb5995bdd394578fbf989b6b20d5eae45b320c,250,formal COE pair,baseline-fabb599-clean250 archive
-E-FAB-280,routed_wns,-0.664,ns,fabb5995bdd394578fbf989b6b20d5eae45b320c,280,formal COE pair,baseline-fabb599-clean280 archive
-E-FAB-300,routed_wns,-0.590,ns,fabb5995bdd394578fbf989b6b20d5eae45b320c,300,unknown COE identity,backend-partition-fabb599 archive
-E-FAB-300P,post_route_physopt_wns,-0.580,ns,fabb5995bdd394578fbf989b6b20d5eae45b320c,300,unknown COE identity,backend-partition-fabb599 archive
-
+id,metric,value,unit,design_stage,frequency_mhz,workload,source
+E-RF-01,regional_withmext_runtime,2.020,s,regional-intermediate,280,withMext-v2,regional optimization report
+E-RF-02,regional_final_runtime,1.607403,s,regional-final,280,withMext-v2,regional optimization report
+E-RF-03,regional_xibei_baseline,6.866,s,regional-intermediate,280,xibei sample,regional optimization report
+E-RF-04,regional_xibei_final,6.184,s,regional-final,280,xibei sample,regional optimization report
+E-FINAL-250,post_route_physopt_wns,0.009,ns,final-design,250,formal COE pair,final implementation archive
+E-FINAL-280,routed_wns,-0.664,ns,final-design,280,formal COE pair,final implementation archive
+E-FINAL-300,routed_wns,-0.590,ns,final-design,300,implementation workload,final implementation archive
+E-FINAL-300P,post_route_physopt_wns,-0.580,ns,final-design,300,implementation workload,final implementation archive

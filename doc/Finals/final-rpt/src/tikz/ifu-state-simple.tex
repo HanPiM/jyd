@@ -1,0 +1,19 @@
+\begin{figure}[H]\centering
+\begin{tikzpicture}[
+ state/.style={draw,rounded corners=1.2pt,minimum width=2.4cm,minimum height=0.82cm,align=center,fill=blue!6},
+ a/.style={-Stealth,thick},font=\small]
+\node[state] (idle) {Idle\\等待新 PC};
+\node[state,right=3.2cm of idle] (resp) {WaitResp\\等待 IROM 响应};
+\node[state,below=2.0cm of idle] (req) {WaitReq\\请求尚未接受};
+\node[state,below=2.0cm of resp] (out) {WaitOut\\等待 IDU 接收};
+\draw[a](idle)--node[above]{请求同拍接受}(resp);
+\draw[a](idle)--node[left]{请求端反压}(req);
+\draw[a](req)--node[sloped,above]{请求端就绪}(resp);
+\draw[a](resp)--node[right]{响应到达、IDU 反压}(out);
+\draw[a](resp.north) -- ++(0,0.55) -| node[pos=0.25,above]{响应被消费且无新请求}(idle.north);
+\draw[a](out.south) -- ++(0,-0.55) -| node[pos=0.25,below]{结果被消费}(idle.south);
+\draw[a](resp) edge[loop right] node{响应未到} (resp);
+\draw[a](req) edge[loop left] node{仍未就绪} (req);
+\draw[a](out) edge[loop right] node{继续反压} (out);
+\end{tikzpicture}
+\caption{IFU 四状态控制的简化关系}\end{figure}

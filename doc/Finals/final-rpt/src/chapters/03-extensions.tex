@@ -2,90 +2,176 @@
 
 \subsection{基础指令能力}
 
-冻结版本支持赛题要求的 RV32I 整数、访存与控制流指令，支持 RV32M 的 \code{MUL/MULH/MULHSU/MULHU}
-和 \code{DIV/DIVU/REM/REMU}，并实现 Zicsr 的六类 CSR 读改写操作以及 \code{ECALL/MRET} 机器态控制流。
-此外，处理器实现了一组经 RTL 译码确认的 B 扩展操作。复杂 B 操作由迭代单元执行，短操作使用专用
-组合通路，避免所有扩展指令承担固定的长延迟。
+处理器实现 RV32I 整数指令集、RV32M 乘除法指令、Zicsr CSR 访问指令以及机器态异常返回，
+并实现了部分 RISC-V 标量 B 扩展指令。表~\ref{tab:implemented-extensions} 按标准扩展名称列出实际
+实现范围；这里的指令列表即为本设计支持的子集，不表示已经覆盖对应扩展的全部指令。
 
-\begin{table}[H]\centering
-\caption{冻结版本主要标准扩展能力}
-\begin{tabularx}{\linewidth}{@{}p{0.17\linewidth}Yp{0.25\linewidth}@{}}
+\begin{table}[H]\centering\scriptsize
+\caption{主要标准扩展能力与已实现指令}\label{tab:implemented-extensions}
+\begin{tabularx}{\linewidth}{@{}C{0.095\linewidth}p{0.57\linewidth}Y@{}}
 \toprule
-\textbf{类别}&\textbf{指令或能力}&\textbf{实现方式}\\\midrule
-RV32I&整数算术、逻辑、移位、比较、分支、跳转、load/store、LUI/AUIPC&快速整数、直接结果和访存通路\\
-RV32M&MUL、MULH、MULHSU、MULHU、DIV、DIVU、REM、REMU&DSP 流水乘法与迭代除法\\
-Zicsr&CSRRW/CSRRS/CSRRC 及立即数形式&EXU 局部两阶段 CSR 事务\\
-机器态&ECALL、MRET、mstatus/mtvec/mepc/mcause/mcycle&注册化重定向与 CSR 状态\\
-B 子集&计数、循环移位、无进位乘法、位抽取、移位加法、符号扩展、无符号最小值、字节置位检查等&短组合通路或显式多周期单元\\
+\textbf{扩展}&\textbf{已实现的指令或能力}&\textbf{实现通路}\\\midrule
+RV32M&\code{mul/mulh/mulhsu/mulhu/div/divu/rem/remu}&DSP 流水乘法与迭代除法\\
+Zicsr&\code{csrrw/csrrs/csrrc} 及三种立即数形式&CSR 读改写通路\\
+Zba&\code{sh1add/sh2add/sh3add}&单周期移位加法\\
+Zbb&\code{clz/ctz/cpop/orc.b/ror/rori/sext.b/sext.h/minu}&短组合或迭代通路\\
+Zbc&\code{clmul/clmulh}&无进位迭代乘法\\
+Zbs&\code{bext/bexti}&单周期位抽取\\
+Zbkb&\code{ror/rori/pack}&旋转与半字拼接\\
+Zbkc&\code{clmul/clmulh}&与 Zbc 共用无进位乘法编码及硬件\\
+Zbkx&\code{xperm4}&逐半字节置换\\
 \bottomrule
 \end{tabularx}
-\end{table}
+\normalsize\end{table}
 
-\subsection{乘除法和 B 扩展多周期控制}
+\subsection{乘除法与 B 扩展多周期控制}
 
-乘法器根据操作类别选择全宽高位结果、普通低位结果或窄操作数快通路。窄乘法由两个一周期 DSP
-实例交替接收操作数，使连续输入能够保持明确的结果对齐。除法器使用恢复除法迭代，每拍完成移位、
-比较和减法；最终符号修正与迭代边界分离。多周期单元在接受输入后持续广告目的寄存器但保持
-\code{dataValid=0}，依赖消费者因此会停顿；结果有效后才允许前递和完成握手。
+乘法器按操作类型选择普通低位、全宽高位或窄操作数快速通路；除法器采用恢复除法，每拍执行移位、
+比较与减法，最后单独完成符号修正。计数、循环移位、无进位乘法和半字节置换等 B 扩展操作进入
+迭代单元，移位加法、符号扩展、无符号最小值和位抽取则保持在短组合通路。
+
+多周期请求被接受后，流水线相关信息仍保留目的寄存器号，但将 \code{dataValid} 保持为 0；因此依赖
+该结果的年轻指令会在 IDU 停顿，而无关指令不会把未完成的数据误认为可前递结果。执行单元寄存最终
+结果后置位 \code{dataValid}，待后级 \code{ready} 有效时完成握手并释放占用。该协议统一覆盖乘法、
+除法、迭代 B 操作以及后述阻塞式加速单元。
 
 \input{src/tikz/multicycle-handshake}
 
 \subsection{自定义指令设计}\label{sec:custom}
 
-领域指令使用 RISC-V 保留的 custom opcode 空间。本文保留真实助记符与编码，便于从文档追溯到 RTL，
-但按其一般硬件语义说明能力：它们分别面向流式校验、位域乘法、链式存储结构变换、矩阵遍历归约和
-有限状态流处理，而不是绑定某一具体评测程序。工具链侧通过让 GCC 识别并生成这些自定义指令完成适配；
-本文不展开任何软件层面的实现细节。
+自定义指令使用 custom-0（\code{0001011}）与 custom-2（\code{1011011}）操作码空间，采用 R 型
+字段组织。GCC 支持生成这些自定义指令。表~\ref{tab:custom-encoding} 给出助记符与固定编码，随后给出
+其输入、输出、状态和访存副作用的完整定义。
 
-\begin{table}[H]\centering\small
-\caption{主要自定义指令编码与硬件语义}\label{tab:custom-encoding}
-\begin{tabularx}{\linewidth}{@{}p{0.13\linewidth}C{0.13\linewidth}C{0.10\linewidth}C{0.10\linewidth}Y@{}}
+\begin{table}[H]\centering\tiny
+\caption{主要自定义指令编码}\label{tab:custom-encoding}
+\begin{tabularx}{\linewidth}{@{}p{0.15\linewidth}C{0.09\linewidth}C{0.09\linewidth}C{0.13\linewidth}Y@{}}
 \toprule
-\textbf{助记符}&\textbf{opcode}&\textbf{funct7}&\textbf{funct3}&\textbf{硬件执行语义}\\\midrule
-\code{xcrcu8}&\code{0001011}&\code{0000000}&\code{000}&对一个输入字节和当前校验状态执行单周期 CRC 更新\\
-\code{xbmul}&\code{0001011}&\code{0000000}&\code{101}&抽取有符号输入的目标位域并完成定宽乘法，结果进入独立加速写回通路\\
-\code{xlistrev}&\code{0001011}&\code{0000000/0000010}&\code{110}&初始化或推进链式节点变换；通过缓存查询、load/store 请求和内部前驱状态完成一步或循环推进\\
-\code{xmsum}&\code{0001011}&\code{0000010}&\code{111}&按地址顺序读取二维数据，执行裁剪条件下的归约与计数，阻塞至结果完成\\
-\code{xdfacnt}&\code{1011011}&\code{0000000}&\code{000/010/011}&初始化、读取、递增或提交本地状态计数器\\
-\code{xdfa2}&\code{1011011}&\code{0000000}&\code{100}&从内存取得字节并并行处理至多两个符号，返回状态、消费数与掩码\\
-\code{xdfa4}&\code{1011011}&\code{0000000}&\code{101}&分两段处理一个字内至多四个符号，并返回组合状态信息\\
-\code{xdfa4h}&\code{1011011}&\code{0000001}&\code{101/010}&处理至多四个符号并在 token 完成时直接累计状态直方图；提供终态计数读取\\
+\textbf{助记符}&\textbf{opcode}&\textbf{funct7}&\textbf{funct3}&\textbf{操作形式}\\\midrule
+\code{xcrcu8}&\code{0001011}&\code{0000000}&\code{000}&\code{rd=f(rs1[7:0],rs2[15:0])}\\
+\code{xbmul}&\code{0001011}&\code{0000000}&\code{101}&\code{rd=rs1[5:2]*rs1[11:5]}\\
+\code{xlistrev.init}&\code{0001011}&\code{0000000}&\code{110}&首节点初始化并完成第一步\\
+\code{xlistrev.loop}&\code{0001011}&\code{0000010}&\code{110}&内部链式状态推进及同 PC 循环\\
+\code{xmsum}&\code{0001011}&\code{0000010}&\code{111}&\code{rs1=base, rs2={n,clip}}\\
+\code{xdfacnt.init}&\code{1011011}&\code{0000000}&\code{000}&清零转移与终态计数器\\
+\code{xdfacnt.read}&\code{1011011}&\code{0000000}&\code{010}&读取指定转移计数\\
+\code{xdfacnt.commit}&\code{1011011}&\code{0000000}&\code{011}&按状态掩码提交计数\\
+\code{xdfa4}&\code{1011011}&\code{0000000}&\code{101}&至多处理四个字节\\
+\code{xdfa4h.step}&\code{1011011}&\code{0000001}&\code{101}&四字节处理并在终止时提交计数\\
+\code{xdfa4h.read}&\code{1011011}&\code{0000001}&\code{010}&读取指定终态计数\\
 \bottomrule
 \end{tabularx}
 \normalsize\end{table}
 
-\subsubsection{单周期数据变换单元}
+\subsubsection{\texttt{xcrcu8}：单字节 CRC 状态变换}
 
-\code{xcrcu8} 与 \code{xbmul} 均为无内部访存的定延迟操作。译码级生成独立有效位，EXU 在加速结果
-通路中形成结果，不把其选择逻辑加入快速整数 ALU 的普通写回回路。该结构适用于协议校验、位打包、
-量化数值与定宽数据处理等场景。
+令输入数据字节 $d=\mathrm{rs1}[7:0]$，当前 16 位 CRC 状态 $c=\mathrm{rs2}[15:0]$，并令
+$v=d\Vert c\in\mathbb{F}_2^{24}$。硬件用固定异或网络实现线性映射
+\begin{equation}
+  \mathrm{rd}[15:0]=M_{\mathrm{CRC}}v,\qquad \mathrm{rd}[31:16]=0,
+\end{equation}
+其中 $M_{\mathrm{CRC}}\in\mathbb{F}_2^{16\times24}$ 为 CRC 更新多项式展开后得到的常量矩阵，矩阵
+乘加均在 $\mathbb{F}_2$ 上进行。等价的逐位参考伪代码为：
+\begin{quote}\small\ttfamily
+next = crc \& 0xffff; value = data;\\
+for (i=0; i<8; i++) \{ x=(value xor next) \& 1; value>>=1;\\
+\quad if (x) next=next xor 0x4002; next=(next>>1)|(x<<15); \}\\
+rd = next \& 0xffff;
+\end{quote}
+该指令不访问存储器、不保留跨指令状态，并在单周期结果通路写回。相同 ISA 配置和迭代数的板级对比
+中，它将运行时间由 10.07521570~s 降至 9.56506582~s，减少 0.51014988~s（5.0634\%）。
 
-\subsubsection{链式存储结构变换单元}
+\subsubsection{\texttt{xbmul}：紧凑位域乘法}
 
-\code{xlistrev} 保存 current、previous、next 和预取状态。每一步先查询 D-cache；命中时直接取得下一
-节点，否则发出 load；随后写回当前节点的链接字段。循环形式利用内部状态推进，避免每个节点都重新
-建立相同的控制依赖。所有写入仍经过缓存一致性更新，外部可见顺序与普通 load/store 一致。
+令 $a=\mathrm{zext}(\mathrm{rs1}[5:2])$、$b=\mathrm{zext}(\mathrm{rs1}[11:5])$，则
+\begin{equation}
+  p=a\times b,\qquad \mathrm{rd}=\mathrm{zext}_{32}(p[10:0]).
+\end{equation}
+两个位域分别为 4 位和 7 位无符号数，因此 11 位结果不会溢出。这一组合数据通路不产生内存或内部
+状态副作用。以已经启用 B 扩展与 \code{xcrcu8} 的板级结果为基准，加入 \code{xbmul} 后运行时间由
+9.56506582~s 降至 9.07727378~s，减少 0.48779204~s（5.10\%）。
 
-\input{src/tikz/list-transform-fsm}
+\input{src/tikz/custom-simple-datapath}
 
-\subsubsection{矩阵归约单元}
+\subsubsection{\texttt{xlistrev}：链表链接反转}
 
-\code{xmsum} 接收基址、维度和裁剪阈值，内部按行列计数器产生访存请求。响应寄存后完成加法、阈值
-比较和结果更新；归约完成后通过加速结果通路一次写回。请求、响应、处理和完成边界均有寄存器，避免
-访存数据与最终写回形成长组合链。
+每个节点首字为后继指针。设当前节点地址为 $cur$、已反转前缀的表头为 $prev$，单步语义为
+\begin{equation}
+  next\leftarrow \mathrm{Mem}_{32}[cur],\qquad
+  \mathrm{Mem}_{32}[cur]\leftarrow prev,\qquad (prev,cur)\leftarrow(cur,next).
+\end{equation}
+\code{xlistrev.init} 从 \code{rs1}、\code{rs2} 装入 $(cur,prev)$ 并完成第一步；
+\code{xlistrev.loop} 使用内部保存的 $(cur,prev)$ 继续推进。当 $next\neq0$ 时，硬件把 PC 重定向回当前
+\code{xlistrev.loop}，否则返回新的表头。其行为可写为：
+\begin{quote}\small\ttfamily
+init: cur=rs1; prev=rs2;\\
+while (cur != 0) \{ next=load32(cur); store32(cur,prev);\\
+\quad prev=cur; cur=next; \}\\
+rd=prev;
+\end{quote}
+读请求先查询 D-cache，未命中时转入统一数据总线；写请求同时更新主存可见数据与缓存副本。预取寄存器
+保存下一节点的查询结果，避免后继循环再次建立无关控制路径。状态转移按请求/响应边界分层，见
+图~\ref{fig:custom-listrev}，连线不穿越状态节点。
 
-\subsubsection{流式状态处理单元}
+\input{src/tikz/custom-listrev}
 
-\code{xdfa*} 将状态转移与计数器放在 EXU 内部。字节数据从内存响应进入寄存器，再由两个两字节步骤
-单元分段处理低半字和高半字；结果包含终态、消费字节数、停止标志和状态掩码。直方图形式只在一个
-完整 token 结束时提交计数，从而保持跨字继续处理的语义。
+在相同组合的板级对比中，\code{xlistrev} 将运行时间由 7.45481628~s 降至 7.29058196~s。
+减少量为 0.16423432~s（约 2.20\%）；对应完整指令数减少 13.81\%，差异来自每个节点仍需要一次相关 load 和
+一次 store 的阻塞事务。
 
-\input{src/tikz/stream-state-pipeline}
+\subsubsection{\texttt{xmsum}：带裁剪的矩阵序列归约}
 
-\subsection{自定义指令一致性与异常边界}
+\code{rs1} 给出连续 32 位元素数组 $C$ 的首地址；$n=\mathrm{rs2}[31:16]$，
+$clip=\mathrm{sext}_{32}(\mathrm{rs2}[15:0])$，处理元素数 $N=n^2$。令 $C_i$ 为第 $i$ 个有符号元素，
+$S_{-1}=0$、$P_{-1}=0$、$R_{-1}=0$，逐元素递推：
+\begin{align}
+ T_i&=(Q_{i-1}?0:S_{i-1})+C_i, & Q_i&=(T_i>clip),\\
+ S_i&=T_i, &R_i&=R_{i-1}+\begin{cases}10,&Q_i\\1,&\neg Q_i\land C_i>P_{i-1}\\0,&\text{其他}\end{cases},\\
+ P_i&=C_i.&&
+\end{align}
+完成后返回 $\mathrm{rd}=\mathrm{sext}_{32}(R_{N-1}[15:0])$；$n=0$ 时返回 0。控制器按
+“请求---响应---递推---完成”推进，只读内存，不修改数组。板级逐项实验中，在 \code{xbmul} 基础上
+加入 \code{xmsum} 后运行时间由 9.07727378~s 降至 8.57272290~s，减少 0.50455088~s（5.56\%）。
 
-自定义单元与普通指令共享 ready/valid 和顺序提交约束：阻塞单元工作时保持当前 EXU 指令；发出的
-访存请求使用统一数据总线；store 更新优先于较早回填；发生控制流冲刷时年轻请求不得修改缓存状态。
-内部状态只由匹配的指令序列推进，完成结果通过独立 \code{accelerator} lane 写回，避免与快速整数
-路径形成循环依赖。
+\input{src/tikz/custom-xmsum}
 
+\subsubsection{\texttt{xdfacnt/xdfa4/xdfa4h}：有界字符状态推进}
+
+该指令族实现八状态字符自动机。状态编码为起始、非法、符号后、指数标记后、整数、小数、指数符号后、
+科学计数；转移函数记为 $q'=\delta(q,ch)$。逗号、零字节或非法转移使本次有界步停止。对至多 $k$
+个可用字符（$k=2$ 或 4），硬件执行：
+\begin{quote}\small\ttfamily
+q=rs1[2:0]; mask=0; consumed=0; stopped=0;\\
+for i in [0,k): if (!stopped) \{ ch=Mem8[rs2+i];\\
+\quad if (ch==0 || ch==',' || delta(q,ch)==INVALID) stopped=1;\\
+\quad else \{ mask |= transitionMask(q,ch); q=delta(q,ch); \}\\
+\quad if (ch!=0) consumed++; \}\\
+rd = pack(mask, stopped, consumed, q);
+\end{quote}
+两字符组合步骤是四字符通路的内部基本模块；\code{xdfa4} 以两个串联步骤覆盖一个对齐字内至多四个
+字符。其返回字段为 $\mathrm{rd}[2:0]=q$、$\mathrm{rd}[5:3]=consumed$、
+$\mathrm{rd}[6]=stopped$、$\mathrm{rd}[14:7]=mask$。实际可用字符数为
+$4-(\mathrm{rs2}\bmod4)$，因此访问不会越过当前对齐字。
+
+\code{xdfacnt.init} 清零 8 项转移计数、8 项终态计数和待提交掩码；\code{xdfacnt.commit}
+对输入掩码中的每个置位状态各递增一次；\code{xdfacnt.read} 返回指定
+转移计数。\code{xdfa4h} 在 token 跨字时累计掩码，在 \code{stopped=1} 后用独立提交拍原子更新转移
+计数和终态计数；其 funct7=1、funct3=2 形式读取终态计数。所有计数均为 EXU 内部架构状态，普通
+\code{xdfa4} 只返回打包结果，不直接修改计数。
+
+\input{src/tikz/custom-dfa}
+
+\code{xdfa4} 用一次有界字读取替代逐字节加载与状态分类，\code{xdfacnt} 把状态掩码归约与计数器更新
+从通用整数数据通路移入专用状态单元；二者的单独板级增益没有形成可归属的同口径逐项结果，因而不作
+拆分估算。
+包含四字节推进与硬件计数提交的 \code{xdfa4h} 方案，在前一同组合版本上将完整动态指令数由
+1,459,284,065 降至 1,335,204,091，减少 124,079,974 条（8.50\%）；包含
+\code{xbmul+xcrcu8+xlistrev+xmsum+xdfa4h} 的组合板测时间为 6.69637186~s。该数值是组合结果，
+不归因于任一条单独指令。
+
+\subsection{一致性、阻塞与异常边界}
+
+无内部访存的 \code{xcrcu8/xbmul} 直接进入加速结果通路；其余单元在 EXU 保持当前指令，直至状态机
+完成并与后级握手。\code{xlistrev} 的 store、\code{xmsum} 的 load 及 DFA 的对齐字读取均复用统一
+数据总线。控制流冲刷不会提交年轻指令的请求；已经握手的链表写入则按普通 store 的可见顺序完成。
+最终结果经独立 accelerator lane 写回，使阻塞控制、访存副作用和普通整数结果选择保持清晰边界。

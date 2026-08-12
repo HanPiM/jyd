@@ -2,11 +2,10 @@
 \begin{tikzpicture}[font=\small]
 \fill[blue!10] (-5,0) -- (5,0) -- (4,1.1) -- (-4,1.1) -- cycle;
 \fill[blue!18] (-4,1.25) -- (4,1.25) -- (3,2.35) -- (-3,2.35) -- cycle;
-\fill[blue!27] (-3,2.5) -- (3,2.5) -- (2,3.6) -- (-2,3.6) -- cycle;
-\fill[blue!38] (-2,3.75) -- (2,3.75) -- (1,4.85) -- (-1,4.85) -- cycle;
+\fill[blue!27] (-3,2.5) -- (3,2.5) -- (2.15,3.7) -- (-2.15,3.7) -- cycle;
+\fill[blue!38] (-2.15,3.85) -- (2.15,3.85) -- (1.2,5.1) -- (-1.2,5.1) -- cycle;
 \node at (0,0.55) {NEMU/Verilator 差分、CPU tests、架构测试};
 \node at (0,1.8) {XSim：IP 模型与板级接口};
-\node at (0,3.05) {Vivado：综合、实现、时序与 DRC};
-\node at (0,4.3) {FPGA 上板与 UART capture};
+\node[align=center,text width=4.3cm,font=\footnotesize] at (0,3.1) {Vivado 综合与实现\\时序分析与 DRC};
+\node[align=center,text width=3.0cm,font=\footnotesize] at (0,4.45) {FPGA 上板\\UART 原始输出};
 \end{tikzpicture}\caption{从指令语义到真实板级行为的验证层次}\end{figure}
-

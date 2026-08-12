@@ -1,7 +1,18 @@
 \begin{figure}[H]\centering\resizebox{\linewidth}{!}{%
-\begin{tikzpicture}[b/.style={draw,rounded corners,align=center,minimum width=2.5cm,minimum height=0.8cm,fill=blue!6},a/.style={-Stealth,thick},font=\small]
-\node[b] (pc) {推测 PC}; \node[b,right=0.8cm of pc] (idx) {index/tag}; \node[b,right=0.8cm of idx] (banks) {8$\times$64 查询 bank};
-\node[b,right=0.8cm of banks] (sel) {bank 选择与 tag 比较}; \node[b,below=0.8cm of banks] (ras) {2 项 RAS};
-\node[b,right=0.8cm of sel] (pred) {类型 + 2-bit 方向\\生成下一 PC};
-\draw[a](pc)--(idx);\draw[a](idx)--(banks);\draw[a](banks)--(sel);\draw[a](sel)--(pred);\draw[a](ras)--(pred);
+\begin{tikzpicture}[
+ b/.style={draw,rounded corners=1.2pt,align=center,minimum height=0.82cm,fill=blue!6},
+ mem/.style={draw,rounded corners=1.2pt,align=center,minimum width=1.35cm,minimum height=2.15cm,fill=green!7},
+ a/.style={-Stealth,thick},font=\small]
+\node[b,minimum width=2.1cm] (pc) {推测 PC};
+\node[b,right=0.65cm of pc,minimum width=2.55cm] (split) {\texttt{pc[16:2]}\\tag / bank / 行号};
+\foreach \i in {0,...,7}{\node[mem,right=0.28cm of split,xshift=\i*1.42cm] (m\i) {bank \i\\64 项\\异步读};}
+\node[b,right=0.65cm of m7,minimum width=2.65cm] (pick) {bank 选择\\tag 相等且类型有效};
+\node[b,below=0.75cm of pick,minimum width=2.65cm,fill=orange!8] (decode) {类型译码\\JAL / branch / return};
+\node[b,below=0.75cm of m5,minimum width=2.6cm,fill=purple!7] (counter) {表项 2-bit 饱和计数器\\最高位给出 branch 方向};
+\node[b,below=0.75cm of m2,minimum width=2.55cm,fill=cyan!7] (ras) {2 项返回地址栈\\call 压入，return 弹出};
+\node[b,below=1.0cm of decode,minimum width=3.2cm,fill=gray!10] (next) {选择 BTB 目标 / RAS 栈顶 / $pc+4$\\形成 PredBundle};
+\draw[a](pc)--(split); \foreach \i in {0,...,7}{\draw[a](split.east)--(m\i.west);\draw[a](m\i.east)--(pick.west);}
+\draw[a](pick)--(decode); \draw[a](decode)--(next); \draw[a](counter.east)-|(next.north);
+\draw[a](ras.east)-|(next.west);
+\node[draw,dashed,rounded corners=1.2pt,fit=(m0)(m7),inner sep=4pt,label=above:{512 项查询阵列}] {};
 \end{tikzpicture}}\caption{512 项八 bank BTB 与返回预测结构}\end{figure}

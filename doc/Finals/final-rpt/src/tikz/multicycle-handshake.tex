@@ -1,9 +1,8 @@
 \begin{figure}[H]\centering
-\begin{tikzpicture}[s/.style={draw,rounded corners,minimum width=3.1cm,minimum height=0.82cm,align=center,fill=blue!6},d/.style={draw,diamond,aspect=2,align=center,fill=orange!7},a/.style={-Stealth,thick},font=\small]
+\begin{tikzpicture}[s/.style={draw,rounded corners=1.2pt,minimum width=3.1cm,minimum height=0.82cm,align=center,fill=blue!6},d/.style={draw,diamond,aspect=2,align=center,fill=orange!7},a/.style={-Stealth,thick},font=\small]
 \node[s] (idle) {Idle：接受多周期指令}; \node[s,below=0.7cm of idle] (busy) {Busy：保持 rd 占用\\dataValid=0};
 \node[d,below=0.7cm of busy] (valid) {结果有效？}; \node[d,below=0.8cm of valid] (ready) {后级 ready？};
 \node[s,below left=0.8cm and 1.4cm of ready] (hold) {Done：寄存结果}; \node[s,below right=0.8cm and 1.4cm of ready] (emit) {完成握手并释放};
 \draw[a](idle)--node[right]{in.fire}(busy);\draw[a](busy)--(valid);\draw[a](valid.west)--++(-1,0)|-node[left]{否}(busy.west);
 \draw[a](valid)--node[right]{是}(ready);\draw[a](ready)--node[above]{否}(hold);\draw[a](ready)--node[above]{是}(emit);\draw[a](hold)--(emit);
 \end{tikzpicture}\caption{多周期执行单元握手与相关保持}\end{figure}
-

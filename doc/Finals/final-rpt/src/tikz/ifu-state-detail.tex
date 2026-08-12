@@ -1,0 +1,28 @@
+\begin{figure}[H]\centering\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[
+ state/.style={draw,rounded corners=1.2pt,minimum width=2.5cm,minimum height=0.82cm,align=center,fill=blue!7},
+ rule/.style={draw,rounded corners=1.2pt,text width=4.1cm,minimum height=2.65cm,align=left,fill=gray!5,inner sep=7pt},
+ a/.style={-Stealth,thick},font=\small]
+\node[state] (idle) {Idle};
+\node[state,right=0.65cm of idle] (req) {WaitReq};
+\node[state,right=0.65cm of req] (resp) {WaitResp};
+\node[state,right=0.65cm of resp] (out) {WaitOut};
+\draw[a](idle)--(req); \draw[a](req)--(resp); \draw[a](resp)--(out);
+\draw[a](out.south) -- ++(0,-0.35) -| (idle.south);
+\node[rule,below=0.85cm of idle] (ri) {\textbf{Idle}\\
+$\lnot pc.valid$：保持；\\
+$pc.valid\land mem.req.ready$：转 WaitResp；\\
+$pc.valid\land\lnot mem.req.ready$：保存 pending，转 WaitReq。};
+\node[rule,right=0.35cm of ri] (rr) {\textbf{WaitReq}\\
+$\lnot mem.req.ready$：保持请求与元信息；\\
+$mem.req.ready$：请求完成，转 WaitResp。};
+\node[rule,right=0.35cm of rr] (rs) {\textbf{WaitResp}\\
+$\lnot mem.resp.valid$：保持；\\
+响应到且 $\lnot out.ready$：转 WaitOut；\\
+响应被消费：依据新 PC 与请求 ready 直接转 Idle、WaitReq 或继续 WaitResp。};
+\node[rule,right=0.35cm of rs] (ro) {\textbf{WaitOut}\\
+$\lnot out.ready$：保持响应；\\
+结果被消费：依据新 PC 与请求 ready 转 Idle、WaitReq 或 WaitResp。};
+\draw[dashed] (idle)--(ri);\draw[dashed](req)--(rr);\draw[dashed](resp)--(rs);\draw[dashed](out)--(ro);
+\end{tikzpicture}}
+\caption{IFU 状态机的完整握手转移条件}\end{figure}

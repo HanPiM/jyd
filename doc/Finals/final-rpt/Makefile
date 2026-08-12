@@ -2,6 +2,7 @@ TEX_SRC := src/main.tex
 CHAPTERS := $(wildcard src/chapters/*.tex)
 TIKZ_SOURCES := $(wildcard src/tikz/*.tex)
 ASSETS := $(shell find src/assets -type f 2>/dev/null)
+DATA := $(shell find src/data -type f 2>/dev/null)
 BUILD_DIR := build
 OUTPUT_DIR := output
 PDF := $(OUTPUT_DIR)/竞业达总决赛技术文档.pdf
@@ -24,10 +25,11 @@ $(PDF): $(TEX_SRC) $(CHAPTERS) $(TIKZ_SOURCES) $(ASSETS)
 
 overleaf: $(OVERLEAF)
 
-$(OVERLEAF): $(TEX_SRC) $(CHAPTERS) $(TIKZ_SOURCES) $(ASSETS)
+$(OVERLEAF): $(TEX_SRC) $(CHAPTERS) $(TIKZ_SOURCES) $(ASSETS) $(DATA)
 	rm -rf $(BUILD_DIR)/overleaf
-	mkdir -p $(BUILD_DIR)/overleaf $(OUTPUT_DIR)
-	cp -R src/. $(BUILD_DIR)/overleaf/
+	mkdir -p $(BUILD_DIR)/overleaf/src $(OUTPUT_DIR)
+	cp src/main.tex $(BUILD_DIR)/overleaf/main.tex
+	cp -R src/chapters src/tikz src/assets src/data $(BUILD_DIR)/overleaf/src/
 	cd $(BUILD_DIR)/overleaf && zip -qr ../../output/overleaf.zip .
 
 audit:

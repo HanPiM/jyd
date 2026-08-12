@@ -1,8 +1,0 @@
-\begin{figure}[H]\centering
-\begin{tikzpicture}[s/.style={draw,rounded corners,minimum width=2.1cm,minimum height=0.72cm,align=center,fill=blue!6},a/.style={-Stealth,thick},font=\scriptsize,node distance=0.65cm and 0.65cm]
-\node[s] (idle) {idle};\node[s,right=of idle] (lookup) {cache lookup};\node[s,right=of lookup] (resolve) {lookup resolve};
-\node[s,below=of resolve] (lr) {load request};\node[s,left=of lr] (lp) {load response};\node[s,left=of lp] (sr) {store request};\node[s,left=of sr] (done) {done/prefetch};
-\draw[a](idle)--(lookup);\draw[a](lookup)--(resolve);\draw[a](resolve)--node[right]{miss}(lr);\draw[a](resolve)-|node[above]{hit}(sr);
-\draw[a](lr)--(lp);\draw[a](lp)--(sr);\draw[a](sr)--(done);\draw[a](done)--(idle);
-\end{tikzpicture}\caption{链式存储结构变换状态机}\end{figure}
-

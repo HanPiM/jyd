@@ -1,0 +1,17 @@
+\begin{figure}[H]
+  \centering
+  \begin{tikzpicture}
+    \begin{axis}[
+      width=0.88\textwidth,height=6.3cm,
+      symbolic x coords={BTB512,通路局部化,缓存与late-load,CRC字节更新,位乘矩阵,状态分拍,领域组合,状态计数},
+      xtick=data,x tick label style={rotate=28,anchor=east,font=\scriptsize},
+      ylabel={板测时间（s）},ymin=6.3,ymax=11.1,grid=major,
+      nodes near coords,nodes near coords style={font=\tiny,anchor=south}]
+      \addplot[blue!75!black,very thick,mark=*] coordinates {
+        (BTB512,10.695831) (通路局部化,10.695831) (缓存与late-load,10.078266)
+        (CRC字节更新,9.565066) (位乘矩阵,8.572723) (状态分拍,7.745942)
+        (领域组合,7.106449) (状态计数,6.696372)};
+    \end{axis}
+  \end{tikzpicture}
+  \caption{关键优化里程碑的板测时间走向}
+\end{figure}

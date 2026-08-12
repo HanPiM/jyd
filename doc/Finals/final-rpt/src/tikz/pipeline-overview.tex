@@ -1,9 +1,0 @@
-\begin{figure}[H]\centering\resizebox{\linewidth}{!}{%
-\begin{tikzpicture}[s/.style={draw,rounded corners,minimum width=2.15cm,minimum height=1cm,align=center,fill=blue!6},q/.style={draw,minimum width=1.05cm,minimum height=0.65cm,fill=gray!8},a/.style={-Stealth,thick},font=\small]
-\node[s] (i0) {IFU}; \node[q,right=0.25cm of i0] (q0) {IF/ID}; \node[s,right=0.25cm of q0] (i1) {IDU};
-\node[q,right=0.25cm of i1] (q1) {ID/EX}; \node[s,right=0.25cm of q1] (i2) {EXU}; \node[q,right=0.25cm of i2] (q2) {EX/LS};
-\node[s,right=0.25cm of q2] (i3) {LSU}; \node[q,right=0.25cm of i3] (q3) {LS/WB}; \node[s,right=0.25cm of q3] (i4) {WBU};
-\foreach \x/\y in {i0/q0,q0/i1,i1/q1,q1/i2,i2/q2,q2/i3,i3/q3,q3/i4}{\draw[a] (\x)--(\y);}
-\draw[a,red!70!black] (i2.south) -- ++(0,-0.65) -| node[pos=0.2,below]{redirect + epoch} (i0.south);
-\draw[a,green!50!black] (i4.north) -- ++(0,0.65) -| node[pos=0.25,above]{写回/旁路状态} (i1.north);
-\end{tikzpicture}}\caption{五级流水、反压与重定向关系}\end{figure}

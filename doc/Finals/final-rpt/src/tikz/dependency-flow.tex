@@ -1,8 +1,23 @@
-\begin{figure}[H]\centering
-\begin{tikzpicture}[b/.style={draw,rounded corners,align=center,minimum width=2.5cm,minimum height=0.75cm,fill=blue!5},d/.style={draw,diamond,aspect=2,align=center,fill=orange!6},a/.style={-Stealth,thick},font=\small]
-\node[b] (src) {源寄存器号}; \node[b,below=0.7cm of src] (p) {EXU/LSU/WBU 生产者优先级}; \node[d,below=0.8cm of p] (m) {目的寄存器匹配？};
-\node[b,below left=0.9cm and 1.4cm of m] (g) {使用 GPR 数据}; \node[d,below right=0.9cm and 1.4cm of m] (v) {数据有效？};
-\node[b,below left=0.9cm and 1.2cm of v] (s) {停顿}; \node[b,below right=0.9cm and 1.2cm of v] (f) {按消费者选择旁路};
-\draw[a] (src)--(p);\draw[a](p)--(m);\draw[a](m)--node[above]{否}(g);\draw[a](m)--node[above]{是}(v);\draw[a](v)--node[above]{否}(s);\draw[a](v)--node[above]{是}(f);
-\end{tikzpicture}\caption{IDU 相关判定与旁路流程}\end{figure}
-
+\begin{figure}[H]\centering\resizebox{0.88\linewidth}{!}{%
+\begin{tikzpicture}[
+  node distance=0.9cm and 1.4cm,
+  block/.style={draw,rounded corners=1.2pt,align=center,minimum width=3cm,minimum height=0.85cm,fill=blue!5},
+  decision/.style={draw,diamond,aspect=2.2,align=center,fill=orange!6},
+  arrow/.style={-Stealth,thick},font=\small]
+\node[block] (src) {源寄存器号与 GPR 读数据};
+\node[block,below left=of src] (exu) {EXU 前递};
+\node[block,below=of src] (lsu) {LSU 前递};
+\node[block,below right=of src] (wbu) {WBU 前递};
+\node[block,below=1.1cm of lsu] (priority) {按 EXU $>$ LSU $>$ WBU\\选择最高优先级匹配项};
+\node[decision,below=of priority] (conflict) {命中未提交目的寄存器？};
+\node[block,below left=of conflict] (gpr) {否：使用 GPR 数据};
+\node[decision,below=of conflict] (valid) {结果已经有效？};
+\node[block,below right=of conflict] (stall) {否：请求流水线停顿};
+\node[block,below=1cm of valid] (forward) {是：选择前递结果送往 EXU};
+\draw[arrow] (src)--(exu); \draw[arrow] (src)--(lsu); \draw[arrow] (src)--(wbu);
+\draw[arrow] (exu)--(priority); \draw[arrow] (lsu)--(priority); \draw[arrow] (wbu)--(priority);
+\draw[arrow] (priority)--(conflict); \draw[arrow] (conflict)--node[above left]{否}(gpr);
+\draw[arrow] (conflict)--node[right]{是}(valid); \draw[arrow] (valid)--node[above right]{否}(stall);
+\draw[arrow] (valid)--node[right]{是}(forward); \draw[arrow] (gpr.south)|-(forward.west);
+\end{tikzpicture}}
+\caption{IDU 旁路与停顿判定流程}\end{figure}

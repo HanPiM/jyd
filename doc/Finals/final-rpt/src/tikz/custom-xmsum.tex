@@ -1,0 +1,14 @@
+\begin{figure}[H]\centering
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[n/.style={draw,rounded corners=1.2pt,minimum height=0.78cm,minimum width=2.25cm,align=center,fill=green!7},a/.style={-Stealth,thick},font=\small,node distance=0.7cm]
+\node[n] (cfg) {锁存 $base,n,clip$\\清零行列计数};
+\node[n,right=of cfg] (req) {地址递增器\\发起 32 位读};
+\node[n,right=of req] (resp) {响应寄存\\得到 $C_i$};
+\node[n,right=of resp] (calc) {$T_i$、裁剪判断\\趋势计分};
+\node[n,right=of calc] (next) {更新 $S_i,P_i,R_i$\\行列计数};
+\node[n,right=of next] (done) {符号扩展\\写回 $R$};
+\foreach \x/\y in {cfg/req,req/resp,resp/calc,calc/next,next/done}{\draw[a](\x)--(\y);}
+\draw[a](next.south)--++(0,-0.45)-|node[pos=0.25,below]{尚有元素}(req.south);
+\end{tikzpicture}}
+\caption{\texttt{xmsum} 的顺序访存与递推归约流程}
+\end{figure}

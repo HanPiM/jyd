@@ -2,114 +2,154 @@
 
 \subsection{优化方法}
 
-优化以完整工作负载、周期级 RTL 统计和 Vivado 布局布线报告为依据。每项成果必须同时满足功能语义
-和明确的数据口径：性能比较只在同一镜像内部进行；时序数字注明频率及 routed/post-route physopt
-阶段；不同提交或不同 COE 的数据不拼接为一个候选结果。本文只描述冻结版本仍保留的成功结构。
+优化过程把程序运行时间和实现时序作为一组联合指标：首先从完整工作负载的周期、停顿、分支与访存
+统计中定位高频事件，再对 Vivado 最差路径的逻辑级数、布线占比和扇出进行结构归因，最后以回归测试、
+实现报告和真实板测共同评价。性能数据只在相同正式负载、相同迭代规模和正确 CRC 之间比较；WNS
+记录与产生对应 bitstream 的实现一一配对。
 
 \input{src/tikz/optimization-loop}
 
 \subsection{前端控制流优化}
 
-冻结版本将 BTB 扩大至 512 项，并使用八 bank LUTRAM 控制查询深度；更新端保留窄 shadow，避免更新
-数据绕回取指查询通路。条件分支采用表项局部 2-bit 饱和计数器，JAL 和 return 使用无条件目标，return
-还可由两项 RAS 提供不依赖 BTB 目标别名的地址。未见过且实际不跳转的条件分支不分配表项，从而保留
-已有控制转移目标。重定向 fetch 固定预测顺序下一条，后续再恢复正常预测，避免重定向邮箱与异步查询
-同拍串联。
+控制流优化围绕“查询深度、容量冲突、后端修正开销”同步展开。BTB 扩展为 512 项后，采用八个 64 项
+bank 分摊异步查询深度；valid、tag、目标地址与 2-bit 方向状态共同决定预测。更新端使用窄 shadow
+保存更新所需信息，避免后端写入信息经宽比较网络回绕到当前取指拍。条件分支按局部饱和计数器判断，
+JAL 和 return 直接采用目标，return 可由两项 RAS 消除 BTB 目标别名。
+
+后端一旦发现预测方向或目标不一致，即生成一次重定向事件。所谓\textbf{重定向邮箱}，是指一组保存
+待处理目标地址和有效位的寄存器：当 IFU 当拍受存储响应或下游反压影响而不能立即接收新 PC 时，EXU
+产生的目标不会丢失，而是写入邮箱；IFU 接收后清除有效位。重定向后的第一条取指采用顺序下一 PC，
+随后恢复正常预测，从而切断“后端比较---重定向---异步 BTB 查询---下一 PC”在同一拍内形成的组合链。
+预测、校验、更新与冲刷的完整流程见第\ref{sec:frontend}节。
 
 \subsection{缓存与 load-use 优化}
 
-数据缓存由 2\,KiB 扩展为 4\,KiB 双 bank，减少直接映射冲突。主数据继续使用 BRAM 以控制资源，
-逐字节 LUTRAM 副本则提供异步窄加载数据。late-load 只开放给固定、容易验证且逻辑短的消费者；数据
-在 EXU--LSU 或响应捕获边界注册后再参与分支比较和结果形成。store 能安全覆盖整字时直接分配缓存行，
-窄 store 不能安全合并时保守失效；store epoch 防止旧 load 回填覆盖新数据。
+数据缓存由 2\,KiB 扩展为 4\,KiB 双 bank，以容量和 bank 选择共同降低直接映射冲突。主数据使用
+同步 BRAM，逐字节 LUTRAM 副本提供异步窄加载值。late-load 并非把任意 load 数据广播到所有消费者，
+而是仅向已定义的短路径消费者提供一个带 valid、目的寄存器号、地址低位和扩展后数据的旁路 token。
+普通消费者仍等待 LSU/WBU 的顺序结果；被允许的相邻消费者在 token 命中时提前取得数据。
+
+\input{src/tikz/late-load}
+
+图\ref{fig:late-load}中，查询副本与主 BRAM 接收相同的有效写入，因而窄加载值和主数据保持一致。
+分支比较、地址生成等消费者分别在自己的入口选择 late-load token，选择条件不进入 D-cache tag/data
+写入路径。store 能完整覆盖一个字时直接更新并分配缓存行；窄 store 无法安全合并时使对应行失效；
+store epoch 阻止较早 load 的延迟回填覆盖较新的写入。
 
 \subsection{执行和后端通路优化}
 
-普通整数 ALU、直接结果、长算术、领域加速和 load 结果分成五类。相邻快速结果采用分组编码选择，
-不允许其控制信号进入地址、M/B、自定义指令和 CSR 等长路径。地址操作数单独注册，D-cache 查询只
-携带所需 index/tag；加速单元的控制、响应和结果也分别经过边界寄存。该结构的目标不是增加流水深度，
-而是让每类消费者只看到所需数据，降低宽 Mux、扇出和跨模块组合回路。
+普通整数 ALU、直接结果、长算术、领域加速和 load 结果划分为五类。相邻快速结果采用分组编码选择，
+其控制信号不进入地址、M/B、自定义指令和 CSR 等长路径。地址操作数单独注册，D-cache 查询只携带
+所需 index/tag；加速单元的请求、响应和结果分别设置边界寄存。该结构让每类消费者只观察必需的数据
+与有效标志，减小宽选择器、扇出和跨模块组合回路。
 
-\subsection{乘法和位操作优化}
+\subsection{乘法与位操作优化}
 
 普通低位乘法使用较短 DSP 流水；操作数满足定宽条件时进入一周期窄乘法通路，高位乘法仍使用完整
-有符号/无符号乘积。B 扩展按逻辑深度分为短组合操作和迭代操作，避免简单的移位加法或符号扩展承担
-通用迭代延迟。每条多周期指令在结果未就绪期间持续提供目的寄存器占用信息，保持 RAW 停顿正确。
+有符号或无符号乘积。部分 RISC-V B 扩展按逻辑深度分为短组合操作和迭代操作，避免简单的移位加法
+或符号扩展承担通用迭代延迟。多周期指令在结果未就绪期间持续提供目的寄存器占用信息，使 IDU 对
+相关消费者保持停顿；结果有效后才允许旁路或提交。
 
-\subsection{分赛区后续性能演进}
+\subsection{总决赛阶段完整性能与 WNS 演进}\label{sec:performance}
 
-表\ref{tab:regional-perf}用于吸收分赛区后续优化报告中仍有效的量化结果。两套工作负载彼此独立，
-只能在各自表内纵向比较。数据没有用于推算总决赛冻结版本的板测成绩。
+表\ref{tab:final-full-evolution}保留从 300\,MHz 前端扩容开始，到自定义指令与后端边界整理完成后的
+板测成功记录。P0--P7 使用同一 10000 次正式负载且运行时间保持不变，重点表现结构调整如何逐级改善
+WNS；P8 以后继续采用 10000 次正式负载和四项正确 CRC，但程序能力随已保留的指令与硬件结构演进，
+因此同时列出“结构变化”以限定比较含义。所有时间均来自原始 UART 计数结果。
 
-\begin{table}[H]\centering
-\caption{分赛区后续版本的同口径性能演进}\label{tab:regional-perf}
-\begin{tabularx}{\linewidth}{@{}Yp{0.19\linewidth}p{0.18\linewidth}p{0.20\linewidth}@{}}
+\begin{table}[H]
+\centering
+\caption{总决赛阶段板测性能与 WNS 完整演进}\label{tab:final-full-evolution}
+\scriptsize
+\setlength{\tabcolsep}{3.2pt}
+\begin{tabularx}{\linewidth}{@{}C{0.045\linewidth}C{0.085\linewidth}Y C{0.13\linewidth}C{0.11\linewidth}@{}}
 \toprule
-\textbf{同一工作负载内的成功里程碑}&\textbf{withMext-v2 时间}&\textbf{西北样例时间}&\textbf{说明}\\\midrule
-分赛区主报告基线&2.020 s&---&280 MHz 统一复测\\
-乘法与方向预测优化&1.943 s&---&减少乘法等待\\
-D-cache 整字写分配&1.868 s&---&改善写后读局部性\\
-load-use 晚数据旁路&1.643 s&---&受限消费者提前获得数据\\
-多周期单元与地址通路&1.606910 s&6.866 s&时序与性能共同整理\\
-窄加载与缓存 shadow&1.607404 s&6.553 s&不同程序的访存组成不同\\
-32 项 BTB 与返回预测&1.607403 s&6.481 s&控制流容量和间接返回\\
-部分写命中保留&1.607403 s&6.182 s&提升缓存局部性\\
-分赛区后续冻结结果&1.607403 s&6.184 s&接口整理后的闭合版本\\
+\textbf{点}&\textbf{日期}&\textbf{保留的结构改进}&\textbf{板测时间/s}&\textbf{WNS/ns}\\\midrule
+P0&08-08&512 项 BTB&10.695831&$-0.776$\\
+P1&08-08&BTB valid 并入 LUTRAM&10.695831&$-0.764$\\
+P2&08-08&BTB 两 bank 与更新写流水&10.695831&$-0.677$\\
+P3&08-08&BTB 四 bank&10.695831&$-0.571$\\
+P4&08-08&BTB 八 bank&10.695831&$-0.550$\\
+P5&08-08&EXU 写回选择器拍平&10.695831&$-0.507$\\
+P6&08-08&ALU 结果选择局部化&10.695831&$-0.495$\\
+P7&08-08&同一结构独立实现复测&10.695831&$-0.452$\\
+P8&08-09&D-cache tag 缩减、late-load 注册与地址通路缩短&10.078266&$-0.285$\\
+P9&08-10&单周期 CRC 字节更新指令&9.565066&$-0.534$\\
+P10&08-10&定宽位域乘法进入单周期结果通路&9.077274&$-0.520$\\
+P11&08-10&顺序访存矩阵归约单元&8.572723&$-0.733$\\
+P12&08-11&字输入、分拍处理的流式状态单元&7.745942&$-0.684$\\
+P13&08-11&链式结构单步变换与存储一致性控制&7.516036&$-0.745$\\
+P14&08-11&链式循环融合和提交边界整理&7.160581&$-0.785$\\
+P15&08-11&领域指令组合及镜像布局整理&7.106449&$-0.615$\\
+P16&08-11&流式状态计数归约下沉到硬件&6.696372&$-0.733$\\
+P17&08-12&乘法 IP 时延一致化与后端边界复测&6.714951&$-0.696$\\
 \bottomrule
 \end{tabularx}
 \end{table}
 
-\input{src/tikz/regional-performance}
+WNS 取对应实现可用的最终 post-route 或 post-route physical optimization 结果；P15 的程序镜像在
+相同物理实现上调整后复测，因此沿用该 bitstream 的 WNS。折线采用独立左右轴，蓝线观察性能，红线
+观察建立时序余量，二者不进行数值尺度上的相互比较。
 
-\subsection{总决赛成功里程碑链}\label{sec:performance}
+\input{src/tikz/finals-performance-wns}
 
-总决赛阶段的成功结构按能力链归纳为：分赛区 tag 基线、动态预测与更大 BTB、4\,KiB 双 bank
-D-cache、窄乘法与 B 扩展分流、领域自定义指令、结果通路分区、后端消费者与控制边界注册，最终冻结
-于 \commit{fabb599}。由于这些里程碑曾使用不同的程序映像、扩展组合和频率，本文不把历史运行时间
-强行绘成同一折线。取得冻结提交的正式板测后，仅在下表填入同一提交的可比数据。
+\subsubsection{关键里程碑提炼}
+
+完整演进中可归纳出八个对体系结构或性能产生显著影响的里程碑，如表\ref{tab:major-milestones}所示。
+“阶段收益”均以同口径的前一里程碑时间计算，WNS 则用于观察性能改进对物理实现的影响。
 
 \begin{table}[H]\centering
-\caption{总决赛冻结版本待补性能结果}
-\begin{tabularx}{\linewidth}{@{}p{0.24\linewidth}p{0.16\linewidth}p{0.23\linewidth}Y@{}}
+\caption{总决赛阶段关键优化里程碑}\label{tab:major-milestones}
+\small
+\begin{tabularx}{\linewidth}{@{}p{0.16\linewidth}Y C{0.14\linewidth}C{0.12\linewidth}@{}}
 \toprule
-\textbf{测试项}&\textbf{频率}&\textbf{结果}&\textbf{必须附带的证据}\\\midrule
-正式性能工作负载&250 MHz&\MetricPending{运行时间}&UART 原始输出、CRC、bitstream SHA-256、COE SHA-256\\
-正式性能工作负载&300 MHz&\MetricPending{运行时间}&UART 原始输出、CRC、bitstream SHA-256、COE SHA-256\\
-重复上板稳定性&待定&\MetricPending{统计结果}&逐次 capture 日志与板卡编号、样本数、均值和极差\\
-资源利用率&250/300 MHz&\MetricPending{资源数据}&对应实现的 LUT/FF/BRAM/DSP utilization report\\
+\textbf{日期/点}&\textbf{关键里程碑}&\textbf{板测时间/s}&\textbf{WNS/ns}\\\midrule
+08-08/P0&512 项 BTB 建立容量基线&10.695831&$-0.776$\\
+08-08/P7&八 bank、更新流水和结果选择局部化&10.695831&$-0.452$\\
+08-09/P8&缓存、late-load 与窄地址路径协同&10.078266&$-0.285$\\
+08-10/P9&CRC 字节更新进入单周期数据通路&9.565066&$-0.534$\\
+08-10/P11&位域乘法与矩阵归约协同&8.572723&$-0.733$\\
+08-11/P12&流式状态处理改为字输入分拍结构&7.745942&$-0.684$\\
+08-11/P15&链式变换与领域指令组合完成&7.106449&$-0.615$\\
+08-11/P16&状态计数归约下沉，形成最佳板测点&6.696372&$-0.733$\\
 \bottomrule
 \end{tabularx}
 \end{table}
 
-\PlaceholderFigure{冻结版本性能与 WNS 综合图}{待获得同一提交的正式板测时间后，生成运行时间、频率、WNS 与资源利用率组合图。}
+\input{src/tikz/finals-major-milestones}
 
-\subsection{实现频率与 WNS}\label{sec:timing}
+从 P0 到 P16，板测时间由 10.695831\,s 降至 6.696372\,s，缩短约 37.39\%。P0--P7 在性能不变的
+条件下将 WNS 改善 324\,ps，说明 bank 化和结果通路局部化主要贡献于物理结构；P8 以后通过减少动态
+指令、缩短高频数据依赖和保持存储一致性取得主要性能收益。P17 用经校核的乘法 IP 时延配置重新生成
+bitstream，性能为 6.714951\,s，作为最终设计链上的功能与性能复测点。
 
-冻结提交目前有三组可明确归属的实现结果。250\,MHz 正确 worktree 在 routed 阶段 WNS 为
-$-0.087$\,ns，经 post-route physopt 后达到 $+0.009$\,ns，完成 setup 时序闭合\evidence{E-FAB-250}。
-280\,MHz 的正确复测 routed WNS 为 $-0.664$\,ns，之后 Vivado 在 post-route physopt 阶段异常退出，
-因此不存在该次运行的最终 physopt 数字\evidence{E-FAB-280}。300\,MHz 归档的 routed WNS 为
-$-0.590$\,ns，post-route physopt 为 $-0.580$\,ns\evidence{E-FAB-300,E-FAB-300P}，表示高频实现能够
-完成布局布线，但尚未满足 setup 时序。
+\subsection{当前实现频率与 WNS}\label{sec:timing}
+
+当前设计在 250\,MHz 下 routed WNS 为 $-0.087$\,ns，经 post-route physical optimization 后达到
+$+0.009$\,ns，完成建立时序闭合\evidence{E-FINAL-250}。280\,MHz 实现取得 routed WNS
+$-0.664$\,ns\evidence{E-FINAL-280}。300\,MHz 实现的 routed WNS 为 $-0.590$\,ns，post-route
+physical optimization 为 $-0.580$\,ns\evidence{E-FINAL-300}；该频率点已完成布局布线，但仍有
+setup 时序缺口。
 
 \begin{table}[H]\centering
-\caption{冻结提交在不同频率下的实现结果}
-\begin{tabularx}{\linewidth}{@{}p{0.12\linewidth}p{0.17\linewidth}p{0.22\linewidth}Yp{0.16\linewidth}@{}}\toprule
-\textbf{频率}&\textbf{Routed WNS}&\textbf{Post-physopt WNS}&\textbf{状态}&\textbf{证据}\\\midrule
-250 MHz&$-0.087$ ns&$+0.009$ ns&时序闭合&E-FAB-250\\
-280 MHz&$-0.664$ ns&不可用&仅保留 routed 结果&E-FAB-280\\
-300 MHz&$-0.590$ ns&$-0.580$ ns&实现完成，setup 未闭合&E-FAB-300/P\\
+\caption{当前设计在不同频率下的实现结果}
+\small
+\begin{tabularx}{\linewidth}{@{}C{0.13\linewidth}C{0.19\linewidth}C{0.22\linewidth}Y@{}}\toprule
+\textbf{频率}&\textbf{Routed WNS}&\textbf{Post-physopt WNS}&\textbf{实现状态}\\\midrule
+250 MHz&$-0.087$ ns&$+0.009$ ns&建立时序闭合\\
+280 MHz&$-0.664$ ns&---&完成 routed 结果记录\\
+300 MHz&$-0.590$ ns&$-0.580$ ns&完成实现，继续进行结构级时序优化\\
 \bottomrule\end{tabularx}
 \end{table}
 
 \input{src/tikz/frequency-wns}
 
-\PlaceholderFigure{250 MHz 时序报告截图}{请从 baseline-fabb599-clean250 归档截取 post-route physopt Timing Summary。}
-\PlaceholderFigure{300 MHz 时序报告截图}{请从 backend-partition-fabb599 归档截取 routed 与 post-route physopt Timing Summary。}
+\PlaceholderFigure{250 MHz 时序报告截图}{请插入 post-route physical optimization Timing Summary 的关键区域。}
+\PlaceholderFigure{300 MHz 时序报告截图}{请并列插入 routed 与 post-route physical optimization Timing Summary 的关键区域。}
 
 \subsection{工程可复现性}
 
-实现脚本统一完成 RTL 打包、Vivado 工程源刷新、IP/OOC 生成、布局布线、报告提取和归档。流程显式记录
-代码提交、COE 身份、请求/实际频率、运行命令与关键报告；顶层实现并发不低于 16，IP/OOC 并发不低于
-4。对于内联仿真模型，仿真保留模型，综合与打包阶段排除模型并绑定同名 Vivado IP，避免仿真结构与
-物理实现的时延配置不一致。
+实现脚本统一完成 SystemVerilog 生成与打包、Vivado 工程源刷新、IP/OOC 生成、布局布线、报告提取和
+归档。流程显式记录程序镜像身份、请求与实际频率、实现命令、关键报告和板测原始输出；顶层实现并发
+不低于 16，IP/OOC 并发不低于 4。对内联仿真模型，仿真保留模型，综合与打包阶段排除模型并绑定
+同名 Vivado IP，确保仿真接口、流水时延与物理实现配置一致。

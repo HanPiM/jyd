@@ -1,0 +1,11 @@
+\begin{figure}[H]\centering
+\begin{tikzpicture}[font=\small,field/.style={draw,minimum height=0.95cm,align=center},a/.style={-Stealth,thick}]
+\node[field,minimum width=3.5cm,fill=gray!10] (hi) {31:17\\固定地址窗口};
+\node[field,minimum width=2.0cm,fill=blue!8,right=0pt of hi] (tag) {16:11\\6-bit tag};
+\node[field,minimum width=1.5cm,fill=orange!10,right=0pt of tag] (bank) {10:8\\8 banks};
+\node[field,minimum width=1.7cm,fill=yellow!12,right=0pt of bank] (row) {7:2\\64 rows};
+\node[field,minimum width=1.2cm,fill=gray!10,right=0pt of row] (lo) {1:0\\00};
+\node[draw,rounded corners=1.2pt,below=1.0cm of bank,align=center,fill=blue!4] (keep) {BTB 保存/比较 \texttt{pc[16:2]}；目标也只保存 15 bit\\重构目标：\texttt{0x80000000 | (target[14:0] << 2)}};
+\draw[a]($(tag.south)!0.5!(row.south)$)--(keep.north);
+\end{tikzpicture}
+\caption{取指 PC 与 BTB 地址字段修剪}\end{figure}

@@ -1,7 +1,7 @@
 \documentclass[UTF8,a4paper,12pt]{ctexart}
 \usepackage[margin=2.35cm]{geometry}
 \usepackage{graphicx,booktabs,longtable,tabularx,array,calc}
-\usepackage{amsmath,amssymb,enumitem,caption,fancyhdr,float}
+\usepackage{amsmath,amssymb,enumitem,caption,fancyhdr,float,dirtree}
 \usepackage[hidelinks]{hyperref}
 \usepackage{xcolor,tikz,pgfplots}
 \usepackage{seqsplit}
@@ -24,7 +24,6 @@
 \newcolumntype{Y}{>{\raggedright\arraybackslash}X}
 \newcolumntype{C}[1]{>{\centering\arraybackslash}p{#1}}
 \newcommand{\code}[1]{\texttt{\seqsplit{#1}}}
-\newcommand{\commit}[1]{\texttt{\seqsplit{#1}}}
 \newcommand{\evidence}[1]{\textsuperscript{\textcolor{blue!60!black}{[#1]}}}
 \newcommand{\MetricPending}[1]{\textcolor{orange!75!black}{\textbf{[\,待补：#1\,]}}}
 \newcommand{\PlaceholderFigure}[2]{%
@@ -35,7 +34,11 @@
   {\zihao{4}\noindent\makebox[6em][l]{\heiti#1：}%
    \underline{\makebox[\dimexpr\textwidth-6em\relax][l]{\strut\heiti #2}}\par}}
 \newenvironment{signalstable}[1]{%
-  \scriptsize\begin{longtable}{@{}p{0.17\linewidth}C{0.065\linewidth}p{0.135\linewidth}p{0.155\linewidth}p{0.285\linewidth}@{}}
+  \scriptsize\begin{longtable}{@{}p{\dimexpr0.17\linewidth-1.36\tabcolsep\relax}
+    C{\dimexpr0.07\linewidth-0.56\tabcolsep\relax}
+    p{\dimexpr0.14\linewidth-1.12\tabcolsep\relax}
+    p{\dimexpr0.17\linewidth-1.36\tabcolsep\relax}
+    p{\dimexpr0.45\linewidth-3.60\tabcolsep\relax}@{}}
   \caption{#1}\\\toprule
   \textbf{信号或信号组}&\textbf{方向}&\textbf{位宽/类型}&\textbf{握手关系}&\textbf{作用}\\\midrule\endhead
   \bottomrule\endfoot
@@ -55,7 +58,6 @@
     \coverfield{参赛杯赛}{``竞业达''企业命题}
     \vspace{0.45cm}\coverfield{队伍编号}{CICC1004252}
     \vspace{0.45cm}\coverfield{团队名称}{和溢位}
-    \vspace{0.45cm}\coverfield{冻结版本}{fabb5995bdd394578fbf989b6b20d5eae45b320c}
     \vspace{0.45cm}\coverfield{文档日期}{2026 年 8 月}
   \end{minipage}
   \vspace{1.8cm}

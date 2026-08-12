@@ -1,101 +1,268 @@
 \section{验证与测评体系}\label{sec:verification}
 
-本章暂沿用分赛区技术文档建立的验证层次，并结合冻结版本增加版本归属和证据要求。验证体系由指令级
-参考模型、周期级 RTL 仿真、Vivado XSim、架构测试、FPGA 实现和上板运行组成；不同层次分别覆盖
-体系结构语义、流水线时序、IP 绑定、物理时序和真实板级行为。
-
-\subsection{验证平台说明}
-
-\subsubsection{Verilator 与 NEMU 差分验证}
-
-Chisel 生成的 SystemVerilog 由 Verilator 编译为周期级仿真器。仿真器在指令提交边界将 DUT 的 PC、
-通用寄存器和相关体系结构状态与 NEMU 参考模型比较；出现差异时输出最近指令环、寄存器状态和访存
-上下文。DPI-C 还负责停机检测、串口模拟和性能计数器采集。该平台运行速度高，适合 CPU tests、
-架构测试和完整工作负载回归。
-
-\subsubsection{Vivado XSim}
-
-XSim 使用与 FPGA 打包一致的顶层、存储器接口和 IP 仿真模型，重点检查 BRAM 同步读写、字节写掩码、
-分布式存储器异步读取以及数码管/LED 等板级连接。BlackBox 内联模型只用于 RTL 仿真；综合输入会排除
-模型并绑定 Vivado IP output product。
-
-\subsubsection{Vivado 实现和数字孪生上板}
-
-实现流程从冻结提交重新生成打包 RTL，刷新工程导入目录，再执行 synthesis、implementation 和
-bitstream。上板验证通过 CLI capture 保存原始 UART 输出，不以人工抄录的屏幕数字作为唯一性能依据。
-每次正式结果需要同时记录板卡编号、bitstream SHA-256、COE SHA-256、CPU 频率、CRC 和完整运行输出。
+本项目沿用分赛区阶段形成的分层验证方法，并针对总决赛新增的预测器、缓存、多周期扩展和自定义指令
+扩大回归范围。验证体系由指令级参考模型、周期级 SystemVerilog 仿真、Vivado Simulation、体系结构
+测试、完整程序、FPGA 实现和真实板测组成。各层分别回答“指令语义是否正确”“流水时序是否正确”
+“器件模型是否一致”“物理实现是否满足约束”以及“真实板级行为是否可复现”。
 
 \input{src/tikz/verification-pyramid}
 
-\subsection{功能测试范围}
+\subsection{验证平台说明}
+
+\subsubsection{Vivado Simulation 板级仿真}
+
+Vivado Simulation 使用与 FPGA 打包一致的顶层、存储器接口和板级连接，覆盖 IROM/DRAM、BRAM
+同步读写、字节写掩码、分布式存储器异步读、数码管、LED 与 UART 通路。SystemVerilog 中的仿真模型
+保持与 Vivado IP 相同的端口和流水时延；进入综合时，工程绑定对应 IP output product。
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.95\linewidth]{verify/image8.png}
+  \caption{Vivado Simulation 仿真工程界面}
+\end{figure}
+
+\subsubsection{Verilator 与 NEMU 差分验证}
+
+SystemVerilog 由 Verilator 编译为周期级仿真器。仿真器在指令提交边界将 DUT 的 PC、通用寄存器与
+相关体系结构状态同 NEMU 参考模型比较；发生不一致时输出最近指令环、寄存器和访存上下文。DPI-C
+同时承担 EBREAK 停机识别、串口模拟、外设行为和性能计数采集。该平台能够快速运行单指令测试、
+CPU tests、体系结构测试和完整性能负载。
+
+仿真器中的 Perf Counters Report 统计周期数、提交指令数、IPC、CPI、分支预测准确率和 RAW stall
+等指标。测试程序结束时执行 EBREAK，仿真器读取返回寄存器并判定 good trap；对赛题 COE，则先转换
+为仿真可加载的 IROM/DRAM 镜像，再运行至设备输出或停机条件。
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.95\linewidth]{verify/image9.png}
+  \caption{自动化回归与实现流程界面}
+\end{figure}
+
+\subsubsection{FPGA 实现与板测}
+
+目标平台采用 Xilinx Kintex-7 XC7K325T-2FFG900 和 Vivado 2024.2。实现流程重新生成并打包
+SystemVerilog，刷新工程输入，完成 synthesis、implementation、bitstream 和时序报告提取。板测通过
+自动化 capture 保存原始 UART 输出；正式记录包含板卡、CPU 频率、程序镜像、bitstream 身份、CRC、
+硬件计时值与完整串口文本。LED 和数码管仍用于快速观察外设写入，UART 则用于保留可解析的量化证据。
+
+\subsection{测试用例与自动化流程}
+
+\subsubsection{基础指令与小程序}
+
+基础测试同时采用单指令边界用例和小规模程序。单指令测试覆盖算术、逻辑、移位、比较、分支、跳转、
+load/store 以及 RV32M 和已实现扩展；程序级测试覆盖 add、load-store、switch、if-else、recursion
+等常见组合。测试资源包括移植到 AbstractMachine 的 riscv-tests、riscv-arch-test，以及
+am-kernels/tests/cpu-tests。
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.92\linewidth]{verify/image10.png}
+  \caption{基础正确性测试自动化流程}
+\end{figure}
+
+\subsubsection{性能与系统负载}
+
+性能测试保留赛题提供的 src0、src1、src2、withoutMext 与 withMext，并使用 CoreMark、Dhrystone
+和总决赛正式性能负载进行回归。仿真阶段记录总周期和提交指令数，按实际目标频率换算时间；板测阶段
+以硬件计时器与 UART 原始输出为准。只有结果校验和 CRC 均正确时，时间数据才进入性能表和折线图。
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.95\linewidth]{verify/image11.png}
+  \caption{性能测试自动化流程}
+\end{figure}
+
+\subsubsection{CSR、机器态与 RT-Thread}
+
+CSR 测试覆盖 \texttt{mcycle(h)}、\texttt{mstatus}、\texttt{mepc}、\texttt{mtvec}、
+\texttt{marchid}、\texttt{mvendorid} 以及 CSR 读改写、\texttt{ecall} 和 \texttt{mret}。
+RT-Thread 测试进一步组合上下文切换、异常返回、串口输入、内存分配和命令执行；仿真到达
+\texttt{msh />} 提示符后，继续运行 version、free、hello、microbench 与 echo 等命令。
+
+\subsection{分层覆盖与专项检查}
 
 \begin{table}[H]\centering
-\caption{验证层次与覆盖目标}
-\begin{tabularx}{\linewidth}{@{}p{0.22\linewidth}YY@{}}
+\caption{验证层次、主要内容与判定标准}
+\small
+\begin{tabularx}{\linewidth}{@{}p{0.18\linewidth}YY@{}}
 \toprule
 \textbf{测试层次}&\textbf{主要内容}&\textbf{判定标准}\\\midrule
-基础 CPU tests&add、load-store、switch、if-else、recursion 等&程序 good trap，差分无不一致\\
-RV32M 定向架构测试&mul、mulh、mulhu、mulhsu 及除法边界&架构签名通过，RAW 停顿正确\\
-CSR/机器态测试&CSR 读改写、ecall、mret、RT-Thread 启动&状态读写正确；环境允许时到达 shell 提示符\\
-B 扩展测试&实际实现的短操作和迭代操作&与参考模型逐指令一致\\
-自定义指令测试&单周期、状态型、访存型和归约型单元&返回值、内部状态、访存副作用与参考语义一致\\
-完整性能负载&固定镜像及正式迭代次数&CRC 全部正确，周期/板测记录完整\\
-XSim 板级测试&存储 IP、SEG/LED、UART 数据路径&波形与设备输出符合接口时序\\
-Vivado 实现&setup/hold、DRC、unrouted nets&报告阶段和频率口径明确，无硬错误\\
-上板稳定性&相同 bitstream 多次 capture&每次 CRC 正确，时间分布可解释\\
+基础 CPU tests&add、load-store、switch、if-else、recursion&程序 good trap，差分无不一致\\
+RV32I/M 架构测试&整数、分支、访存、乘除法及边界条件&体系结构签名通过，RAW 停顿正确\\
+CSR/机器态测试&CSR 读改写、ecall、mret、RT-Thread&状态更新正确，可进入 shell 并执行命令\\
+B 扩展测试&各已实现短操作与迭代操作&指令结果及边界行为与参考语义一致\\
+自定义指令测试&单周期、状态型、访存型和归约型单元&返回值、内部状态、访存副作用符合指令语义\\
+完整性能负载&固定镜像和正式迭代次数&全部 CRC 正确，周期与板测记录完整\\
+Vivado Sim.&存储 IP、SEG/LED、UART 与顶层接口&波形和设备输出符合接口时序\\
+Vivado 实现&setup/hold、DRC、unrouted nets&报告阶段和频率明确，无硬错误\\
+真实板测&相同 bitstream 的多次 capture&每次 CRC 正确，时间重复性可解释\\
 \bottomrule
 \end{tabularx}
 \end{table}
-
-\subsection{流水线与缓存专项验证}
 
 \subsubsection{RAW、旁路与多周期执行}
 
-验证同时覆盖立即消费、隔一条消费、两个源寄存器同时相关、后级反压、多周期结果完成同拍消费等场景。
-生产者在数据无效时必须保留目的寄存器号，使 IDU 停顿；结果有效后才能解除停顿或进入专用旁路。
-相邻快速 token 不得被地址、M/B、CSR 或自定义消费者误用。
+专项用例覆盖立即消费、隔一条消费、两个源寄存器同时相关、后级反压、多周期完成同拍消费和提交阻塞。
+生产者在数据尚未有效时保留目的寄存器占用，使 IDU 停顿；结果有效后才解除停顿或进入专用旁路。
+相邻快速结果 token 只服务规定的消费者，不进入地址、多周期、CSR 或自定义指令通路。
 
-\subsubsection{load-use 与分支重定向}
+\subsubsection{load-use、控制流与缓存一致性}
 
-缓存命中时检查窄加载扩展、地址低位和 late-data 副本一致；miss 时检查响应捕获后再解析消费者。
-BEQ/BNE 的 late-load 比较还需覆盖预测正确和错误两类结果，确保重定向只发生一次、年轻 EXU 指令
-及其访存/缓存更新均被抑制。
+命中路径检查 LB/LBU/LH/LHU/LW 的地址低位与扩展结果，miss 路径检查响应捕获、回填和消费者恢复。
+BEQ/BNE 的 late-load 比较覆盖预测正确与错误，确保重定向只发生一次，较年轻指令及其访存副作用均被
+抑制。缓存专项场景包括 load fill、整字 store 分配、窄 store 失效、store 与旧 load 回填竞争、双
+bank 连续访问、同步 BRAM bank 对齐，以及自定义访存单元产生的缓存更新。
 
-\subsubsection{D-cache 一致性}
+\subsection{代表性验证结果}
 
-专项场景包括 load fill、整字 store 分配、窄 store 失效、store 与旧 load 回填竞争、双 bank 连续访问、
-同步 BRAM bank 选择对齐以及自定义访存单元的缓存更新。主 BRAM 和逐字节 late-data 镜像在所有有效
-写入后必须保持数据一致。
+\subsubsection{RV32I 基本指令测试}
 
-\subsection{冻结版本验证状态}
+\begin{figure}[H]
+  \centering
+  \includegraphics[height=0.58\textheight,trim=0 0 669bp 0,clip]{verify/image13.png}%
+  \includegraphics[height=0.58\textheight,trim=0 0 644bp 0,clip]{verify/image14.png}%
+  \includegraphics[height=0.58\textheight,trim=0 0 654bp 0,clip]{verify/image15.png}
+  \caption{RV32I 基本指令测试结果}
+\end{figure}
 
-本文架构描述由 \commit{fabb599} RTL 静态核对；已归属到该提交的时序证据见第\ref{sec:timing}节。
-正式板测尚未完成，因此表\ref{tab:verification-status}对缺失项明确标为待补，不把其他提交的运行结果
-移植到冻结版本。
+单指令与边界样例全部通过，程序以 good trap 结束。该组回归覆盖 RV32I 算术逻辑、移位、比较、
+跳转、分支和访存路径，是后续缓存、预测器与执行通路迭代的基础门禁。
+
+\subsubsection{src0、src1 与 src2 性能测试}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.82\linewidth,trim=0 365bp 0 0,clip]{verify/image16.png}
+  \caption{src0 仿真日志与性能统计}
+\end{figure}
+
+src0 完成 37 条功能测试并进入 halt。分赛区阶段记录为 1,988,372,516 周期、1,417M 条动态指令，
+IPC 0.7130、CPI 1.4025；按 280\,MHz 计算为 7.10133\,s，与当时板测显示一致。
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\linewidth]{verify/image17.png}
+  \caption{src0 Vivado Simulation 波形}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.82\linewidth,trim=0 350bp 0 0,clip]{verify/image18.png}
+  \caption{src1 仿真日志与性能统计}
+\end{figure}
+
+src1 记录为 1,973,306,668 周期、1,304M 条动态指令，IPC 0.6609、CPI 1.5131；280\,MHz 换算
+时间为 7.04752\,s。对应 Vivado Simulation 波形中，数码管写入 37000000，表明 37 条功能测试完成。
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\linewidth]{verify/image19.png}
+  \caption{src1 Vivado Simulation 波形}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.82\linewidth,trim=0 340bp 0 0,clip]{verify/image20.png}
+  \caption{src2 仿真日志与性能统计}
+\end{figure}
+
+src2 记录为 2,585,374,792 周期、1,849M 条动态指令，IPC 0.7152、CPI 1.3982；280\,MHz 换算
+时间为 9.23348\,s。其 Vivado Simulation 波形同样完成数码管结果写入。
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\linewidth]{verify/image21.png}
+  \caption{src2 Vivado Simulation 波形}
+\end{figure}
 
 \begin{table}[H]\centering
-\caption{冻结版本验证证据状态}\label{tab:verification-status}
-\begin{tabularx}{\linewidth}{@{}p{0.30\linewidth}p{0.22\linewidth}Y@{}}
+\caption{src0、src1、src2 性能统计结果}
+\small
+\begin{tabularx}{\linewidth}{@{}lrrrrr@{}}\toprule
+\textbf{用例}&\textbf{周期数}&\textbf{指令数}&\textbf{IPC}&\textbf{CPI}&\textbf{280 MHz 时间/s}\\\midrule
+src0&1988M&1417M&0.7130&1.4025&7.10133\\
+src1&1973M&1304M&0.6609&1.5131&7.04752\\
+src2&2585M&1849M&0.7152&1.3982&9.23348\\
+\bottomrule\end{tabularx}
+\end{table}
+
+\subsubsection{CoreMark 与 Dhrystone}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.82\linewidth,trim=0 440bp 0 0,clip]{verify/image22.png}
+  \caption{CoreMark 测试结果}
+\end{figure}
+
+分赛区阶段 1000 次 CoreMark 迭代共执行 472,993,621 周期，IPC 0.6625、CPI 1.5094；按
+280\,MHz 计算运行时间为 1.68926\,s，对应 CoreMark 308、CoreMark/MHz 1.10。总决赛正式负载
+进一步以 10000 次迭代和四项 CRC 作为板测判据，其完整性能演进见第\ref{sec:performance}节。
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.82\linewidth,trim=0 545bp 0 0,clip]{verify/image23.png}
+  \caption{Dhrystone 测试结果}
+\end{figure}
+
+Dhrystone 500000 次迭代执行 302,517,149 周期，IPC 0.7768、CPI 1.2873；按 280\,MHz 计算为
+1.08042\,s，对应约 462,784 Dhrystones/s、263.39 DMIPS 和 0.941 DMIPS/MHz。
+
+\subsubsection{RT-Thread 系统测试}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.9\linewidth]{verify/image12.png}
+  \caption{RT-Thread 启动与 shell 提示符}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\linewidth]{verify/image24.png}
+  \vspace{0.25em}
+  \includegraphics[width=\linewidth]{verify/image25.png}
+  \vspace{0.25em}
+  \includegraphics[width=\linewidth]{verify/image26.png}
+  \vspace{0.25em}
+  \includegraphics[width=\linewidth]{verify/image27.png}
+  \caption{RT-Thread 自动化测试输出节选}
+\end{figure}
+
+自动化脚本向仿真串口依次输入命令并检查输出；version、free、hello、microbench 与 echo 均得到预期
+结果。该测试同时覆盖 CSR、ecall/mret、上下文切换、堆管理、串口输入与较长程序执行。
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.9\linewidth]{verify/image28.png}
+  \caption{RT-Thread 本地交互测试}
+\end{figure}
+
+\subsection{总决赛新增能力的验证闭环}
+
+总决赛阶段在上述基础回归上新增 512 项 BTB/RAS 的预测与更新测试、4\,KiB 双 bank D-cache 的一致性
+测试、RV32M 多周期 RAW 测试、已实现 B 扩展的指令语义测试，以及每条自定义指令的参考模型测试。
+正式性能负载运行前先完成短迭代差分与 16M 指令前缀检查，再生成带身份记录的 bitstream；板测采用
+10000 次迭代，要求 list、matrix、state 和 final 四项 CRC 全部正确，并用多次 capture 检查重复性。
+
+\begin{table}[H]\centering
+\caption{当前验证证据状态}\label{tab:verification-status}
+\small
+\begin{tabularx}{\linewidth}{@{}p{0.24\linewidth}p{0.14\linewidth}Y@{}}
 \toprule
 \textbf{证据项}&\textbf{状态}&\textbf{说明}\\\midrule
-RTL/接口静态核对&完成&本文模块、编码和接口均从冻结提交读取\\
-250 MHz 完整实现&完成&post-route physopt WNS $+0.009$ ns\\
-280 MHz routed 实现&完成&routed WNS $-0.664$ ns；后续工具异常，不填最终 physopt 值\\
-300 MHz 完整实现&完成&post-route physopt WNS $-0.580$ ns，setup 未闭合\\
-冻结版本 CPU tests 日志&\MetricPending{归档}&补充命令、提交和日志摘要\\
-冻结版本自定义指令回归&\MetricPending{归档}&补充参考模型与 RTL 对比结果\\
-冻结版本正式板测&\MetricPending{测试}&补充 250/300 MHz UART capture、CRC 和 bitstream 身份\\
-冻结版本资源报告&\MetricPending{提取}&补充 LUT/FF/BRAM/DSP 数据与截图\\
+基础指令与 CPU tests&完成&覆盖算术、访存、分支、递归及相关边界\\
+RV32M 与多周期 RAW&完成&包含 mul/mulh/mulhu/mulhsu 定向测试和握手停顿\\
+CSR 与 RT-Thread&完成&可进入 shell 并执行代表性命令\\
+自定义指令短迭代与前缀差分&完成&语义、CRC、访存副作用及 16M 指令前缀一致\\
+正式负载多次板测&完成&最佳阶段三次相同 6.696371860\,s，四项 CRC 一致\\
+250 MHz 完整实现&完成&post-route physical optimization WNS $+0.009$ ns\\
+300 MHz 完整实现&完成&post-route physical optimization WNS $-0.580$ ns\\
+当前资源利用率图&\MetricPending{提取}&补充 LUT、FF、BRAM、DSP 和时钟资源截图\\
 \bottomrule
 \end{tabularx}
 \end{table}
 
-\PlaceholderFigure{冻结版本 UART 上板输出}{请使用 CLI capture 的完整原始输出，包含程序身份、CRC 与运行时间。}
-\PlaceholderFigure{冻结版本板卡运行照片}{请提供开发板、连接环境和运行状态清晰可辨的照片。}
-
 \subsection{测评结果判读规则}
 
-性能时间只在程序输出校验通过后有效；仿真周期换算必须注明是否包含启动和报告开销；板测结果优先
-采用原始硬件计数器和 UART 输出。WNS 必须注明时钟、约束周期和报告阶段：routed 与 post-route
-physopt 不能混称。任何表格和图片中的最终数据都必须能回查附录证据索引。
-
+性能时间仅在程序输出和 CRC 校验通过后有效；仿真周期换算注明目标频率以及是否包含启动和输出开销；
+板测优先使用硬件计时器与 UART 原始输出。WNS 注明时钟约束和报告阶段，routed 与 post-route physical
+optimization 不混称。正文中的最终表格与图均可通过附录证据编号回查到相应实现报告或测评记录。

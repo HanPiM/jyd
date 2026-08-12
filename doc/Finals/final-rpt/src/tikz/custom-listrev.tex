@@ -1,0 +1,24 @@
+\begin{figure}[H]\centering
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[n/.style={draw,rounded corners=1.2pt,minimum height=0.72cm,minimum width=1.8cm,align=center,fill=blue!6},d/.style={draw,diamond,aspect=2.0,align=center,fill=orange!8},a/.style={-Stealth,thick},font=\scriptsize,node distance=0.62cm and 0.68cm]
+\node[n] (idle) {装入\\$(cur,prev)$};
+\node[d,right=of idle] (null) {$cur=0$?};
+\node[n,right=of null] (lookup) {查询 D-cache\\读取 $next$};
+\node[d,right=of lookup] (hit) {命中?};
+\node[n,right=of hit] (loadq) {发出 load};
+\node[n,below=0.74cm of loadq] (loadr) {等待响应\\锁存 $next$};
+\node[n,below=0.74cm of hit] (store) {发出 store\\$[cur]\leftarrow prev$};
+\node[d,left=of store] (more) {$next\ne0$?};
+\node[n,left=of more] (done) {返回新表头\\完成写回};
+\draw[a](idle)--(null);
+\draw[a](null)--node[above]{否}(lookup);
+\draw[a](null.south)--++(0,-0.28)-|node[pos=0.18,left]{是}(done.north);
+\draw[a](lookup)--(hit);
+\draw[a](hit)--node[above]{否}(loadq);
+\draw[a](hit)--node[right]{是}(store);
+\draw[a](loadq)--(loadr); \draw[a](loadr)--(store); \draw[a](store)--(more);
+\draw[a](more)--node[above]{否}(done);
+\draw[a](more.south)--++(0,-0.46)-|node[pos=0.26,below]{是：$(prev,cur)\leftarrow(cur,next)$}(lookup.south);
+\end{tikzpicture}}
+\caption{\texttt{xlistrev} 单步数据副作用与循环控制}\label{fig:custom-listrev}
+\end{figure}

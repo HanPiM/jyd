@@ -839,6 +839,13 @@ proc validate_mul16_fast_ooc {} {
 if {![validate_mul16_fast_ooc]} {
   error "mult_gen_mul16_fast native OOC result does not implement latency-1 as DSP 0/0/0/1"
 }
+if {$guard_mul16_ooc} {
+  config_ip_cache -enable_for_ip $guarded_mul16_ip
+  if {[config_ip_cache -is_ip_disabled $guarded_mul16_ip]} {
+    error "Failed to restore IPCACHE state for mult_gen_mul16_fast"
+  }
+  puts "OOC freshness: restored IPCACHE state for mult_gen_mul16_fast"
+}
 set locked_ips_after_generate [list]
 foreach ip_obj $project_ips {
   if {[get_property IS_LOCKED $ip_obj]} {
@@ -1011,7 +1018,7 @@ ip_config_hash() {
   while IFS= read -r -d '' xci_file; do
     # Vivado may remove a final newline while regenerating an otherwise
     # byte-identical JSON XCI. Normalize that non-semantic difference while
-    # retaining the gate for every configuration value and file path.
+    # retaining the gate for every configuration and runtime value and path.
     normalized_hash=$(sed -e '$a\' "$xci_file" | sha256sum | awk '{print $1}')
     printf '%s  %s\n' "$normalized_hash" "$xci_file"
   done < <(find "$vivado_proj_home/digital_twin.srcs/sources_1/ip" -type f -name '*.xci' -print0 | sort -z) \

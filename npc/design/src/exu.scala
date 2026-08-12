@@ -385,9 +385,9 @@ class EXU(
     }
   }.elsewhen(listReverseState === ListReverseState.lookup) {
     listReverseLookupHit := io.dcache.hit
-    listReverseNext := io.dcache.lateReadData
     listReverseState := ListReverseState.lookupResolve
   }.elsewhen(listReverseState === ListReverseState.lookupResolve) {
+    listReverseNext := io.dcache.readData
     listReverseState := Mux(listReverseLookupHit, ListReverseState.storeRequest, ListReverseState.loadRequest)
   }.elsewhen(listReverseState === ListReverseState.loadRequest && io.memReq.fire) {
     listReverseState := ListReverseState.loadResponse
@@ -671,15 +671,20 @@ class EXU(
       capturedLateLoadData === stableLateOtherRegV1
     )
   )
-  val immediateBranchEqual = Mux(hasLateLoadOperand, capturedLateEqual, branchRegV1 === branchRegV2)
+  // Immediate redirect must be physically independent of the adjacent-fast
+  // selector. Those branches resolve through the registered LSU token below;
+  // a validity condition alone does not remove their data arc from STA.
+  val immediateBranchEqual = Mux(hasLateLoadOperand, capturedLateEqual, baseRegV1 === baseRegV2)
+  val immediateIsLessThan = baseRegV1.asSInt < baseRegV2.asSInt
+  val immediateIsLessThanU = baseRegV1 < baseRegV2
   val immediateTakeBranch = Mux1H(
     Seq(
       dinst.info.is_beq  -> immediateBranchEqual,
       dinst.info.is_bne  -> !immediateBranchEqual,
-      dinst.info.is_blt  -> isLessThan,
-      dinst.info.is_bge  -> !isLessThan,
-      dinst.info.is_bltu -> isLessThanU,
-      dinst.info.is_bgeu -> !isLessThanU
+      dinst.info.is_blt  -> immediateIsLessThan,
+      dinst.info.is_bge  -> !immediateIsLessThan,
+      dinst.info.is_bltu -> immediateIsLessThanU,
+      dinst.info.is_bgeu -> !immediateIsLessThanU
     )
   )
 
@@ -796,8 +801,7 @@ class EXU(
   val dcacheQueryAddr = Mux(listReverseCacheQuery, listReverseQueryAddress, reg1AddImm)
   io.dcache.queryIndex := dcacheQueryAddr(11, 2)
   io.dcache.queryTag   := dcacheQueryAddr(17, 11)
-  val lateDataQueryAddr = Mux(listReverseState === ListReverseState.lookup, listReverseCurrent, reg1AddImm)
-  io.dcache.lateQueryIndex := lateDataQueryAddr(11, 2)
+  io.dcache.lateQueryIndex := reg1AddImm(11, 2)
   val cacheableStore = isTypStore && reg1AddImm(21, 20) === "b01".U
   val cacheableStoreFire = memReqFire && cacheableStore
   val listReverseStepCacheStore = isListReverseStep && listReverseState === ListReverseState.done &&

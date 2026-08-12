@@ -106,14 +106,6 @@ class LateLoadSourceInfo(
   val offset    = UInt(2.W)
 }
 
-class LateBranchPreview(
-  implicit p: CPUParameters)
-    extends Bundle {
-  val valid        = Bool()
-  val otherOperand = Types.UWord
-  val bothLate     = Bool()
-}
-
 object SingleByPassMux {
   def conflict(rs: UInt, rd: UInt, en: Bool): Bool = (rs === rd) && (rd =/= 0.U) && en
   def apply(
@@ -252,7 +244,6 @@ class IDU(
 
     val wrBackInfo           = Input(new WrBackInfoGroup)
     val lateLoadProducer     = Input(new LateLoadProducerInfo)
-    val lateBranchPreview    = Output(new LateBranchPreview)
 
     val out = Decoupled(new DecodedInst)
   })
@@ -446,23 +437,9 @@ class IDU(
     needReg1AddImm && SingleByPassMux.conflict(res.rs1, io.wrBackInfo.exu.addr, io.wrBackInfo.exu.enWr)
   val addressLsuConflict =
     needReg1AddImm && SingleByPassMux.conflict(res.rs1, io.wrBackInfo.lsu.addr, io.wrBackInfo.lsu.enWr)
-  val previousLsuAddressValid = RegNext(io.wrBackInfo.lsu.enWr && io.wrBackInfo.lsu.dataVaild, false.B)
-  val previousLsuAddressRd = RegEnable(io.wrBackInfo.lsu.addr, io.wrBackInfo.lsu.enWr && io.wrBackInfo.lsu.dataVaild)
-  val previousLsuAddressData = RegEnable(io.wrBackInfo.lsu.data, io.wrBackInfo.lsu.enWr && io.wrBackInfo.lsu.dataVaild)
-  val addressWbuConflict =
-    needReg1AddImm && !addressLsuConflict &&
-      SingleByPassMux.conflict(res.rs1, io.wrBackInfo.wbu.addr, io.wrBackInfo.wbu.enWr)
   val addressLsuReady = addressLsuConflict && io.wrBackInfo.lsu.dataVaild
-  val addressWbuReady = addressWbuConflict && previousLsuAddressValid && res.rs1 === previousLsuAddressRd
-  val needStallAddress =
-    addressExuConflict || (addressLsuConflict && !addressLsuReady) || (addressWbuConflict && !addressWbuReady)
+  val needStallAddress = addressExuConflict || (addressLsuConflict && !addressLsuReady)
   val needStall = bypassMux.io.needStall || needStallAddress
-
-  io.lateBranchPreview.valid := io.in.valid && !needStall && isEqualityBranch &&
-    (bypassMux.io.lateLoadRs1 || bypassMux.io.lateLoadRs2)
-  io.lateBranchPreview.otherOperand :=
-    Mux(bypassMux.io.lateLoadRs1, bypassMux.io.outData2, bypassMux.io.outData1)
-  io.lateBranchPreview.bothLate := bypassMux.io.lateLoadRs1 && bypassMux.io.lateLoadRs2
 
   layer.block(PerfCounterLayer) {
     val rawStallPerfTap = Module(new RAWStallPerfTap())
@@ -474,7 +451,7 @@ class IDU(
     rawStallPerfTap.io.actualNeedStall := needStall
     rawStallPerfTap.io.bypassNeedStall := bypassMux.io.needStall
     rawStallPerfTap.io.reg1AddImmEXUStall := addressExuConflict
-    rawStallPerfTap.io.reg1AddImmWBUStall := addressWbuConflict && !addressWbuReady
+    rawStallPerfTap.io.reg1AddImmWBUStall := false.B
   }
 
   // res.snpc       := io.in.bits.pc + 4.U
@@ -487,8 +464,7 @@ class IDU(
     val high = Mux(crossesIntoPerip, "h20".U(6.W), Mux(crossesIntoDram, "h10".U(6.W), base(21, 16)))
     high ## lowSum(15, 0)
   }
-  val addressBase = Mux(addressLsuReady, io.wrBackInfo.lsu.data,
-    Mux(addressWbuReady, previousLsuAddressData, io.rvec.rawData(0)))
+  val addressBase = Mux(addressLsuReady, io.wrBackInfo.lsu.data, io.rvec.data(0))
   res.reg1AddImm := addAddrImm(addressBase)
 
   when(io.in.valid && needReg1AddImm) {

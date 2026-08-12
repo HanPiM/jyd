@@ -80,7 +80,6 @@ class EXU(
 
     val fwd = Output(new WrBackForwardInfo)
     val lateLoadProducer = Output(new LateLoadProducerInfo)
-    val lateBranchPreview = Input(new LateBranchPreview)
     val lateLoadLSU = Input(new LateLoadSourceInfo)
     val lateLoadWBU = Input(new LateLoadSourceInfo)
     val lateLoadWBURawData = Input(Types.UWord)
@@ -628,26 +627,7 @@ class EXU(
     )
   )
   val useRegisteredRawLoadEqual = hasLateLoadOperand && io.lateLoadLSU.dataValid
-  val previewRawLoadEqual = rawLoadEqual(
-    io.dcache.lateReadData,
-    reg1AddImm(1, 0),
-    func3t,
-    io.lateBranchPreview.otherOperand
-  )
-  val previewLoadWidthSupported = func3t === "b000".U || func3t === "b001".U || func3t === "b010".U ||
-    func3t === "b100".U || func3t === "b101".U
-  val previewLoadAddressAligned =
-    Mux(func3t(1), reg1AddImm(1, 0) === 0.U, Mux(func3t(0), !reg1AddImm(0), true.B))
-  val lateBranchPreviewValid =
-    io.in.valid && isTypLoad && previewLoadWidthSupported && previewLoadAddressAligned &&
-      reg1AddImm(21, 20) === "b01".U && io.dcache.hit && io.lateBranchPreview.valid
-  val lateBranchEqualValid = RegNext(lateBranchPreviewValid, false.B)
-  val lateBranchEqual = RegEnable(
-    Mux(io.lateBranchPreview.bothLate, true.B, previewRawLoadEqual),
-    lateBranchPreviewValid
-  )
-  val isEqual     = Mux(lateBranchEqualValid, lateBranchEqual,
-    Mux(useRegisteredRawLoadEqual, lsuLateEqual, extendedLoadEqual))
+  val isEqual     = Mux(useRegisteredRawLoadEqual, lsuLateEqual, extendedLoadEqual)
   val isLessThan  = branchRegV1.asSInt < branchRegV2.asSInt
   val isLessThanU = branchRegV1 < branchRegV2
 

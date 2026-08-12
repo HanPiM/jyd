@@ -8,24 +8,24 @@ updates GCC's call graph; changing only the GIMPLE call can let later IPA
 passes inline the old callee and silently remove the intended instruction.
 
 The value uses an ISA-style suffix, for example
-`_xbmul_xcrcu8_xlrev_xmsum_xdfa`.  GCC rejects unknown `x*` extensions in
+`_xbmul_xcrcu8_xlistrev_xmsum_xdfa4h`. GCC rejects unknown `x*` extensions in
 `-march`, so the standard extensions remain in the real `-march` option and
 the custom suffix is passed as the real compiler definition
 `-D__COREMARK_XEXTS=...`.  The automatically generated `COMPILER_FLAGS`
 string reports the effective optimization and ISA options followed by the
 plugin and forced-include options used by the build.
 
-Supported names are `xmac16`, `xdot16`, `xbmul`, `xcrcu8`, `xlrev1`, `xlrev`,
-`xdfa`, `xdfacnt`, `xdfa2`, `xdfa4`, `xdfa4h`, and `xmsum`. The word-fed DFA
+Supported names are `xmac16`, `xdot16`, `xbmul`, `xcrcu8`, `xlistrev`,
+`xdfacnt`, `xdfa2`, `xdfa4`, `xdfa4h`, and `xmsum`. The word-fed DFA
 instructions evaluate two or four characters. `xdfa4h` accumulates a token's
 transition mask and final-state count in hardware; it remains a bounded
 four-byte step rather than a whole-parser operation. For example:
 
 ```sh
 make ARCH=riscv32-nemu ITERATIONS=10000 \
-  COREMARK_XEXTS=_xbmul_xcrcu8_xlrev2_xmsum_xdfa4h image
+  COREMARK_XEXTS=_xbmul_xcrcu8_xlistrev_xmsum_xdfa4h image
 make ARCH=riscv32-nemu ITERATIONS=10000 \
-  COREMARK_XEXTS=_xbmul_xcrcu8_xlrev2_xmsum_xdfa4h audit-accel
+  COREMARK_XEXTS=_xbmul_xcrcu8_xlistrev_xmsum_xdfa4h audit-accel
 ```
 
 The GCC plugin headers require `gmp.h`.  Override

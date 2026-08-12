@@ -54,7 +54,7 @@ Options:
   --difftest-ref <dir> Backward-compatible alias for --nemu-ref.
   --coe-dir <dir>      Directory with coremark-official-riscv32-jyd.{text,data}.coe
                        (default: <src>/jyd-tests/coremark-official/build/
-                       iter10000-...-x_xbmul_xcrcu8_xlrev2_xmsum_xdfa4h-...).
+                       iter10000-...-x_xbmul_xcrcu8_xlistrev_xmsum_xdfa4h-...).
   --skip-coe-check     Allow COE hashes to differ from the frozen formal pair.
   --verify-sim         Build and run the riscv32-jyd add smoke test, then verify
                        its simulator banner and image path belong to this
@@ -361,7 +361,7 @@ echo "   interpreter-so sha256: $(sha256sum "$WT_DIR/nemu/build/riscv32-nemu-int
 
 # --- formal COE pair ---------------------------------------------------------
 if [[ -z "$COE_DIR" ]]; then
-  COE_DIR="$SRC/jyd-tests/coremark-official/build/iter10000-data2000-z_zba_zbb_zbc_zbs_zbkb_zbkx-x_xbmul_xcrcu8_xlrev2_xmsum_xdfa4h-cdefault-lto0-pf1"
+  COE_DIR="$SRC/jyd-tests/coremark-official/build/iter10000-data2000-z_zba_zbb_zbc_zbs_zbkb_zbkx-x_xbmul_xcrcu8_xlistrev_xmsum_xdfa4h-cdefault-lto0-pf1"
 fi
 case "/$COE_DIR/" in
   */iter10000-*) ;;

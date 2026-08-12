@@ -16,7 +16,7 @@ COREMARK_XEXTS ?=
 empty :=
 space := $(empty) $(empty)
 comma := ,
-COREMARK_SUPPORTED_XEXTS := xbmul xcrcu8 xdot16 xlrev xlrev1 xlrev2 xmac16 xmsum xdfa xdfacnt xdfa2 xdfa4 xdfa4h
+COREMARK_SUPPORTED_XEXTS := xbmul xcrcu8 xdot16 xlistrev xmac16 xmsum xdfacnt xdfa2 xdfa4 xdfa4h
 COREMARK_XEXT_WORDS := $(filter x%,$(subst _, ,$(strip $(COREMARK_XEXTS))))
 COREMARK_UNKNOWN_XEXTS := $(filter-out $(COREMARK_SUPPORTED_XEXTS),$(COREMARK_XEXT_WORDS))
 ifneq ($(strip $(COREMARK_UNKNOWN_XEXTS)),)
@@ -56,7 +56,7 @@ LIB_MAKE_ARGS_softfloat = \
 
 # Keep COREMARK_OPT at -Os for the formal image: the hot benchmark translation
 # units below still receive force_o3.h, while core_main stays smaller and saves
-# roughly 54 million instructions on the xlrev2+xdfa4 workload.  Explicitly
+# roughly 54 million instructions on the xlistrev+xdfa4 workload. Explicitly
 # pass COREMARK_OPT=-O3 only for comparison experiments.
 CFLAGS += -Os
 CFLAGS += -DITERATIONS=$(ITERATIONS) -DTOTAL_DATA_SIZE=$(TOTAL_DATA_SIZE)

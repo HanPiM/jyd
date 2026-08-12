@@ -114,10 +114,7 @@ static const char *replacement_for(const char *name) {
   if (has("xdfa4") && !std::strcmp(name, "core_bench_state")) return "numeric_token_scan_xdfa4";
   if (has("xdfa2") && !std::strcmp(name, "core_bench_state")) return "numeric_token_scan_xdfa2";
   if (has("xdfacnt") && !std::strcmp(name, "core_bench_state")) return "__xaccel_xdfacnt_bench";
-  if (has("xlrev2") && !std::strcmp(name, "core_list_reverse")) return "__xaccel_xlrev2";
-  if (has("xlrev1") && !std::strcmp(name, "core_list_reverse")) return "__xaccel_xlrev1";
-  if (has("xlrev") && !std::strcmp(name, "core_list_reverse")) return "__xaccel_xlrev";
-  if (has("xdfa") && !std::strcmp(name, "core_state_transition")) return "__xaccel_xdfa";
+  if (has("xlistrev") && !std::strcmp(name, "core_list_reverse")) return "__xaccel_xlistrev";
   if (has("xmsum") && !std::strcmp(name, "matrix_sum")) return "__xaccel_xmsum";
   if (has("xbmul") && !std::strcmp(name, "matrix_mul_matrix_bitextract")) return "__xaccel_xbmul_matrix";
   if (has("xdot16") && !std::strcmp(name, "matrix_mul_vect")) return "__xaccel_xdot_vect";

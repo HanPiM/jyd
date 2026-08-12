@@ -137,21 +137,21 @@ class EXU(
 
   val isNumericDfa = dinst.info.numericDfaValid
 
-  object XlrevState extends ChiselEnum {
+  object ListReverseState extends ChiselEnum {
     val idle, loadRequest, loadResponse, storeRequest, done = Value
   }
-  val xlrevState   = RegInit(XlrevState.idle)
-  val xlrevCurrent = Reg(Types.UWord)
-  val xlrevPrevious = Reg(Types.UWord)
-  val xlrevChainPrevious = Reg(Types.UWord)
-  val xlrevNext    = Reg(Types.UWord)
-  val xlrevResult  = Reg(Types.UWord)
-  val xlrevLoopQueryAddr = RegInit(0.U(32.W))
-  val xlrevSingleStoreCommitted = RegInit(false.B)
-  val isXlrev      = dinst.info.xlrevValid
-  val isXlrevSingle = dinst.info.xlrevSingle
-  val isXlrevLoop = dinst.info.xlrevLoop
-  val xlrevLoopTaken = RegInit(false.B)
+  val listReverseState = RegInit(ListReverseState.idle)
+  val listReverseCurrent = Reg(Types.UWord)
+  val listReversePrevious = Reg(Types.UWord)
+  val listReverseChainPrevious = Reg(Types.UWord)
+  val listReverseNext = Reg(Types.UWord)
+  val listReverseResult = Reg(Types.UWord)
+  val listReverseLoopAddress = RegInit(0.U(32.W))
+  val listReverseStepStoreCommitted = RegInit(false.B)
+  val isListReverse = dinst.info.listReverseValid
+  val isListReverseStep = dinst.info.listReverseStep
+  val isListReverseLoop = dinst.info.listReverseLoop
+  val listReverseLoopTaken = RegInit(false.B)
 
   object XmsumState extends ChiselEnum {
     val idle, request, response, finalizeResult, done = Value
@@ -258,7 +258,7 @@ class EXU(
   )
   val reg_v1       = baseRegV1
   val reg_v2       = baseRegV2
-  val xlrevActiveCurrent = Mux(isXlrevLoop, xlrevLoopQueryAddr, reg_v1)
+  val listReverseActiveCurrent = Mux(isListReverseLoop, listReverseLoopAddress, reg_v1)
 
   // A numeric-token scan consumes at most the configured data-region size, so 16-bit
   // counters retain the full architectural result while avoiding sixteen
@@ -358,46 +358,46 @@ class EXU(
     }
   }
 
-  when(xlrevState === XlrevState.idle && io.in.valid && isXlrev) {
-    // Capture the asynchronous cache value for every xlrev entry.  Whether it
-    // is consumed is decided by the state transition, keeping xlrevSingle out
+  when(listReverseState === ListReverseState.idle && io.in.valid && isListReverse) {
+    // Capture the asynchronous cache value for every list-reversal entry. Whether it
+    // is consumed is decided by the state transition, keeping init decode out
     // of this register's timing-critical write-enable cone.
-    xlrevNext := io.dcache.lateReadData
-    xlrevSingleStoreCommitted := false.B
-    xlrevCurrent  := xlrevActiveCurrent
-    xlrevPrevious := Mux(isXlrevLoop, xlrevChainPrevious, reg_v2)
-    when(isXlrevSingle) {
-      xlrevChainPrevious := xlrevActiveCurrent
+    listReverseNext := io.dcache.lateReadData
+    listReverseStepStoreCommitted := false.B
+    listReverseCurrent := listReverseActiveCurrent
+    listReversePrevious := Mux(isListReverseLoop, listReverseChainPrevious, reg_v2)
+    when(isListReverseStep) {
+      listReverseChainPrevious := listReverseActiveCurrent
     }
-    when(xlrevActiveCurrent === 0.U) {
-      xlrevResult := Mux(isXlrevLoop, xlrevChainPrevious, 0.U)
-      xlrevLoopTaken := false.B
-      xlrevState  := XlrevState.done
-    }.elsewhen(isXlrevSingle && io.dcache.hit) {
-      xlrevState := XlrevState.storeRequest
+    when(listReverseActiveCurrent === 0.U) {
+      listReverseResult := Mux(isListReverseLoop, listReverseChainPrevious, 0.U)
+      listReverseLoopTaken := false.B
+      listReverseState := ListReverseState.done
+    }.elsewhen(isListReverseStep && io.dcache.hit) {
+      listReverseState := ListReverseState.storeRequest
     }.otherwise {
-      xlrevState := XlrevState.loadRequest
+      listReverseState := ListReverseState.loadRequest
     }
-  }.elsewhen(xlrevState === XlrevState.loadRequest && io.memReq.fire) {
-    xlrevState := XlrevState.loadResponse
-  }.elsewhen(xlrevState === XlrevState.loadResponse && io.memResp.valid) {
-    xlrevNext  := io.memResp.bits
-    xlrevState := XlrevState.storeRequest
-  }.elsewhen(xlrevState === XlrevState.storeRequest && io.memReq.fire) {
-    xlrevSingleStoreCommitted := true.B
-    val loopTaken = isXlrevLoop && xlrevNext =/= 0.U
-    xlrevResult := Mux(isXlrevLoop && !loopTaken, xlrevCurrent, xlrevNext)
-    xlrevLoopTaken := loopTaken
-    xlrevState := XlrevState.done
-  }.elsewhen(xlrevState === XlrevState.done && io.out.fire) {
-    xlrevState := XlrevState.idle
+  }.elsewhen(listReverseState === ListReverseState.loadRequest && io.memReq.fire) {
+    listReverseState := ListReverseState.loadResponse
+  }.elsewhen(listReverseState === ListReverseState.loadResponse && io.memResp.valid) {
+    listReverseNext := io.memResp.bits
+    listReverseState := ListReverseState.storeRequest
+  }.elsewhen(listReverseState === ListReverseState.storeRequest && io.memReq.fire) {
+    listReverseStepStoreCommitted := true.B
+    val loopTaken = isListReverseLoop && listReverseNext =/= 0.U
+    listReverseResult := Mux(isListReverseLoop && !loopTaken, listReverseCurrent, listReverseNext)
+    listReverseLoopTaken := loopTaken
+    listReverseState := ListReverseState.done
+  }.elsewhen(listReverseState === ListReverseState.done && io.out.fire) {
+    listReverseState := ListReverseState.idle
   }
 
-  // The loop instruction can enter EXU as the previous xlrev leaves done.
+  // The loop instruction can enter EXU as the previous list operation leaves done.
   // Capture its result at that boundary so the next iteration's asynchronous
   // cache lookup cannot feed back directly from the accelerator result lane.
-  when(xlrevState === XlrevState.done) {
-    xlrevLoopQueryAddr := xlrevResult
+  when(listReverseState === ListReverseState.done) {
+    listReverseLoopAddress := listReverseResult
   }
 
   when(xmsumState === XmsumState.idle && io.in.valid && isXmsum) {
@@ -476,7 +476,7 @@ class EXU(
 
   // Branches/JAL use PC+imm, while a JALR BTB entry must learn the resolved
   // rs1+imm target.  The BTB stores only the same trimmed PC bits either way.
-  io.branchTarget   := Mux(isXlrevLoop, dinst.pc, Mux(isTypJALR, reg1AddImm, pcAddImm))
+  io.branchTarget   := Mux(isListReverseLoop, dinst.pc, Mux(isTypJALR, reg1AddImm, pcAddImm))
 
   fast_in.src1   := fastRegV1
   fast_in.src2   := fastRegV2
@@ -666,14 +666,14 @@ class EXU(
   lsuInfo.dcacheStoreEpoch := io.dcache.storeEpoch
 
   val snpc = dinst.info.staticNextPCOrCSRTarget
-  io.staticTarget := Mux(isXlrevLoop, dinst.pc, snpc)
+  io.staticTarget := Mux(isListReverseLoop, dinst.pc, snpc)
 
   val useSingleCycleForward = isTypArithmetic && resultIsFast && !hasLateLoadOperand
   val isLateLoadBit = isLateLoadAndi1 || isLateLoadSrli1
   val acceleratorData = Mux(
     isNumericDfa,
     xdfaWordResult,
-    Mux(isXlrev, xlrevResult, Mux(isXmsum, xmsumResult, specialExecutionOut))
+    Mux(isListReverse, listReverseResult, Mux(isXmsum, xmsumResult, specialExecutionOut))
   )
 
   writeBackInfo.resultKind := dinst.info.resultKind
@@ -716,12 +716,12 @@ class EXU(
   writeBackInfo.dcacheStoreEpoch := false.B
 
   val isMemOP        = isTypLoad || isTypStore
-  val xlrevDone = isXlrev && xlrevState === XlrevState.done
+  val listReverseDone = isListReverse && listReverseState === ListReverseState.done
   val xmsumDone = isXmsum && xmsumState === XmsumState.done
   val xdfaWordDone = isNumericDfaStep && xdfaWordState === NumericDfaState.done
   val exuResultValid =
     Mux(isNumericDfaStep, xdfaWordDone,
-      Mux(isXlrev, xlrevDone, Mux(isXmsum, xmsumDone,
+      Mux(isListReverse, listReverseDone, Mux(isXmsum, xmsumDone,
         (!isTypArithmetic || isNumericDfa ||
           Mux(resultIsFast, Mux(hasLateLoadOperand, lateDataReady, fastInteger.io.out.valid), alu.io.out.valid)) &&
           (!hasLateLoadOperand || lateDataReady))))
@@ -747,33 +747,34 @@ class EXU(
 
   val memWData = GenMemWData(reg1AddImm(1, 0), storeRegV2)
 
-  val xlrevStoreRequest = xlrevState === XlrevState.storeRequest
-  // xlrev's operand is held in the IDU/EXU payload for the instruction's
+  val listReverseStoreRequest = listReverseState === ListReverseState.storeRequest
+  // The list-reversal operand is held in the IDU/EXU payload for the instruction's
   // entire residence in EXU.  Its decoder disables the previous-EXU direct
   // bypass, so this registered value cannot create a forwarding-to-tag path.
-  // xlrevLoop always consumes the preceding xlrev result: first the init
+  // The loop always consumes the preceding list-reversal result: first the init
   // result, then the result of its previous self-iteration. The done-boundary
   // register keeps that private recurrence out of the asynchronous tag RAM.
-  val xlrevQueryAddr = Mux(isXlrevLoop, xlrevLoopQueryAddr, reg_v1)
-  val dcacheQueryAddr = Mux(isXlrevSingle, xlrevQueryAddr, reg1AddImm)
+  val listReverseQueryAddress = Mux(isListReverseLoop, listReverseLoopAddress, reg_v1)
+  val dcacheQueryAddr = Mux(isListReverseStep, listReverseQueryAddress, reg1AddImm)
   io.dcache.queryIndex := dcacheQueryAddr(11, 2)
   io.dcache.queryTag   := dcacheQueryAddr(17, 11)
   val cacheableStore = isTypStore && reg1AddImm(21, 20) === "b01".U
   val cacheableStoreFire = memReqFire && cacheableStore
-  val xlrevSingleCacheStore = isXlrevSingle && xlrevState === XlrevState.done && xlrevSingleStoreCommitted
+  val listReverseStepCacheStore = isListReverseStep && listReverseState === ListReverseState.done &&
+    listReverseStepStoreCommitted
   // Keep the asynchronous tag lookup out of this cross-module control and
   // every data-memory write enable.
   io.dcache.storeUpdate := cacheableStoreFire
   io.dcache.storeFull   := cacheableStoreFire && memWMask.andR
   io.dcache.storeData   := memWData
   io.dcache.storeMask   := memWMask
-  io.dcache.fullUpdate     := xlrevSingleCacheStore
+  io.dcache.fullUpdate     := listReverseStepCacheStore
   io.dcache.fullUpdateValid := true.B
-  io.dcache.fullUpdateAddr := xlrevCurrent
-  io.dcache.fullUpdateData := xlrevPrevious
+  io.dcache.fullUpdateAddr := listReverseCurrent
+  io.dcache.fullUpdateData := listReversePrevious
 
-  val xlrevLoadRequest = xlrevState === XlrevState.loadRequest
-  val xlrevRequest = xlrevLoadRequest || xlrevStoreRequest
+  val listReverseLoadRequest = listReverseState === ListReverseState.loadRequest
+  val listReverseRequest = listReverseLoadRequest || listReverseStoreRequest
   val xmsumRequest = xmsumState === XmsumState.request
   val xdfaWordRequest = xdfaWordState === NumericDfaState.request
   val normalMemReq = Wire(new MemReq)
@@ -782,14 +783,16 @@ class EXU(
   // state-machine request bits only qualify valid. This keeps state decode out
   // of the shared address/data network and does not change the handshake.
   normalMemReq.addr  := Mux(isNumericDfaStep, xdfaWordAddress & ~3.U(32.W),
-    Mux(isXlrev, xlrevCurrent, Mux(isXmsum, xmsumAddress, reg1AddImm)))
-  normalMemReq.size  := Mux(isNumericDfaStep || isXlrev || isXmsum, 2.U, func3t(1, 0))
-  normalMemReq.wen   := Mux(isNumericDfaStep, false.B, Mux(isXlrev, xlrevStoreRequest, !isXmsum && isTypStore))
-  normalMemReq.wdata := Mux(xlrevStoreRequest, xlrevPrevious,
-    Mux(isXmsum || (isXlrev && !xlrevStoreRequest), 0.U, memWData))
-  normalMemReq.wmask := Mux(xlrevStoreRequest, "b1111".U,
-    Mux(isXmsum || (isXlrev && !xlrevStoreRequest), 0.U, memWMask))
-  io.memReq.valid := xdfaWordRequest || xlrevRequest || xmsumRequest || (needMemReq && io.in.valid && io.out.ready)
+    Mux(isListReverse, listReverseCurrent, Mux(isXmsum, xmsumAddress, reg1AddImm)))
+  normalMemReq.size  := Mux(isNumericDfaStep || isListReverse || isXmsum, 2.U, func3t(1, 0))
+  normalMemReq.wen   := Mux(isNumericDfaStep, false.B,
+    Mux(isListReverse, listReverseStoreRequest, !isXmsum && isTypStore))
+  normalMemReq.wdata := Mux(listReverseStoreRequest, listReversePrevious,
+    Mux(isXmsum || (isListReverse && !listReverseStoreRequest), 0.U, memWData))
+  normalMemReq.wmask := Mux(listReverseStoreRequest, "b1111".U,
+    Mux(isXmsum || (isListReverse && !listReverseStoreRequest), 0.U, memWMask))
+  io.memReq.valid := xdfaWordRequest || listReverseRequest || xmsumRequest ||
+    (needMemReq && io.in.valid && io.out.ready)
   io.memReq.bits := normalMemReq
 
   val normalReady = memReqFire || (
@@ -799,17 +802,17 @@ class EXU(
     io.in.valid && !needMemReq && exuResultValid
   )
   io.in.ready := Mux(isNumericDfaStep, xdfaWordDone && io.out.ready,
-    Mux(isXlrev, xlrevDone && io.out.ready, Mux(isXmsum, xmsumDone && io.out.ready, normalReady)))
+    Mux(isListReverse, listReverseDone && io.out.ready, Mux(isXmsum, xmsumDone && io.out.ready, normalReady)))
   io.out.valid := Mux(isNumericDfaStep, xdfaWordDone,
-    Mux(isXlrev, xlrevDone, Mux(isXmsum, xmsumDone, normalValid)))
+    Mux(isListReverse, listReverseDone, Mux(isXmsum, xmsumDone, normalValid)))
 
   writeBackInfo.iid := dinst.iid
 
   // --- Next PC ---
   val isJmpCsr = is_ecall || is_mret
-  val xlrevLoopBranch = isXlrevLoop && xlrevDone
+  val listReverseLoopBranch = isListReverseLoop && listReverseDone
   val willJmp  = (isTypBranch && takeBranch) || isTypJALR || isTypJAL || isJmpCsr ||
-    (xlrevLoopBranch && xlrevLoopTaken)
+    (listReverseLoopBranch && listReverseLoopTaken)
 
   val normalNxtPC = Wire(Types.UWord)
   val nxtPC       = Wire(Types.UWord)
@@ -825,7 +828,7 @@ class EXU(
       )
     )
   )
-  nxtPC       := Mux(xlrevLoopBranch && xlrevLoopTaken, dinst.pc, normalNxtPC)
+  nxtPC       := Mux(listReverseLoopBranch && listReverseLoopTaken, dinst.pc, normalNxtPC)
   io.nxtPC    := nxtPC
   io.pc       := dinst.pc
 
@@ -833,14 +836,14 @@ class EXU(
   // Reuse the existing unconditional-entry bit for direct JAL and the exact
   // return encoding that IDU can validate without an address-add dependency.
   io.isJAL       := isTypJAL || dinst.code === "h00008067".U
-  io.isBranch    := isTypBranch || xlrevLoopBranch
+  io.isBranch    := isTypBranch || listReverseLoopBranch
   io.isReturn    := isTypJALR && dinst.code === "h00008067".U
   io.isCall      := (isTypJAL || isTypJALR) && dinst.info.rd =/= 0.U
-  io.branchTaken := Mux(xlrevLoopBranch, xlrevLoopTaken, takeBranch)
-  io.btbUpdateEn := isTypBranch || isTypJAL || isTypJALR || xlrevLoopBranch
+  io.branchTaken := Mux(listReverseLoopBranch, listReverseLoopTaken, takeBranch)
+  io.btbUpdateEn := isTypBranch || isTypJAL || isTypJALR || listReverseLoopBranch
   io.predWrong := exuResultValid && Mux(
-    xlrevLoopBranch,
-    xlrevLoopTaken ^ dinst.predTake,
+    listReverseLoopBranch,
+    listReverseLoopTaken ^ dinst.predTake,
     (isFmtB && (takeBranch ^ dinst.predTake)) || io.in.bits.info.notBranchPredWrong
   )
 

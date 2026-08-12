@@ -311,41 +311,7 @@ xbmul(ee_s32 value)
 }
 
 static inline __attribute__((always_inline, used)) void *
-__xaccel_xlrev(void *list)
-{
-    void *result;
-    asm volatile(".insn r 0x0b, 7, 0, %0, %1, x0"
-                 : "=r"(result)
-                 : "r"(list)
-                 : "memory");
-    return result;
-}
-
-static inline __attribute__((always_inline, used)) void *
-__xaccel_xlrev1(void *list)
-{
-    if (!list)
-        return 0;
-    asm volatile(".insn r 0x0b, 6, 0, %0, %0, zero"
-                 : "+r"(list)
-                 :
-                 : "memory");
-    while (list)
-    {
-        asm volatile(".insn r 0x0b, 6, 1, %0, %0, zero"
-                     : "+r"(list)
-                     :
-                     : "memory");
-    }
-    asm volatile(".insn r 0x0b, 6, 1, %0, %0, zero"
-                 : "+r"(list)
-                 :
-                 : "memory");
-    return list;
-}
-
-static inline __attribute__((always_inline, used)) void *
-__xaccel_xlrev2(void *list)
+__xaccel_xlistrev(void *list)
 {
     if (!list)
         return 0;
@@ -355,17 +321,6 @@ __xaccel_xlrev2(void *list)
                  :
                  : "memory");
     return list;
-}
-
-static inline __attribute__((always_inline, used)) int
-__xaccel_xdfa(ee_u8 **instr, ee_u32 *transition_count)
-{
-    ee_u32 result;
-    asm volatile(".insn r 0x0b, 7, 1, %0, %1, %2"
-                 : "=r"(result)
-                 : "r"(instr), "r"(transition_count)
-                 : "memory");
-    return (int)result;
 }
 
 static inline __attribute__((always_inline, used)) ee_s16

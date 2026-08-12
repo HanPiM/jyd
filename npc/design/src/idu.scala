@@ -321,13 +321,14 @@ class IDU(
     )
   )
 
-  val isXlrevLoopEncoding = inst(31, 25) === 2.U && inst(14, 12) === 6.U && inst(6, 0) === "b0001011".U
+  val isListReverseLoopEncoding =
+    inst(31, 25) === 2.U && inst(14, 12) === 6.U && inst(6, 0) === "b0001011".U
   val bypassMux = Module(new ByPassMux())
-  // The looping xlrev form advances from EXU's private chain state after its
+  // The loop operation advances from EXU's private list-reversal state after its
   // init instruction.  Its encoded rs1 only names the eventual destination;
   // treating it as a source creates a false loop-carried RAW dependency.
   val needReg1AddImm = isTypLoad || isTypStore || isTypJALR
-  bypassMux.io.rs1        := Mux(isXlrevLoopEncoding || needReg1AddImm, 0.U, res.rs1)
+  bypassMux.io.rs1        := Mux(isListReverseLoopEncoding || needReg1AddImm, 0.U, res.rs1)
   bypassMux.io.rs2        := res.rs2
   bypassMux.io.regData1   := io.rvec.data(0)
   bypassMux.io.regData2   := io.rvec.data(1)
@@ -345,10 +346,9 @@ class IDU(
   val arithmeticFunc3 = inst(14, 12)
   val arithmeticFunc7 = inst(31, 25)
   val isMExtArithmetic = !isFmtI && arithmeticFunc7 === "b0000001".U
-  // xlrev2 consists of an init step (funct7=0) followed by the fused loop
-  // step (funct7=2). The legacy whole-list and software-loop forms are no
-  // longer part of the supported accelerator interface.
-  val isXlrevEncoding = inst(6, 0) === "b0001011".U && arithmeticFunc3 === 6.U &&
+  // xlistrev consists of an init step (funct7=0) followed by the fused loop
+  // step (funct7=2). No legacy whole-list or software-loop encoding is accepted.
+  val isListReverseEncoding = inst(6, 0) === "b0001011".U && arithmeticFunc3 === 6.U &&
     (inst(31, 25) === 0.U || inst(31, 25) === 2.U)
   res.lateLoadRs1 := bypassMux.io.lateLoadRs1
   res.lateLoadRs2 := bypassMux.io.lateLoadRs2
@@ -372,7 +372,7 @@ class IDU(
   val isBBext = arithmeticFunc7 === "b0100100".U && arithmeticFunc3 === "b101".U
   val isCrcU8Custom = inst(31, 25) === 0.U && arithmeticFunc3 === 0.U && inst(6, 0) === "b0001011".U
   val isBitExtractMulCustom = inst(31, 25) === 0.U && arithmeticFunc3 === 5.U && inst(6, 0) === "b0001011".U
-  val isListReverseCustom = isXlrevEncoding
+  val isListReverseCustom = isListReverseEncoding
   val isMatrixReduceCustom = inst(31, 25) === 2.U && arithmeticFunc3 === 7.U && inst(6, 0) === "b0001011".U
   val isNumericDfaCustom = inst(6, 0) === "b1011011".U &&
     ((inst(31, 25) === 0.U &&
@@ -381,9 +381,9 @@ class IDU(
   res.bExtValid := isTypArithmetic && !isMExtArithmetic && isIterativeB
   res.crcValid := isCrcU8Custom
   res.xbmulValid := isBitExtractMulCustom
-  res.xlrevValid := isListReverseCustom
-  res.xlrevSingle := isListReverseCustom && arithmeticFunc3 === 6.U
-  res.xlrevLoop := isListReverseCustom && isXlrevLoopEncoding
+  res.listReverseValid := isListReverseCustom
+  res.listReverseStep := isListReverseCustom
+  res.listReverseLoop := isListReverseCustom && isListReverseLoopEncoding
   // The legacy custom-0 whole-parser state machine is intentionally unsupported.
   // Use the custom-2 word-fed numeric DFA operations decoded below.
   res.xmsumValid := isMatrixReduceCustom

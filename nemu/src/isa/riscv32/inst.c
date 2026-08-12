@@ -51,21 +51,15 @@
 #define MATCH_XACCEL_XMAC16 0x0000300b
 #define MATCH_XACCEL_XDOT16 0x0000400b
 #define MATCH_XACCEL_XBMUL  0x0000500b
-#define MATCH_XACCEL_XLREV  0x0000700b
-#define MATCH_XACCEL_XLREV1 0x0000600b
-#define MATCH_XACCEL_XLREV1_CHAIN 0x0200600b
-#define MATCH_XACCEL_XLREV2 0x0400600b
-#define MATCH_XACCEL_XDFA 0x0200700b
+#define MATCH_XACCEL_XLISTREV_INIT 0x0000600b
+#define MATCH_XACCEL_XLISTREV_LOOP 0x0400600b
 #define MATCH_XACCEL_XMSUM  0x0400700b
 #define MASK_XACCEL_XACCEL  0xfe00707f
 #define MASK_XACCEL_XMAC16 MASK_XACCEL_XACCEL
 #define MASK_XACCEL_XDOT16 MASK_XACCEL_XACCEL
 #define MASK_XACCEL_XBMUL  MASK_XACCEL_XACCEL
-#define MASK_XACCEL_XLREV  MASK_XACCEL_XACCEL
-#define MASK_XACCEL_XLREV1 MASK_XACCEL_XACCEL
-#define MASK_XACCEL_XLREV1_CHAIN MASK_XACCEL_XACCEL
-#define MASK_XACCEL_XLREV2 MASK_XACCEL_XACCEL
-#define MASK_XACCEL_XDFA MASK_XACCEL_XACCEL
+#define MASK_XACCEL_XLISTREV_INIT MASK_XACCEL_XACCEL
+#define MASK_XACCEL_XLISTREV_LOOP MASK_XACCEL_XACCEL
 #define MASK_XACCEL_XMSUM  MASK_XACCEL_XACCEL
 
 static vaddr_t list_reverse_previous;
@@ -88,7 +82,7 @@ static vaddr_t list_reverse_previous;
 #define MASK_XACCEL_XDFA4H_FINAL_READ MASK_XACCEL_XDFACNT
 #define MASK_XACCEL_XDFA4H_STEP MASK_XACCEL_XDFACNT
 
-enum { XA_MAC16, XA_DOT16, XA_BMUL, XA_LREV, XA_STATE, XA_MSUM };
+enum { XA_MAC16, XA_DOT16, XA_BMUL, XA_LISTREV, XA_UNUSED, XA_MSUM };
 
 static uint32_t numeric_dfa_transition_counts[8];
 static uint32_t numeric_dfa_final_counts[8];
@@ -171,103 +165,6 @@ static word_t crc_update(word_t data, word_t crc, unsigned bytes) {
 }
 
 static inline int32_t sx16(word_t value) { return (int16_t)(uint16_t)value; }
-
-static word_t list_reverse(vaddr_t list, uint64_t *nodes) {
-  vaddr_t next = 0;
-  *nodes = 0;
-  while (list) {
-    vaddr_t tmp = vaddr_read(list, 4);
-    vaddr_write(list, 4, next);
-    next = list;
-    list = tmp;
-    (*nodes)++;
-  }
-  return next;
-}
-
-enum CoreState {
-  CS_START, CS_INVALID, CS_S1, CS_S2, CS_INT, CS_FLOAT, CS_EXPONENT,
-  CS_SCIENTIFIC
-};
-
-static inline bool ascii_digit(uint8_t c) { return c >= '0' && c <= '9'; }
-
-static word_t numeric_token_transition(vaddr_t instr_addr,
-                                        vaddr_t counts_addr,
-                                        uint64_t *chars) {
-  vaddr_t str = vaddr_read(instr_addr, 4);
-  unsigned state = CS_START;
-  *chars = 0;
-  while (state != CS_INVALID) {
-    uint8_t c = vaddr_read(str, 1);
-    (*chars)++;
-    if (!c)
-      break;
-    if (c == ',') {
-      str++;
-      break;
-    }
-    vaddr_t count_addr = counts_addr + state * 4;
-    uint32_t count = vaddr_read(count_addr, 4);
-    switch (state) {
-    case CS_START:
-      if (ascii_digit(c)) state = CS_INT;
-      else if (c == '+' || c == '-') state = CS_S1;
-      else if (c == '.') state = CS_FLOAT;
-      else state = CS_INVALID;
-      vaddr_write(count_addr, 4, count + 1);
-      if (state == CS_INVALID) {
-        vaddr_t invalid_addr = counts_addr + CS_INVALID * 4;
-        vaddr_write(invalid_addr, 4, vaddr_read(invalid_addr, 4) + 1);
-      }
-      break;
-    case CS_S1:
-      if (ascii_digit(c)) state = CS_INT;
-      else if (c == '.') state = CS_FLOAT;
-      else state = CS_INVALID;
-      vaddr_write(count_addr, 4, count + 1);
-      break;
-    case CS_INT:
-      if (c == '.') {
-        state = CS_FLOAT;
-        vaddr_write(count_addr, 4, count + 1);
-      } else if (!ascii_digit(c)) {
-        state = CS_INVALID;
-        vaddr_write(count_addr, 4, count + 1);
-      }
-      break;
-    case CS_FLOAT:
-      if (c == 'E' || c == 'e') {
-        state = CS_S2;
-        vaddr_write(count_addr, 4, count + 1);
-      } else if (!ascii_digit(c)) {
-        state = CS_INVALID;
-        vaddr_write(count_addr, 4, count + 1);
-      }
-      break;
-    case CS_S2:
-      state = (c == '+' || c == '-') ? CS_EXPONENT : CS_INVALID;
-      vaddr_write(count_addr, 4, count + 1);
-      break;
-    case CS_EXPONENT:
-      state = ascii_digit(c) ? CS_SCIENTIFIC : CS_INVALID;
-      vaddr_write(count_addr, 4, count + 1);
-      break;
-    case CS_SCIENTIFIC:
-      if (!ascii_digit(c)) {
-        state = CS_INVALID;
-        vaddr_t invalid_addr = counts_addr + CS_INVALID * 4;
-        vaddr_write(invalid_addr, 4, vaddr_read(invalid_addr, 4) + 1);
-      }
-      break;
-    default:
-      break;
-    }
-    str++;
-  }
-  vaddr_write(instr_addr, 4, str);
-  return state;
-}
 
 static word_t matrix_clipped_sum(vaddr_t data, word_t config,
                                   uint64_t *elements) {
@@ -480,33 +377,15 @@ static int decode_exec(Decode *s) {
     riscv_profile_record_xaccel(XA_BMUL, 1, 1);
     matched = true;
   }
-  if (IS_INST(XACCEL_XLREV)) {
-    uint64_t nodes;
-    R(rd) = list_reverse(R(rs1), &nodes);
-    riscv_profile_record_xaccel(XA_LREV, nodes, 4 + 2 * nodes);
-    matched = true;
-  }
-  if (IS_INST(XACCEL_XLREV1)) {
+  if (IS_INST(XACCEL_XLISTREV_INIT)) {
     vaddr_t current = R(rs1);
     R(rd) = vaddr_read(current, 4);
     vaddr_write(current, 4, 0);
     list_reverse_previous = current;
-    riscv_profile_record_xaccel(XA_LREV, 1, 4);
+    riscv_profile_record_xaccel(XA_LISTREV, 1, 4);
     matched = true;
   }
-  if (IS_INST(XACCEL_XLREV1_CHAIN)) {
-    vaddr_t current = R(rs1);
-    if (current == 0) {
-      R(rd) = list_reverse_previous;
-    } else {
-      R(rd) = vaddr_read(current, 4);
-      vaddr_write(current, 4, list_reverse_previous);
-      list_reverse_previous = current;
-    }
-    riscv_profile_record_xaccel(XA_LREV, 1, 4);
-    matched = true;
-  }
-  if (IS_INST(XACCEL_XLREV2)) {
+  if (IS_INST(XACCEL_XLISTREV_LOOP)) {
     vaddr_t current = R(rs1);
     if (current == 0) {
       R(rd) = list_reverse_previous;
@@ -521,13 +400,7 @@ static int decode_exec(Decode *s) {
         R(rd) = current;
       }
     }
-    riscv_profile_record_xaccel(XA_LREV, 1, 4);
-    matched = true;
-  }
-  if (IS_INST(XACCEL_XDFA)) {
-    uint64_t chars;
-    R(rd) = numeric_token_transition(R(rs1), R(rs2), &chars);
-    riscv_profile_record_xaccel(XA_STATE, chars, 4 + 3 * chars);
+    riscv_profile_record_xaccel(XA_LISTREV, 1, 4);
     matched = true;
   }
   if (IS_INST(XACCEL_XMSUM)) {

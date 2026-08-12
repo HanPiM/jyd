@@ -531,11 +531,18 @@ tcl_file=$(mktemp "${TMPDIR:-/tmp}/digital_twin_flow.XXXXXX.tcl")
 xpr_backup=$(mktemp "${TMPDIR:-/tmp}/digital_twin_project.XXXXXX.xpr")
 cp -- "$vivado_project" "$xpr_backup"
 xpr_hash_before=$(sha256sum "$vivado_project" | awk '{print $1}')
+mul16_xci="$vivado_proj_home/digital_twin.srcs/sources_1/ip/mult_gen_mul16_fast/mult_gen_mul16_fast.xci"
+mul16_xci_backup=""
+if [ -f "$mul16_xci" ]; then
+  mul16_xci_backup=$(mktemp "${TMPDIR:-/tmp}/mult_gen_mul16_fast.XXXXXX.xci")
+  cp -- "$mul16_xci" "$mul16_xci_backup"
+fi
 cleanup() {
   if [ -n "${xpr_backup:-}" ] && [ -f "$xpr_backup" ]; then
     cp -- "$xpr_backup" "$vivado_project"
     rm -f -- "$xpr_backup"
   fi
+  rm -f -- "${mul16_xci_backup:-}"
   rm -f -- "$tcl_file"
 }
 trap cleanup EXIT
@@ -1052,6 +1059,35 @@ if [ "$xpr_hash_before" != "$xpr_hash_after" ]; then
   echo "  before: $xpr_hash_before" >&2
   echo "  after:  $xpr_hash_after" >&2
   exit 1
+fi
+
+# config_ip_cache -disable_for_ip is an execution-only choice, but Vivado
+# serializes it into the XCI and -enable_for_ip does not remove that field.
+# Accept and restore only this exact mutation; every other XCI change remains
+# subject to the complete immutable manifest below.
+if [ -n "$mul16_xci_backup" ]; then
+  mul16_before_hash=$(jq -cS . "$mul16_xci_backup" | sha256sum | awk '{print $1}')
+  mul16_after_hash=$(jq -cS . "$mul16_xci" | sha256sum | awk '{print $1}')
+  if [ "$mul16_before_hash" != "$mul16_after_hash" ]; then
+    mul16_before_cache_flag=$(jq -c '.ip_inst.parameters.runtime_parameters.IPCACHEDISABLEDFORIP // null' \
+      "$mul16_xci_backup")
+    mul16_after_cache_flag=$(jq -c '.ip_inst.parameters.runtime_parameters.IPCACHEDISABLEDFORIP // null' \
+      "$mul16_xci")
+    mul16_before_without_flag=$(jq -cS 'del(.ip_inst.parameters.runtime_parameters.IPCACHEDISABLEDFORIP)' \
+      "$mul16_xci_backup" | sha256sum | awk '{print $1}')
+    mul16_after_without_flag=$(jq -cS 'del(.ip_inst.parameters.runtime_parameters.IPCACHEDISABLEDFORIP)' \
+      "$mul16_xci" | sha256sum | awk '{print $1}')
+    if [ "$mul16_before_cache_flag" != null ] || \
+      [ "$mul16_after_cache_flag" != '[{"value":"TRUE"}]' ] || \
+      [ "$mul16_before_without_flag" != "$mul16_after_without_flag" ]; then
+      echo "mult_gen_mul16_fast XCI changed beyond the expected temporary IPCACHE flag" >&2
+      exit 1
+    fi
+    cp -- "$mul16_xci_backup" "$mul16_xci"
+    echo "# Restored temporary mult_gen_mul16_fast IPCACHE XCI mutation"
+  fi
+  rm -f -- "$mul16_xci_backup"
+  mul16_xci_backup=""
 fi
 
 ip_config_hash_after=$(ip_config_hash)

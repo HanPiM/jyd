@@ -206,19 +206,23 @@ class EXU(
 
   val baseRegV1 = dinst.info.reg1
   val baseRegV2 = dinst.info.reg2
+  val fastBaseRegV1 = dinst.info.fastBaseReg1
+  val fastBaseRegV2 = dinst.info.fastBaseReg2
+  dontTouch(fastBaseRegV1)
+  dontTouch(fastBaseRegV2)
   def decodeAdjacentFastGroups(encoded: UInt, base: UInt): UInt = encoded ^ base(7, 0)
   def expandAdjacentFastGroups(groups: UInt): UInt = Cat((7 to 0 by -1).map(i => Fill(4, groups(i))))
   def selectAdjacentFast(groups: UInt, base: UInt): UInt = {
     val mask = expandAdjacentFastGroups(groups)
     (io.previousStageFwd.data & mask) | (base & ~mask)
   }
-  val fastAluRs1Groups = decodeAdjacentFastGroups(dinst.info.fastAluRs1, baseRegV1)
-  val fastAluRs2Groups = decodeAdjacentFastGroups(dinst.info.fastAluRs2, baseRegV2)
+  val fastAluRs1Groups = decodeAdjacentFastGroups(dinst.info.fastAluRs1, fastBaseRegV1)
+  val fastAluRs2Groups = decodeAdjacentFastGroups(dinst.info.fastAluRs2, fastBaseRegV2)
   val fastBranchRs1Groups = decodeAdjacentFastGroups(dinst.info.fastBranchRs1, baseRegV1)
   val fastBranchRs2Groups = decodeAdjacentFastGroups(dinst.info.fastBranchRs2, baseRegV2)
   val fastStoreRs2Groups = decodeAdjacentFastGroups(dinst.info.fastStoreRs2, baseRegV2)
-  val fastRegV1 = selectAdjacentFast(fastAluRs1Groups, baseRegV1)
-  val fastRegV2 = selectAdjacentFast(fastAluRs2Groups, baseRegV2)
+  val fastRegV1 = selectAdjacentFast(fastAluRs1Groups, fastBaseRegV1)
+  val fastRegV2 = selectAdjacentFast(fastAluRs2Groups, fastBaseRegV2)
   val branchRegV1 = selectAdjacentFast(fastBranchRs1Groups, baseRegV1)
   val branchRegV2 = selectAdjacentFast(fastBranchRs2Groups, baseRegV2)
   val storeRegV2 = selectAdjacentFast(fastStoreRs2Groups, baseRegV2)

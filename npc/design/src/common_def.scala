@@ -184,6 +184,10 @@ class DecodedInstInfo(implicit p : CPUParameters) extends InstMetaInfo with HasR
 
   val reg1 = Types.UWord
   val reg2 = Types.UWord
+  // Physical ID/EX operand copies dedicated to the fast integer cluster.
+  // The generic copies feed only long/custom consumers.
+  val fastBaseReg1 = Types.UWord
+  val fastBaseReg2 = Types.UWord
   val csrReadData = Types.UWord
 
   val staticNextPCOrCSRTarget = Types.UWord

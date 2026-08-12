@@ -426,8 +426,10 @@ class IDU(
   // payload avoids a wide IDU payload mux/self-loop on the critical path.
   res.reg1                := bypassMux.io.outData1
   res.reg2                := Mux(isFmtI, immI, bypassMux.io.outData2) // For exu ALU src2
-  res.fastAluRs1          := Fill(8, fastAluRs1Token) ^ res.reg1(7, 0)
-  res.fastAluRs2          := Fill(8, fastAluRs2Token) ^ res.reg2(7, 0)
+  res.fastBaseReg1        := bypassMux.io.outData1
+  res.fastBaseReg2        := Mux(isFmtI, immI, bypassMux.io.outData2)
+  res.fastAluRs1          := Fill(8, fastAluRs1Token) ^ res.fastBaseReg1(7, 0)
+  res.fastAluRs2          := Fill(8, fastAluRs2Token) ^ res.fastBaseReg2(7, 0)
   res.fastBranchRs1       := Fill(8, fastBranchRs1Token) ^ res.reg1(7, 0)
   res.fastBranchRs2       := Fill(8, fastBranchRs2Token) ^ res.reg2(7, 0)
   res.fastStoreRs2        := Fill(8, fastStoreRs2Token) ^ res.reg2(7, 0)

@@ -257,30 +257,46 @@ class CPUCore(
   bp.io.historyIsBranch   := btb.io.query.isBranch
   bp.io.historyIsReturn   := btb.io.query.isReturn
   bp.io.historyDirectionTaken := btb.io.query.directionTaken
-  bp.io.updateEn          := RegNext(exu.io.out.valid && exu.io.btbUpdateEn)
-  bp.io.updatePc          := RegNext(exu.io.pc)
-  bp.io.updateIsCall      := RegNext(exu.io.isCall)
-  bp.io.updateIsReturn    := RegNext(exu.io.isReturn)
+  val branchUpdateFireReg   = RegNext(exu.io.out.fire && exu.io.btbUpdateEn, false.B)
+  val branchUpdatePcReg     = RegEnable(exu.io.pc, exu.io.out.fire)
+  val branchUpdateTargetReg = RegEnable(exu.io.branchTarget, exu.io.out.fire)
+  val branchUpdateIsCallReg = RegEnable(exu.io.isCall, exu.io.out.fire)
+  val branchUpdateIsReturnReg = RegEnable(exu.io.isReturn, exu.io.out.fire)
+  val branchUpdateIsJALReg = RegEnable(exu.io.isJAL, exu.io.out.fire)
+  val branchUpdateIsBranchReg = RegEnable(exu.io.isBranch, exu.io.out.fire)
+  val branchUpdateTakenReg = RegEnable(exu.io.branchTaken, exu.io.out.fire)
 
-  btb.io.update.en         := RegNext(exu.io.out.valid && exu.io.btbUpdateEn)
-  btb.io.update.addr       := RegNext(exu.io.pc)
-  btb.io.update.target     := RegNext(exu.io.branchTarget)
+  bp.io.updateEn       := branchUpdateFireReg
+  bp.io.updatePc       := branchUpdatePcReg
+  bp.io.updateIsCall   := branchUpdateIsCallReg
+  bp.io.updateIsReturn := branchUpdateIsReturnReg
+
+  btb.io.update.en     := branchUpdateFireReg
+  btb.io.update.addr   := branchUpdatePcReg
+  btb.io.update.target := branchUpdateTargetReg
   // Direct JAL and the selected predictable JALR form reuse the existing
   // unconditional-entry bit, adding neither a BTB data bit nor a module port.
-  btb.io.update.isJAL      := RegNext(exu.io.isJAL)
-  btb.io.update.isBranch   := RegNext(exu.io.isBranch)
-  btb.io.update.isReturn   := RegNext(exu.io.isReturn)
-  btb.io.update.actualTaken := RegNext(exu.io.branchTaken)
+  btb.io.update.isJAL       := branchUpdateIsJALReg
+  btb.io.update.isBranch    := branchUpdateIsBranchReg
+  btb.io.update.isReturn    := branchUpdateIsReturnReg
+  btb.io.update.actualTaken := branchUpdateTakenReg
 
-  val redirectNow         = exu.io.out.valid && exu.io.predWrong
+  val immediateRedirectNow = exu.io.out.valid && exu.io.immediatePredWrong
+  val lateRedirectNow = lsu.io.in.fire && lsu.io.in.bits.lateBranchResolve && lsu.io.in.bits.lateBranchMismatch
+  val redirectNow = immediateRedirectNow || lateRedirectNow
+  dontTouch(lateRedirectNow)
   val redirectPacket      = Wire(new RedirectPacket)
   val redirectPendingFire = ifu.io.pc.fire && redirectPendingReg
 
-  // Capture both address candidates every cycle. The branch comparator only
-  // registers the narrow choice bit and cannot enter either address lane.
-  redirectUseTargetReg   := !exu.io.isBranch || exu.io.branchTaken
-  redirectTargetReg      := TrimmedPC.trim(Mux(exu.io.btbUpdateEn, exu.io.branchTarget, exu.io.staticTarget))
-  redirectFallthroughReg := TrimmedPC.trim(exu.io.pc) + 1.U
+  when(lateRedirectNow) {
+    redirectUseTargetReg   := branchUpdateTakenReg
+    redirectTargetReg      := TrimmedPC.trim(branchUpdateTargetReg)
+    redirectFallthroughReg := TrimmedPC.trim(branchUpdatePcReg) + 1.U
+  }.elsewhen(immediateRedirectNow) {
+    redirectUseTargetReg   := !exu.io.isBranch || exu.io.branchTaken
+    redirectTargetReg      := TrimmedPC.trim(Mux(exu.io.btbUpdateEn, exu.io.branchTarget, exu.io.staticTarget))
+    redirectFallthroughReg := TrimmedPC.trim(exu.io.pc) + 1.U
+  }
 
   when(redirectNow) {
     redirectPendingReg := true.B
@@ -404,9 +420,17 @@ class CPUCore(
   pipelineConnect(idu.io.out, exuPipe)
   val exuEpochMatch = exuPipe.bits.epoch === pipelineEpoch
   exu.io.in.bits := exuPipe.bits
-  exu.io.in.valid := exuPipe.valid && exuEpochMatch
-  exuPipe.ready := exu.io.in.ready || !exuEpochMatch
+  exu.io.in.valid := exuPipe.valid && exuEpochMatch && !lateRedirectNow
+  exuPipe.ready := exu.io.in.ready || !exuEpochMatch || lateRedirectNow
   pipelineConnect(exu.io.out, lsu.io.in, lsu.io.out)
+
+  when(lateRedirectNow) {
+    assert(!immediateRedirectNow, "late and immediate redirects must be mutually exclusive")
+    assert(!exu.io.in.valid && !exu.io.out.valid, "a late redirect must discard the younger EXU instruction")
+    assert(!exu.io.memReq.valid, "a late redirect must suppress the younger EXU memory request")
+    assert(!exu.io.dcache.storeUpdate && !exu.io.dcache.fullUpdate,
+      "a late redirect must suppress younger DCache mutations")
+  }
 
   idu.io.rvec <> gprs.io.read
   idu.io.csrRead <> csrs.io.read

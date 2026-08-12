@@ -71,6 +71,9 @@ class EXU(
     val btbUpdateEn = Output(Bool())
 
     val predWrong = Output(Bool())
+    val immediatePredWrong = Output(Bool())
+    val lateBranchResolve = Output(Bool())
+    val lateBranchMismatch = Output(Bool())
 
     val branchTarget   = Output(Types.UWord)
     val staticTarget   = Output(Types.UWord)
@@ -645,6 +648,26 @@ class EXU(
       dinst.info.is_bgeu -> !isLessThanU
     )
   )
+  val capturedLateEqual = Mux(
+    dinst.info.lateLoadRs1 && dinst.info.lateLoadRs2,
+    true.B,
+    Mux(
+      dinst.info.lateLoadRs1,
+      capturedLateLoadData === stableLateOtherRegV2,
+      capturedLateLoadData === stableLateOtherRegV1
+    )
+  )
+  val immediateBranchEqual = Mux(hasLateLoadOperand, capturedLateEqual, branchRegV1 === branchRegV2)
+  val immediateTakeBranch = Mux1H(
+    Seq(
+      dinst.info.is_beq  -> immediateBranchEqual,
+      dinst.info.is_bne  -> !immediateBranchEqual,
+      dinst.info.is_blt  -> isLessThan,
+      dinst.info.is_bge  -> !isLessThan,
+      dinst.info.is_bltu -> isLessThanU,
+      dinst.info.is_bgeu -> !isLessThanU
+    )
+  )
 
   // --- LSU input ---
   val lsuInfo = io.out.bits
@@ -842,10 +865,23 @@ class EXU(
   io.isCall      := (isTypJAL || isTypJALR) && dinst.info.rd =/= 0.U
   io.branchTaken := Mux(listReverseLoopBranch, listReverseLoopTaken, takeBranch)
   io.btbUpdateEn := isTypBranch || isTypJAL || isTypJALR || listReverseLoopBranch
+  val lateEqualityBranchResolve =
+    isTypBranch && (dinst.info.is_beq || dinst.info.is_bne) && hasLateLoadOperand && useRegisteredRawLoadEqual
+  io.lateBranchResolve := exuResultValid && lateEqualityBranchResolve
+  io.lateBranchMismatch := takeBranch ^ dinst.predTake
+  lsuInfo.lateBranchResolve := io.lateBranchResolve
+  lsuInfo.lateBranchMismatch := io.lateBranchMismatch
   io.predWrong := exuResultValid && Mux(
     listReverseLoopBranch,
     listReverseLoopTaken ^ dinst.predTake,
     (isFmtB && (takeBranch ^ dinst.predTake)) || io.in.bits.info.notBranchPredWrong
+  )
+  dontTouch(io.predWrong)
+  io.immediatePredWrong := exuResultValid && Mux(
+    listReverseLoopBranch,
+    listReverseLoopTaken ^ dinst.predTake,
+    (isFmtB && !lateEqualityBranchResolve && (immediateTakeBranch ^ dinst.predTake)) ||
+      io.in.bits.info.notBranchPredWrong
   )
 
   StageLogger(

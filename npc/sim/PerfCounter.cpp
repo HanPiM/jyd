@@ -196,10 +196,10 @@ void RAWStallPerfCounter::bind() {
       &GetIDU()->perfCounterLayer->rawStallPerfTap->io_actualReg1AddImmWBUStall;
   hStalledInst = &GetIDU()->perfCounterLayer->rawStallPerfTap->io_stalledInst;
 }
-IDUFlushPerfCounter::IDUFlushReason IDUFlushPerfCounter::getCurReason() const {
+IDUFlushPerfCounter::IDUFlushReason IDUFlushPerfCounter::getCurReason() {
   auto &exu = *GetEXU();
   IDUFlushReason reason;
-  if (exu.dbgIsBranch)
+  if (hLateRedirectNow.get() || exu.dbgIsBranch)
     reason = IDUFlushReason::BranchTaken;
   else if (exu.dbgIsJAL)
     reason = IDUFlushReason::JAL;
@@ -234,6 +234,7 @@ void IDUFlushPerfCounter::update() {
 void IDUFlushPerfCounter::bind() {
   hIsFlushIDU = &GetCPU()->activeRedirectValid;
   hRedirectNow = &GetCPU()->redirectNow;
+  hLateRedirectNow = &GetCPU()->lateRedirectNow;
 }
 
 void BranchPredPerfCounter::bind() {

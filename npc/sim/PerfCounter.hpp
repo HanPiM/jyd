@@ -300,6 +300,7 @@ struct RAWStallPerfCounter : public PerfCounterBase {
 struct IDUFlushPerfCounter : public PerfCounterBase {
   SignalHandle hIsFlushIDU;
   SignalHandle hRedirectNow;
+  SignalHandle hLateRedirectNow;
   bool lastCycIsFlush = false;
   bool lastCycRedirectNow = false;
 
@@ -325,7 +326,7 @@ struct IDUFlushPerfCounter : public PerfCounterBase {
   void bind();
   void update();
 
-  IDUFlushReason getCurReason() const;
+  IDUFlushReason getCurReason();
 
   void dumpStatistics(std::ostream &) override;
 };

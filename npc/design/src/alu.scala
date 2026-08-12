@@ -98,10 +98,9 @@ class DividerInput extends Bundle {
 object MultiplierConfig {
   val latency       = 4
   val fastLatency   = 3
-  // Vivado's one-stage 16x16 MultGen maps to registered DSP inputs and a
-  // registered product, so its result is externally visible two cycles after
-  // the operands are presented.
-  val narrowLatency = 2
+  // The narrow MultGen is combinational; the controller publishes its result
+  // in the cycle after accepting and holding the operands.
+  val narrowLatency = 1
 }
 
 class mult_gen_0 extends BlackBox with HasBlackBoxInline {
@@ -180,7 +179,7 @@ class mult_gen_mul32_fast extends BlackBox with HasBlackBoxInline {
   )
 }
 
-/** Two-stage low-word multiplier used only when both unsigned operands fit in 16 bits.
+/** Low-word multiplier used only when both unsigned operands fit in 16 bits.
   *
   * The dedicated narrow IP keeps the 16x16 DSP mapping separate from the regular
   * 32x32 MUL datapath.  MULH-family operations always use the regular path.
@@ -201,22 +200,7 @@ class mult_gen_mul16_fast extends BlackBox with HasBlackBoxInline {
       |  input  [15:0] B,
       |  output [31:0] P
       |);
-      |  reg [31:0] pipe [0:${MultiplierConfig.narrowLatency - 1}];
-      |  integer i;
-      |  wire [31:0] product = A * B;
-      |
-      |  initial begin
-      |    for (i = 0; i < ${MultiplierConfig.narrowLatency}; i = i + 1)
-      |      pipe[i] = 32'd0;
-      |  end
-      |
-      |  always @(posedge CLK) begin
-      |    pipe[0] <= product;
-      |    for (i = 1; i < ${MultiplierConfig.narrowLatency}; i = i + 1)
-      |      pipe[i] <= pipe[i - 1];
-      |  end
-      |
-      |  assign P = pipe[${MultiplierConfig.narrowLatency - 1}];
+      |  assign P = A * B;
       |endmodule
       |""".stripMargin
   )
@@ -236,6 +220,8 @@ class Multiplier extends Module {
   val isFastReg       = Reg(Bool())
   val isNarrowFastReg = Reg(Bool())
   val narrowSelectReg = Reg(Bool())
+  val narrowRawAReg   = Reg(UInt(16.W))
+  val narrowRawBReg   = Reg(UInt(16.W))
   val narrowPrevAReg  = Reg(UInt(16.W))
   val narrowPrevBReg  = Reg(UInt(16.W))
   val resultReg       = Reg(Types.UWord)
@@ -246,7 +232,7 @@ class Multiplier extends Module {
   // one extra cycle.  Keeping the two lanes on the same DSP core lets the
   // raw/raw case retain the shortest valid latency while the prev-rs2 case avoids the long
   // WBU-to-DSP-B input route that was the previous worst setup path.
-  val narrowValidPipe = RegInit(0.U((MultiplierConfig.narrowLatency + 1).W))
+  val narrowValidPipe = RegInit(0.U(2.W))
   val multiplier      = Module(new mult_gen_0)
   val fastMultiplier = Module(new mult_gen_mul32_fast)
   val narrowMultiplier = Seq.fill(2)(Module(new mult_gen_mul16_fast))
@@ -267,17 +253,15 @@ class Multiplier extends Module {
   fastMultiplier.io.A   := io.in.bits.src1
   fastMultiplier.io.B   := io.in.bits.src2
   narrowMultiplier.foreach(_.io.CLK := clock)
-  narrowMultiplier(0).io.A := io.in.bits.rawSrc1(15, 0)
-  narrowMultiplier(0).io.B := io.in.bits.rawSrc2(15, 0)
+  narrowMultiplier(0).io.A := narrowRawAReg
+  narrowMultiplier(0).io.B := narrowRawBReg
   narrowMultiplier(1).io.A := narrowPrevAReg
   narrowMultiplier(1).io.B := narrowPrevBReg
 
   val product = multiplier.io.P
   val narrowProduct = Mux(narrowSelectReg, narrowMultiplier(1).io.P, narrowMultiplier(0).io.P)
   val result = Mux(isNarrowFastReg, narrowProduct, Mux(isFastReg, fastMultiplier.io.P, product(63, 32)))
-  val resultValid = Mux(isNarrowFastReg,
-    Mux(narrowSelectReg, narrowValidPipe(MultiplierConfig.narrowLatency),
-      narrowValidPipe(MultiplierConfig.narrowLatency - 1)), Mux(
+  val resultValid = Mux(isNarrowFastReg, Mux(narrowSelectReg, narrowValidPipe(1), narrowValidPipe(0)), Mux(
     isFastReg,
     fastValidPipe(MultiplierConfig.fastLatency - 1),
     slowValidPipe(MultiplierConfig.latency - 1)
@@ -296,6 +280,8 @@ class Multiplier extends Module {
         isFastReg := isMul
         isNarrowFastReg := isNarrowFast
         narrowSelectReg := io.in.bits.prevRs2
+        narrowRawAReg := io.in.bits.rawSrc1(15, 0)
+        narrowRawBReg := io.in.bits.rawSrc2(15, 0)
         narrowPrevAReg := io.in.bits.rawSrc1(15, 0)
         narrowPrevBReg := io.in.bits.prevData(15, 0)
         slowValidPipe := Mux(isMul, 0.U, 1.U)

@@ -138,7 +138,7 @@ class EXU(
   val isNumericDfa = dinst.info.numericDfaValid
 
   object XlrevState extends ChiselEnum {
-    val idle, loadRequest, loadResponse, storeRequest, storeResponse, done = Value
+    val idle, loadRequest, loadResponse, storeRequest, done = Value
   }
   val xlrevState   = RegInit(XlrevState.idle)
   val xlrevCurrent = Reg(Types.UWord)
@@ -148,13 +148,8 @@ class EXU(
   val xlrevResult  = Reg(Types.UWord)
   val xlrevLoopQueryAddr = RegInit(0.U(32.W))
   val xlrevSingleStoreCommitted = RegInit(false.B)
-  // xlrev mutates memory behind the cache. Once it has run, bypass cached
-  // loads until reset instead of updating every reversed node through the
-  // cache RAM write ports.
-  val dcachePoisonedByXlrev = RegInit(false.B)
   val isXlrev      = dinst.info.xlrevValid
   val isXlrevSingle = dinst.info.xlrevSingle
-  val isXlrevChain = dinst.info.xlrevChain
   val isXlrevLoop = dinst.info.xlrevLoop
   val xlrevLoopTaken = RegInit(false.B)
 
@@ -369,16 +364,13 @@ class EXU(
     // of this register's timing-critical write-enable cone.
     xlrevNext := io.dcache.lateReadData
     xlrevSingleStoreCommitted := false.B
-    when(!isXlrevSingle) {
-      dcachePoisonedByXlrev := true.B
-    }
     xlrevCurrent  := xlrevActiveCurrent
-    xlrevPrevious := Mux(isXlrevChain || isXlrevLoop, xlrevChainPrevious, Mux(isXlrevSingle, reg_v2, 0.U))
+    xlrevPrevious := Mux(isXlrevLoop, xlrevChainPrevious, reg_v2)
     when(isXlrevSingle) {
       xlrevChainPrevious := xlrevActiveCurrent
     }
     when(xlrevActiveCurrent === 0.U) {
-      xlrevResult := Mux(isXlrevChain || isXlrevLoop, xlrevChainPrevious, 0.U)
+      xlrevResult := Mux(isXlrevLoop, xlrevChainPrevious, 0.U)
       xlrevLoopTaken := false.B
       xlrevState  := XlrevState.done
     }.elsewhen(isXlrevSingle && io.dcache.hit) {
@@ -392,27 +384,11 @@ class EXU(
     xlrevNext  := io.memResp.bits
     xlrevState := XlrevState.storeRequest
   }.elsewhen(xlrevState === XlrevState.storeRequest && io.memReq.fire) {
-    when(isXlrevSingle) {
-      xlrevSingleStoreCommitted := true.B
-      val loopTaken = isXlrevLoop && xlrevNext =/= 0.U
-      xlrevResult := Mux(isXlrevLoop && !loopTaken, xlrevCurrent, xlrevNext)
-      xlrevLoopTaken := loopTaken
-      xlrevState   := XlrevState.done
-    }.otherwise {
-      xlrevState := XlrevState.storeResponse
-    }
-  }.elsewhen(xlrevState === XlrevState.storeResponse && io.memResp.valid) {
-    when(isXlrevSingle) {
-      xlrevResult := xlrevNext
-      xlrevState  := XlrevState.done
-    }.elsewhen(xlrevNext === 0.U) {
-      xlrevResult := xlrevCurrent
-      xlrevState  := XlrevState.done
-    }.otherwise {
-      xlrevPrevious := xlrevCurrent
-      xlrevCurrent  := xlrevNext
-      xlrevState    := XlrevState.loadRequest
-    }
+    xlrevSingleStoreCommitted := true.B
+    val loopTaken = isXlrevLoop && xlrevNext =/= 0.U
+    xlrevResult := Mux(isXlrevLoop && !loopTaken, xlrevCurrent, xlrevNext)
+    xlrevLoopTaken := loopTaken
+    xlrevState := XlrevState.done
   }.elsewhen(xlrevState === XlrevState.done && io.out.fire) {
     xlrevState := XlrevState.idle
   }
@@ -681,7 +657,7 @@ class EXU(
   val loadAddressAligned = Mux(func3t(1), reg1AddImm(1, 0) === 0.U, Mux(func3t(0), !reg1AddImm(0), true.B))
   lsuInfo.cacheableLoad :=
     isTypLoad && supportedLoadWidth && loadAddressAligned && reg1AddImm(21, 20) === "b01".U
-  lsuInfo.dcacheHit := lsuInfo.cacheableLoad && io.dcache.hit && !dcachePoisonedByXlrev
+  lsuInfo.dcacheHit := lsuInfo.cacheableLoad && io.dcache.hit
   // Capture the asynchronous shadow result without sign extension. Extending
   // byte/half loads before this register lets synthesis map the replicated
   // sign bit onto slow synchronous-set pins; registered offset/width metadata

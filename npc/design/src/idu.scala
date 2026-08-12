@@ -345,10 +345,11 @@ class IDU(
   val arithmeticFunc3 = inst(14, 12)
   val arithmeticFunc7 = inst(31, 25)
   val isMExtArithmetic = !isFmtI && arithmeticFunc7 === "b0000001".U
-  val isXlrevEncoding = inst(6, 0) === "b0001011".U &&
-    ((arithmeticFunc3 === 6.U &&
-      (inst(31, 25) === 0.U || inst(31, 25) === 1.U || inst(31, 25) === 2.U)) ||
-      (arithmeticFunc3 === 7.U && inst(31, 25) === 0.U))
+  // xlrev2 consists of an init step (funct7=0) followed by the fused loop
+  // step (funct7=2). The legacy whole-list and software-loop forms are no
+  // longer part of the supported accelerator interface.
+  val isXlrevEncoding = inst(6, 0) === "b0001011".U && arithmeticFunc3 === 6.U &&
+    (inst(31, 25) === 0.U || inst(31, 25) === 2.U)
   res.lateLoadRs1 := bypassMux.io.lateLoadRs1
   res.lateLoadRs2 := bypassMux.io.lateLoadRs2
   // Only operations that still use the iterative B unit assert bExtValid.
@@ -382,7 +383,6 @@ class IDU(
   res.xbmulValid := isBitExtractMulCustom
   res.xlrevValid := isListReverseCustom
   res.xlrevSingle := isListReverseCustom && arithmeticFunc3 === 6.U
-  res.xlrevChain := isListReverseCustom && arithmeticFunc3 === 6.U && inst(31, 25) === 1.U
   res.xlrevLoop := isListReverseCustom && isXlrevLoopEncoding
   // The legacy custom-0 whole-parser state machine is intentionally unsupported.
   // Use the custom-2 word-fed numeric DFA operations decoded below.

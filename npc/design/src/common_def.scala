@@ -224,7 +224,6 @@ class DecodedInstInfo(implicit p : CPUParameters) extends InstMetaInfo with HasR
   // In-place list reversal is a blocking multi-cycle custom operation.
   val xlrevValid = Bool()
   val xlrevSingle = Bool()
-  val xlrevChain = Bool()
   val xlrevLoop = Bool()
 
   // Clipped matrix reduction is a blocking multi-cycle custom operation.

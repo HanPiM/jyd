@@ -106,8 +106,11 @@ $(NANO_CHECKOUT)/.pinned-$(NANO_COMMIT):
 	@if ! git -C "$(NANO_CHECKOUT)" cat-file -e "$(NANO_COMMIT)^{commit}" 2>/dev/null; then \
 		git -C "$(NANO_CHECKOUT)" fetch --depth 1 origin "$(NANO_COMMIT)"; \
 	fi
-	@git -C "$(NANO_CHECKOUT)" checkout --detach "$(NANO_COMMIT)"
+	@git -C "$(NANO_CHECKOUT)" checkout -f --detach "$(NANO_COMMIT)"
 	@test "$$(git -C "$(NANO_CHECKOUT)" rev-parse HEAD)" = "$(NANO_COMMIT)"
+	@if ! git -C "$(NANO_CHECKOUT)" apply --reverse --check $(ROOT_DIR)/patches/*.patch 2>/dev/null; then \
+		git -C "$(NANO_CHECKOUT)" apply $(ROOT_DIR)/patches/*.patch; \
+	fi
 	@touch "$@"
 
 .PHONY: fetch

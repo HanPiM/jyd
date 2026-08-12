@@ -4,7 +4,7 @@ set -euo pipefail
 
 usage() {
   cat <<'EOF'
-Usage: run_digital_twin_vivado.sh [impl|write_bitstream|bitstream] [--jobs N] [--ip-jobs N] [--coe-dir DIR] [--reset-runs] [--skip-pack] [--skip-vivado] [--user-approved-low-jobs]
+Usage: run_digital_twin_vivado.sh [impl|write_bitstream|bitstream] [--jobs N] [--ip-jobs N] [--coe-dir DIR] [--project-root DIR] [--expected-cpu-mhz N] [--flow-profile NAME] [--reset-runs] [--reuse-ip] [--skip-pack] [--skip-vivado] [--user-approved-low-jobs]
 
 Build npc pack-fpga, replace the Vivado project's imported pack-fpga directory,
 then run the digital_twin Vivado project to impl or write_bitstream.
@@ -18,6 +18,12 @@ Environment:
   VIVADO                Vivado executable to use. Defaults to "vivado".
   JOBS                  Vivado top-level jobs and max threads. Defaults to nproc.
   IP_JOBS               IP/OOC run concurrency and max threads. Defaults to 4.
+
+Isolated diagnostic flow:
+  --project-root DIR     Use DIR as the Vivado project instead of the in-tree project.
+  --expected-cpu-mhz N   Require the configured CPU clock to match N MHz.
+  --flow-profile NAME    project, quick, or default. Defaults to project.
+  --reuse-ip             Rebuild top synthesis while reusing completed IP/OOC products.
 
 Parallelism policy:
   Top-level jobs must be at least 16 and IP/OOC jobs must be at least 4.
@@ -45,10 +51,14 @@ mode=impl
 skip_pack=0
 skip_vivado=0
 reset_runs=0
+reuse_ip=0
 user_approved_low_jobs=0
 jobs="${JOBS:-$(nproc 2>/dev/null || echo 4)}"
 ip_jobs=""
 coe_dir=""
+project_root=""
+expected_cpu_mhz=""
+flow_profile=project
 synth_global_retiming="${VIVADO_SYNTH_GLOBAL_RETIMING:-0}"
 synth_keep_equivalent_registers="${VIVADO_SYNTH_KEEP_EQUIVALENT_REGISTERS:-0}"
 synth_flatten_hierarchy="${VIVADO_SYNTH_FLATTEN_HIERARCHY:-}"
@@ -91,8 +101,36 @@ while [ "$#" -gt 0 ]; do
       coe_dir="$2"
       shift 2
       ;;
+    --project-root)
+      if [ "$#" -lt 2 ]; then
+        echo "Missing value for --project-root" >&2
+        exit 2
+      fi
+      project_root="$2"
+      shift 2
+      ;;
+    --expected-cpu-mhz)
+      if [ "$#" -lt 2 ]; then
+        echo "Missing value for --expected-cpu-mhz" >&2
+        exit 2
+      fi
+      expected_cpu_mhz="$2"
+      shift 2
+      ;;
+    --flow-profile)
+      if [ "$#" -lt 2 ]; then
+        echo "Missing value for --flow-profile" >&2
+        exit 2
+      fi
+      flow_profile="$2"
+      shift 2
+      ;;
     --reset-runs)
       reset_runs=1
+      shift
+      ;;
+    --reuse-ip)
+      reuse_ip=1
       shift
       ;;
     --skip-pack)
@@ -128,6 +166,21 @@ if [ -z "$ip_jobs" ]; then
 fi
 if ! [[ "$ip_jobs" =~ ^[1-9][0-9]*$ ]]; then
   echo "--ip-jobs must be a positive integer: $ip_jobs" >&2
+  exit 2
+fi
+if [ -n "$expected_cpu_mhz" ] && ! awk -v value="$expected_cpu_mhz" 'BEGIN { exit !(value > 0) }'; then
+  echo "--expected-cpu-mhz must be positive: $expected_cpu_mhz" >&2
+  exit 2
+fi
+case "$flow_profile" in
+  project | quick | default) ;;
+  *)
+    echo "Unsupported --flow-profile: $flow_profile" >&2
+    exit 2
+    ;;
+esac
+if [ "$reset_runs" -eq 1 ] && [ "$reuse_ip" -eq 1 ]; then
+  echo "--reset-runs and --reuse-ip are mutually exclusive" >&2
   exit 2
 fi
 if [ "$jobs" -lt 16 ] || [ "$ip_jobs" -lt 4 ]; then
@@ -210,7 +263,14 @@ if [ "$mode" = write_bitstream ]; then
   done
 fi
 
-vivado_proj_home="$repo_root/jyd-vivado-proj"
+if [ -n "$project_root" ]; then
+  vivado_proj_home=$(CDPATH= cd -- "$project_root" 2>/dev/null && pwd) || {
+    echo "Vivado project directory does not exist: $project_root" >&2
+    exit 1
+  }
+else
+  vivado_proj_home="$repo_root/jyd-vivado-proj"
+fi
 vivado_project="$vivado_proj_home/digital_twin.xpr"
 pack_dst="$vivado_proj_home/digital_twin.srcs/sources_1/imports/pack-fpga"
 vivado_bin="${VIVADO:-vivado}"
@@ -278,23 +338,32 @@ cleanup() {
 trap cleanup EXIT
 
 cat >"$tcl_file" <<'EOF'
-if {$argc != 12} {
-  error "Expected Tcl args: <mode> <jobs> <ip-jobs> <expected-pack-fpga-dir> <reset-runs> <global-retiming> <keep-equivalent-registers> <flatten-hierarchy> <place-directive> <route-directive> <pre-route-physopt-directive> <post-route-physopt-directive>"
+if {$argc != 15} {
+  error "Expected Tcl args: <mode> <jobs> <ip-jobs> <expected-pack-fpga-dir> <reset-runs> <reuse-ip> <expected-cpu-mhz> <flow-profile> <global-retiming> <keep-equivalent-registers> <flatten-hierarchy> <place-directive> <route-directive> <pre-route-physopt-directive> <post-route-physopt-directive>"
 }
 set mode [lindex $argv 0]
 set jobs [lindex $argv 1]
 set ip_jobs [lindex $argv 2]
 set expected_pack_dir [file normalize [lindex $argv 3]]
 set reset_runs [lindex $argv 4]
-set synth_global_retiming [lindex $argv 5]
-set synth_keep_equivalent_registers [lindex $argv 6]
-set synth_flatten_hierarchy [lindex $argv 7]
-set place_directive [lindex $argv 8]
-set route_directive [lindex $argv 9]
-set pre_route_phys_opt_directive [lindex $argv 10]
-set post_route_phys_opt_directive [lindex $argv 11]
+set reuse_ip [lindex $argv 5]
+set expected_cpu_mhz [lindex $argv 6]
+set flow_profile [lindex $argv 7]
+set synth_global_retiming [lindex $argv 8]
+set synth_keep_equivalent_registers [lindex $argv 9]
+set synth_flatten_hierarchy [lindex $argv 10]
+set place_directive [lindex $argv 11]
+set route_directive [lindex $argv 12]
+set pre_route_phys_opt_directive [lindex $argv 13]
+set post_route_phys_opt_directive [lindex $argv 14]
 if {$reset_runs ni {0 1}} {
   error "reset-runs must be 0 or 1, got: $reset_runs"
+}
+if {$reuse_ip ni {0 1}} {
+  error "reuse-ip must be 0 or 1, got: $reuse_ip"
+}
+if {$flow_profile ni {project quick default}} {
+  error "unsupported flow profile: $flow_profile"
 }
 if {$synth_global_retiming ni {0 1}} {
   error "global-retiming must be 0 or 1, got: $synth_global_retiming"
@@ -423,6 +492,10 @@ puts [format "Configured CPU clock: requested=%.6f MHz actual=%.6f MHz error=%.6
 if {$configured_freq_error_mhz > 0.001} {
   error [format "CPU clock requested/actual mismatch exceeds 1 kHz: %.6f MHz" $configured_freq_error_mhz]
 }
+if {$expected_cpu_mhz ne "" && abs(double($expected_cpu_mhz) - $configured_cpu_mhz) > 0.001} {
+  error [format "Configured CPU clock does not match expected frequency: expected=%.6f actual=%.6f MHz" \
+    $expected_cpu_mhz $configured_cpu_mhz]
+}
 if {$reset_runs} {
   puts "Resetting and regenerating [llength $project_ips] project IP output products"
   reset_target all $project_ips
@@ -499,7 +572,16 @@ if {[llength [get_runs impl_1]] == 0} {
 }
 
 set impl_run [get_runs impl_1]
-if {$post_route_phys_opt_directive eq "Disabled"} {
+if {$flow_profile eq "quick"} {
+  set_property STRATEGY Flow_Quick $impl_run
+  set_property STEPS.POST_ROUTE_PHYS_OPT_DESIGN.IS_ENABLED true $impl_run
+  set_property STEPS.POST_ROUTE_PHYS_OPT_DESIGN.ARGS.DIRECTIVE ExploreWithAggressiveHoldFix $impl_run
+  puts "impl_1 profile: quick; strategy=[get_property STRATEGY $impl_run]; post-route physopt=ExploreWithAggressiveHoldFix"
+} elseif {$flow_profile eq "default"} {
+  set_property STRATEGY {Vivado Implementation Defaults} $impl_run
+  set_property STEPS.POST_ROUTE_PHYS_OPT_DESIGN.IS_ENABLED false $impl_run
+  puts "impl_1 profile: default; strategy=[get_property STRATEGY $impl_run]; post-route physopt disabled"
+} elseif {$post_route_phys_opt_directive eq "Disabled"} {
   set_property STEPS.POST_ROUTE_PHYS_OPT_DESIGN.IS_ENABLED false $impl_run
   puts "impl_1 post-route physopt: disabled"
 } else {
@@ -562,7 +644,7 @@ if {$reset_runs} {
   puts "Resetting synth_1 and dependent impl_1 for a clean rebuild"
   reset_run synth_1
   launch_runs synth_1 -jobs $jobs
-} elseif {$mode eq "impl"} {
+} elseif {$mode eq "impl" || $reuse_ip} {
   # Routine RTL iterations reuse IP/OOC output products, but the top-level
   # checkpoint must always be rebuilt from the freshly packaged sources.
   puts "Resetting top-level synth_1 and dependent impl_1; reusing IP/OOC checkpoints"
@@ -655,7 +737,8 @@ ip_config_hash() {
 ip_config_hash_before=$(ip_config_hash)
 set +e
 "$vivado_bin" -mode batch -source "$tcl_file" -tclargs \
-  "$mode" "$jobs" "$ip_jobs" "$pack_dst" "$reset_runs" \
+  "$mode" "$jobs" "$ip_jobs" "$pack_dst" "$reset_runs" "$reuse_ip" \
+  "$expected_cpu_mhz" "$flow_profile" \
   "$synth_global_retiming" "$synth_keep_equivalent_registers" \
   "$synth_flatten_hierarchy" "$place_directive" "$route_directive" \
   "$pre_route_phys_opt_directive" "$post_route_phys_opt_directive"
@@ -690,7 +773,7 @@ fi
 if [ "$mode" = write_bitstream ]; then
   impl_dir="$vivado_proj_home/digital_twin.runs/impl_1"
   raw_bit="$impl_dir/top.bit"
-  if [ "$post_route_phys_opt_directive" = Disabled ]; then
+  if [ "$flow_profile" = default ] || [ "$post_route_phys_opt_directive" = Disabled ]; then
     routed_dcp="$impl_dir/top_routed.dcp"
   else
     routed_dcp="$impl_dir/top_postroute_physopt.dcp"

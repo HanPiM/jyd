@@ -465,7 +465,8 @@ execute_profile() {
     --project-root "$project_dir" \
     --expected-cpu-mhz "$PROFILE_CPU_MHZ" \
     --flow-profile "$PROFILE_FLOW" \
-    --jobs "$jobs" --ip-jobs "$ip_jobs" --reuse-ip --skip-pack 2>&1 | tee "$runner_log"
+    --coe-dir "$coe_dir" \
+    --jobs "$jobs" --ip-jobs "$ip_jobs" --reset-runs --skip-pack 2>&1 | tee "$runner_log"
   vivado_status=${PIPESTATUS[0]}
   set -e
   flow_end_ns=$(date +%s%N)

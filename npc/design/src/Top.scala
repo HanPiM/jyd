@@ -350,6 +350,7 @@ class CPUCore(
   dcache.io.queryIndex := exu.io.dcache.queryIndex
   dcache.io.queryTag   := exu.io.dcache.queryTag
   exu.io.dcache.hit    := dcache.io.hit && p.enableDCache.B
+  exu.io.dcache.readData := dcache.io.readData
   exu.io.dcache.lateReadData := dcache.io.lateReadData
   val dcacheStorePortMutation = exu.io.dcache.storeUpdate && p.enableDCache.B
   val dcacheStoreMutation = dcacheStorePortMutation || (exu.io.dcache.fullUpdate && p.enableDCache.B)

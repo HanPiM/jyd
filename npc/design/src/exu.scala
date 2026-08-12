@@ -92,6 +92,7 @@ class EXU(
 
     val dcache = new Bundle {
       val hit        = Input(Bool())
+      val readData   = Input(Types.UWord)
       val lateReadData = Input(Types.UWord)
       val storeEpoch = Input(Bool())
       val queryIndex = Output(UInt(10.W))
@@ -155,6 +156,10 @@ class EXU(
   val isListReverseStep = dinst.info.listReverseStep
   val isListReverseLoop = dinst.info.listReverseLoop
   val listReverseLoopTaken = RegInit(false.B)
+  val listReversePrefetchValid = RegInit(false.B)
+  val listReversePrefetchHit = Reg(Bool())
+  val listReversePrefetchAddress = Reg(Types.UWord)
+  val listReversePrefetchData = Reg(Types.UWord)
 
   object XmsumState extends ChiselEnum {
     val idle, request, response, finalizeResult, done = Value
@@ -365,7 +370,10 @@ class EXU(
     // Capture the asynchronous cache value for every list-reversal entry. Whether it
     // is consumed is decided by the state transition, keeping init decode out
     // of this register's timing-critical write-enable cone.
-    listReverseNext := io.dcache.lateReadData
+    val usePrefetch = isListReverseLoop && listReversePrefetchValid &&
+      listReversePrefetchAddress === listReverseActiveCurrent
+    listReverseNext := Mux(usePrefetch, listReversePrefetchData, io.dcache.lateReadData)
+    listReversePrefetchValid := false.B
     listReverseStepStoreCommitted := false.B
     listReverseCurrent := listReverseActiveCurrent
     listReversePrevious := Mux(isListReverseLoop, listReverseChainPrevious, reg_v2)
@@ -376,7 +384,7 @@ class EXU(
       listReverseResult := Mux(isListReverseLoop, listReverseChainPrevious, 0.U)
       listReverseLoopTaken := false.B
       listReverseState := ListReverseState.done
-    }.elsewhen(isListReverseStep && io.dcache.hit) {
+    }.elsewhen(isListReverseStep && Mux(usePrefetch, listReversePrefetchHit, io.dcache.hit)) {
       listReverseState := ListReverseState.storeRequest
     }.otherwise {
       listReverseState := ListReverseState.loadRequest
@@ -388,11 +396,19 @@ class EXU(
     listReverseState := ListReverseState.storeRequest
   }.elsewhen(listReverseState === ListReverseState.storeRequest && io.memReq.fire) {
     listReverseStepStoreCommitted := true.B
+    listReversePrefetchAddress := listReverseNext
+    listReversePrefetchHit := Mux(listReverseNext === listReverseCurrent, true.B, io.dcache.hit)
     val loopTaken = isListReverseLoop && listReverseNext =/= 0.U
     listReverseResult := Mux(isListReverseLoop && !loopTaken, listReverseCurrent, listReverseNext)
     listReverseLoopTaken := loopTaken
     listReverseState := ListReverseState.done
   }.elsewhen(listReverseState === ListReverseState.done && io.out.fire) {
+    listReversePrefetchValid := listReverseNext =/= 0.U
+    listReversePrefetchData := Mux(
+      listReverseNext === listReverseCurrent,
+      listReversePrevious,
+      io.dcache.readData
+    )
     listReverseState := ListReverseState.idle
   }
 
@@ -462,12 +478,14 @@ class EXU(
   val lateOtherOperandCaptured = RegInit(false.B)
   val capturedLateOtherRegV1 = Reg(Types.UWord)
   val capturedLateOtherRegV2 = Reg(Types.UWord)
+  when(hasLateLoadOperand && !lateOtherOperandCaptured) {
+    capturedLateOtherRegV1 := branchRegV1
+    capturedLateOtherRegV2 := branchRegV2
+  }
   when(!io.in.valid || io.in.fire) {
     lateOtherOperandCaptured := false.B
   }.elsewhen(hasLateLoadOperand && !lateOtherOperandCaptured) {
     lateOtherOperandCaptured := true.B
-    capturedLateOtherRegV1 := branchRegV1
-    capturedLateOtherRegV2 := branchRegV2
   }
   val stableLateOtherRegV1 = Mux(lateOtherOperandCaptured, capturedLateOtherRegV1, branchRegV1)
   val stableLateOtherRegV2 = Mux(lateOtherOperandCaptured, capturedLateOtherRegV2, branchRegV2)
@@ -778,7 +796,8 @@ class EXU(
   // The loop always consumes the preceding list-reversal result: first the init
   // result, then the result of its previous self-iteration. The done-boundary
   // register keeps that private recurrence out of the asynchronous tag RAM.
-  val listReverseQueryAddress = Mux(isListReverseLoop, listReverseLoopAddress, reg_v1)
+  val listReverseEntryAddress = Mux(isListReverseLoop, listReverseLoopAddress, reg_v1)
+  val listReverseQueryAddress = Mux(listReverseStoreRequest, listReverseNext, listReverseEntryAddress)
   val dcacheQueryAddr = Mux(isListReverseStep, listReverseQueryAddress, reg1AddImm)
   io.dcache.queryIndex := dcacheQueryAddr(11, 2)
   io.dcache.queryTag   := dcacheQueryAddr(17, 11)

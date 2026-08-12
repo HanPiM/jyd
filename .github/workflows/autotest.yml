@@ -6,6 +6,8 @@ on:
     paths:
       - 'npc/**'
       - 'patch/**'
+      - 'abstract-machine/**'
+      - 'jyd-tests/**'
       - '.github/**'
   pull_request:
     branches: [main]
@@ -93,7 +95,32 @@ jobs:
         run: |
           make ARCH=riscv32-jyd -C ${{ matrix.test-set.dir }} run ${{ matrix.test-set.args }}
 
-  rt-thread:
+  rtthread-nano:
+    needs: setup
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Common operations
+        uses: ./.github/actions/common
+        with:
+          MAKEFLAGS: ${{ needs.setup.outputs.MAKEFLAGS }}
+
+      - name: Build NPC sim
+        run: |
+          make ARCH=riscv32-jyd -C npc
+
+      - name: Build rtthread-nano image
+        run: |
+          make ARCH=riscv32-jyd -C jyd-tests/rtthread-nano
+
+      - name: rtthread-nano
+        run: |
+          python $MONITOR_PY make ARCH=riscv32-jyd -C jyd-tests/rtthread-nano run
+
+  coremark:
     needs: setup
     runs-on: ubuntu-24.04
     steps:
@@ -107,11 +134,12 @@ jobs:
           MAKEFLAGS: ${{ needs.setup.outputs.MAKEFLAGS }}
 
       - name: Install dependency
-        run: sudo apt install -y scons
+        run: sudo apt install -y gcc-13-plugin-dev libgmp-dev
 
-      - name: rt-thread
+      - name: Build NPC sim
         run: |
-          cd rt-thread-am/bsp/abstract-machine
-          make ARCH=riscv32-jyd init
-          KEY=$(head -c 5 /dev/urandom | base32)
-          python $MONITOR_PY --good=$KEY make ARCH=riscv32-jyd run
+          make ARCH=riscv32-jyd -C npc
+
+      - name: coremark
+        run: |
+          make ARCH=riscv32-jyd -C jyd-tests/coremark-official HOST_CXX=g++-13 run VSIM_print_fullperf=1

@@ -75,15 +75,23 @@ COREMARK_MAIN_OBJ = $(DST_DIR)/src/core_main.o
 COREMARK_FP12_OBJ = $(DST_DIR)/accel/float_dump.o
 
 HOST_CXX ?= g++
+# Some distro cross GCC packages (e.g. Ubuntu gcc-13-riscv64-linux-gnu) do not
+# ship the plugin headers.  Fall back to the host compiler's plugin dir, which
+# is ABI-compatible as long as both compilers share the same base version.
 GCC_PLUGIN_DIR := $(shell $(CC) -print-file-name=plugin)
-GCC_PLUGIN_GMP_INCLUDE ?= /home/hanpi/jyd-vivado-projs/jyd-vivado-proj-regional/digital_twin.gen/sources_1/ip/fp_add_sub_test/cmodel/floating_point_v7_1_bitacc_cmodel_lin64
+ifeq ($(wildcard $(GCC_PLUGIN_DIR)/include/gcc-plugin.h),)
+GCC_PLUGIN_DIR := $(shell $(HOST_CXX) -print-file-name=plugin)
+endif
+# Only needed when the plugin headers' <gmp.h> does not resolve through the
+# default include search path; set it on the make command line in that case.
+GCC_PLUGIN_GMP_INCLUDE ?=
 COREMARK_ACCEL_PLUGIN := $(CURDIR)/build/tools/xaccel_plugin.so
 
 $(COREMARK_ACCEL_PLUGIN): accel/xaccel_plugin.cc
 	@mkdir -p $(dir $@)
 	$(HOST_CXX) -std=gnu++17 -fPIC -shared -fno-rtti -fno-exceptions \
 		-I$(GCC_PLUGIN_DIR)/include \
-		-I$(GCC_PLUGIN_GMP_INCLUDE) \
+		$(if $(GCC_PLUGIN_GMP_INCLUDE),-I$(GCC_PLUGIN_GMP_INCLUDE),) \
 		-o $@ $<
 
 COREMARK_FLAGS_HEADER := $(BUILD_DIR)/generated/compiler_flags.h

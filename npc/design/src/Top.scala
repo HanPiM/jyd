@@ -419,6 +419,7 @@ class CPUCore(
     ExtLoadData(lsu.io.in.bits.lateLoadData, lsu.io.in.bits.destAddr(1, 0), lsu.io.in.bits.func3t)
   idu.io.wrBackInfo.exu := exu.io.fwd
   idu.io.lateLoadProducer := exu.io.lateLoadProducer
+  exu.io.lateBranchPreview := idu.io.lateBranchPreview
   idu.io.wrBackInfo.lsu := lsuFwdInfo
   idu.io.wrBackInfo.wbu := ExtractFwdInfoFromWrBack(wbu.io.in, wbu.io.memResp)
   exu.io.previousStageFwd := lsuFastFwdInfo

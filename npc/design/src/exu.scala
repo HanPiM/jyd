@@ -80,6 +80,7 @@ class EXU(
 
     val fwd = Output(new WrBackForwardInfo)
     val lateLoadProducer = Output(new LateLoadProducerInfo)
+    val lateBranchPreview = Input(new LateBranchPreview)
     val lateLoadLSU = Input(new LateLoadSourceInfo)
     val lateLoadWBU = Input(new LateLoadSourceInfo)
     val lateLoadWBURawData = Input(Types.UWord)
@@ -274,29 +275,27 @@ class EXU(
   val xdfaWordAddress = Reg(Types.UWord)
   val xdfaWordStepResult = Reg(Types.UWord)
   val xdfaWordResponseData = Reg(Types.UWord)
+  val xdfaWordAvailable = Reg(UInt(3.W))
   val xdfaWordIntermediate = Reg(UInt(16.W))
   val xdfaCommitMask = Reg(UInt(8.W))
   val xdfaCommitFinalState = Reg(UInt(3.W))
   val isNumericDfaStep = isNumericDfa && func3t === 5.U
   val isNumericDfaHistogramStep = isNumericDfaStep && func7t === 1.U
-  val xdfaWordOffset = xdfaWordAddress(1, 0)
   val xdfaWordLow = Module(new NumericTokenDfa2ByteStep)
   val xdfaWordHigh = Module(new NumericTokenDfa2ByteStep)
-  val xdfaWord4ShiftedData = xdfaWordResponseData >> (xdfaWordOffset << 3)
-  val xdfaWordAvailable = 4.U(3.W) - xdfaWordOffset
   xdfaWordLow.io.state := xdfaWordStartState
   xdfaWordLow.io.mask := 0.U
   xdfaWordLow.io.consumed := 0.U
   xdfaWordLow.io.active := true.B
   xdfaWordLow.io.stopped := false.B
-  xdfaWordLow.io.symbols := xdfaWord4ShiftedData(15, 0)
+  xdfaWordLow.io.symbols := xdfaWordResponseData(15, 0)
   xdfaWordLow.io.available := xdfaWordAvailable
   xdfaWordHigh.io.state := xdfaWordIntermediate(2, 0)
   xdfaWordHigh.io.consumed := xdfaWordIntermediate(5, 3)
   xdfaWordHigh.io.active := xdfaWordIntermediate(6)
   xdfaWordHigh.io.stopped := xdfaWordIntermediate(7)
   xdfaWordHigh.io.mask := xdfaWordIntermediate(15, 8)
-  xdfaWordHigh.io.symbols := xdfaWord4ShiftedData(31, 16)
+  xdfaWordHigh.io.symbols := xdfaWordResponseData(31, 16)
   xdfaWordHigh.io.available := Mux(xdfaWordAvailable > 2.U, xdfaWordAvailable - 2.U, 0.U)
   val xdfaCounterRead = Mux(func7t === 1.U, xdfaFinalCounters(reg_v1(2, 0)), xdfaCounters(reg_v1(2, 0)))
   val xdfaWordResult = Mux(func3t === 2.U, xdfaCounterRead, Mux(isNumericDfaStep, xdfaWordStepResult, 0.U))
@@ -308,7 +307,9 @@ class EXU(
   }.elsewhen(xdfaWordState === NumericDfaState.request && io.memReq.fire) {
     xdfaWordState := NumericDfaState.response
   }.elsewhen(xdfaWordState === NumericDfaState.response && io.memResp.valid) {
-    xdfaWordResponseData := io.memResp.bits
+    // Terminate address-dependent alignment at the response register boundary.
+    xdfaWordResponseData := io.memResp.bits >> (xdfaWordAddress(1, 0) << 3)
+    xdfaWordAvailable := 4.U - xdfaWordAddress(1, 0)
     xdfaWordState := NumericDfaState.processLow
   }.elsewhen(xdfaWordState === NumericDfaState.processLow) {
     xdfaWordIntermediate := xdfaWordLow.io.result
@@ -627,7 +628,26 @@ class EXU(
     )
   )
   val useRegisteredRawLoadEqual = hasLateLoadOperand && io.lateLoadLSU.dataValid
-  val isEqual     = Mux(useRegisteredRawLoadEqual, lsuLateEqual, extendedLoadEqual)
+  val previewRawLoadEqual = rawLoadEqual(
+    io.dcache.lateReadData,
+    reg1AddImm(1, 0),
+    func3t,
+    io.lateBranchPreview.otherOperand
+  )
+  val previewLoadWidthSupported = func3t === "b000".U || func3t === "b001".U || func3t === "b010".U ||
+    func3t === "b100".U || func3t === "b101".U
+  val previewLoadAddressAligned =
+    Mux(func3t(1), reg1AddImm(1, 0) === 0.U, Mux(func3t(0), !reg1AddImm(0), true.B))
+  val lateBranchPreviewValid =
+    io.in.valid && isTypLoad && previewLoadWidthSupported && previewLoadAddressAligned &&
+      reg1AddImm(21, 20) === "b01".U && io.dcache.hit && io.lateBranchPreview.valid
+  val lateBranchEqualValid = RegNext(lateBranchPreviewValid, false.B)
+  val lateBranchEqual = RegEnable(
+    Mux(io.lateBranchPreview.bothLate, true.B, previewRawLoadEqual),
+    lateBranchPreviewValid
+  )
+  val isEqual     = Mux(lateBranchEqualValid, lateBranchEqual,
+    Mux(useRegisteredRawLoadEqual, lsuLateEqual, extendedLoadEqual))
   val isLessThan  = branchRegV1.asSInt < branchRegV2.asSInt
   val isLessThanU = branchRegV1 < branchRegV2
 
@@ -662,7 +682,8 @@ class EXU(
   // byte/half loads before this register lets synthesis map the replicated
   // sign bit onto slow synchronous-set pins; registered offset/width metadata
   // performs the extension in C1 instead.
-  lsuInfo.lateLoadData := io.dcache.lateReadData
+  // Accelerator cache queries must not populate the ordinary load-result lane.
+  lsuInfo.lateLoadData := Mux(lsuInfo.cacheableLoad, io.dcache.lateReadData, 0.U)
   lsuInfo.dcacheStoreEpoch := io.dcache.storeEpoch
 
   val snpc = dinst.info.staticNextPCOrCSRTarget

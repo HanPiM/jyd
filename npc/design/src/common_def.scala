@@ -207,6 +207,7 @@ class DecodedInstInfo(implicit p : CPUParameters) extends InstMetaInfo with HasR
   val fastBranchRs1 = UInt(8.W)
   val fastBranchRs2 = UInt(8.W)
   val fastStoreRs2  = UInt(8.W)
+  val adjacentFastBranch = Bool()
 
   val resultKind = ResultKind()
 

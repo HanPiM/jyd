@@ -431,6 +431,7 @@ class IDU(
   res.fastBranchRs1       := Fill(8, fastBranchRs1Token) ^ res.reg1(7, 0)
   res.fastBranchRs2       := Fill(8, fastBranchRs2Token) ^ res.reg2(7, 0)
   res.fastStoreRs2        := Fill(8, fastStoreRs2Token) ^ res.reg2(7, 0)
+  res.adjacentFastBranch  := fastBranchRs1Token || fastBranchRs2Token
   res.csrReadData         := io.csrRead.data
 
   val addressExuConflict =

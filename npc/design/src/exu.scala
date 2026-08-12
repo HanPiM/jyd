@@ -154,7 +154,6 @@ class EXU(
   val listReversePrefetchHit = Reg(Bool())
   val listReversePrefetchData = Reg(Types.UWord)
   val listReverseLookupHit = Reg(Bool())
-  val listReverseLookupData = Reg(Types.UWord)
 
   object XmsumState extends ChiselEnum {
     val idle, request, response, finalizeResult, done = Value
@@ -386,10 +385,9 @@ class EXU(
     }
   }.elsewhen(listReverseState === ListReverseState.lookup) {
     listReverseLookupHit := io.dcache.hit
-    listReverseLookupData := io.dcache.lateReadData
+    listReverseNext := io.dcache.lateReadData
     listReverseState := ListReverseState.lookupResolve
   }.elsewhen(listReverseState === ListReverseState.lookupResolve) {
-    listReverseNext := listReverseLookupData
     listReverseState := Mux(listReverseLookupHit, ListReverseState.storeRequest, ListReverseState.loadRequest)
   }.elsewhen(listReverseState === ListReverseState.loadRequest && io.memReq.fire) {
     listReverseState := ListReverseState.loadResponse
@@ -883,8 +881,7 @@ class EXU(
   io.btbUpdateEn := isTypBranch || isTypJAL || isTypJALR || listReverseLoopBranch
   val lateEqualityBranchResolve =
     isTypBranch && (dinst.info.is_beq || dinst.info.is_bne) && hasLateLoadOperand && useRegisteredRawLoadEqual
-  val adjacentFastBranchResolve =
-    isTypBranch && (fastBranchRs1Groups.orR || fastBranchRs2Groups.orR)
+  val adjacentFastBranchResolve = dinst.info.adjacentFastBranch
   val registeredBranchResolve = lateEqualityBranchResolve || adjacentFastBranchResolve
   lsuInfo.lateBranchResolve := exuResultValid && registeredBranchResolve
   lsuInfo.lateBranchMismatch := takeBranch ^ dinst.predTake

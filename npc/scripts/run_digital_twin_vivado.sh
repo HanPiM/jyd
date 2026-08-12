@@ -4,7 +4,7 @@ set -euo pipefail
 
 usage() {
   cat <<'EOF'
-Usage: run_digital_twin_vivado.sh [impl|write_bitstream|bitstream] [--jobs N] [--ip-jobs N] [--coe-dir DIR] [--isolated-profile NAME] [--archive-dir DIR] [--prepare-only] [--keep-workdir] [--project-root DIR] [--expected-cpu-mhz N] [--flow-profile NAME] [--reset-runs] [--reuse-ip] [--skip-pack] [--skip-vivado] [--user-approved-low-jobs]
+Usage: run_digital_twin_vivado.sh [impl|write_bitstream|bitstream] [--jobs N] [--ip-jobs N] [--coe-dir DIR] [--isolated-profile NAME] [--archive-dir DIR] [--prepare-only] [--keep-workdir] [--project-root DIR] [--expected-cpu-mhz N] [--flow-profile NAME] [--reset-runs] [--reuse-ip] [--source-manifest-only] [--skip-pack] [--skip-vivado] [--user-approved-low-jobs]
 
 Build npc pack-fpga, replace the Vivado project's imported pack-fpga directory,
 then run the digital_twin Vivado project to impl or write_bitstream.
@@ -29,6 +29,7 @@ Isolated diagnostic flow:
   --expected-cpu-mhz N   Require the configured CPU clock to match N MHz.
   --flow-profile NAME    project, quick, or default. Defaults to project.
   --reuse-ip             Rebuild top synthesis while reusing completed IP/OOC products.
+  --source-manifest-only Refresh and validate synthesis sources, then stop before runs.
 
 Parallelism policy:
   Top-level jobs must be at least 16 and IP/OOC jobs must be at least 4.
@@ -68,6 +69,7 @@ isolated_profile=""
 archive_dir=""
 keep_workdir=0
 prepare_only=0
+source_manifest_only=0
 synth_global_retiming="${VIVADO_SYNTH_GLOBAL_RETIMING:-0}"
 synth_keep_equivalent_registers="${VIVADO_SYNTH_KEEP_EQUIVALENT_REGISTERS:-0}"
 synth_flatten_hierarchy="${VIVADO_SYNTH_FLATTEN_HIERARCHY:-}"
@@ -159,6 +161,10 @@ while [ "$#" -gt 0 ]; do
       ;;
     --reuse-ip)
       reuse_ip=1
+      shift
+      ;;
+    --source-manifest-only)
+      source_manifest_only=1
       shift
       ;;
     --skip-pack)
@@ -539,6 +545,7 @@ while IFS= read -r -d '' xci_file; do
 done < <(find "$vivado_proj_home/digital_twin.srcs/sources_1/ip" -type f -name '*.xci' -print0)
 mul16_xci="$vivado_proj_home/digital_twin.srcs/sources_1/ip/mult_gen_mul16_fast/mult_gen_mul16_fast.xci"
 mul16_xci_backup=""
+stale_pack_placeholder_list=""
 if [ -f "$mul16_xci" ]; then
   mul16_xci_backup=$(mktemp "${TMPDIR:-/tmp}/mult_gen_mul16_fast.XXXXXX.xci")
   cp -- "$mul16_xci" "$mul16_xci_backup"
@@ -551,12 +558,44 @@ cleanup() {
   rm -f -- "${mul16_xci_backup:-}"
   rm -rf -- "${xci_backup_dir:-}"
   rm -f -- "$tcl_file"
+  if [ -n "${stale_pack_placeholder_list:-}" ] && [ -f "$stale_pack_placeholder_list" ]; then
+    while IFS= read -r stale_pack_placeholder; do
+      rm -f -- "$stale_pack_placeholder"
+    done <"$stale_pack_placeholder_list"
+    rm -f -- "$stale_pack_placeholder_list"
+  fi
 }
 trap cleanup EXIT
 
+# A copied XPR records the original project directory and Vivado searches that
+# directory when a registered source has disappeared. Keep project opening
+# local by temporarily materializing only obsolete pack entries. Tcl removes
+# every pack entry and rebuilds the file-set before compile order is evaluated.
+if ! command -v xmllint >/dev/null 2>&1; then
+  echo "xmllint is required to validate Vivado project source paths" >&2
+  exit 1
+fi
+stale_pack_placeholder_list=$(mktemp "${TMPDIR:-/tmp}/digital_twin_stale_pack.XXXXXX")
+xpr_pack_xpath='//*[local-name()="File"][contains(@Path,"$PSRCDIR/sources_1/imports/pack-fpga/")]'
+xpr_pack_count=$(xmllint --xpath "count($xpr_pack_xpath)" "$vivado_project")
+for ((xpr_pack_index = 1; xpr_pack_index <= xpr_pack_count; xpr_pack_index++)); do
+  xpr_source_path=$(xmllint --xpath "string(($xpr_pack_xpath)[$xpr_pack_index]/@Path)" "$vivado_project")
+  xpr_source_suffix=${xpr_source_path#\$PSRCDIR}
+  if [ "$xpr_source_suffix" = "$xpr_source_path" ] || [[ "$xpr_source_suffix" != /sources_1/imports/pack-fpga/* ]]; then
+    echo "Unsafe pack-fpga source path in XPR: $xpr_source_path" >&2
+    exit 1
+  fi
+  xpr_local_source="$vivado_proj_home/digital_twin.srcs$xpr_source_suffix"
+  if [ ! -e "$xpr_local_source" ]; then
+    mkdir -p -- "$(dirname -- "$xpr_local_source")"
+    : >"$xpr_local_source"
+    printf '%s\n' "$xpr_local_source" >>"$stale_pack_placeholder_list"
+  fi
+done
+
 cat >"$tcl_file" <<'EOF'
-if {$argc != 15} {
-  error "Expected Tcl args: <mode> <jobs> <ip-jobs> <expected-pack-fpga-dir> <reset-runs> <reuse-ip> <expected-cpu-mhz> <flow-profile> <global-retiming> <keep-equivalent-registers> <flatten-hierarchy> <place-directive> <route-directive> <pre-route-physopt-directive> <post-route-physopt-directive>"
+if {$argc != 16} {
+  error "Expected Tcl args: <mode> <jobs> <ip-jobs> <expected-pack-fpga-dir> <reset-runs> <reuse-ip> <expected-cpu-mhz> <flow-profile> <global-retiming> <keep-equivalent-registers> <flatten-hierarchy> <place-directive> <route-directive> <pre-route-physopt-directive> <post-route-physopt-directive> <source-manifest-only>"
 }
 set mode [lindex $argv 0]
 set jobs [lindex $argv 1]
@@ -573,11 +612,15 @@ set place_directive [lindex $argv 11]
 set route_directive [lindex $argv 12]
 set pre_route_phys_opt_directive [lindex $argv 13]
 set post_route_phys_opt_directive [lindex $argv 14]
+set source_manifest_only [lindex $argv 15]
 if {$reset_runs ni {0 1}} {
   error "reset-runs must be 0 or 1, got: $reset_runs"
 }
 if {$reuse_ip ni {0 1}} {
   error "reuse-ip must be 0 or 1, got: $reuse_ip"
+}
+if {$source_manifest_only ni {0 1}} {
+  error "source-manifest-only must be 0 or 1, got: $source_manifest_only"
 }
 if {$flow_profile ni {project quick default}} {
   error "unsupported flow profile: $flow_profile"
@@ -659,20 +702,51 @@ update_compile_order -fileset sources_1
 puts "Vivado launch_runs jobs: $jobs"
 puts "Vivado IP/OOC max threads: [get_param general.maxThreads]"
 
-set pack_file_count 0
-foreach source_file [get_files -all] {
+set expected_pack_files [list]
+foreach pack_subdir {cpu fpgawrap} {
+  foreach pattern {*.v *.sv} {
+    foreach source_file [glob -nocomplain -directory "${expected_pack_dir}/${pack_subdir}" $pattern] {
+      lappend expected_pack_files [file normalize $source_file]
+    }
+  }
+}
+set expected_pack_files [lsort -unique $expected_pack_files]
+set registered_pack_files [list]
+foreach source_file [get_files -of_objects [get_filesets sources_1]] {
   set resolved_file [file normalize $source_file]
   if {[string first "/pack-fpga/" $resolved_file] >= 0} {
-    incr pack_file_count
+    lappend registered_pack_files $resolved_file
     if {[string first "${expected_pack_dir}/" $resolved_file] != 0} {
       error "pack-fpga source escaped the in-tree project: $resolved_file (expected under $expected_pack_dir)"
     }
   }
 }
-if {$pack_file_count == 0} {
+set registered_pack_files [lsort -unique $registered_pack_files]
+if {[llength $registered_pack_files] == 0} {
   error "No pack-fpga sources were resolved from the Vivado project"
 }
-puts "Verified $pack_file_count pack-fpga sources under: $expected_pack_dir"
+if {$registered_pack_files ne $expected_pack_files} {
+  error "Vivado pack-fpga file-set differs from packaged RTL: registered=$registered_pack_files expected=$expected_pack_files"
+}
+
+set expected_project_root [file normalize [pwd]]
+set synthesis_manifest [get_files -compile_order sources -used_in synthesis]
+foreach source_file $synthesis_manifest {
+  set resolved_file [file normalize $source_file]
+  if {![file exists $resolved_file]} {
+    error "Synthesis source does not exist after file-set refresh: $resolved_file"
+  }
+  if {[string first "${expected_project_root}/" $resolved_file] != 0} {
+    error "Synthesis source escaped the active project: $resolved_file (expected under $expected_project_root)"
+  }
+}
+puts "Verified [llength $registered_pack_files] exact pack-fpga sources under: $expected_pack_dir"
+puts "Verified [llength $synthesis_manifest] synthesis compile-order sources under: $expected_project_root"
+if {$source_manifest_only} {
+  puts "SOURCE_MANIFEST_VALID=1"
+  close_project
+  exit 0
+}
 
 # Generated IP output products and OOC checkpoints are ignored build
 # artifacts. A clean run rebuilds them; routine implementation iterations
@@ -1050,7 +1124,7 @@ set +e
   "$expected_cpu_mhz" "$flow_profile" \
   "$synth_global_retiming" "$synth_keep_equivalent_registers" \
   "$synth_flatten_hierarchy" "$place_directive" "$route_directive" \
-  "$pre_route_phys_opt_directive" "$post_route_phys_opt_directive"
+  "$pre_route_phys_opt_directive" "$post_route_phys_opt_directive" "$source_manifest_only"
 vivado_status=$?
 set -e
 

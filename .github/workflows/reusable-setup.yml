@@ -80,7 +80,7 @@ jobs:
             MILL_VERSION=`cat npc/.mill-version`
           fi
           echo "Downloading mill with version $MILL_VERSION"
-          sh -c "curl -L https://github.com/com-lihaoyi/mill/releases/download/$MILL_VERSION/$MILL_VERSION > ~/.local/bin/mill && chmod +x ~/.local/bin/mill"
+          sh -c "curl --retry 5 --retry-all-errors --retry-delay 2 -L https://github.com/com-lihaoyi/mill/releases/download/$MILL_VERSION/$MILL_VERSION > ~/.local/bin/mill && chmod +x ~/.local/bin/mill"
 
       - name: Install LLVM toolchain
         run: |

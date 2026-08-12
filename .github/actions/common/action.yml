@@ -47,7 +47,7 @@ runs:
           MILL_VERSION=`cat npc/.mill-version`
         fi
         echo "Downloading mill with version $MILL_VERSION"
-        curl -L "https://github.com/com-lihaoyi/mill/releases/download/$MILL_VERSION/$MILL_VERSION" -o ~/.local/bin/mill
+        curl --retry 5 --retry-all-errors --retry-delay 2 -L "https://github.com/com-lihaoyi/mill/releases/download/$MILL_VERSION/$MILL_VERSION" -o ~/.local/bin/mill
         chmod +x ~/.local/bin/mill
         echo "$HOME/.local/bin" >> $GITHUB_PATH
 

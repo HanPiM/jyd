@@ -220,144 +220,9 @@ if [ "$profile" = auto ]; then
   fi
 fi
 
-echo "# Building current pack-fpga once for the frozen input"
-make -C "$npc_dir" pack-fpga
-pack_src="$npc_dir/build/pack-fpga"
-[ -d "$pack_src" ] || die "pack-fpga output not found: $pack_src"
-
 run_stamp=$(date -u +%Y%m%dT%H%M%SZ)
 batch_archive="$archive_root/digital-twin-board-perf-$run_stamp"
 mkdir -p -- "$batch_archive"
-
-copy_project_inputs() {
-  local project_dir="$1"
-  local source_path relative_path target_path
-
-  mkdir -p -- "$project_dir"
-  cp -a -- "$source_project/digital_twin.xpr" "$project_dir/"
-  for source_path in \
-    "$source_project/digital_twin.srcs/constrs_1" \
-    "$source_project/digital_twin.srcs/sim_1" \
-    "$source_project/digital_twin.srcs/sources_1/new" \
-    "$source_project/jyd-coes"; do
-    if [ -e "$source_path" ]; then
-      target_path="$project_dir/${source_path#"$source_project/"}"
-      mkdir -p -- "$(dirname -- "$target_path")"
-      cp -a -- "$source_path" "$target_path"
-    fi
-  done
-
-  while IFS= read -r -d '' source_path; do
-    relative_path=${source_path#"$source_project/"}
-    target_path="$project_dir/$relative_path"
-    mkdir -p -- "$(dirname -- "$target_path")"
-    cp -a -- "$source_path" "$target_path"
-  done < <(find "$source_project/digital_twin.srcs/sources_1/ip" -type f -name '*.xci' -print0 | sort -z)
-
-  mkdir -p -- "$project_dir/digital_twin.srcs/sources_1/imports"
-  cp -a -- "$pack_src" "$project_dir/digital_twin.srcs/sources_1/imports/pack-fpga"
-  mkdir -p -- "$project_dir/digital_twin.srcs/sources_1/imports/cur_coe"
-  cp -a -- "$coe_dir/irom.coe" "$coe_dir/dram.coe" \
-    "$project_dir/digital_twin.srcs/sources_1/imports/cur_coe/"
-}
-
-seed_ip_build_state() {
-  local project_dir="$1"
-  local cache_dir run_dir
-
-  for cache_dir in digital_twin.gen digital_twin.cache digital_twin.ip_user_files; do
-    if [ -d "$source_project/$cache_dir" ]; then
-      cp -a --reflink=auto -- "$source_project/$cache_dir" "$project_dir/"
-    fi
-  done
-
-  mkdir -p -- "$project_dir/digital_twin.runs"
-  while IFS= read -r -d '' run_dir; do
-    cp -a --reflink=auto -- "$run_dir" "$project_dir/digital_twin.runs/"
-  done < <(find "$source_project/digital_twin.runs" -mindepth 1 -maxdepth 1 \
-    -type d -name '*_synth_1' -print0 2>/dev/null | sort -z)
-}
-
-configure_clock() {
-  local project_dir="$1"
-  local cpu_mhz="$2"
-  local config_tcl="$3"
-
-  cat >"$config_tcl" <<'EOF'
-if {$argc != 2} {
-  error "Expected Tcl args: <project-path> <cpu-mhz>"
-}
-set project_path [file normalize [lindex $argv 0]]
-set cpu_mhz [lindex $argv 1]
-open_project $project_path
-set pll_ip [get_ips -quiet mypll]
-if {[llength $pll_ip] != 1} {
-  error "Expected exactly one mypll IP, got [llength $pll_ip]"
-}
-set_property CONFIG.CLKOUT2_REQUESTED_OUT_FREQ $cpu_mhz $pll_ip
-set requested_cpu [get_property CONFIG.CLKOUT2_REQUESTED_OUT_FREQ $pll_ip]
-set requested_peripheral [get_property CONFIG.CLKOUT1_REQUESTED_OUT_FREQ $pll_ip]
-puts "CLOCK_PROFILE_CPU_MHZ=$requested_cpu"
-puts "CLOCK_PROFILE_PERIPHERAL_MHZ=$requested_peripheral"
-if {abs(double($requested_cpu) - double($cpu_mhz)) > 0.001} {
-  error "Clock Wizard rejected requested CPU frequency $cpu_mhz MHz"
-}
-if {abs(double($requested_peripheral) - 50.0) > 0.001} {
-  error "Clock Wizard peripheral output is not 50 MHz: $requested_peripheral"
-}
-close_project
-EOF
-
-  (
-    cd "$project_dir"
-    "$vivado_bin" -mode batch -nolog -nojournal -notrace \
-      -source "$config_tcl" -tclargs "$project_dir/digital_twin.xpr" "$cpu_mhz"
-  )
-}
-
-write_input_manifest() {
-  local project_dir="$1"
-  local output_file="$2"
-  local input_file relative_path
-
-  : >"$output_file"
-  while IFS= read -r -d '' input_file; do
-    relative_path=${input_file#"$project_dir/"}
-    printf '%s  %s\n' "$(sha256sum "$input_file" | awk '{print $1}')" "$relative_path" >>"$output_file"
-  done < <(
-    find "$project_dir" -type f \
-      ! -path '*/digital_twin.runs/*' \
-      ! -path '*/digital_twin.gen/*' \
-      ! -path '*/digital_twin.cache/*' \
-      ! -path '*/.Xil/*' -print0 | sort -z
-  )
-}
-
-archive_run_artifacts() {
-  local project_dir="$1"
-  local run_archive="$2"
-  local artifact relative_path target_path
-
-  mkdir -p -- "$run_archive/artifacts"
-  while IFS= read -r -d '' artifact; do
-    relative_path=${artifact#"$project_dir/"}
-    target_path="$run_archive/artifacts/$relative_path"
-    mkdir -p -- "$(dirname -- "$target_path")"
-    cp -a -- "$artifact" "$target_path"
-  done < <(
-    {
-      find \
-        "$project_dir/digital_twin.runs/synth_1" \
-        "$project_dir/digital_twin.runs/impl_1" \
-        -type f \( \
-        -name '*.bit' -o -name '*.dcp' -o -name '*timing*.rpt' -o \
-        -name 'runme.log' -o -name 'runme.jou' -o -name 'vivado.log' -o -name 'vivado.jou' \
-        \) -print0 2>/dev/null
-      find "$project_dir" -type f \( -name 'vivado.log' -o -name 'vivado.jou' -o -name 'runme.log' \) \
-        -print0 2>/dev/null
-    } | sort -zu
-  )
-}
 
 parse_timing() {
   local report_path="$1"
@@ -414,18 +279,15 @@ LAST_CAPTURE_STATUS=0
 execute_profile() {
   local selected_profile="$1"
   local run_archive="$batch_archive/$selected_profile"
-  local work_dir project_dir config_tcl runner_log bitstream timing_report
+  local runner_log bitstream timing_report
   local vivado_status=0 timing_ok=0 uart_ok=0 flow_start_ns flow_end_ns
 
   profile_settings "$selected_profile" || die "unsupported profile: $selected_profile"
-  work_dir=$(mktemp -d "$tmp_root/digital-twin-board-perf.${selected_profile}.XXXXXX")
-  project_dir="$work_dir/jyd-vivado-proj"
-  config_tcl="$work_dir/configure-clock.tcl"
   mkdir -p -- "$run_archive"
 
   LAST_PROFILE="$selected_profile"
   LAST_ARCHIVE="$run_archive"
-  LAST_WORKDIR="$work_dir"
+  LAST_WORKDIR=""
   LAST_IMPL_SECONDS=""
   LAST_FLOW_SECONDS=""
   LAST_RUNTIME_SECONDS=""
@@ -438,57 +300,43 @@ execute_profile() {
     echo "peripheral_mhz=50"
     echo "flow_profile=$PROFILE_FLOW"
     echo "coe_dir=$coe_dir"
-    echo "work_dir=$work_dir"
     echo "repo_commit=$(git -C "$repo_root" rev-parse HEAD)"
     echo "vivado_version=$($vivado_bin -version | head -n 1)"
     echo "started_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   } >"$run_archive/metadata.env"
   git -C "$repo_root" status --short >"$run_archive/git-status.txt"
 
-  echo "# [$selected_profile] copying isolated Vivado project inputs"
-  copy_project_inputs "$project_dir"
-  echo "# [$selected_profile] seeding reusable IP output products and OOC runs"
-  seed_ip_build_state "$project_dir"
-  configure_clock "$project_dir" "$PROFILE_CPU_MHZ" "$config_tcl" | tee "$run_archive/configure-clock.log"
-  write_input_manifest "$project_dir" "$run_archive/input-sha256.txt"
-
   if [ "$prepare_only" -eq 1 ]; then
-    echo "prepared_project=$project_dir" | tee -a "$run_archive/metadata.env"
-    echo "# [$selected_profile] prepared isolated project: $project_dir"
-    return 0
+    die "--prepare-only is no longer supported; use the main flow's --isolated-profile with --keep-workdir"
   fi
 
   runner_log="$run_archive/vivado-runner.log"
   flow_start_ns=$(date +%s%N)
   set +e
   "$vivado_runner" bitstream \
-    --project-root "$project_dir" \
-    --expected-cpu-mhz "$PROFILE_CPU_MHZ" \
-    --flow-profile "$PROFILE_FLOW" \
+    --isolated-profile "$selected_profile" \
+    --archive-dir "$run_archive" \
     --coe-dir "$coe_dir" \
-    --jobs "$jobs" --ip-jobs "$ip_jobs" --reset-runs --skip-pack 2>&1 | tee "$runner_log"
+    --jobs "$jobs" --ip-jobs "$ip_jobs" 2>&1 | tee "$runner_log"
   vivado_status=${PIPESTATUS[0]}
   set -e
   flow_end_ns=$(date +%s%N)
   LAST_FLOW_SECONDS=$(awk -v start="$flow_start_ns" -v end="$flow_end_ns" \
     'BEGIN { printf "%.3f", (end - start) / 1000000000.0 }')
 
-  archive_run_artifacts "$project_dir" "$run_archive"
   echo "vivado_status=$vivado_status" >>"$run_archive/metadata.env"
   if [ "$vivado_status" -ne 0 ]; then
-    echo "# [$selected_profile] Vivado failed; retaining $work_dir" >&2
+    LAST_WORKDIR=$(awk -F= '/^ISOLATED_WORKDIR=/ {value=$2} END {print value}' "$runner_log")
+    echo "# [$selected_profile] Vivado failed; retained ${LAST_WORKDIR:-isolated workdir}" >&2
     return 1
   fi
 
   LAST_IMPL_SECONDS=$(awk -F= '/^IMPL_ELAPSED_SECONDS=/ {value=$2} END {print value}' "$runner_log")
   [ -n "$LAST_IMPL_SECONDS" ] || die "implementation elapsed time missing from $runner_log"
-  bitstream=$(find "$project_dir/digital_twin.runs/impl_1" -maxdepth 1 -type f -name '*.bit' -print -quit)
-  [ -n "$bitstream" ] || die "bitstream not found for $selected_profile"
+  bitstream="$run_archive/top.bit"
+  [ -f "$bitstream" ] || die "bitstream not found for $selected_profile"
 
-  timing_report="$project_dir/digital_twin.runs/impl_1/top_timing_summary_postroute_physopted.rpt"
-  if [ ! -f "$timing_report" ]; then
-    timing_report="$project_dir/digital_twin.runs/impl_1/top_timing_summary_routed.rpt"
-  fi
+  timing_report=$(find "$run_archive/artifacts" -type f \( -name 'top_timing_summary_postroute_physopted.rpt' -o -name 'top_timing_summary_routed.rpt' \) -print -quit)
   [ -f "$timing_report" ] || die "routed timing report not found: $timing_report"
   python3 "$repo_root/jyd-vivado-proj/scripts/extract-timing-summary.py" "$timing_report" \
     | tee "$run_archive/timing-summary.txt"
@@ -496,7 +344,6 @@ execute_profile() {
     timing_ok=1
   fi
 
-  cp -a -- "$bitstream" "$run_archive/top.bit"
   sha256sum "$run_archive/top.bit" >"$run_archive/bitstream-sha256.txt"
 
   if [ "$run_board" -eq 1 ]; then
@@ -543,11 +390,6 @@ execute_profile() {
     fi
     echo "finished_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   } >>"$run_archive/metadata.env"
-
-  if [ "$keep_workdir" -eq 0 ]; then
-    rm -rf -- "$work_dir"
-    LAST_WORKDIR=""
-  fi
 
   if [ "$run_board" -eq 1 ] && [ "$LAST_ELIGIBLE" -ne 1 ]; then
     return 1

@@ -4,7 +4,7 @@ set -euo pipefail
 
 usage() {
   cat <<'EOF'
-Usage: run_digital_twin_vivado.sh [impl|write_bitstream|bitstream] [--jobs N] [--ip-jobs N] [--coe-dir DIR] [--project-root DIR] [--expected-cpu-mhz N] [--flow-profile NAME] [--reset-runs] [--reuse-ip] [--skip-pack] [--skip-vivado] [--user-approved-low-jobs]
+Usage: run_digital_twin_vivado.sh [impl|write_bitstream|bitstream] [--jobs N] [--ip-jobs N] [--coe-dir DIR] [--isolated-profile NAME] [--archive-dir DIR] [--keep-workdir] [--project-root DIR] [--expected-cpu-mhz N] [--flow-profile NAME] [--reset-runs] [--reuse-ip] [--skip-pack] [--skip-vivado] [--user-approved-low-jobs]
 
 Build npc pack-fpga, replace the Vivado project's imported pack-fpga directory,
 then run the digital_twin Vivado project to impl or write_bitstream.
@@ -20,6 +20,10 @@ Environment:
   IP_JOBS               IP/OOC run concurrency and max threads. Defaults to 4.
 
 Isolated diagnostic flow:
+  --isolated-profile NAME
+                         Build quick-75, default-200, or default-150 in a copied project.
+  --archive-dir DIR      Archive isolated-flow logs, reports, DCPs, and bitstream in DIR.
+  --keep-workdir         Retain the isolated Vivado project after completion.
   --project-root DIR     Use DIR as the Vivado project instead of the in-tree project.
   --expected-cpu-mhz N   Require the configured CPU clock to match N MHz.
   --flow-profile NAME    project, quick, or default. Defaults to project.
@@ -59,6 +63,9 @@ coe_dir=""
 project_root=""
 expected_cpu_mhz=""
 flow_profile=project
+isolated_profile=""
+archive_dir=""
+keep_workdir=0
 synth_global_retiming="${VIVADO_SYNTH_GLOBAL_RETIMING:-0}"
 synth_keep_equivalent_registers="${VIVADO_SYNTH_KEEP_EQUIVALENT_REGISTERS:-0}"
 synth_flatten_hierarchy="${VIVADO_SYNTH_FLATTEN_HIERARCHY:-}"
@@ -108,6 +115,20 @@ while [ "$#" -gt 0 ]; do
       fi
       project_root="$2"
       shift 2
+      ;;
+    --isolated-profile)
+      [ "$#" -ge 2 ] || { echo "Missing value for --isolated-profile" >&2; exit 2; }
+      isolated_profile="$2"
+      shift 2
+      ;;
+    --archive-dir)
+      [ "$#" -ge 2 ] || { echo "Missing value for --archive-dir" >&2; exit 2; }
+      archive_dir="$2"
+      shift 2
+      ;;
+    --keep-workdir)
+      keep_workdir=1
+      shift
       ;;
     --expected-cpu-mhz)
       if [ "$#" -lt 2 ]; then
@@ -179,6 +200,14 @@ case "$flow_profile" in
     exit 2
     ;;
 esac
+case "$isolated_profile" in
+  "" | quick-75 | default-200 | default-150) ;;
+  *) echo "Unsupported --isolated-profile: $isolated_profile" >&2; exit 2 ;;
+esac
+if [ -n "$isolated_profile" ] && [ -n "$project_root" ]; then
+  echo "--isolated-profile and --project-root are mutually exclusive" >&2
+  exit 2
+fi
 if [ "$reset_runs" -eq 1 ] && [ "$reuse_ip" -eq 1 ]; then
   echo "--reset-runs and --reuse-ip are mutually exclusive" >&2
   exit 2
@@ -241,6 +270,7 @@ script_dir=$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 npc_dir=$(CDPATH= cd -- "$script_dir/.." && pwd)
 repo_root=$(CDPATH= cd -- "$npc_dir/.." && pwd)
 pack_src="$npc_dir/build/pack-fpga"
+vivado_bin="${VIVADO:-vivado}"
 
 if [ -z "$coe_dir" ]; then
   coe_dir="$repo_root/cur_coe"
@@ -263,6 +293,155 @@ if [ "$mode" = write_bitstream ]; then
   done
 fi
 
+if [ -n "$isolated_profile" ]; then
+  case "$isolated_profile" in
+    quick-75) isolated_cpu_mhz=75; isolated_flow_profile=quick ;;
+    default-200) isolated_cpu_mhz=200; isolated_flow_profile=default ;;
+    default-150) isolated_cpu_mhz=150; isolated_flow_profile=default ;;
+  esac
+  workload_manifest="$coe_dir/coremark-workload.env"
+  [ -f "$workload_manifest" ] || {
+    echo "Formal COE manifest does not exist: $workload_manifest" >&2
+    exit 1
+  }
+  manifest_iterations=$(sed -n 's/^COREMARK_ITERATIONS=//p' "$workload_manifest")
+  manifest_irom_sha=$(sed -n 's/^COREMARK_IROM_SHA256=//p' "$workload_manifest")
+  manifest_dram_sha=$(sed -n 's/^COREMARK_DRAM_SHA256=//p' "$workload_manifest")
+  actual_irom_sha=$(sha256sum "$irom_coe" | awk '{print $1}')
+  actual_dram_sha=$(sha256sum "$dram_coe" | awk '{print $1}')
+  [ "$manifest_iterations" = 10000 ] || {
+    echo "Isolated bitstream input must use COREMARK_ITERATIONS=10000, got: ${manifest_iterations:-missing}" >&2
+    exit 1
+  }
+  [ "$manifest_irom_sha" = "$actual_irom_sha" ] || {
+    echo "irom.coe does not match formal workload manifest" >&2
+    exit 1
+  }
+  [ "$manifest_dram_sha" = "$actual_dram_sha" ] || {
+    echo "dram.coe does not match formal workload manifest" >&2
+    exit 1
+  }
+
+  jyd_data_root="${JYD_DATA_ROOT:-/srv/data/jyd}"
+  isolated_stamp=$(date -u +%Y%m%dT%H%M%SZ)
+  isolated_workdir=$(mktemp -d "$jyd_data_root/tmp/digital-twin-vivado.${isolated_profile}.XXXXXX")
+  isolated_project="$isolated_workdir/jyd-vivado-proj"
+  if [ -z "$archive_dir" ]; then
+    archive_dir="$jyd_data_root/archive/digital-twin-vivado-$isolated_stamp/$isolated_profile"
+  elif [ "${archive_dir#/}" = "$archive_dir" ]; then
+    archive_dir="$PWD/$archive_dir"
+  fi
+  mkdir -p -- "$isolated_project" "$archive_dir"
+
+  source_project="$repo_root/jyd-vivado-proj"
+  cp -a -- "$source_project/digital_twin.xpr" "$isolated_project/"
+  for source_path in \
+    "$source_project/digital_twin.srcs/constrs_1" \
+    "$source_project/digital_twin.srcs/sim_1" \
+    "$source_project/digital_twin.srcs/sources_1/new" \
+    "$source_project/jyd-coes"; do
+    if [ -e "$source_path" ]; then
+      target_path="$isolated_project/${source_path#"$source_project/"}"
+      mkdir -p -- "$(dirname -- "$target_path")"
+      cp -a -- "$source_path" "$target_path"
+    fi
+  done
+  while IFS= read -r -d '' source_path; do
+    target_path="$isolated_project/${source_path#"$source_project/"}"
+    mkdir -p -- "$(dirname -- "$target_path")"
+    cp -a -- "$source_path" "$target_path"
+  done < <(find "$source_project/digital_twin.srcs/sources_1/ip" -type f -name '*.xci' -print0 | sort -z)
+  for cache_name in digital_twin.gen digital_twin.cache digital_twin.ip_user_files; do
+    [ ! -d "$source_project/$cache_name" ] || cp -a --reflink=auto -- "$source_project/$cache_name" "$isolated_project/"
+  done
+  mkdir -p -- "$isolated_project/digital_twin.runs"
+  while IFS= read -r -d '' run_dir; do
+    cp -a --reflink=auto -- "$run_dir" "$isolated_project/digital_twin.runs/"
+  done < <(find "$source_project/digital_twin.runs" -mindepth 1 -maxdepth 1 -type d -name '*_synth_1' -print0 2>/dev/null | sort -z)
+
+  if [ "$skip_pack" -eq 0 ]; then
+    make -C "$npc_dir" pack-fpga
+  fi
+  [ -d "$pack_src" ] || { echo "pack-fpga directory does not exist: $pack_src" >&2; exit 1; }
+  mkdir -p -- "$isolated_project/digital_twin.srcs/sources_1/imports"
+  cp -a -- "$pack_src" "$isolated_project/digital_twin.srcs/sources_1/imports/pack-fpga"
+
+  configure_tcl="$isolated_workdir/configure-clock.tcl"
+  cat >"$configure_tcl" <<'EOF'
+if {$argc != 2} { error "Expected Tcl args: <project-path> <cpu-mhz>" }
+set project_path [file normalize [lindex $argv 0]]
+set cpu_mhz [lindex $argv 1]
+open_project $project_path
+set pll_ip [get_ips -quiet mypll]
+if {[llength $pll_ip] != 1} { error "Expected exactly one mypll IP, got [llength $pll_ip]" }
+set_property CONFIG.CLKOUT2_REQUESTED_OUT_FREQ $cpu_mhz $pll_ip
+set requested_cpu [get_property CONFIG.CLKOUT2_REQUESTED_OUT_FREQ $pll_ip]
+set requested_peripheral [get_property CONFIG.CLKOUT1_REQUESTED_OUT_FREQ $pll_ip]
+puts "CLOCK_PROFILE_CPU_MHZ=$requested_cpu"
+puts "CLOCK_PROFILE_PERIPHERAL_MHZ=$requested_peripheral"
+if {abs(double($requested_cpu) - double($cpu_mhz)) > 0.001} { error "Clock Wizard rejected requested CPU frequency $cpu_mhz MHz" }
+if {abs(double($requested_peripheral) - 50.0) > 0.001} { error "Clock Wizard peripheral output is not 50 MHz: $requested_peripheral" }
+close_project
+EOF
+  (
+    cd "$isolated_project"
+    "$vivado_bin" -mode batch -nolog -nojournal -notrace -source "$configure_tcl" \
+      -tclargs "$isolated_project/digital_twin.xpr" "$isolated_cpu_mhz"
+  ) 2>&1 | tee "$archive_dir/configure-clock.log"
+
+  {
+    echo "profile=$isolated_profile"
+    echo "cpu_mhz=$isolated_cpu_mhz"
+    echo "flow_profile=$isolated_flow_profile"
+    echo "repo_commit=$(git -C "$repo_root" rev-parse HEAD)"
+    echo "coe_dir=$coe_dir"
+    echo "irom_sha256=$actual_irom_sha"
+    echo "dram_sha256=$actual_dram_sha"
+    echo "workdir=$isolated_workdir"
+    echo "started_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  } >"$archive_dir/metadata.env"
+
+  set +e
+  "$script_dir/run_digital_twin_vivado.sh" "$mode" \
+    --project-root "$isolated_project" --expected-cpu-mhz "$isolated_cpu_mhz" \
+    --flow-profile "$isolated_flow_profile" --coe-dir "$coe_dir" \
+    --jobs "$jobs" --ip-jobs "$ip_jobs" --reset-runs --skip-pack \
+    2>&1 | tee "$archive_dir/vivado-runner.log"
+  isolated_status=${PIPESTATUS[0]}
+  set -e
+
+  mkdir -p -- "$archive_dir/artifacts"
+  for run_name in synth_1 impl_1; do
+    run_path="$isolated_project/digital_twin.runs/$run_name"
+    [ ! -d "$run_path" ] || find "$run_path" -maxdepth 1 -type f \
+      \( -name '*.bit' -o -name '*.dcp' -o -name '*timing*.rpt' -o -name 'runme.log' -o -name 'runme.jou' \) \
+      -exec cp -a --parents -- {} "$archive_dir/artifacts" \;
+  done
+  if [ "$isolated_status" -eq 0 ] && [ "$mode" = write_bitstream ]; then
+    cp -a -- "$isolated_project/digital_twin.runs/impl_1/top.bit" "$archive_dir/top.bit"
+    cp -a -- "$isolated_project/digital_twin.runs/impl_1/top.bit.coe-manifest" "$archive_dir/"
+    sha256sum "$archive_dir/top.bit" >"$archive_dir/bitstream-sha256.txt"
+  fi
+  timing_report="$isolated_project/digital_twin.runs/impl_1/top_timing_summary_postroute_physopted.rpt"
+  [ -f "$timing_report" ] || timing_report="$isolated_project/digital_twin.runs/impl_1/top_timing_summary_routed.rpt"
+  if [ -f "$timing_report" ]; then
+    python3 "$repo_root/jyd-vivado-proj/scripts/extract-timing-summary.py" "$timing_report" >"$archive_dir/timing-summary.txt"
+  fi
+  {
+    echo "vivado_status=$isolated_status"
+    echo "archive_dir=$archive_dir"
+    echo "finished_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  } >>"$archive_dir/metadata.env"
+  echo "ISOLATED_PROFILE=$isolated_profile"
+  echo "ISOLATED_ARCHIVE=$archive_dir"
+  if [ "$keep_workdir" -eq 1 ] || [ "$isolated_status" -ne 0 ]; then
+    echo "ISOLATED_WORKDIR=$isolated_workdir"
+  else
+    rm -rf -- "$isolated_workdir"
+  fi
+  exit "$isolated_status"
+fi
+
 if [ -n "$project_root" ]; then
   vivado_proj_home=$(CDPATH= cd -- "$project_root" 2>/dev/null && pwd) || {
     echo "Vivado project directory does not exist: $project_root" >&2
@@ -273,7 +452,6 @@ else
 fi
 vivado_project="$vivado_proj_home/digital_twin.xpr"
 pack_dst="$vivado_proj_home/digital_twin.srcs/sources_1/imports/pack-fpga"
-vivado_bin="${VIVADO:-vivado}"
 
 if [ ! -d "$vivado_proj_home" ]; then
   echo "Vivado project directory does not exist: $vivado_proj_home" >&2

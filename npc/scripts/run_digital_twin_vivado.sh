@@ -531,6 +531,12 @@ tcl_file=$(mktemp "${TMPDIR:-/tmp}/digital_twin_flow.XXXXXX.tcl")
 xpr_backup=$(mktemp "${TMPDIR:-/tmp}/digital_twin_project.XXXXXX.xpr")
 cp -- "$vivado_project" "$xpr_backup"
 xpr_hash_before=$(sha256sum "$vivado_project" | awk '{print $1}')
+xci_backup_dir=$(mktemp -d "${TMPDIR:-/tmp}/digital_twin_xci.XXXXXX")
+while IFS= read -r -d '' xci_file; do
+  xci_relative=${xci_file#"$vivado_proj_home/"}
+  mkdir -p -- "$xci_backup_dir/$(dirname -- "$xci_relative")"
+  cp -- "$xci_file" "$xci_backup_dir/$xci_relative"
+done < <(find "$vivado_proj_home/digital_twin.srcs/sources_1/ip" -type f -name '*.xci' -print0)
 mul16_xci="$vivado_proj_home/digital_twin.srcs/sources_1/ip/mult_gen_mul16_fast/mult_gen_mul16_fast.xci"
 mul16_xci_backup=""
 if [ -f "$mul16_xci" ]; then
@@ -543,6 +549,7 @@ cleanup() {
     rm -f -- "$xpr_backup"
   fi
   rm -f -- "${mul16_xci_backup:-}"
+  rm -rf -- "${xci_backup_dir:-}"
   rm -f -- "$tcl_file"
 }
 trap cleanup EXIT
@@ -1090,6 +1097,23 @@ if [ -n "$mul16_xci_backup" ]; then
   mul16_xci_backup=""
 fi
 
+# Product generation can remove an XCI's final newline without changing its
+# JSON content. Restore only byte changes whose complete newline-normalized
+# content is identical; semantic changes remain in place for the manifest gate
+# below to reject and preserve for diagnosis.
+while IFS= read -r -d '' xci_file; do
+  xci_relative=${xci_file#"$vivado_proj_home/"}
+  xci_backup="$xci_backup_dir/$xci_relative"
+  if ! cmp -s -- "$xci_backup" "$xci_file"; then
+    xci_before_normalized=$(sed -e '$a\' "$xci_backup" | sha256sum | awk '{print $1}')
+    xci_after_normalized=$(sed -e '$a\' "$xci_file" | sha256sum | awk '{print $1}')
+    if [ "$xci_before_normalized" = "$xci_after_normalized" ]; then
+      cp -- "$xci_backup" "$xci_file"
+      echo "# Restored non-semantic XCI newline mutation: $xci_relative"
+    fi
+  fi
+done < <(find "$vivado_proj_home/digital_twin.srcs/sources_1/ip" -type f -name '*.xci' -print0)
+
 ip_config_hash_after=$(ip_config_hash)
 if [ "$ip_config_hash_before" != "$ip_config_hash_after" ]; then
   echo "Vivado IP configuration changed during the run:" >&2
@@ -1097,6 +1121,8 @@ if [ "$ip_config_hash_before" != "$ip_config_hash_after" ]; then
   echo "  after:  $ip_config_hash_after" >&2
   exit 1
 fi
+rm -rf -- "$xci_backup_dir"
+xci_backup_dir=""
 if [ "$vivado_status" -ne 0 ]; then
   exit "$vivado_status"
 fi

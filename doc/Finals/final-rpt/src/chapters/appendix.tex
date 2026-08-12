@@ -1,0 +1,67 @@
+\clearpage
+\appendix
+\section{附录}
+
+\subsection{版本与证据索引}
+
+\begin{longtable}{@{}p{0.16\linewidth}p{0.25\linewidth}p{0.49\linewidth}@{}}
+\caption{关键版本与证据索引}\\\toprule
+\textbf{编号}&\textbf{提交或归档}&\textbf{用途}\\\midrule\endhead\bottomrule\endfoot
+V-REG&\code{ReginalFinal-Post-Report-Version} / \commit{2b2734b}&分赛区后续报告版本边界\\
+V-FINAL&\commit{fabb5995bdd394578fbf989b6b20d5eae45b320c}&总决赛全文架构冻结版本\\
+E-FAB-250&\code{baseline-fabb599-clean250-250mhz-20260812}&250 MHz 正确 worktree；post-route physopt WNS $+0.009$ ns\\
+E-FAB-280&\code{baseline-fabb599-clean280-280mhz-20260812}&280 MHz 正确 worktree；routed WNS $-0.664$ ns\\
+E-FAB-300/P&\code{backend-partition-fabb599-300mhz-20260812}&300 MHz routed/post-route physopt WNS $-0.590/-0.580$ ns\\
+E-RF-01--04&分赛区后续优化报告及 CSV&withMext-v2 与西北样例的独立性能演进\\
+E-BOARD&\MetricPending{正式板测归档}&必须对应 V-FINAL，记录 COE、bitstream、频率、板卡和 UART 输出\\
+\end{longtable}
+
+机器可读证据清单位于 \code{src/data/evidence.csv}。其中 300 MHz 归档未保留可确认的 COE manifest，
+因此该归档仅用于冻结提交的物理时序，不作为板测性能归属依据。
+
+\subsection{工程目录结构}
+
+\begin{verbatim}
+npc/
+  design/src/             Chisel CPU、缓存、预测器与 SoC RTL
+  sim/                    Verilator/C++ 仿真与性能计数
+  scripts/                RTL 打包、工作树、Vivado 与板测流程
+nemu/                     RV32 参考模型与差分测试参考端
+sdb/                      调试、指令环与差分状态比较
+abstract-machine/         裸机运行时与 riscv32-jyd 平台
+jyd-vivado-proj/          数字孪生 Vivado 工程、IP、约束与报告工具
+doc/Finals/final-rpt/
+  src/chapters/           技术文档正文
+  src/tikz/               独立 TikZ/pgfplots 图源
+  src/assets/             外部图片与照片
+  src/data/               机器可读证据和图表数据
+  scripts/                内容审计脚本
+\end{verbatim}
+
+\subsection{图片待补清单}
+
+\begin{enumerate}
+  \item 250 MHz post-route physopt Timing Summary 截图；
+  \item 300 MHz routed 与 post-route physopt Timing Summary 截图；
+  \item \commit{fabb599} 正式 250/300 MHz UART capture；
+  \item 对应 bitstream/COE SHA-256 清单；
+  \item 板卡运行现场照片；
+  \item 冻结版本资源利用率图；
+  \item 补齐性能数据后生成的性能/WNS/资源综合图。
+\end{enumerate}
+
+\subsection{参考资料}
+
+\begin{enumerate}
+  \item RISC-V International, \emph{The RISC-V Instruction Set Manual, Volume I: Unprivileged Architecture}.
+  \item RISC-V International, \emph{The RISC-V Instruction Set Manual, Volume II: Privileged Architecture}.
+  \item AMD Xilinx, \emph{Vivado Design Suite User Guide: Design Analysis and Closure Techniques}.
+  \item AMD Xilinx, \emph{7 Series FPGAs Memory Resources User Guide}.
+  \item Berkeley, \emph{Chisel Hardware Construction Language} documentation.
+\end{enumerate}
+
+\subsection{AI 工具使用声明}
+
+项目研发与文档整理过程中使用了 AI 辅助工具进行资料结构化、文字校订、代码检索和图表草拟。
+所有体系结构描述、接口、编码与指标均以冻结 RTL、测试记录和 Vivado 报告为依据，并由团队成员复核；
+AI 工具不替代功能验证、物理实现或上板测评。

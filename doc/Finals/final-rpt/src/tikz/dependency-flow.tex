@@ -1,0 +1,8 @@
+\begin{figure}[H]\centering
+\begin{tikzpicture}[b/.style={draw,rounded corners,align=center,minimum width=2.5cm,minimum height=0.75cm,fill=blue!5},d/.style={draw,diamond,aspect=2,align=center,fill=orange!6},a/.style={-Stealth,thick},font=\small]
+\node[b] (src) {源寄存器号}; \node[b,below=0.7cm of src] (p) {EXU/LSU/WBU 生产者优先级}; \node[d,below=0.8cm of p] (m) {目的寄存器匹配？};
+\node[b,below left=0.9cm and 1.4cm of m] (g) {使用 GPR 数据}; \node[d,below right=0.9cm and 1.4cm of m] (v) {数据有效？};
+\node[b,below left=0.9cm and 1.2cm of v] (s) {停顿}; \node[b,below right=0.9cm and 1.2cm of v] (f) {按消费者选择旁路};
+\draw[a] (src)--(p);\draw[a](p)--(m);\draw[a](m)--node[above]{否}(g);\draw[a](m)--node[above]{是}(v);\draw[a](v)--node[above]{否}(s);\draw[a](v)--node[above]{是}(f);
+\end{tikzpicture}\caption{IDU 相关判定与旁路流程}\end{figure}
+

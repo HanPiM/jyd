@@ -1,0 +1,52 @@
+\section{项目概述与研发演进}\label{sec:overview}
+
+\subsection{项目目标}
+
+本项目面向竞业达指定 FPGA 平台，目标是在受限片上存储与逻辑资源条件下完成一款可综合、可验证、
+可上板运行的 RISC-V 处理器。设计同时关注三类约束：其一是指令和机器态控制流的正确性；其二是
+顺序流水线在数据相关、访存延迟和控制流重定向下的稳定运行；其三是 FPGA 实现后的频率、资源与
+工作负载运行时间。工程使用 Chisel 描述核心 RTL，并通过内联 BlackBox 模型兼顾 Verilator 仿真与
+Vivado IP 综合绑定。
+
+\subsection{版本边界与研发演进}
+
+为保证全文可追溯，本文只采用两个明确的版本节点：分赛区后续报告版本为 tag
+\code{ReginalFinal-Post-Report-Version}，对应提交 \commit{2b2734bca383dbfcbe840787ab0033e4980775eb}；
+总决赛冻结版本为 \commit{fabb5995bdd394578fbf989b6b20d5eae45b320c}。本报告不按提交历史逐项复述
+研发过程，而是以冻结版本中仍然存在的结构为准，将演进归纳为表\ref{tab:evolution}所示的成功方向。
+
+\begin{table}[H]
+\centering
+\caption{从分赛区版本到总决赛冻结版本的主要演进}\label{tab:evolution}
+\begin{tabularx}{\linewidth}{@{}p{0.20\linewidth}YY@{}}
+\toprule
+\textbf{方向}&\textbf{分赛区后续版本}&\textbf{总决赛冻结版本}\\\midrule
+控制流预测&较小容量 BTB 与基础方向预测&512 项八 bank BTB、表项 2-bit 动态预测、返回地址栈\\
+数据缓存&2\,KiB 直接映射缓存及早期窄加载副本&4\,KiB 双 bank 缓存，主 BRAM 与逐字节异步副本协同\\
+执行结构&普通 ALU 与多周期执行结果耦合较多&快速整数、直接、长算术、加速、加载五类结果通路\\
+相关处理&EXU/LSU/WBU 通用旁路与有限 late-load&分组编码的相邻结果选择、注册化 late-load 与专用地址通路\\
+整数扩展&RV32M 与部分 B 扩展多周期实现&窄乘法 DSP 快通路、短 B 与迭代 B 分流\\
+领域能力&无冻结的领域指令体系&CRC、位抽取乘法、链式变换、矩阵归约、流式状态处理指令\\
+板级接口&数码管/LED 为主&加入跨时钟 UART 子系统与原始运行记录通道\\
+工程闭环&基础打包和实现脚本&输入身份、并发下限、时序摘要、归档和板测流程可追溯\\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{设计平台}
+
+处理器目标器件为 Xilinx Kintex-7 XC7K325T-2FFG900，使用 Vivado 2024.2 完成综合、布局布线与
+bitstream 生成。仿真侧使用 Verilator/C++ 周期级仿真与 Vivado XSim；NEMU 作为指令级参考模型，
+共享差分测试框架负责比较通用寄存器、PC 及相关体系结构状态。板级系统包含 IROM、DRAM、计时器、
+LED、数码管与 UART 等资源，处理器通过统一地址映射访问。
+
+\subsection{设计原则}
+
+\begin{itemize}
+  \item \textbf{顺序提交：}任何多周期运算、缓存命中或重定向都不得破坏程序顺序可见性。
+  \item \textbf{显式握手：}流水级和多周期单元以 ready/valid 表达接受、保持和完成条件。
+  \item \textbf{局部化关键路径：}按消费者类型分割结果、地址、分支和加速通路，减少宽多路选择器跨模块传播。
+  \item \textbf{保守的一致性：}缓存无法安全合并时失效对应行；较新 store 优先于较早 load 回填。
+  \item \textbf{证据可归属：}提交、输入镜像、频率、实现报告和运行输出必须能够组成同一候选的证据链。
+\end{itemize}
+

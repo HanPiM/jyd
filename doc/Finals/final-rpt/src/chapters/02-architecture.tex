@@ -1,0 +1,141 @@
+\section{CPU 架构与模块设计}\label{sec:architecture}
+
+\subsection{总体架构}
+
+CPU 采用 IFU、IDU、EXU、LSU、WBU 五级顺序单发射流水线。级间寄存器采用 Decoupled
+ready/valid 语义：后级不能接收时，前级保持当前 payload；操作真正完成时才发生 \code{fire}。
+控制流错误通过 epoch 翻转使年轻指令局部失效，并由注册化重定向邮箱把正确 PC 送回 IFU。
+
+\input{src/tikz/pipeline-overview}
+
+\subsection{IFU 取指模块}
+
+IFU 将 PC、预测信息和流水 epoch 与读取到的指令组合为 \code{FetchedInst}。它能够在消费当前取指响应的
+同一周期接受下一 PC 并发出下一请求，从而隐藏片上 IROM 的同步读延迟。若存储或 IDU 反压，则内部
+pending 状态保持请求及其预测元信息，避免地址与预测结果错配。
+
+\begin{signalstable}{IFU 接口信号说明}
+pc&输入&32 位 Decoupled&\code{valid/ready}&接收待取指 PC\\
+predNext&输入&PredBundle&与 PC 同周期&该 PC 对应的预测命中、方向和下一地址\\
+epoch&输入&Bool&随 PC 采样&标记当前有效控制流世代\\
+mem&输出&SimpleBus master&请求/响应握手&访问 IROM\\
+out&输出&FetchedInst Decoupled&\code{valid/ready}&向 IDU 输出指令、PC、预测和 epoch\\
+\end{signalstable}
+
+\subsection{IDU 译码与相关处理模块}
+
+IDU 完成指令格式/类型译码、立即数形成、寄存器读取和相关判定。它分别观察 EXU、LSU、WBU 的生产者
+状态：目的寄存器匹配且数据已就绪时旁路；匹配但数据无效时停顿。冻结版本进一步把相邻快速结果按
+8 个四位组编码，只允许普通整数、分支和 store-data 等短路径消费者使用；地址、M/B、自定义指令和
+CSR 等消费者走注册化或保守停顿路径，以限制选择信号扇出。
+
+\begin{signalstable}{IDU 接口信号说明}
+in&输入&FetchedInst Decoupled&\code{valid/ready}&接收 IFU 结果\\
+rvec&输出/输入&2 读端口 GPR&组合读&给出 rs1/rs2 地址并取得寄存器值\\
+csrRead&输出/输入&CSR 单读口&组合读&读取当前 CSR 数据\\
+wrBackInfo&输入&三级前递信息组&生产者有效性&判定旁路或停顿\\
+lateLoadProducer&输入&延迟加载生产者信息&专用相关协议&标识可延后到 EXU 解析的 load 生产者\\
+pipelineFlush&输入&Bool&高有效&丢弃错误 epoch 指令\\
+out&输出&DecodedInst Decoupled&\code{valid/ready}&输出操作数、控制元信息和结果类别\\
+\end{signalstable}
+
+\input{src/tikz/dependency-flow}
+
+\subsection{EXU 分区执行模块}
+
+EXU 同时承担普通算术、分支裁决、地址请求、多周期整数扩展、CSR 操作和自定义指令执行。为避免所有
+结果汇入同一宽 Mux，冻结版本把写回语义划分为 \code{fastInt}、\code{direct}、
+\code{longArithmetic}、\code{accelerator} 和 \code{load} 五类。普通整数进入独立快速 ALU；
+乘除法、迭代 B 扩展和短 B 运算进入特殊执行簇；领域单元使用独立结果通路；load 最终由存储响应产生。
+
+\begin{signalstable}{EXU 接口信号说明}
+in&输入&DecodedInst Decoupled&\code{valid/ready}&接收译码结果及消费者类型\\
+previousStageFwd&输入&FastForwardInfo&局部组合选择&只供允许的相邻快速消费者使用\\
+lateLoadLSU/WBU&输入&LateLoadInfo&有效/数据有效&在 EXU 注册边界解析受限 load-use\\
+dcache&双向&DCache 查询/更新组&查询与更新协议&命中、同步/异步数据及 store 变更\\
+memReq/memResp&双向&Decoupled/Valid&请求/响应&普通访存和自定义单元访存\\
+fwd&输出&ForwardInfo&生产者状态&向 IDU 广告目的寄存器及数据有效性\\
+out&输出&LSUInput Decoupled&\code{valid/ready}&输出分区写回结果、访存和重定向元信息\\
+branch* / btbUpdate*&输出&控制流更新组&随完成采样&提供真实方向、目标和表项类型\\
+\end{signalstable}
+
+\input{src/tikz/result-lanes}
+
+\subsection{LSU 与 WBU}
+
+LSU 保存访存类型、地址低位、缓存命中和分区写回信息，并在同步缓存数据到达后形成 LSU 级旁路。
+WBU 对 load 返回字按 \code{func3} 和地址偏移完成字节/半字抽取与符号扩展，随后写入 GPR；其他结果
+按结果类别选择后顺序提交。store 的缓存更新在 EXU 请求侧发生，较早 load 的回填则由 store epoch
+阻止覆盖更新后的缓存状态。
+
+\begin{signalstable}{LSU 接口信号说明}
+in&输入&LSUInput Decoupled&\code{valid/ready}&接收执行结果和访存元信息\\
+dcacheReadData&输入&UInt(32)&同步 BRAM 返回&取得上一周期查询的数据\\
+fwd&输出&ForwardInfo&生产者状态&向 IDU 提供 LSU 级普通结果状态\\
+out&输出&WBUInput Decoupled&\code{valid/ready}&向 WBU 传递统一提交信息\\
+\end{signalstable}
+
+\begin{signalstable}{WBU 接口信号说明}
+in&输入&WBUInput Decoupled&\code{valid/ready}&接收 LSU 输出\\
+memResp&输入&Valid[UInt(32)]&与 load 对齐&接收 DRAM 返回数据\\
+dcacheUpdate*&输出&地址/数据/掩码&提交时回填&将有效 load 结果写入缓存\\
+gpr&输出&GPR WriteIO&最终提交&写入目的通用寄存器\\
+\end{signalstable}
+
+\subsection{GPR 与 CSR}
+
+通用寄存器堆使用两份 32$\times$32 分布式存储器形成双异步读、单同步写结构；写回同址时使用显式
+write-through，\code{x0} 始终返回零。CSR 单元实现 \code{mstatus}、\code{mtvec}、\code{mepc}、
+\code{mcause}、\code{mcycle} 等机器态状态。冻结版本将 CSR 事务局部化到 EXU，以减少跨越 IDU、
+LSU 和 WBU 的读写控制通路。
+
+\subsection{控制流前端}\label{sec:frontend}
+
+BTB 包含 512 个表项，按 8 个 bank、每 bank 64 项组织为异步 LUTRAM。表项保存类型、tag、压缩目标和
+2-bit 饱和方向计数器；更新 shadow 保存较窄的 tag/类型/方向状态。复位阶段逐项清零，在初始化完成前
+强制查询 miss。新出现且实际不跳转的条件分支不会驱逐同索引下的有用目标。返回预测由 2 项 RAS
+提供，call 压入 \code{pc+4}，标准 return 弹出栈顶。
+
+\begin{signalstable}{BTB 与分支预测器接口信号说明}
+query.addr&输入&UInt(32)&组合查询&当前推测 PC\\
+query.hit/target&输出&Bool/UInt(32)&组合返回&命中与预测目标\\
+query.is*&输出&类型/方向组&随查询返回&区分 branch、JAL、return 及预测方向\\
+update.*&输入&地址/目标/类型/方向&注册后写入&用真实执行结果训练表项\\
+pred&输出&PredBundle&送入 IFU&给出命中、taken 和下一 PC\\
+\end{signalstable}
+
+\input{src/tikz/btb-structure}
+
+\subsection{存储系统与 D-cache}\label{sec:memory}
+
+D-cache 为 4\,KiB 直接映射结构，由两个 512$\times$32 BRAM bank 组成。tag 使用两个 512$\times$8
+分布式存储器；bank 位留在存储地址之外。主数据端是单周期同步读，因此 bank 选择也延迟一拍。
+另有每 bank 四个逐字节分布式存储器镜像，提供异步 late-load 数据；该数据必须先跨越 EXU--LSU
+寄存边界，再参与受限消费者的运算或比较。
+
+\begin{signalstable}{D-cache 接口信号说明}
+queryIndex/tag&输入&10/7 bit&组合 tag 查询&普通 load/store 地址\\
+lateQueryIndex&输入&10 bit&异步数据查询&late-load 专用地址\\
+hit/readData&输出&Bool/UInt(32)&tag 组合、数据同步&普通缓存命中与主数据\\
+lateReadData&输出&UInt(32)&异步读取&逐字节副本数据\\
+storeUpdate/*&输入&地址/数据/4-bit mask&store 优先&更新或保守失效缓存行\\
+update/*&输入&地址/数据/valid/mask&回填协议&写入较早 load 返回或加速单元更新\\
+\end{signalstable}
+
+\input{src/tikz/dcache-structure}
+
+\subsection{SoC、内存接口与 UART}
+
+CPU 核心通过独立取指与数据 SimpleBus 端口接入 JYD SoC。IROM 基址为 \code{0x80000000}，DRAM
+基址为 \code{0x80100000}，MMIO 位于 \code{0x80200000} 区域。FPGA 顶层使用 Vivado BRAM IP
+承载指令和数据存储；UART 通过 AXI UARTLite、时钟转换和异步字节 FIFO 连接 CPU 与板级 50\,MHz
+外设时钟域，使长时间运行能够留下原始、可机器读取的输出。
+
+\begin{signalstable}{SimpleBus 与 SoC 外设接口信号说明}
+req.valid/ready&双向&Bool&请求握手&表示一次请求被接受\\
+req.addr&输出&UInt(32)&随请求稳定&统一物理地址\\
+wen/data/mask&输出&Bool/32/4 bit&写请求有效&表达 store 数据与字节使能\\
+resp.valid/rdata&输入&Bool/UInt(32)&响应握手&返回 load 或取指数据\\
+LED/SEG/CNT&输出&设备相关&地址译码&板级显示与计时\\
+UART TX/RX&双向&串行字节流&跨时钟 FIFO&输出性能记录并支持交互\\
+\end{signalstable}

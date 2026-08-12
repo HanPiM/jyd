@@ -1,0 +1,8 @@
+\begin{figure}[H]\centering\resizebox{0.96\linewidth}{!}{%
+\begin{tikzpicture}[m/.style={draw,rounded corners,align=center,minimum width=2.6cm,minimum height=0.9cm},a/.style={-Stealth,thick},font=\small]
+\node[m,fill=blue!6] (q) {地址\\bank/index/tag}; \node[m,fill=green!7,right=1.0cm of q] (tag) {2$\times$512 tag LUTRAM};
+\node[m,fill=green!7,right=1.0cm of tag] (bram) {2$\times$2 KiB BRAM\\同步主数据};
+\node[m,fill=orange!8,below=0.9cm of tag] (late) {2$\times$4 字节 LUTRAM\\异步数据镜像};
+\node[m,fill=gray!10,right=1.0cm of bram] (pipe) {EXU--LSU 注册边界};
+\draw[a](q)--(tag);\draw[a](tag)--node[above]{hit}(bram);\draw[a](bram)--(pipe);\draw[a](q)--(late);\draw[a](late)-|(pipe);
+\end{tikzpicture}}\caption{4 KiB 双 bank D-cache 主数据与异步副本}\end{figure}

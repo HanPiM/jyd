@@ -1,0 +1,5 @@
+\begin{figure}[H]\centering
+\begin{tikzpicture}\begin{axis}[width=0.92\linewidth,height=6.5cm,symbolic x coords={基线,乘法预测,DCache,晚旁路,多周期地址,Shadow,BTB返回,部分写,冻结},xtick=data,x tick label style={rotate=28,anchor=east,font=\scriptsize},ylabel={评估时间（s）},ymin=1.5,ymax=2.08,grid=major]
+\addplot[blue!70!black,thick,mark=*] coordinates {(基线,2.020)(乘法预测,1.943)(DCache,1.868)(晚旁路,1.643)(多周期地址,1.606910)(Shadow,1.607404)(BTB返回,1.607403)(部分写,1.607403)(冻结,1.607403)};
+\end{axis}\end{tikzpicture}\caption{withMext-v2 同口径性能走向}\end{figure}
+

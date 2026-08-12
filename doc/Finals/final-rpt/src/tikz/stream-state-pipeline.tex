@@ -1,0 +1,7 @@
+\begin{figure}[H]\centering\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[s/.style={draw,rounded corners,minimum width=2.25cm,minimum height=0.8cm,align=center,fill=purple!7},a/.style={-Stealth,thick},font=\small]
+\node[s] (req) {对齐访存请求};\node[s,right=0.65cm of req] (resp) {响应/可用字节寄存};
+\node[s,right=0.65cm of resp] (low) {低 2 字节状态步};\node[s,right=0.65cm of low] (high) {高 2 字节状态步};
+\node[s,right=0.65cm of high] (commit) {掩码/终态计数提交};
+\foreach \x/\y in {req/resp,resp/low,low/high,high/commit}{\draw[a](\x)--(\y);}
+\end{tikzpicture}}\caption{流式状态识别与计数流水}\end{figure}

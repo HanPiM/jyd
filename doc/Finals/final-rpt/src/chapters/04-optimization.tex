@@ -1,0 +1,115 @@
+\section{性能与时序优化}\label{sec:optimization}
+
+\subsection{优化方法}
+
+优化以完整工作负载、周期级 RTL 统计和 Vivado 布局布线报告为依据。每项成果必须同时满足功能语义
+和明确的数据口径：性能比较只在同一镜像内部进行；时序数字注明频率及 routed/post-route physopt
+阶段；不同提交或不同 COE 的数据不拼接为一个候选结果。本文只描述冻结版本仍保留的成功结构。
+
+\input{src/tikz/optimization-loop}
+
+\subsection{前端控制流优化}
+
+冻结版本将 BTB 扩大至 512 项，并使用八 bank LUTRAM 控制查询深度；更新端保留窄 shadow，避免更新
+数据绕回取指查询通路。条件分支采用表项局部 2-bit 饱和计数器，JAL 和 return 使用无条件目标，return
+还可由两项 RAS 提供不依赖 BTB 目标别名的地址。未见过且实际不跳转的条件分支不分配表项，从而保留
+已有控制转移目标。重定向 fetch 固定预测顺序下一条，后续再恢复正常预测，避免重定向邮箱与异步查询
+同拍串联。
+
+\subsection{缓存与 load-use 优化}
+
+数据缓存由 2\,KiB 扩展为 4\,KiB 双 bank，减少直接映射冲突。主数据继续使用 BRAM 以控制资源，
+逐字节 LUTRAM 副本则提供异步窄加载数据。late-load 只开放给固定、容易验证且逻辑短的消费者；数据
+在 EXU--LSU 或响应捕获边界注册后再参与分支比较和结果形成。store 能安全覆盖整字时直接分配缓存行，
+窄 store 不能安全合并时保守失效；store epoch 防止旧 load 回填覆盖新数据。
+
+\subsection{执行和后端通路优化}
+
+普通整数 ALU、直接结果、长算术、领域加速和 load 结果分成五类。相邻快速结果采用分组编码选择，
+不允许其控制信号进入地址、M/B、自定义指令和 CSR 等长路径。地址操作数单独注册，D-cache 查询只
+携带所需 index/tag；加速单元的控制、响应和结果也分别经过边界寄存。该结构的目标不是增加流水深度，
+而是让每类消费者只看到所需数据，降低宽 Mux、扇出和跨模块组合回路。
+
+\subsection{乘法和位操作优化}
+
+普通低位乘法使用较短 DSP 流水；操作数满足定宽条件时进入一周期窄乘法通路，高位乘法仍使用完整
+有符号/无符号乘积。B 扩展按逻辑深度分为短组合操作和迭代操作，避免简单的移位加法或符号扩展承担
+通用迭代延迟。每条多周期指令在结果未就绪期间持续提供目的寄存器占用信息，保持 RAW 停顿正确。
+
+\subsection{分赛区后续性能演进}
+
+表\ref{tab:regional-perf}用于吸收分赛区后续优化报告中仍有效的量化结果。两套工作负载彼此独立，
+只能在各自表内纵向比较。数据没有用于推算总决赛冻结版本的板测成绩。
+
+\begin{table}[H]\centering
+\caption{分赛区后续版本的同口径性能演进}\label{tab:regional-perf}
+\begin{tabularx}{\linewidth}{@{}Yp{0.19\linewidth}p{0.18\linewidth}p{0.20\linewidth}@{}}
+\toprule
+\textbf{同一工作负载内的成功里程碑}&\textbf{withMext-v2 时间}&\textbf{西北样例时间}&\textbf{说明}\\\midrule
+分赛区主报告基线&2.020 s&---&280 MHz 统一复测\\
+乘法与方向预测优化&1.943 s&---&减少乘法等待\\
+D-cache 整字写分配&1.868 s&---&改善写后读局部性\\
+load-use 晚数据旁路&1.643 s&---&受限消费者提前获得数据\\
+多周期单元与地址通路&1.606910 s&6.866 s&时序与性能共同整理\\
+窄加载与缓存 shadow&1.607404 s&6.553 s&不同程序的访存组成不同\\
+32 项 BTB 与返回预测&1.607403 s&6.481 s&控制流容量和间接返回\\
+部分写命中保留&1.607403 s&6.182 s&提升缓存局部性\\
+分赛区后续冻结结果&1.607403 s&6.184 s&接口整理后的闭合版本\\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\input{src/tikz/regional-performance}
+
+\subsection{总决赛成功里程碑链}\label{sec:performance}
+
+总决赛阶段的成功结构按能力链归纳为：分赛区 tag 基线、动态预测与更大 BTB、4\,KiB 双 bank
+D-cache、窄乘法与 B 扩展分流、领域自定义指令、结果通路分区、后端消费者与控制边界注册，最终冻结
+于 \commit{fabb599}。由于这些里程碑曾使用不同的程序映像、扩展组合和频率，本文不把历史运行时间
+强行绘成同一折线。取得冻结提交的正式板测后，仅在下表填入同一提交的可比数据。
+
+\begin{table}[H]\centering
+\caption{总决赛冻结版本待补性能结果}
+\begin{tabularx}{\linewidth}{@{}p{0.24\linewidth}p{0.16\linewidth}p{0.23\linewidth}Y@{}}
+\toprule
+\textbf{测试项}&\textbf{频率}&\textbf{结果}&\textbf{必须附带的证据}\\\midrule
+正式性能工作负载&250 MHz&\MetricPending{运行时间}&UART 原始输出、CRC、bitstream SHA-256、COE SHA-256\\
+正式性能工作负载&300 MHz&\MetricPending{运行时间}&UART 原始输出、CRC、bitstream SHA-256、COE SHA-256\\
+重复上板稳定性&待定&\MetricPending{统计结果}&逐次 capture 日志与板卡编号、样本数、均值和极差\\
+资源利用率&250/300 MHz&\MetricPending{资源数据}&对应实现的 LUT/FF/BRAM/DSP utilization report\\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\PlaceholderFigure{冻结版本性能与 WNS 综合图}{待获得同一提交的正式板测时间后，生成运行时间、频率、WNS 与资源利用率组合图。}
+
+\subsection{实现频率与 WNS}\label{sec:timing}
+
+冻结提交目前有三组可明确归属的实现结果。250\,MHz 正确 worktree 在 routed 阶段 WNS 为
+$-0.087$\,ns，经 post-route physopt 后达到 $+0.009$\,ns，完成 setup 时序闭合\evidence{E-FAB-250}。
+280\,MHz 的正确复测 routed WNS 为 $-0.664$\,ns，之后 Vivado 在 post-route physopt 阶段异常退出，
+因此不存在该次运行的最终 physopt 数字\evidence{E-FAB-280}。300\,MHz 归档的 routed WNS 为
+$-0.590$\,ns，post-route physopt 为 $-0.580$\,ns\evidence{E-FAB-300,E-FAB-300P}，表示高频实现能够
+完成布局布线，但尚未满足 setup 时序。
+
+\begin{table}[H]\centering
+\caption{冻结提交在不同频率下的实现结果}
+\begin{tabularx}{\linewidth}{@{}p{0.12\linewidth}p{0.17\linewidth}p{0.22\linewidth}Yp{0.16\linewidth}@{}}\toprule
+\textbf{频率}&\textbf{Routed WNS}&\textbf{Post-physopt WNS}&\textbf{状态}&\textbf{证据}\\\midrule
+250 MHz&$-0.087$ ns&$+0.009$ ns&时序闭合&E-FAB-250\\
+280 MHz&$-0.664$ ns&不可用&仅保留 routed 结果&E-FAB-280\\
+300 MHz&$-0.590$ ns&$-0.580$ ns&实现完成，setup 未闭合&E-FAB-300/P\\
+\bottomrule\end{tabularx}
+\end{table}
+
+\input{src/tikz/frequency-wns}
+
+\PlaceholderFigure{250 MHz 时序报告截图}{请从 baseline-fabb599-clean250 归档截取 post-route physopt Timing Summary。}
+\PlaceholderFigure{300 MHz 时序报告截图}{请从 backend-partition-fabb599 归档截取 routed 与 post-route physopt Timing Summary。}
+
+\subsection{工程可复现性}
+
+实现脚本统一完成 RTL 打包、Vivado 工程源刷新、IP/OOC 生成、布局布线、报告提取和归档。流程显式记录
+代码提交、COE 身份、请求/实际频率、运行命令与关键报告；顶层实现并发不低于 16，IP/OOC 并发不低于
+4。对于内联仿真模型，仿真保留模型，综合与打包阶段排除模型并绑定同名 Vivado IP，避免仿真结构与
+物理实现的时延配置不一致。

@@ -1,0 +1,6 @@
+\begin{figure}[H]\centering
+\begin{tikzpicture}\begin{axis}[ybar,width=0.78\linewidth,height=6.2cm,symbolic x coords={250,280,300},xtick=data,xlabel={核心频率（MHz）},ylabel={WNS（ns）},ymin=-0.72,ymax=0.12,bar width=18pt,nodes near coords,grid=major]
+\addplot[fill=blue!35] coordinates {(250,0.009)(280,-0.664)(300,-0.580)};
+\draw[red,dashed,thick] (axis cs:250,0)--(axis cs:300,0);
+\end{axis}\end{tikzpicture}\caption{冻结提交各频率可用的最终阶段 WNS（280 MHz 为 routed）}\end{figure}
+

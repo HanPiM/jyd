@@ -1,0 +1,91 @@
+\section{指令扩展与硬件加速}\label{sec:extensions}
+
+\subsection{基础指令能力}
+
+冻结版本支持赛题要求的 RV32I 整数、访存与控制流指令，支持 RV32M 的 \code{MUL/MULH/MULHSU/MULHU}
+和 \code{DIV/DIVU/REM/REMU}，并实现 Zicsr 的六类 CSR 读改写操作以及 \code{ECALL/MRET} 机器态控制流。
+此外，处理器实现了一组经 RTL 译码确认的 B 扩展操作。复杂 B 操作由迭代单元执行，短操作使用专用
+组合通路，避免所有扩展指令承担固定的长延迟。
+
+\begin{table}[H]\centering
+\caption{冻结版本主要标准扩展能力}
+\begin{tabularx}{\linewidth}{@{}p{0.17\linewidth}Yp{0.25\linewidth}@{}}
+\toprule
+\textbf{类别}&\textbf{指令或能力}&\textbf{实现方式}\\\midrule
+RV32I&整数算术、逻辑、移位、比较、分支、跳转、load/store、LUI/AUIPC&快速整数、直接结果和访存通路\\
+RV32M&MUL、MULH、MULHSU、MULHU、DIV、DIVU、REM、REMU&DSP 流水乘法与迭代除法\\
+Zicsr&CSRRW/CSRRS/CSRRC 及立即数形式&EXU 局部两阶段 CSR 事务\\
+机器态&ECALL、MRET、mstatus/mtvec/mepc/mcause/mcycle&注册化重定向与 CSR 状态\\
+B 子集&计数、循环移位、无进位乘法、位抽取、移位加法、符号扩展、无符号最小值、字节置位检查等&短组合通路或显式多周期单元\\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{乘除法和 B 扩展多周期控制}
+
+乘法器根据操作类别选择全宽高位结果、普通低位结果或窄操作数快通路。窄乘法由两个一周期 DSP
+实例交替接收操作数，使连续输入能够保持明确的结果对齐。除法器使用恢复除法迭代，每拍完成移位、
+比较和减法；最终符号修正与迭代边界分离。多周期单元在接受输入后持续广告目的寄存器但保持
+\code{dataValid=0}，依赖消费者因此会停顿；结果有效后才允许前递和完成握手。
+
+\input{src/tikz/multicycle-handshake}
+
+\subsection{自定义指令设计}\label{sec:custom}
+
+领域指令使用 RISC-V 保留的 custom opcode 空间。本文保留真实助记符与编码，便于从文档追溯到 RTL，
+但按其一般硬件语义说明能力：它们分别面向流式校验、位域乘法、链式存储结构变换、矩阵遍历归约和
+有限状态流处理，而不是绑定某一具体评测程序。工具链侧通过让 GCC 识别并生成这些自定义指令完成适配；
+本文不展开任何软件层面的实现细节。
+
+\begin{table}[H]\centering\small
+\caption{主要自定义指令编码与硬件语义}\label{tab:custom-encoding}
+\begin{tabularx}{\linewidth}{@{}p{0.13\linewidth}C{0.13\linewidth}C{0.10\linewidth}C{0.10\linewidth}Y@{}}
+\toprule
+\textbf{助记符}&\textbf{opcode}&\textbf{funct7}&\textbf{funct3}&\textbf{硬件执行语义}\\\midrule
+\code{xcrcu8}&\code{0001011}&\code{0000000}&\code{000}&对一个输入字节和当前校验状态执行单周期 CRC 更新\\
+\code{xbmul}&\code{0001011}&\code{0000000}&\code{101}&抽取有符号输入的目标位域并完成定宽乘法，结果进入独立加速写回通路\\
+\code{xlistrev}&\code{0001011}&\code{0000000/0000010}&\code{110}&初始化或推进链式节点变换；通过缓存查询、load/store 请求和内部前驱状态完成一步或循环推进\\
+\code{xmsum}&\code{0001011}&\code{0000010}&\code{111}&按地址顺序读取二维数据，执行裁剪条件下的归约与计数，阻塞至结果完成\\
+\code{xdfacnt}&\code{1011011}&\code{0000000}&\code{000/010/011}&初始化、读取、递增或提交本地状态计数器\\
+\code{xdfa2}&\code{1011011}&\code{0000000}&\code{100}&从内存取得字节并并行处理至多两个符号，返回状态、消费数与掩码\\
+\code{xdfa4}&\code{1011011}&\code{0000000}&\code{101}&分两段处理一个字内至多四个符号，并返回组合状态信息\\
+\code{xdfa4h}&\code{1011011}&\code{0000001}&\code{101/010}&处理至多四个符号并在 token 完成时直接累计状态直方图；提供终态计数读取\\
+\bottomrule
+\end{tabularx}
+\normalsize\end{table}
+
+\subsubsection{单周期数据变换单元}
+
+\code{xcrcu8} 与 \code{xbmul} 均为无内部访存的定延迟操作。译码级生成独立有效位，EXU 在加速结果
+通路中形成结果，不把其选择逻辑加入快速整数 ALU 的普通写回回路。该结构适用于协议校验、位打包、
+量化数值与定宽数据处理等场景。
+
+\subsubsection{链式存储结构变换单元}
+
+\code{xlistrev} 保存 current、previous、next 和预取状态。每一步先查询 D-cache；命中时直接取得下一
+节点，否则发出 load；随后写回当前节点的链接字段。循环形式利用内部状态推进，避免每个节点都重新
+建立相同的控制依赖。所有写入仍经过缓存一致性更新，外部可见顺序与普通 load/store 一致。
+
+\input{src/tikz/list-transform-fsm}
+
+\subsubsection{矩阵归约单元}
+
+\code{xmsum} 接收基址、维度和裁剪阈值，内部按行列计数器产生访存请求。响应寄存后完成加法、阈值
+比较和结果更新；归约完成后通过加速结果通路一次写回。请求、响应、处理和完成边界均有寄存器，避免
+访存数据与最终写回形成长组合链。
+
+\subsubsection{流式状态处理单元}
+
+\code{xdfa*} 将状态转移与计数器放在 EXU 内部。字节数据从内存响应进入寄存器，再由两个两字节步骤
+单元分段处理低半字和高半字；结果包含终态、消费字节数、停止标志和状态掩码。直方图形式只在一个
+完整 token 结束时提交计数，从而保持跨字继续处理的语义。
+
+\input{src/tikz/stream-state-pipeline}
+
+\subsection{自定义指令一致性与异常边界}
+
+自定义单元与普通指令共享 ready/valid 和顺序提交约束：阻塞单元工作时保持当前 EXU 指令；发出的
+访存请求使用统一数据总线；store 更新优先于较早回填；发生控制流冲刷时年轻请求不得修改缓存状态。
+内部状态只由匹配的指令序列推进，完成结果通过独立 \code{accelerator} lane 写回，避免与快速整数
+路径形成循环依赖。
+

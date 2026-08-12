@@ -1,0 +1,9 @@
+\begin{figure}[H]\centering
+\begin{tikzpicture}[u/.style={draw,rounded corners,align=center,minimum width=2.7cm,minimum height=0.8cm},a/.style={-Stealth,thick},font=\small]
+\node[u,fill=blue!6] (d) {DecodedInst}; \node[u,fill=green!7,above right=0.3cm and 1.5cm of d] (fi) {快速整数通路};
+\node[u,fill=green!7,right=1.5cm of d] (di) {直接结果通路}; \node[u,fill=orange!8,below right=0.3cm and 1.5cm of d] (la) {长算术通路};
+\node[u,fill=purple!7,below=1.5cm of d] (ac) {领域加速通路}; \node[u,fill=cyan!7,above=1.5cm of d] (ld) {加载结果通路};
+\node[u,fill=gray!10,right=4.8cm of d] (wb) {按 ResultKind\\局部汇聚与写回};
+\foreach \x in {fi,di,la,ac,ld}{\draw[a] (d)--(\x);\draw[a] (\x)--(wb);}
+\end{tikzpicture}\caption{EXU 与写回结果通路分区}\end{figure}
+

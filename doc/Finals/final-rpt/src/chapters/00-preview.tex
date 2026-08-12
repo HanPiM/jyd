@@ -1,0 +1,36 @@
+\section*{作品核心内容快速预览}
+\addcontentsline{toc}{section}{作品核心内容快速预览}
+
+本项目实现了一款面向 FPGA 的 RV32 顺序单发射五级流水处理器。总决赛文档冻结于
+\commit{fabb5995bdd394578fbf989b6b20d5eae45b320c}，分赛区对照点固定为
+\code{ReginalFinal-Post-Report-Version}（\commit{2b2734b}）。冻结版本在保留
+IFU--IDU--EXU--LSU--WBU 主流水结构的基础上，形成了动态控制流预测、4\,KiB 数据缓存、
+分区式执行/写回通路、多周期整数扩展以及领域自定义指令协同工作的处理器结构。
+
+\input{src/tikz/core-preview}
+
+\begin{table}[H]
+\centering
+\caption{核心成果与正文索引}
+\begin{tabularx}{\linewidth}{@{}p{0.23\linewidth}Yp{0.18\linewidth}@{}}
+\toprule
+\textbf{核心内容}&\textbf{快速结论}&\textbf{查阅位置}\\\midrule
+处理器架构&五级顺序单发射、ready/valid 反压、epoch 冲刷、分区结果通路&第\ref{sec:architecture}节\\
+控制流前端&512 项八 bank LUTRAM BTB、表项 2-bit 方向计数器、2 项返回地址栈&第\ref{sec:frontend}节\\
+存储系统&4\,KiB 双 bank 直接映射 D-cache，支持主数据与 late-load 数据副本&第\ref{sec:memory}节\\
+指令能力&RV32I、RV32M、Zicsr、机器态控制流、实际实现的 B 子集与自定义指令&第\ref{sec:extensions}节\\
+领域加速&CRC 字节更新、位抽取乘法、链式结构变换、矩阵归约、流式状态识别&第\ref{sec:custom}节\\
+实现结果&300\,MHz post-route WNS $-0.580$\,ns；250\,MHz post-route physopt WNS $+0.009$\,ns&第\ref{sec:timing}节\\
+性能结果&\MetricPending{fabb599 正式板测时间与截图}&第\ref{sec:performance}节\\
+验证体系&仿真、差分测试、指令/架构测试、时序实现和上板证据闭环&第\ref{sec:verification}节\\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\noindent\textbf{结果口径说明：}300\,MHz 是冻结版本的高频实现点，其 setup 时序尚有
+$0.580$\,ns 缺口；250\,MHz 版本在 post-route physical optimization 后 WNS 为
+$+0.009$\,ns，完成建立时序闭合。两者不混写为同一个实现结果。冻结提交尚无可归属到同一
+候选的正式板测时间，因此所有板测性能均保持占位，待取得正式记录后补齐。
+
+\PlaceholderFigure{冻结版本板测核心结果}{请补充同一提交、同一 COE、同一频率下的 UART 原始输出与板卡照片。}
+\clearpage

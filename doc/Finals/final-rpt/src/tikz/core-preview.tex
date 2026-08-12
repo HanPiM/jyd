@@ -1,0 +1,12 @@
+\begin{figure}[H]\centering
+\begin{tikzpicture}[stage/.style={draw,rounded corners,minimum width=2.25cm,minimum height=1.05cm,align=center,fill=blue!7},unit/.style={draw,rounded corners,minimum width=2.45cm,minimum height=0.8cm,align=center,fill=green!7},arr/.style={-Stealth,thick},font=\small]
+\node[stage] (ifu) {IFU\\连续取指}; \node[stage,right=0.65cm of ifu] (idu) {IDU\\译码/相关};
+\node[stage,right=0.65cm of idu] (exu) {EXU\\分区执行}; \node[stage,right=0.65cm of exu] (lsu) {LSU\\访存元信息};
+\node[stage,right=0.65cm of lsu] (wbu) {WBU\\顺序写回};
+\foreach \a/\b in {ifu/idu,idu/exu,exu/lsu,lsu/wbu}{\draw[arr] (\a)--(\b);}
+\node[unit,above=0.7cm of ifu] (pred) {512 项 BTB + 2-bit 方向预测 + RAS};
+\node[unit,below=0.75cm of lsu] (dc) {4 KiB 双 bank D-cache\\同步主数据 + 异步旁路副本};
+\node[unit,below=0.75cm of exu] (acc) {M/B 多周期单元与领域加速单元};
+\draw[arr] (pred)--(ifu); \draw[arr] (exu)--(acc); \draw[arr] (acc)--(lsu); \draw[arr] (exu)--(dc); \draw[arr] (dc)--(lsu);
+\end{tikzpicture}\caption{冻结版本核心结构快速预览}\end{figure}
+

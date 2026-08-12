@@ -1,0 +1,101 @@
+\section{验证与测评体系}\label{sec:verification}
+
+本章暂沿用分赛区技术文档建立的验证层次，并结合冻结版本增加版本归属和证据要求。验证体系由指令级
+参考模型、周期级 RTL 仿真、Vivado XSim、架构测试、FPGA 实现和上板运行组成；不同层次分别覆盖
+体系结构语义、流水线时序、IP 绑定、物理时序和真实板级行为。
+
+\subsection{验证平台说明}
+
+\subsubsection{Verilator 与 NEMU 差分验证}
+
+Chisel 生成的 SystemVerilog 由 Verilator 编译为周期级仿真器。仿真器在指令提交边界将 DUT 的 PC、
+通用寄存器和相关体系结构状态与 NEMU 参考模型比较；出现差异时输出最近指令环、寄存器状态和访存
+上下文。DPI-C 还负责停机检测、串口模拟和性能计数器采集。该平台运行速度高，适合 CPU tests、
+架构测试和完整工作负载回归。
+
+\subsubsection{Vivado XSim}
+
+XSim 使用与 FPGA 打包一致的顶层、存储器接口和 IP 仿真模型，重点检查 BRAM 同步读写、字节写掩码、
+分布式存储器异步读取以及数码管/LED 等板级连接。BlackBox 内联模型只用于 RTL 仿真；综合输入会排除
+模型并绑定 Vivado IP output product。
+
+\subsubsection{Vivado 实现和数字孪生上板}
+
+实现流程从冻结提交重新生成打包 RTL，刷新工程导入目录，再执行 synthesis、implementation 和
+bitstream。上板验证通过 CLI capture 保存原始 UART 输出，不以人工抄录的屏幕数字作为唯一性能依据。
+每次正式结果需要同时记录板卡编号、bitstream SHA-256、COE SHA-256、CPU 频率、CRC 和完整运行输出。
+
+\input{src/tikz/verification-pyramid}
+
+\subsection{功能测试范围}
+
+\begin{table}[H]\centering
+\caption{验证层次与覆盖目标}
+\begin{tabularx}{\linewidth}{@{}p{0.22\linewidth}YY@{}}
+\toprule
+\textbf{测试层次}&\textbf{主要内容}&\textbf{判定标准}\\\midrule
+基础 CPU tests&add、load-store、switch、if-else、recursion 等&程序 good trap，差分无不一致\\
+RV32M 定向架构测试&mul、mulh、mulhu、mulhsu 及除法边界&架构签名通过，RAW 停顿正确\\
+CSR/机器态测试&CSR 读改写、ecall、mret、RT-Thread 启动&状态读写正确；环境允许时到达 shell 提示符\\
+B 扩展测试&实际实现的短操作和迭代操作&与参考模型逐指令一致\\
+自定义指令测试&单周期、状态型、访存型和归约型单元&返回值、内部状态、访存副作用与参考语义一致\\
+完整性能负载&固定镜像及正式迭代次数&CRC 全部正确，周期/板测记录完整\\
+XSim 板级测试&存储 IP、SEG/LED、UART 数据路径&波形与设备输出符合接口时序\\
+Vivado 实现&setup/hold、DRC、unrouted nets&报告阶段和频率口径明确，无硬错误\\
+上板稳定性&相同 bitstream 多次 capture&每次 CRC 正确，时间分布可解释\\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{流水线与缓存专项验证}
+
+\subsubsection{RAW、旁路与多周期执行}
+
+验证同时覆盖立即消费、隔一条消费、两个源寄存器同时相关、后级反压、多周期结果完成同拍消费等场景。
+生产者在数据无效时必须保留目的寄存器号，使 IDU 停顿；结果有效后才能解除停顿或进入专用旁路。
+相邻快速 token 不得被地址、M/B、CSR 或自定义消费者误用。
+
+\subsubsection{load-use 与分支重定向}
+
+缓存命中时检查窄加载扩展、地址低位和 late-data 副本一致；miss 时检查响应捕获后再解析消费者。
+BEQ/BNE 的 late-load 比较还需覆盖预测正确和错误两类结果，确保重定向只发生一次、年轻 EXU 指令
+及其访存/缓存更新均被抑制。
+
+\subsubsection{D-cache 一致性}
+
+专项场景包括 load fill、整字 store 分配、窄 store 失效、store 与旧 load 回填竞争、双 bank 连续访问、
+同步 BRAM bank 选择对齐以及自定义访存单元的缓存更新。主 BRAM 和逐字节 late-data 镜像在所有有效
+写入后必须保持数据一致。
+
+\subsection{冻结版本验证状态}
+
+本文架构描述由 \commit{fabb599} RTL 静态核对；已归属到该提交的时序证据见第\ref{sec:timing}节。
+正式板测尚未完成，因此表\ref{tab:verification-status}对缺失项明确标为待补，不把其他提交的运行结果
+移植到冻结版本。
+
+\begin{table}[H]\centering
+\caption{冻结版本验证证据状态}\label{tab:verification-status}
+\begin{tabularx}{\linewidth}{@{}p{0.30\linewidth}p{0.22\linewidth}Y@{}}
+\toprule
+\textbf{证据项}&\textbf{状态}&\textbf{说明}\\\midrule
+RTL/接口静态核对&完成&本文模块、编码和接口均从冻结提交读取\\
+250 MHz 完整实现&完成&post-route physopt WNS $+0.009$ ns\\
+280 MHz routed 实现&完成&routed WNS $-0.664$ ns；后续工具异常，不填最终 physopt 值\\
+300 MHz 完整实现&完成&post-route physopt WNS $-0.580$ ns，setup 未闭合\\
+冻结版本 CPU tests 日志&\MetricPending{归档}&补充命令、提交和日志摘要\\
+冻结版本自定义指令回归&\MetricPending{归档}&补充参考模型与 RTL 对比结果\\
+冻结版本正式板测&\MetricPending{测试}&补充 250/300 MHz UART capture、CRC 和 bitstream 身份\\
+冻结版本资源报告&\MetricPending{提取}&补充 LUT/FF/BRAM/DSP 数据与截图\\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\PlaceholderFigure{冻结版本 UART 上板输出}{请使用 CLI capture 的完整原始输出，包含程序身份、CRC 与运行时间。}
+\PlaceholderFigure{冻结版本板卡运行照片}{请提供开发板、连接环境和运行状态清晰可辨的照片。}
+
+\subsection{测评结果判读规则}
+
+性能时间只在程序输出校验通过后有效；仿真周期换算必须注明是否包含启动和报告开销；板测结果优先
+采用原始硬件计数器和 UART 输出。WNS 必须注明时钟、约束周期和报告阶段：routed 与 post-route
+physopt 不能混称。任何表格和图片中的最终数据都必须能回查附录证据索引。
+

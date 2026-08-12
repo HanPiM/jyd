@@ -45,9 +45,6 @@ class WriteBackInfo(implicit p:CPUParameters) extends Bundle {
   val dcacheHit     = Bool()
   val dcacheStoreEpoch = Bool()
 
-  val csr           = CSRegReqIO.TX.Write
-  val csr_ecallflag = Bool()
-
   // val is_ebreak = Bool()
   // val skipDifftest = Bool()
 
@@ -131,8 +128,6 @@ object ExtractFwdInfoFromWrBack {
     out.data      := 0.U
     out.kind      := wrBack.resultKind
 
-    out.enWrCSR := wrBack.csr.en && info.valid
-
     out
   }
 }
@@ -142,8 +137,6 @@ class WBU(implicit p:CPUParameters) extends Module {
     val in       = Flipped(Decoupled(new WriteBackInfo))
     val memResp  = Flipped(Valid(Types.UWord))
     val gpr      = GPRegReqIO.WriteTX
-    val csr      = CSRegReqIO.TX.Write
-    val is_ecall = Output(Bool())
     val done     = Output(Bool())
     val dcacheUpdate = Output(Bool())
     val dcacheAddr   = Output(Types.UWord)
@@ -190,11 +183,6 @@ class WBU(implicit p:CPUParameters) extends Module {
   io.gpr.en   := resultValid && valid
   io.gpr.addr := selectedRd
   io.gpr.data := selectedData
-
-  io.csr.en   := wbinfo.csr.en && valid
-  io.csr.addr := wbinfo.csr.addr
-  io.csr.data := wbinfo.csr.data
-  io.is_ecall := wbinfo.csr_ecallflag && valid
 
   io.done := valid
 

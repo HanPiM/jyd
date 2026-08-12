@@ -220,7 +220,6 @@ class CPUCore(
   val redirectEpochReg           = RegInit(false.B)
 
   val gprs = Module(new RegisterFile(READ_PORTS = 2))
-  val csrs = Module(new ControlStatusRegisterFile())
 
   val ifu        = Module(new IFU)
   val idu        = Module(new IDU)
@@ -425,9 +424,6 @@ class CPUCore(
   }
 
   idu.io.rvec <> gprs.io.read
-  idu.io.csrRead <> csrs.io.read
-  idu.io.csrJmpTarget.mepc  := csrs.io.mepc
-  idu.io.csrJmpTarget.mtvec := csrs.io.mtvec
 
   val lsuFwdInfo = ExtractFwdInfoFromLSU(lsu.io.in)
   val lsuFastFwdInfo = ExtractFastFwdInfoFromLSU(lsu.io.in)
@@ -491,6 +487,4 @@ class CPUCore(
   pipelineConnect(lsu.io.out, wbu.io.in, foo)
 
   gprs.io.write <> wbu.io.gpr
-  csrs.io.write <> wbu.io.csr
-  csrs.io.is_ecall := wbu.io.is_ecall
 }

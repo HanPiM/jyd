@@ -36,8 +36,6 @@ object ExtractFwdInfoFromLSU {
     out.data      := Mux(info.bits.isLoad, loadData, ResultLaneSelect.nonLoadData(wrBack))
     out.kind      := wrBack.resultKind
 
-    out.enWrCSR := wrBack.csr.en && info.valid
-
     out
   }
 }
@@ -53,7 +51,6 @@ object ExtractFastFwdInfoFromLSU {
     out.dataVaild := wrBack.fastResult.valid && info.valid
     out.data      := wrBack.fastResult.data
     out.kind      := ResultKind.fastInt
-    out.enWrCSR   := false.B
     out
   }
 }
@@ -127,10 +124,6 @@ class LSU(
   //   )
   // )
 
-  outWriteBackInfo.csr.en        := activeReq.exuWriteBack.csr.en
-  outWriteBackInfo.csr.addr      := activeReq.exuWriteBack.csr.addr
-  outWriteBackInfo.csr.data      := activeReq.exuWriteBack.csr.data
-  outWriteBackInfo.csr_ecallflag := activeReq.exuWriteBack.csr_ecallflag
   outWriteBackInfo.resultKind    := activeReq.exuWriteBack.resultKind
   outWriteBackInfo.fastResult    := activeReq.exuWriteBack.fastResult
   outWriteBackInfo.directResult  := activeReq.exuWriteBack.directResult

@@ -23,7 +23,6 @@ class WrBackForwardInfo(
   val data      = Types.UWord
   val kind      = ResultKind()
 
-  val enWrCSR = Bool()
 }
 
 object WrBackForwardInfo {
@@ -39,15 +38,13 @@ object WrBackForwardInfo {
     res.dataVaild := WrBack.dataVaild
     res.data      := newData
     res.kind      := WrBack.kind
-    res.enWrCSR   := WrBack.enWrCSR
     res
   }
   def apply(
     infoValid:  Bool,
     dinstInfo:  DecodedInst,
     dataVaild:  Bool,
-    data:       UInt,
-    csrWrEn:    Bool
+    data:       UInt
   )(
     implicit p: CPUParameters
   ): WrBackForwardInfo = {
@@ -57,18 +54,16 @@ object WrBackForwardInfo {
     res.dataVaild := dataVaild
     res.data      := data
     res.kind      := dinstInfo.info.resultKind
-    res.enWrCSR   := csrWrEn && infoValid
     res
   }
   def apply(
     dinst:      DecoupledIO[DecodedInst],
     dataVaild:  Bool,
-    data:       UInt,
-    csrWrEn:    Bool
+    data:       UInt
   )(
     implicit p: CPUParameters
   ): WrBackForwardInfo = {
-    apply(dinst.valid, dinst.bits, dataVaild, data, csrWrEn)
+    apply(dinst.valid, dinst.bits, dataVaild, data)
   }
   def apply(
     dinst:      DecoupledIO[DecodedInst]
@@ -77,7 +72,7 @@ object WrBackForwardInfo {
   ): WrBackForwardInfo = {
     val foo = Wire(Types.UWord)
     foo := DontCare
-    apply(dinst, false.B, foo, false.B)
+    apply(dinst, false.B, foo)
   }
 }
 
@@ -166,12 +161,6 @@ object CacheAwareByPassMux {
   }
 }
 
-object CSRByPassNeedStall {
-  def apply(wrBacks: Seq[WrBackForwardInfo]): Bool = {
-    wrBacks.map(_.enWrCSR).reduce(_ || _)
-  }
-}
-
 class ByPassMux(
   implicit p: CPUParameters)
     extends Module {
@@ -198,8 +187,6 @@ class ByPassMux(
   })
 
   val wrBacks    = Seq(io.wrBackInfo.exu, io.wrBackInfo.lsu, io.wrBackInfo.wbu)
-  val csrWrBacks = Seq(io.wrBackInfo.exu, io.wrBackInfo.lsu, io.wrBackInfo.wbu)
-
   val (needStall1, outData1, lateLoadRs1, adjacentFastRs1) = CacheAwareByPassMux(
     io.rs1,
     io.regData1,
@@ -217,9 +204,7 @@ class ByPassMux(
     io.allowAdjacentFastRs2
   )
 
-  val needStallCSR = CSRByPassNeedStall(csrWrBacks)
-
-  io.needStall := needStall1 || needStall2 || needStallCSR
+  io.needStall := needStall1 || needStall2
   io.lateLoadRs1 := lateLoadRs1
   io.lateLoadRs2 := lateLoadRs2
   io.adjacentFastRs1 := adjacentFastRs1
@@ -234,11 +219,6 @@ class IDU(
   val io = IO(new Bundle {
     val in           = Flipped(Decoupled(new FetchedInst))
     val rvec         = GPRegReqIO.ReadVecTX(2)
-    val csrRead      = CSRegReqIO.TX.SingleRead
-    val csrJmpTarget = Input(new Bundle {
-      val mepc  = Types.UWord
-      val mtvec = Types.UWord
-    })
 
     val pipelineFlush = Input(Bool())
 
@@ -294,9 +274,6 @@ class IDU(
 
   io.rvec.addr(0) := res.rs1
   io.rvec.addr(1) := res.rs2
-  io.csrRead.en   := io.in.valid
-  io.csrRead.addr := inst(31, 20)
-
   val immI    = Cat(Fill(21, inst(31)), inst(30, 20))
   val immS    = Cat(immI(31, 5), inst(11, 8), inst(7))
   val immB    = Cat(immI(31, 12), inst(7), immS(10, 1), 0.U(1.W))
@@ -432,7 +409,6 @@ class IDU(
   res.fastBranchRs2       := Fill(8, fastBranchRs2Token) ^ res.reg2(7, 0)
   res.fastStoreRs2        := Fill(8, fastStoreRs2Token) ^ res.reg2(7, 0)
   res.adjacentFastBranch  := fastBranchRs1Token || fastBranchRs2Token
-  res.csrReadData         := io.csrRead.data
 
   val addressExuConflict =
     needReg1AddImm && SingleByPassMux.conflict(res.rs1, io.wrBackInfo.exu.addr, io.wrBackInfo.exu.enWr)
@@ -485,18 +461,14 @@ class IDU(
 
   val snpc = io.in.bits.pc + 4.U
 
-  res.staticNextPCOrCSRTarget := TrimmedPC.expand(Mux(
-    res.isECall,
-    TrimmedPC.trim(io.csrJmpTarget.mtvec),
-    Mux(res.isMRet, TrimmedPC.trim(io.csrJmpTarget.mepc), TrimmedPC.trim(snpc))
-  ))
+  res.staticNextPCOrCSRTarget := snpc
 
   res.preMuxWrBackData := Mux1H(
     Seq(
       isTypLUI               -> immU,
       isTypAUIPC             -> res.pcAddImm,
       (isTypJALR | isTypJAL) -> snpc,
-      isTypSys               -> res.csrReadData
+      isTypSys               -> 0.U
     )
   )
 
@@ -508,9 +480,9 @@ class IDU(
   // Other JALR encodings retain the original always-redirect behavior.
   val isPredictableReturn = inst === "h00008067".U
   // Do not place the EXU add-result carry chain on the return-prediction
-  // validation path.  A return immediately dependent on an EXU write to x1
+  // validation path. A return immediately dependent on an EXU write to x1
   // takes the ordinary redirect path; normal compiler epilogues restore x1
-  // earlier through LSU and retain prediction.  The comparison base excludes
+  // earlier through LSU and retain prediction. The comparison base excludes
   // EXU data structurally even when the conservative redirect term is true.
   val returnTargetBase = io.rvec.data(0)
   val returnProducerPending = SingleByPassMux.conflict(res.rs1, io.wrBackInfo.exu.addr, io.wrBackInfo.exu.enWr) ||

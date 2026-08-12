@@ -110,6 +110,7 @@ class EXU(
   // Keep the historical instance name for simulator hierarchy probes. This
   // module is now only the special cluster; fast integer execution is separate.
   val alu = Module(new SpecialExecutionCluster)
+  val csrs = Module(new ControlStatusRegisterFile)
 
   fastInteger.io.out.ready := io.out.ready
   alu.io.out.ready := io.out.ready
@@ -555,13 +556,23 @@ class EXU(
   val is_ecall = dinst.info.isECall
 
   val csr_raddr = dinst.code(31, 20)
-  val csr_rdata = dinst.info.csrReadData
+  csrs.io.read.en   := io.in.valid && isTypSys
+  csrs.io.read.addr := csr_raddr
+  val csr_rdata = csrs.io.read.data
+
+  val csrPrepared   = RegInit(false.B)
+  val csrReadDataReg = Reg(Types.UWord)
+  val csrNextPCReg  = Reg(Types.UWord)
+  val csrWriteEnReg = Reg(Bool())
+  val csrWriteAddrReg = Reg(UInt(Types.BitWidth.csr_addr.W))
+  val csrWriteDataReg = Reg(Types.UWord)
+  val csrECallReg   = Reg(Bool())
 
   val writeBackInfo = io.out.bits.exuWriteBack
 
-  val csrWrEnable = writeBackInfo.csr.en
-  val csrWrAddr   = writeBackInfo.csr.addr
-  val csrWrData   = writeBackInfo.csr.data
+  val csrWrEnable = WireDefault(isTypSys && func3t(1, 0) =/= 0.U)
+  val csrWrAddr   = WireDefault(csr_raddr)
+  val csrWrData   = Wire(Types.UWord)
 
   object CSROp {
     val RW = 1.U
@@ -574,8 +585,6 @@ class EXU(
   // val isCSRRW = (func3t === CSROp.RW) && isTypSys
   // val isCSRRS = (func3t === CSROp.RS) && isTypSys
 
-  csrWrEnable := isTypSys && func3t(1, 0) =/= 0.U
-
   when(isTypSys) {
 
     val isRW = func3t(1, 0) === CSROp.RW
@@ -586,10 +595,6 @@ class EXU(
 
     when(is_ecall) {
       csrWrAddr := CSRAddr.mepc
-      // ecall: set mepc to pc
-      // !!!note:
-      // although wen = false
-      // is_ecall flag makes csr to write wdata to mepc
       csrWrData := dinst.pc
     }.otherwise {
       csrWrAddr := csr_raddr
@@ -600,11 +605,30 @@ class EXU(
       )
     }
   }.otherwise {
-    csrWrAddr := DontCare
     csrWrData := DontCare
   }
 
-  writeBackInfo.csr_ecallflag := is_ecall
+  // CSR instructions are local two-phase EXU transactions. The first cycle
+  // captures every wide value; the second cycle commits and emits the result.
+  // A redirect from an older instruction clears an uncommitted transaction.
+  when(!io.in.valid) {
+    csrPrepared := false.B
+  }.elsewhen(isTypSys && !csrPrepared) {
+    csrPrepared     := true.B
+    csrReadDataReg  := csr_rdata
+    csrNextPCReg    := Mux(is_ecall, csrs.io.mtvec, Mux(is_mret, csrs.io.mepc, dinst.info.staticNextPCOrCSRTarget))
+    csrWriteEnReg   := csrWrEnable
+    csrWriteAddrReg := csrWrAddr
+    csrWriteDataReg := csrWrData
+    csrECallReg     := is_ecall
+  }.elsewhen(io.out.fire && isTypSys) {
+    csrPrepared := false.B
+  }
+
+  csrs.io.write.en   := csrWriteEnReg && io.out.fire && isTypSys && csrPrepared
+  csrs.io.write.addr := csrWriteAddrReg
+  csrs.io.write.data := csrWriteDataReg
+  csrs.io.is_ecall   := csrECallReg && io.out.fire && isTypSys && csrPrepared
 
   // --- Inst type decode ---
   val needMemReq = isTypLoad || isTypStore
@@ -712,7 +736,7 @@ class EXU(
   lsuInfo.lateLoadData := Mux(lsuInfo.cacheableLoad, io.dcache.lateReadData, 0.U)
   lsuInfo.dcacheStoreEpoch := io.dcache.storeEpoch
 
-  val snpc = dinst.info.staticNextPCOrCSRTarget
+  val snpc = Mux(isTypSys, csrNextPCReg, dinst.info.staticNextPCOrCSRTarget)
 
   val useSingleCycleForward = isTypArithmetic && resultIsFast && !hasLateLoadOperand
   val isLateLoadBit = isLateLoadAndi1 || isLateLoadSrli1
@@ -728,7 +752,7 @@ class EXU(
   writeBackInfo.fastResult.data := Mux(isLateLoadBit, lateBitResult, fastIntegerOut)
   writeBackInfo.directResult.valid := dinst.info.rdWrEn && dinst.info.resultKind === ResultKind.direct
   writeBackInfo.directResult.rd := dinst.info.rd
-  writeBackInfo.directResult.data := dinst.info.preMuxWrBackData
+  writeBackInfo.directResult.data := Mux(isTypSys, csrReadDataReg, dinst.info.preMuxWrBackData)
   writeBackInfo.longResult.valid := dinst.info.rdWrEn && resultIsLong
   writeBackInfo.longResult.rd := dinst.info.rd
   writeBackInfo.longResult.data := specialExecutionOut
@@ -768,7 +792,7 @@ class EXU(
   val exuResultValid =
     Mux(isNumericDfaStep, xdfaWordDone,
       Mux(isListReverse, listReverseDone, Mux(isXmsum, xmsumDone,
-        (!isTypArithmetic || isNumericDfa ||
+        (!isTypSys || csrPrepared) && (!isTypArithmetic || isNumericDfa ||
           Mux(resultIsFast, Mux(hasLateLoadOperand, lateDataReady, fastInteger.io.out.valid), alu.io.out.valid)) &&
           (!hasLateLoadOperand || lateDataReady))))
   // Keep the same-cycle forwarding loop independent of the multi-cycle M/D/B
@@ -781,7 +805,7 @@ class EXU(
   // EXU bypass token. Other single-cycle results wait one cycle and use the
   // ordinary LSU-to-IDU bypass, keeping them out of the ALU recurrence.
   val exuForwardDataValid = useSingleCycleForward || useLateBitForward
-  io.fwd := WrBackForwardInfo(io.in.valid, dinst, exuForwardDataValid, exuForwardData, csrWrEnable)
+  io.fwd := WrBackForwardInfo(io.in.valid, dinst, exuForwardDataValid, exuForwardData)
   // The producer token is decode-only.  In particular, do not feed the
   // current load address/cacheability back into IDU ready; cache hit only
   // decides whether the already-issued consumer completes in the next cycle.

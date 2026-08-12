@@ -271,7 +271,6 @@ class EXU(
   val xdfaCounters = RegInit(VecInit(Seq.fill(8)(0.U(12.W))))
   val xdfaFinalCounters = RegInit(VecInit(Seq.fill(8)(0.U(16.W))))
   val xdfaPendingMask = RegInit(0.U(8.W))
-  val xdfaPendingValid = RegInit(false.B)
   object NumericDfaState extends ChiselEnum {
     val idle, request, response, processLow, processHigh, commit, done = Value
   }
@@ -320,18 +319,17 @@ class EXU(
     xdfaWordIntermediate := xdfaWordLow.io.result
     xdfaWordState := NumericDfaState.processHigh
   }.elsewhen(xdfaWordState === NumericDfaState.processHigh) {
-    val combinedMask = Mux(xdfaPendingValid, xdfaPendingMask, 0.U) | xdfaWordHigh.io.result(15, 8)
+    val combinedMask = xdfaPendingMask | xdfaWordHigh.io.result(15, 8)
     xdfaWordStepResult := Cat(0.U(17.W), xdfaWordHigh.io.result(15, 8), xdfaWordHigh.io.result(7),
       xdfaWordHigh.io.result(5, 3), xdfaWordHigh.io.result(2, 0))
     when(isNumericDfaHistogramStep) {
       when(xdfaWordHigh.io.result(7)) {
         xdfaCommitMask := combinedMask
         xdfaCommitFinalState := xdfaWordHigh.io.result(2, 0)
-        xdfaPendingValid := false.B
+        xdfaPendingMask := 0.U
         xdfaWordState := NumericDfaState.commit
       }.otherwise {
         xdfaPendingMask := combinedMask
-        xdfaPendingValid := true.B
         xdfaWordState := NumericDfaState.done
       }
     }.otherwise {
@@ -355,7 +353,7 @@ class EXU(
   when(numericDfaLocalFire && func3t === 0.U) {
     xdfaCounters.foreach(_ := 0.U)
     xdfaFinalCounters.foreach(_ := 0.U)
-    xdfaPendingValid := false.B
+    xdfaPendingMask := 0.U
   }
   when(numericDfaLocalFire && func3t === 3.U) {
     for (state <- 0 until 8) {

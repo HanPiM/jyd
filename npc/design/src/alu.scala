@@ -231,7 +231,7 @@ class Multiplier extends Module {
   })
 
   object State extends ChiselEnum {
-    val idle, busy, done = Value
+    val idle, busy, macCommit, done = Value
   }
   val state = RegInit(State.idle)
 
@@ -245,6 +245,7 @@ class Multiplier extends Module {
   val xmacaccBitReg   = Reg(Bool())
   val xmacaccAReg     = Reg(UInt(16.W))
   val xmacaccBReg     = Reg(UInt(16.W))
+  val xmacaccTermReg  = Reg(UInt(32.W))
   val matrixAccumulator = Reg(UInt(32.W))
   val resultReg       = Reg(Types.UWord)
   val slowValidPipe   = RegInit(0.U(MultiplierConfig.latency.W))
@@ -289,7 +290,6 @@ class Multiplier extends Module {
     Mux(xmacaccAReg(15), Cat(xmacaccBReg, 0.U(16.W)), 0.U) -
     Mux(xmacaccBReg(15), Cat(xmacaccAReg, 0.U(16.W)), 0.U)
   val xmacaccTerm = Mux(xmacaccBitReg, xmacaccBitTerm, xmacaccSignedTerm)
-  val xmacaccResult = Mux(xmacaccFirstReg, xmacaccTerm, matrixAccumulator + xmacaccTerm)
   val result = Mux(isNarrowFastReg, narrowProduct, Mux(isFastReg, fastMultiplier.io.P, product(63, 32)))
   val resultValid = Mux(isNarrowFastReg, Mux(narrowSelectReg, narrowValidPipe(1), narrowValidPipe(0)), Mux(
     isFastReg,
@@ -298,8 +298,8 @@ class Multiplier extends Module {
   ))
 
   io.in.ready  := state === State.idle
-  io.out.valid := state === State.done || (state === State.busy && resultValid)
-  io.out.bits  := Mux(state === State.done, resultReg, Mux(xmacaccReg, xmacaccResult, result))
+  io.out.valid := state === State.done || (state === State.busy && resultValid && !xmacaccReg)
+  io.out.bits  := Mux(state === State.done, resultReg, result)
 
   switch(state) {
     is(State.idle) {
@@ -330,13 +330,8 @@ class Multiplier extends Module {
       narrowValidPipe := narrowValidPipe << 1
       when(resultValid) {
         when(xmacaccReg) {
-          matrixAccumulator := xmacaccResult
-          when(io.out.ready) {
-            state := State.idle
-          }.otherwise {
-            resultReg := xmacaccResult
-            state := State.done
-          }
+          xmacaccTermReg := xmacaccTerm
+          state := State.macCommit
         }.elsewhen(io.out.ready) {
           state := State.idle
         }.otherwise {
@@ -344,6 +339,12 @@ class Multiplier extends Module {
           state := State.done
         }
       }
+    }
+    is(State.macCommit) {
+      val nextAccumulator = Mux(xmacaccFirstReg, xmacaccTermReg, matrixAccumulator + xmacaccTermReg)
+      matrixAccumulator := nextAccumulator
+      resultReg := nextAccumulator
+      state := State.done
     }
     is(State.done) {
       when(io.out.fire) {

@@ -19,6 +19,7 @@ class RegFileIO(AddrWidth: Int, data_width: Int = Types.BitWidth.word) {
     // val en   = Input(Bool())
     val addr = Input(Vec(N, _AddrT))
     val data = Output(Vec(N, _DataT))
+    val rawData = Output(Vec(N, _DataT))
   }
   class SingleReaIO       extends Bundle {
     val en   = Input(Bool())
@@ -91,6 +92,7 @@ class RegisterFile(
   for (i <- 0 until READ_PORTS) {
     replicas(i).io.dpra := io.read.addr(i).pad(5)
     val writeThrough = writeEn && io.read.addr(i) === io.write.addr
+    io.read.rawData(i) := Mux(io.read.addr(i) === 0.U, 0.U, replicas(i).io.dpo)
     io.read.data(i) := Mux(
       io.read.addr(i) === 0.U,
       0.U,

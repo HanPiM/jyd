@@ -290,6 +290,7 @@ class Multiplier extends Module {
     Mux(xmacaccAReg(15), Cat(xmacaccBReg, 0.U(16.W)), 0.U) -
     Mux(xmacaccBReg(15), Cat(xmacaccAReg, 0.U(16.W)), 0.U)
   val xmacaccTerm = Mux(xmacaccBitReg, xmacaccBitTerm, xmacaccSignedTerm)
+  val xmacaccNextAccumulator = Mux(xmacaccFirstReg, xmacaccTermReg, matrixAccumulator + xmacaccTermReg)
   val result = Mux(isNarrowFastReg, narrowProduct, Mux(isFastReg, fastMultiplier.io.P, product(63, 32)))
   val resultValid = Mux(isNarrowFastReg, Mux(narrowSelectReg, narrowValidPipe(1), narrowValidPipe(0)), Mux(
     isFastReg,
@@ -298,8 +299,9 @@ class Multiplier extends Module {
   ))
 
   io.in.ready  := state === State.idle
-  io.out.valid := state === State.done || (state === State.busy && resultValid && !xmacaccReg)
-  io.out.bits  := Mux(state === State.done, resultReg, result)
+  io.out.valid := state === State.done || state === State.macCommit ||
+    (state === State.busy && resultValid && !xmacaccReg)
+  io.out.bits := Mux(state === State.done, resultReg, Mux(state === State.macCommit, xmacaccNextAccumulator, result))
 
   switch(state) {
     is(State.idle) {
@@ -341,10 +343,9 @@ class Multiplier extends Module {
       }
     }
     is(State.macCommit) {
-      val nextAccumulator = Mux(xmacaccFirstReg, xmacaccTermReg, matrixAccumulator + xmacaccTermReg)
-      matrixAccumulator := nextAccumulator
-      resultReg := nextAccumulator
-      state := State.done
+      matrixAccumulator := xmacaccNextAccumulator
+      resultReg := xmacaccNextAccumulator
+      state := Mux(io.out.ready, State.idle, State.done)
     }
     is(State.done) {
       when(io.out.fire) {

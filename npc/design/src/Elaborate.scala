@@ -50,6 +50,11 @@ object Elaborate extends App {
   )
 
   emit(new TestSoC(new npc.NPCDevices), s"$emitRootDir/testsoc/npc")
-  emit(new jyd.JYDSoC, s"$emitRootDir/testsoc/jyd")
+  // VSIM_DRAM_KB selects a larger simulation-only DRAM for workloads whose
+  // data segments exceed the 64 KB digital twin size.  The FPGA top keeps its
+  // own fixed sizing; leaving the variable unset reproduces the default
+  // elaboration byte for byte.
+  val jydSimDramKB = sys.env.get("VSIM_DRAM_KB").map(_.toInt).getOrElse(jyd.JYDSoCConfig.dramSizeInByte / 1024)
+  emit(new jyd.JYDSoC(dramSizeInByte = jydSimDramKB * 1024), s"$emitRootDir/testsoc/jyd")
   emit(new jyd.JYDFPGATop, s"$emitRootDir/testsoc/jydFPGA")
 }

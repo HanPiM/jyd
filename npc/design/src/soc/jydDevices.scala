@@ -563,9 +563,10 @@ trait HasJYDCPUAndResetPC { this: Module =>
   cpu.io.io.interrupt := false.B
 }
 
-class JYDSoC(val resetPC: UInt = "h80000000".U) extends Module with HasJYDCPUAndResetPC {
+class JYDSoC(val resetPC: UInt = "h80000000".U,
+             val dramSizeInByte: Int = JYDSoCConfig.dramSizeInByte) extends Module with HasJYDCPUAndResetPC {
   val irom  = Module(new SimpleBusROM(JYDSoCConfig.iromSizeInByte, JYDSoCConfig.iromBaseAddr))
-  val dram  = Module(new SimpleBusMem(JYDSoCConfig.dramSizeInByte, JYDSoCConfig.dramBaseAddr))
+  val dram  = Module(new SimpleBusMem(dramSizeInByte, JYDSoCConfig.dramBaseAddr))
   val led   = Module(new SimpleBusOneWordRWDevice(Some("jyd_update_led")))
   val seg   = Module(new SimpleBusOneWordRWDevice(Some("jyd_update_seg")))
   val cnt   = Module(new SimpleBusTimer)

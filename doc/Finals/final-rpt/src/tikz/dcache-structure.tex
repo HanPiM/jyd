@@ -34,7 +34,7 @@
 \draw[a] (write)--(broadcast);
 
 % 三条写广播分别占用近端、左外侧和右外侧通道，互不共线。
-\draw[wa] (broadcast.west) -- ++(-0.65,0) -| (shadow.south);
+\draw[wa] ([yshift=0.38cm]broadcast.west) -- ++(-0.65,0) -| (shadow.south);
 \draw[wa] ([xshift=-0.75cm]broadcast.south) -- ++(0,-0.75)
   -- ++(-9.8,0) |- ([yshift=0.8cm]tags.north) -- (tags.north);
 \draw[wa] ([xshift=0.75cm]broadcast.south) -- ++(0,-1.05)

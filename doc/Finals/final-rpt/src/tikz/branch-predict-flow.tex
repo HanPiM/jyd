@@ -9,11 +9,7 @@
 \node[b,right=1.25cm of btbt,yshift=0.55cm] (pred) {形成 PredBundle\\hit / take / next PC\\随指令进入流水线};
 \draw[a](pc)--(q);\draw[a](q)--(hit);\draw[a](hit)--node[above left]{是}(ret);\draw[a](ret)--node[above]{是}(rast);
 \draw[a](ret)--node[left]{否}(type);
-\coordinate (hitbend) at ($(hit.south)+(0,-0.38)$);
-\coordinate (typeleft) at ($(type.west)+(-0.55,0)$);
-\draw[a](hit.south) -- (hitbend)
-  -- node[below]{否} (typeleft |- hitbend)
-  -- (typeleft |- fall.west) -- (fall.west);
+\draw[a](hit.south) |- node[pos=0.22,left]{否} (fall.west);
 \draw[a](type)--node[above]{是}(btbt);\draw[a](type)--node[right]{否}(fall);
 \draw[a](rast)--(pred);\draw[a](btbt)--(pred);\draw[a](fall)-|(pred.south);
 \end{tikzpicture}}

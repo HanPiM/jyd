@@ -16,8 +16,8 @@
 \node[b,fill=green!7] (lsu) at (-7.2,-0.6) {数据、地址与 bank 对齐\\LSU 扩展并前递};
 \draw[a] (-7.2,3.8)--(normal); \draw[a] (normal)--(lsu);
 
-\node[b,fill=cyan!8] (mirror) at (-2.0,1.9) {可放行的 late-load 命中\\异步镜像在 C0 读出原始字};
-\node[b,fill=cyan!8] (reg) at (-2.0,-0.6) {跨 EXU--LSU 寄存边界\\C1 扩展后供受限消费者};
+\node[b,fill=cyan!8,text width=4.55cm] (mirror) at (-2.0,1.9) {可放行的 late-load 命中\\异步镜像在 C0 读出原始字};
+\node[b,fill=cyan!8,text width=4.55cm] (reg) at (-2.0,-0.6) {跨 EXU--LSU 寄存边界\\C1 扩展后供受限消费者};
 \draw[a] (-2.0,3.8)--(mirror); \draw[a] (mirror)--(reg);
 
 \node[b,fill=purple!7] (store) at (3.2,1.9) {store：主 BRAM 与镜像同址更新};

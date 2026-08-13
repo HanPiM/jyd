@@ -43,6 +43,7 @@ echo "Configuring gcc for target riscv64-linux-gnu"
   --target=riscv64-linux-gnu \
   --prefix="$PREFIX" \
   --with-sysroot=/usr/riscv64-linux-gnu \
+  --with-native-system-header-dir=/include \
   --with-as=/usr/bin/riscv64-linux-gnu-as \
   --with-ld=/usr/bin/riscv64-linux-gnu-ld \
   --enable-languages=c \

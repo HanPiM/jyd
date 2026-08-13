@@ -4,11 +4,11 @@
  d/.style={draw,diamond,aspect=2,align=center,inner sep=2pt,minimum width=2.8cm,minimum height=1.25cm,fill=orange!7},
  a/.style={-Stealth,thick},font=\small]
 \node[s] (idle) at (0,0) {Idle：接受多周期指令};
-\node[s] (busy) at (5.1,0) {Busy：保持 rd 占用\\dataValid=0};
-\node[d] (valid) at (10.0,0) {结果有效？};
-\node[d] (ready) at (14.8,0) {后级 ready？};
-\node[s] (emit) at (19.6,0) {完成握手并释放};
-\node[s,fill=gray!10] (hold) at (14.8,-2.25) {Done：寄存并稳定保持结果};
+\node[s] (busy) at (6.5,0) {Busy：保持 rd 占用\\dataValid=0};
+\node[d] (valid) at (11.4,0) {结果有效？};
+\node[d] (ready) at (16.2,0) {后级 ready？};
+\node[s] (emit) at (21.0,0) {完成握手并释放};
+\node[s,fill=gray!10] (hold) at (16.2,-2.25) {Done：寄存并稳定保持结果};
 
 \draw[a] (idle)--node[pos=0.38,above,yshift=2pt,fill=white,inner sep=1pt]{$in.fire$}(busy);
 \draw[a] (busy)--(valid);

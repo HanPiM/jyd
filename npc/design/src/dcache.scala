@@ -99,9 +99,7 @@ class DCache extends Module {
   val lateReadData = lateDataMem.map { banks => Cat(banks.reverse.map(_.io.dpo)) }
   io.lateReadData := Mux(lateQueryBank, lateReadData(1), lateReadData(0))
 
-  val listFindCachedInfoLookup = listFindState === ListFindState.nodeResolve && listFindNextHit && listFindInfoHit
-  val listQueryAddressA = Mux(listFindCachedInfoLookup, listFindInfo, listFindQueryAddress)
-  val listQueryAddresses = Seq(listQueryAddressA, listFindQueryAddressB)
+  val listQueryAddresses = Seq(listFindQueryAddress, listFindQueryAddressB)
   val listQueryTags = listQueryAddresses.map(_(17, 11))
   val listQueryBanks = listQueryAddresses.map(_(11))
   val listQueryAddrs = listQueryAddresses.map(_(10, 2))
@@ -135,6 +133,10 @@ class DCache extends Module {
     listFindInfoHit := listQueryHits(1)
     listFindNext := listReadData(0)
     listFindInfo := listReadData(1)
+    // Port A has finished reading the node's next pointer. Point it at the
+    // captured info target for the following resolve cycle without feeding
+    // the hit decision back through the asynchronous RAM address.
+    listFindQueryAddress := listReadData(1)
     listFindState := ListFindState.nodeResolve
   }.elsewhen(listFindState === ListFindState.nodeResolve) {
     when(!listFindNextHit) {

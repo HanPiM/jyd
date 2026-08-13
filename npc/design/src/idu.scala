@@ -347,6 +347,17 @@ class IDU(
     (bImmLow5 === 4.U || bImmLow5 === 5.U)
   val isBMinu = !isFmtI && arithmeticFunc7 === "b0000101".U && arithmeticFunc3 === "b101".U
   val isBBext = arithmeticFunc7 === "b0100100".U && arithmeticFunc3 === "b101".U
+  val isBSet = arithmeticFunc7 === "b0010100".U && arithmeticFunc3 === "b001".U
+  val isBClr = arithmeticFunc7 === "b0100100".U && arithmeticFunc3 === "b001".U
+  val isBInv = arithmeticFunc7 === "b0110100".U && arithmeticFunc3 === "b001".U
+  val isBAndn = !isFmtI && arithmeticFunc7 === "b0100000".U && arithmeticFunc3 === "b111".U
+  val isBOrn = !isFmtI && arithmeticFunc7 === "b0100000".U && arithmeticFunc3 === "b110".U
+  val isBXnor = !isFmtI && arithmeticFunc7 === "b0100000".U && arithmeticFunc3 === "b100".U
+  val isBMax = !isFmtI && arithmeticFunc7 === "b0000101".U && arithmeticFunc3 === "b110".U
+  val isBMaxu = !isFmtI && arithmeticFunc7 === "b0000101".U && arithmeticFunc3 === "b111".U
+  val isBMin = !isFmtI && arithmeticFunc7 === "b0000101".U && arithmeticFunc3 === "b100".U
+  val isBRol = !isFmtI && arithmeticFunc7 === "b0110000".U && arithmeticFunc3 === "b001".U
+  val isBRev8 = isFmtI && arithmeticFunc7 === "b0110100".U && arithmeticFunc3 === "b101".U && bImmLow5 === 25.U
   val isCrcU8Custom = inst(31, 25) === 0.U && arithmeticFunc3 === 0.U && inst(6, 0) === "b0001011".U
   val isBitExtractMulCustom = inst(31, 25) === 0.U && arithmeticFunc3 === 5.U && inst(6, 0) === "b0001011".U
   val isListReverseCustom = isListReverseEncoding
@@ -377,7 +388,9 @@ class IDU(
       (arithmeticFunc7 === "b0100000".U && (arithmeticFunc3 === 0.U || arithmeticFunc3 === "b101".U))
   )
   val isFastIntegerArithmetic = isTypArithmetic && (isRv32iImmediate || isRv32iRegister || isPack)
-  val isShortB = isBShiftAdd || isBSext || isBMinu || isBBext
+  val isShortB = isBShiftAdd || isBSext || isBMinu || isBBext ||
+    isBSet || isBClr || isBInv || isBAndn || isBOrn || isBXnor || isBMax || isBMaxu || isBMin ||
+    isBRol || isBRev8
   val isLongArithmetic = isTypArithmetic && (isMExtArithmetic || isIterativeB || isShortB)
   val isAccelerator =
     isCrcU8Custom || isBitExtractMulCustom || isListReverseCustom || isMatrixReduceCustom || isNumericDfaCustom

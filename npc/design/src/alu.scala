@@ -424,6 +424,17 @@ class SpecialExecutionCluster extends Module {
   val isSextH = inbits.is_imm && inbits.func7t === "b0110000".U && inbits.func3t === "b001".U && src2(4, 0) === 5.U
   val isMinu = !inbits.is_imm && inbits.func7t === "b0000101".U && inbits.func3t === "b101".U
   val isBext = inbits.func7t === "b0100100".U && inbits.func3t === "b101".U
+  val isBSet = inbits.func7t === "b0010100".U && inbits.func3t === "b001".U
+  val isBClr = inbits.func7t === "b0100100".U && inbits.func3t === "b001".U
+  val isBInv = inbits.func7t === "b0110100".U && inbits.func3t === "b001".U
+  val isAndn = !inbits.is_imm && inbits.func7t === "b0100000".U && inbits.func3t === "b111".U
+  val isOrn = !inbits.is_imm && inbits.func7t === "b0100000".U && inbits.func3t === "b110".U
+  val isXnor = !inbits.is_imm && inbits.func7t === "b0100000".U && inbits.func3t === "b100".U
+  val isMax = !inbits.is_imm && inbits.func7t === "b0000101".U && inbits.func3t === "b110".U
+  val isMaxu = !inbits.is_imm && inbits.func7t === "b0000101".U && inbits.func3t === "b111".U
+  val isMin = !inbits.is_imm && inbits.func7t === "b0000101".U && inbits.func3t === "b100".U
+  val isRol = !inbits.is_imm && inbits.func7t === "b0110000".U && inbits.func3t === "b001".U
+  val isRev8 = inbits.is_imm && inbits.func7t === "b0110100".U && inbits.func3t === "b101".U && src2(4, 0) === 25.U
 
   val sh1AddResult = src2 + (src1 << 1)
   val sh2AddResult = src2 + (src1 << 2)
@@ -432,6 +443,18 @@ class SpecialExecutionCluster extends Module {
   val sextHResult = Cat(Fill(16, src1(15)), src1(15, 0))
   val minuResult = Mux(src1 < src2, src1, src2)
   val bextResult = Cat(0.U(31.W), (src1 >> src2(4, 0))(0))
+  val bitMask = 1.U(32.W) << src2(4, 0)
+  val bsetResult = src1 | bitMask
+  val bclrResult = src1 & ~bitMask
+  val binvResult = src1 ^ bitMask
+  val andnResult = src1 & ~src2
+  val ornResult = src1 | ~src2
+  val xnorResult = ~(src1 ^ src2)
+  val maxResult = Mux(src1.asSInt < src2.asSInt, src2, src1)
+  val maxuResult = Mux(src1 < src2, src2, src1)
+  val minResult = Mux(src1.asSInt < src2.asSInt, src1, src2)
+  val rolResult = Mux(src2(4, 0) === 0.U, src1, (src1 << src2(4, 0)) | (src1 >> (32.U - src2(4, 0))))
+  val rev8Result = Cat(src1(7, 0), src1(15, 8), src1(23, 16), src1(31, 24))
 
   // CRCU8 is linear over GF(2).  This parallel XOR matrix avoids the timing
   // depth of eight serial polynomial-update rounds.
@@ -456,6 +479,17 @@ class SpecialExecutionCluster extends Module {
       isSextH  -> sextHResult,
       isMinu   -> minuResult,
       isBext   -> bextResult,
+      isBSet   -> bsetResult,
+      isBClr   -> bclrResult,
+      isBInv   -> binvResult,
+      isAndn   -> andnResult,
+      isOrn    -> ornResult,
+      isXnor   -> xnorResult,
+      isMax    -> maxResult,
+      isMaxu   -> maxuResult,
+      isMin    -> minResult,
+      isRol    -> rolResult,
+      isRev8   -> rev8Result,
       inbits.crcValid   -> crcResult,
       inbits.xbmulValid -> xbmulResult
     )

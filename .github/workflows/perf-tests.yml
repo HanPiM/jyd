@@ -70,6 +70,31 @@ jobs:
         run: |
           make ARCH=riscv32-jyd -C am-kernels/benchmarks/coremark run VSIM_print_fullperf=1
 
+  coremark-official:
+    needs: setup
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Common operations
+        uses: ./.github/actions/common
+        with:
+          MAKEFLAGS: ${{ needs.setup.outputs.MAKEFLAGS }}
+
+      - name: Install dependency
+        run: sudo apt install -y g++-13 gcc-13-plugin-dev libgmp-dev
+
+      - name: Build NPC sim
+        run: |
+          make ARCH=riscv32-jyd -C npc
+
+      # ITERATIONS=2000 keeps the CI run within the 6h job limit while still
+      # exercising the full benchmark; the default 10000 remains for formal runs.
+      - name: coremark-official
+        run: |
+          make ARCH=riscv32-jyd -C jyd-tests/coremark-official HOST_CXX=g++-13 ITERATIONS=2000 run VSIM_print_fullperf=1
   dhrystone:
     needs: setup
     runs-on: ubuntu-24.04

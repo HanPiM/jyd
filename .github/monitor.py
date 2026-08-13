@@ -15,9 +15,17 @@ keys = {"good": args.good, "middle": args.middle, "bad": args.bad}
 state = "empty"
 state_rtt = "empty"
 rtt_success = False
-# rtthread-nano shell: `help` must list the embedded `coremark` command.
-#            input                    string for success
-rtt_input = [('help',                 'coremark')]
+# rtthread-nano shell checks: `help` must list the embedded `coremark`
+# command, and the embedded CoreMark report must reproduce the NEMU
+# one-iteration CRC reference for the accelerated image.
+#          input      strings expected in order
+rtt_input = [('help', ['coremark']),
+             ('coremark', ['seedcrc          : 0xe9f5',
+                           '[0]crclist       : 0xe714',
+                           '[0]crcmatrix     : 0x1fd7',
+                           '[0]crcstate      : 0x8e3a',
+                           '[0]crcfinal      : 0xe714'])]
+rtt_expected = []
 
 buffer = bytearray()
 def read_line(fd, buffer_size=1024):
@@ -58,26 +66,28 @@ def monitor_output(proc, result_queue):
     global state_rtt
     global master
     global rtt_input
+    global rtt_expected
     global rtt_success
-    rtt_ans = ""
     while True:
         line = read_line(master)
         if line == None:
             break
         print(line, flush=True)
         if state_rtt == "rtt-monitor":
-            if rtt_ans in line:
-                state_rtt = "empty"
-                if rtt_input == []:
-                    rtt_success = True
-                    result_queue.put("match")
-                    os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-                    return
+            if rtt_expected != [] and rtt_expected[0] in line:
+                rtt_expected = rtt_expected[1:]
+                if rtt_expected == []:
+                    state_rtt = "empty"
+                    if rtt_input == []:
+                        rtt_success = True
+                        result_queue.put("match")
+                        os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+                        return
         else:
             if line == "msh >" and rtt_input != []:
                 proc.stdin.write(rtt_input[0][0] + '\n')
                 proc.stdin.flush()
-                rtt_ans = rtt_input[0][1]
+                rtt_expected = rtt_input[0][1]
                 state_rtt = "rtt-monitor"
                 rtt_input = rtt_input[1:]
         for s, k in keys.items():

@@ -1,7 +1,7 @@
 \begin{figure}[H]\centering\resizebox{0.98\linewidth}{!}{%
 \begin{tikzpicture}[
  state/.style={draw,rounded corners=1.2pt,minimum width=2.35cm,minimum height=0.82cm,align=center,fill=blue!7},
- rule/.style={draw,rounded corners=1.2pt,text width=4.25cm,minimum height=2.45cm,align=left,fill=gray!5,inner sep=6pt,font=\footnotesize},
+ rule/.style={draw,rounded corners=1.2pt,text width=5.15cm,minimum height=1.85cm,align=left,fill=gray!5,inner sep=6pt,font=\footnotesize},
  a/.style={-Stealth,thick},font=\small]
 \node[state] (idle) at (-1.65,1.35) {Idle};
 \node[state] (req)  at ( 1.65,1.35) {WaitReq};
@@ -12,17 +12,17 @@
 \draw[a] (resp)--(out);
 \draw[a] (out)--(idle);
 
-\node[rule] (ri) at (-7.0,1.75) {\textbf{Idle}\\
+\node[rule] (ri) at (-7.55,1.55) {\textbf{Idle}\\
 $\lnot pc.valid$：保持；\\
 $pc.valid\land mem.req.ready$：转 WaitResp；\\
 $pc.valid\land\lnot mem.req.ready$：保存 pending，转 WaitReq。};
-\node[rule] (ro) at (-7.0,-1.75) {\textbf{WaitOut}\\
+\node[rule] (ro) at (-7.55,-1.55) {\textbf{WaitOut}\\
 $\lnot out.ready$：保持响应；\\
 结果被消费：依据新 PC 与请求 ready 转 Idle、WaitReq 或 WaitResp。};
-\node[rule] (rr) at (7.0,1.75) {\textbf{WaitReq}\\
+\node[rule] (rr) at (7.55,1.55) {\textbf{WaitReq}\\
 $\lnot mem.req.ready$：保持请求与元信息；\\
 $mem.req.ready$：请求完成，转 WaitResp。};
-\node[rule] (rs) at (7.0,-1.75) {\textbf{WaitResp}\\
+\node[rule] (rs) at (7.55,-1.55) {\textbf{WaitResp}\\
 $\lnot mem.resp.valid$：保持；\\
 响应到且 $\lnot out.ready$：转 WaitOut；\\
 响应被消费：依据新 PC 与请求 ready 直接转 Idle、WaitReq 或继续 WaitResp。};

@@ -2,6 +2,7 @@
 \usepackage[margin=2.35cm]{geometry}
 \usepackage{graphicx,booktabs,longtable,tabularx,array,calc}
 \usepackage{amsmath,amssymb,enumitem,caption,fancyhdr,float,dirtree}
+\usepackage{algorithm,algpseudocode}
 \usepackage[hidelinks]{hyperref}
 \usepackage{xcolor,tikz,pgfplots}
 \usepackage{seqsplit}
@@ -17,6 +18,8 @@
 \graphicspath{{src/assets/}{assets/}}
 \captionsetup{font=small,labelfont=bf,position=bottom}
 \captionsetup[table]{position=top,skip=6pt}
+\floatname{algorithm}{算法}
+\captionsetup[algorithm]{font=small,labelfont=bf,position=top,skip=4pt}
 \pagestyle{fancy}
 \fancyhf{}
 \fancyfoot[C]{\thepage}

@@ -1,7 +1,7 @@
 \section{CPU 架构与模块设计}\label{sec:architecture}
 
 \newenvironment{archsignalstable}[2][@{}>{\raggedright\arraybackslash}p{0.145\linewidth}C{0.06\linewidth}>{\raggedright\arraybackslash}p{0.14\linewidth}>{\raggedright\arraybackslash}p{0.14\linewidth}>{\raggedright\arraybackslash}p{0.41\linewidth}@{}]{%
-  \begin{table}[H]\centering\fontsize{7.5}{9}\selectfont\caption{#2}%
+  \begin{table}[H]\centering\fontsize{6.8}{8.1}\selectfont\caption{#2}%
   \begin{tabular}{#1}
   \toprule\textbf{信号或信号组}&\textbf{方向}&\textbf{位宽/类型}&\textbf{握手关系}&\textbf{作用}\\\midrule
 }{\bottomrule\end{tabular}\end{table}}
@@ -52,7 +52,7 @@ IDU 根据 opcode、funct3 和 funct7 完成指令类型、格式与执行类别
 并同时读取两个 GPR 源操作数和一个 CSR 操作数。为缩短后端组合路径，IDU 还预先形成
 $pc+4$、$pc+imm$、地址低位加法结果和 \code{ecall}/\code{mret} 的静态目标。
 
-\begin{archsignalstable}[@{}>{\raggedright\arraybackslash}p{0.135\linewidth}C{0.055\linewidth}>{\raggedright\arraybackslash}p{0.19\linewidth}>{\raggedright\arraybackslash}p{0.095\linewidth}>{\raggedright\arraybackslash}p{0.42\linewidth}@{}]{IDU 接口信号说明}
+\begin{archsignalstable}[@{}>{\raggedright\arraybackslash}p{0.13\linewidth}C{0.055\linewidth}>{\raggedright\arraybackslash}p{0.205\linewidth}>{\raggedright\arraybackslash}p{0.085\linewidth}>{\raggedright\arraybackslash}p{0.42\linewidth}@{}]{IDU 接口信号说明}
 in&输入&FetchedInst Decoupled&valid/ready&接收 IFU 输出的指令、PC 与预测记录\\
 rvec&双向&2-read GPR&组合读&给出 rs1/rs2 地址并取得两个通用寄存器值\\
 csrRead&双向&CSR single-read&组合读&按指令高 12 位读取 CSR 旧值\\
@@ -168,15 +168,17 @@ mcycle64&输出&64 bit&连续计数&低 32 位递增，高 32 位保持为零\\
 
 \subsubsection{地址字段修剪}
 
-取指程序位于固定的 \code{0x80000000} 基地址窗口，指令按 4 字节对齐。流水线中的紧凑 PC、重定向
-邮箱和 BTB 目标只保存 \code{pc[16:2]} 共 15 位，使用时补回固定高位和低两位零，对应 128 KiB
-取指窗口。BTB 的 512 项索引使用 \code{pc[10:2]}：\code{pc[10:8]} 选择 8 个 bank，
+取指程序位于固定的 \code{0x80000000} 基地址窗口，指令按 4 字节对齐。早期优化曾按 64\,KiB 程序
+空间考虑只保留 14 位字地址；为容纳后续体积更大的完整程序，当前设计恢复一位并统一保存
+\code{pc[16:2]} 共 15 位。流水线紧凑 PC、重定向邮箱和 BTB 目标使用该表示，展开时补回固定高位
+与低两位零，因而覆盖 \code{0x80000000--0x8001ffff} 的 128\,KiB 取指窗口。BTB 的 512 项索引使用
+\code{pc[10:2]}：\code{pc[10:8]} 选择 8 个 bank，
 \code{pc[7:2]} 选择 bank 内 64 行，\code{pc[16:11]} 为 6-bit tag。
 
 \input{src/tikz/pc-trimming}
 
-修剪的边界是明确的：它只用于取指和控制流目标，不代替 32 位体系结构地址；load/store 与 MMIO
-仍使用各自的数据地址形成通路。对不属于约定取指窗口的目标，也不应依赖这一紧凑表示。
+修剪只用于取指和控制流目标，不代替 32 位访存地址；load/store 与 MMIO 始终使用完整访存地址形成
+通路。落在上述取指窗口之外的控制流目标不能使用这一紧凑表示。
 
 \subsubsection{512 项 8-bank BTB 与动态预测}
 

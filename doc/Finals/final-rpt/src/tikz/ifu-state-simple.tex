@@ -11,7 +11,13 @@
 \draw[a](req)--node[sloped,above]{请求端就绪}(resp);
 \draw[a](resp)--node[right]{响应到达、IDU 反压}(out);
 \draw[a](resp.north) -- ++(0,0.55) -| node[pos=0.25,above]{响应被消费且无新请求}(idle.north);
-\draw[a](out.east) -- ++(0.75,0) |- node[pos=0.28,right]{结果被消费} ([yshift=0.85cm]resp.north) -| (idle.north);
+% 回路紧贴 WaitReq 右侧折返；交叉处以白色底线留出视觉间隔。
+\coordinate (reqrightlow) at ($(req.east)+(0.28,-0.52)$);
+\coordinate (reqrighthigh) at ($(req.east)+(0.28,1.30)$);
+\coordinate (idlebelow) at ($(idle.south)+(0.20,-0.24)$);
+\draw[a,preaction={draw=white,line width=4.0pt}]
+  (out.south) -- ++(0,-0.52) -- node[below]{结果被消费}(reqrightlow)
+  -- (reqrighthigh) -- (idlebelow) -- ($(idle.south)+(0.20,0)$);
 \draw[a](resp) edge[loop right] node{响应未到} (resp);
 \draw[a](req) edge[loop left] node{仍未就绪} (req);
 \draw[a](out) edge[loop below] node{继续反压} (out);

@@ -1,4 +1,5 @@
 \begin{figure}[H]\centering
+\resizebox{0.96\linewidth}{!}{%
 \begin{tikzpicture}[
  state/.style={draw,rounded corners=1.2pt,minimum width=2.4cm,minimum height=0.82cm,align=center,fill=blue!6},
  a/.style={-Stealth,thick},font=\small]
@@ -22,5 +23,5 @@
 \draw[a](resp) edge[loop right] node{响应未到} (resp);
 \draw[a](req) edge[loop left] node{仍未就绪} (req);
 \draw[a](out) edge[loop right] node[right]{继续反压} (out);
-\end{tikzpicture}
+\end{tikzpicture}}
 \caption{IFU 四状态控制的简化关系}\end{figure}

@@ -9,3 +9,4 @@ E-FINAL-300,routed_wns,-0.590,ns,final-design,300,implementation workload,final 
 E-FINAL-300P,post_route_physopt_wns,-0.580,ns,final-design,300,implementation workload,final implementation archive
 E-BOARD-01,board_runtime,6.696371860,s,best-board-validated-stage,300,CoreMark formal iterations 10000,UART capture archive
 E-BOARD-02,board_runtime,6.714950940,s,corrected-IP board anchor,300,CoreMark formal iterations 10000,UART capture archive
+E-BOARD-03,board_runtime,6.691154040,s,gcc-automatic-selection,300,CoreMark ordinary C source iterations 10000,gcc-md-finals-20260813 UART archive

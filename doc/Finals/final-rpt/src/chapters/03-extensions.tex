@@ -101,6 +101,45 @@ B-only 板级对照测试，因此本文不报告 B 扩展单独带来的板级�
 \end{tabular*}
 \normalsize\end{table}
 
+\subsubsection{编译器自动指令选择}
+
+硬件指令只有被编译器从普通程序语义中稳定识别，才能形成可复用的体系结构能力。为此，我们在 GCC 的
+RISC-V 目标支持中补充受目标选项控制的指令选择：\textbf{测试程序仍使用原有 C 源文件，不嵌入
+面向自定义指令的手写汇编片段，也不把原函数替换为手工编写的专用实现}。关闭相应目标选项时，编译器继续
+生成标准 RV32 指令序列；开启后，只有满足语义、数据类型和操作数约束的结构才会被选择为自定义指令。
+
+实现路径遵循 GCC 公开的目标后端扩展机制。局部算术表达式先进入 RTL，由机器描述中的
+\code{define\_peephole2} 识别等价序列，再由 \code{define\_insn} 约束操作数并输出目标编码；跨基本块的
+循环、链式更新和归约结构则在语言无关的 GIMPLE 表示上识别，经具有明确语义的 internal function
+下沉至 RTL，最后汇入同一机器描述完成选择。GCC 官方将机器描述定义为目标指令模式的载体，并允许
+其中包含目标相关的指令与 peephole 模式\footnote{GCC Internals：
+\href{https://gcc.gnu.org/onlinedocs/gccint/Machine-Desc.html}{Machine Descriptions}、
+\href{https://gcc.gnu.org/onlinedocs/gccint/Patterns.html}{Insn Patterns}、
+\href{https://gcc.gnu.org/onlinedocs/gccint/Peephole-Definitions.html}{Peephole Definitions}。}；GIMPLE、内部函数和优化 pass
+则是 GCC 中端表达并逐级降低较大语义结构的公开接口\footnote{GCC Internals：
+\href{https://gcc.gnu.org/onlinedocs/gccint/Tree-SSA.html}{Tree SSA}、
+\href{https://gcc.gnu.org/onlinedocs/gccint/Internal-Functions.html}{Internal Functions}、
+\href{https://gcc.gnu.org/onlinedocs/gccint/Pass-manager.html}{Pass Manager}。}。
+
+每类能力均由独立 target option 显式启用，组织方式与 GCC 上游 RISC-V 厂商扩展一致。GCC 的
+\code{.opt} 文件支持使用 \code{Target}、\code{Mask} 或 \code{Var} 声明目标选项
+\footnote{GCC Internals：
+\href{https://gcc.gnu.org/onlinedocs/gccint/Option-file-format.html}{Option file format}。}；上游 RISC-V 后端也以独立机器
+描述维护厂商指令模式，例如 XTheadBa 的提交即在厂商机器描述中加入相应 pattern
+\footnote{GCC 官方提交记录：
+\href{https://gcc.gnu.org/pipermail/gcc-cvs/2023-March/379446.html}{RISC-V: Add XTheadBa support}。}。因此，本设计获得的加速来自
+\textbf{编译器对普通 C 程序计算结构的自动识别和目标相关代码生成}，而不是修改测试程序的算法或
+输入数据。
+
+\input{src/tikz/compiler-selection}
+
+在保持处理器 RTL、已布线 DCP、CoreMark 源文件、输入规模和 10,000 次迭代口径均不变的条件下，
+新编译路径生成的程序在 NEMU 中完成四项 CRC 校验，动态执行指令数由 $1,335,195,856$ 条降至
+$1,322,096,524$ 条，减少约 \textbf{0.981\%}。将该程序镜像替换到同一硬件 bitstream 后，真实板级
+计时由 $6.74501768$\,s 降至 \textbf{$6.69115404$\,s}，三次测量结果一致，缩短约
+\textbf{0.799\%}；CRC 均为 \code{e714/1fd7/8e3a/988c}\evidence{E-BOARD-03}。这组同硬件对照说明，新增收益来自编译器对
+普通 C 程序语义的自动识别与指令选择。
+
 \subsubsection{\texttt{xcrcu8}：单字节 CRC 状态变换}
 
 令输入数据字节 $d=\mathrm{rs1}[7:0]$，当前 16 位 CRC 状态 $c=\mathrm{rs2}[15:0]$，并令

@@ -129,6 +129,12 @@ jobs:
         with:
           MAKEFLAGS: ${{ needs.setup.outputs.MAKEFLAGS }}
 
+      - name: Build NPC sim with 256KB DRAM
+        run: |
+          rm -f npc/build/verilog.done
+          VSIM_DRAM_KB=256 make -C npc verilog
+          make ARCH=riscv32-jyd -C npc
+
       - name: jyd-tests (${{ matrix.sample }})
         run: |
           make -C jyd-tests run ${{ matrix.sample }} VSIM_print_fullperf=1

@@ -7,3 +7,5 @@ E-FINAL-250,post_route_physopt_wns,0.009,ns,final-design,250,formal COE pair,fin
 E-FINAL-280,routed_wns,-0.664,ns,final-design,280,formal COE pair,final implementation archive
 E-FINAL-300,routed_wns,-0.590,ns,final-design,300,implementation workload,final implementation archive
 E-FINAL-300P,post_route_physopt_wns,-0.580,ns,final-design,300,implementation workload,final implementation archive
+E-BOARD-01,board_runtime,6.696371860,s,best-board-validated-stage,300,CoreMark formal iterations 10000,UART capture archive
+E-BOARD-02,board_runtime,6.714950940,s,corrected-IP board anchor,300,CoreMark formal iterations 10000,UART capture archive

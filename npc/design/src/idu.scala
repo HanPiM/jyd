@@ -322,11 +322,13 @@ class IDU(
   bypassMux.io.allowLateLoadRs2 := isEqualityBranch
   val arithmeticFunc3 = inst(14, 12)
   val arithmeticFunc7 = inst(31, 25)
-  val isMExtArithmetic = !isFmtI && arithmeticFunc7 === "b0000001".U
+  val isMExtArithmetic = inst(6, 0) === "b0110011".U && arithmeticFunc7 === "b0000001".U
   // xlistrev consists of an init step (funct7=0) followed by the fused loop
   // step (funct7=2). No legacy whole-list or software-loop encoding is accepted.
   val isListReverseEncoding = inst(6, 0) === "b0001011".U && arithmeticFunc3 === 6.U &&
     (inst(31, 25) === 0.U || inst(31, 25) === 2.U)
+  val isListFindEncoding = inst(6, 0) === "b0001011".U && arithmeticFunc3 === 6.U &&
+    (inst(31, 25) === 1.U || inst(31, 25) === 3.U)
   res.lateLoadRs1 := bypassMux.io.lateLoadRs1
   res.lateLoadRs2 := bypassMux.io.lateLoadRs2
   // Only operations that still use the iterative B unit assert bExtValid.
@@ -360,18 +362,28 @@ class IDU(
   val isBRev8 = isFmtI && arithmeticFunc7 === "b0110100".U && arithmeticFunc3 === "b101".U && bImmLow5 === 24.U
   val isCrcU8Custom = inst(31, 25) === 0.U && arithmeticFunc3 === 0.U && inst(6, 0) === "b0001011".U
   val isBitExtractMulCustom = inst(31, 25) === 0.U && arithmeticFunc3 === 5.U && inst(6, 0) === "b0001011".U
+  val isFusedBitExtractMulCustom = inst(31, 25) === 1.U && arithmeticFunc3 === 5.U && inst(6, 0) === "b0001011".U
+  val isMatrixAccumulateCustom = inst(6, 0) === "b0001011".U && arithmeticFunc3 === 3.U &&
+    inst(31, 25) >= 4.U && inst(31, 25) <= 9.U
   val isListReverseCustom = isListReverseEncoding
   val isMatrixReduceCustom = inst(31, 25) === 2.U && arithmeticFunc3 === 7.U && inst(6, 0) === "b0001011".U
   val isNumericDfaCustom = inst(6, 0) === "b1011011".U &&
     ((inst(31, 25) === 0.U &&
       (arithmeticFunc3 === 0.U || arithmeticFunc3 === 2.U || arithmeticFunc3 === 3.U || arithmeticFunc3 === 5.U)) ||
-     (inst(31, 25) === 1.U && (arithmeticFunc3 === 2.U || arithmeticFunc3 === 5.U)))
+     (inst(31, 25) === 1.U && (arithmeticFunc3 === 2.U || arithmeticFunc3 === 5.U)) ||
+     (inst(31, 25) === 2.U && arithmeticFunc3 === 5.U))
   res.bExtValid := isTypArithmetic && !isMExtArithmetic && isIterativeB
   res.crcValid := isCrcU8Custom
   res.xbmulValid := isBitExtractMulCustom
+  res.xmbmValid := isFusedBitExtractMulCustom
+  res.xmacaccValid := isMatrixAccumulateCustom
+  when(isMatrixAccumulateCustom && inst(31, 25) =/= 8.U && inst(31, 25) =/= 9.U) {
+    res.rdWrEn := false.B
+  }
   res.listReverseValid := isListReverseCustom
   res.listReverseStep := isListReverseCustom
   res.listReverseLoop := isListReverseCustom && isListReverseLoopEncoding
+  res.listFindValid := isListFindEncoding
   // The legacy custom-0 whole-parser state machine is intentionally unsupported.
   // Use the custom-2 word-fed numeric DFA operations decoded below.
   res.xmsumValid := isMatrixReduceCustom
@@ -391,9 +403,11 @@ class IDU(
   val isShortB = isBShiftAdd || isBSext || isBMinu || isBBext ||
     isBSet || isBClr || isBInv || isBAndn || isBOrn || isBXnor || isBMax || isBMaxu || isBMin ||
     isBRol || isBRev8
-  val isLongArithmetic = isTypArithmetic && (isMExtArithmetic || isIterativeB || isShortB)
+  val isLongArithmetic = isTypArithmetic &&
+    (isMExtArithmetic || isIterativeB || isShortB || isFusedBitExtractMulCustom || isMatrixAccumulateCustom)
   val isAccelerator =
-    isCrcU8Custom || isBitExtractMulCustom || isListReverseCustom || isMatrixReduceCustom || isNumericDfaCustom
+    isCrcU8Custom || isBitExtractMulCustom || isListReverseCustom || isListFindEncoding ||
+      isMatrixReduceCustom || isNumericDfaCustom
 
   bypassMux.io.allowAdjacentFastRs1 := isFastIntegerArithmetic || isTypBranch
   bypassMux.io.allowAdjacentFastRs2 := isFastIntegerArithmetic || isTypBranch || isTypStore

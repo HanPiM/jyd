@@ -91,6 +91,17 @@ class EXU(
       val queryIndex = Output(UInt(10.W))
       val queryTag   = Output(UInt(7.W))
       val lateQueryIndex = Output(UInt(10.W))
+      val listFindStart = Output(Bool())
+      val listFindConsume = Output(Bool())
+      val listFindAddress = Output(Types.UWord)
+      val listFindTarget = Output(UInt(16.W))
+      val listFindDataMode = Output(Bool())
+      val listFindRequestFire = Output(Bool())
+      val listFindMemResponse = Output(Valid(Types.UWord))
+      val listFindRequest = Input(Bool())
+      val listFindRequestAddress = Input(Types.UWord)
+      val listFindDone = Input(Bool())
+      val listFindResult = Input(Types.UWord)
       val storeUpdate = Output(Bool())
       val storeFull   = Output(Bool())
       val storeData   = Output(Types.UWord)
@@ -156,6 +167,8 @@ class EXU(
   val listReversePrefetchData = Reg(Types.UWord)
   val listReverseLookupHit = Reg(Bool())
   val listReverseQueryAddress = Reg(Types.UWord)
+
+  val isListFind = dinst.info.listFindValid
 
   object XmsumState extends ChiselEnum {
     val idle, request, response, finalizeResult, done = Value
@@ -277,14 +290,18 @@ class EXU(
   val xdfaWordState = RegInit(NumericDfaState.idle)
   val xdfaWordStartState = Reg(UInt(3.W))
   val xdfaWordAddress = Reg(Types.UWord)
+  val xdfaWordAddressUpperPlusOne = Reg(UInt(29.W))
   val xdfaWordStepResult = Reg(Types.UWord)
   val xdfaWordResponseData = Reg(Types.UWord)
   val xdfaWordAvailable = Reg(UInt(3.W))
   val xdfaWordIntermediate = Reg(UInt(16.W))
   val xdfaCommitMask = Reg(UInt(8.W))
   val xdfaCommitFinalState = Reg(UInt(3.W))
+  val xdfaInternalState = RegInit(0.U(3.W))
+  val xdfaInternalStopped = RegInit(true.B)
   val isNumericDfaStep = isNumericDfa && func3t === 5.U
   val isNumericDfaHistogramStep = isNumericDfaStep && func7t === 1.U
+  val isNumericDfaStepPtr = isNumericDfaStep && func7t === 2.U
   val xdfaWordLow = Module(new NumericTokenDfa2ByteStep)
   val xdfaWordHigh = Module(new NumericTokenDfa2ByteStep)
   xdfaWordLow.io.state := xdfaWordStartState
@@ -305,31 +322,48 @@ class EXU(
   val xdfaWordResult = Mux(func3t === 2.U, xdfaCounterRead, Mux(isNumericDfaStep, xdfaWordStepResult, 0.U))
 
   when(xdfaWordState === NumericDfaState.idle && io.in.valid && isNumericDfaStep) {
-    xdfaWordStartState := reg_v1(2, 0)
+    xdfaWordStartState := Mux(isNumericDfaStepPtr, Mux(xdfaInternalStopped, 0.U, xdfaInternalState), reg_v1(2, 0))
     xdfaWordAddress := reg_v2
-    xdfaWordState := NumericDfaState.request
+    xdfaWordState := Mux(io.memReq.fire, NumericDfaState.response, NumericDfaState.request)
   }.elsewhen(xdfaWordState === NumericDfaState.request && io.memReq.fire) {
     xdfaWordState := NumericDfaState.response
   }.elsewhen(xdfaWordState === NumericDfaState.response && io.memResp.valid) {
     // Terminate address-dependent alignment at the response register boundary.
     xdfaWordResponseData := io.memResp.bits >> (xdfaWordAddress(1, 0) << 3)
     xdfaWordAvailable := 4.U - xdfaWordAddress(1, 0)
+    xdfaWordAddressUpperPlusOne := xdfaWordAddress(31, 3) + 1.U
     xdfaWordState := NumericDfaState.processLow
   }.elsewhen(xdfaWordState === NumericDfaState.processLow) {
     xdfaWordIntermediate := xdfaWordLow.io.result
     xdfaWordState := NumericDfaState.processHigh
   }.elsewhen(xdfaWordState === NumericDfaState.processHigh) {
     val combinedMask = xdfaPendingMask | xdfaWordHigh.io.result(15, 8)
-    xdfaWordStepResult := Cat(0.U(17.W), xdfaWordHigh.io.result(15, 8), xdfaWordHigh.io.result(7),
-      xdfaWordHigh.io.result(5, 3), xdfaWordHigh.io.result(2, 0))
-    when(isNumericDfaHistogramStep) {
+    xdfaPendingMask := Mux(xdfaWordHigh.io.result(7), 0.U, combinedMask)
+    val nextAddressLow = xdfaWordAddress(2, 0) +& xdfaWordHigh.io.result(5, 3)
+    val nextAddress = Cat(
+      Mux(nextAddressLow(3), xdfaWordAddressUpperPlusOne, xdfaWordAddress(31, 3)),
+      nextAddressLow(2, 0)
+    )
+    xdfaWordStepResult := Mux(isNumericDfaStepPtr,
+      nextAddress,
+      Cat(0.U(17.W), xdfaWordHigh.io.result(15, 8), xdfaWordHigh.io.result(7),
+        xdfaWordHigh.io.result(5, 3), xdfaWordHigh.io.result(2, 0)))
+    when(isNumericDfaStepPtr) {
+      xdfaInternalState := xdfaWordHigh.io.result(2, 0)
+      xdfaInternalStopped := xdfaWordHigh.io.result(7)
+    }
+    when(isNumericDfaHistogramStep || isNumericDfaStepPtr) {
       when(xdfaWordHigh.io.result(7)) {
-        xdfaCommitMask := combinedMask
-        xdfaCommitFinalState := xdfaWordHigh.io.result(2, 0)
-        xdfaPendingMask := 0.U
-        xdfaWordState := NumericDfaState.commit
+        when(isNumericDfaStepPtr && xdfaWordHigh.io.result(5, 3) === 0.U && xdfaPendingMask === 0.U) {
+          // Terminal empty-token NUL step: the software loop never executes it,
+          // so it must not record a final state.
+          xdfaWordState := NumericDfaState.done
+        }.otherwise {
+          xdfaCommitMask := combinedMask
+          xdfaCommitFinalState := xdfaWordHigh.io.result(2, 0)
+          xdfaWordState := NumericDfaState.commit
+        }
       }.otherwise {
-        xdfaPendingMask := combinedMask
         xdfaWordState := NumericDfaState.done
       }
     }.otherwise {
@@ -354,6 +388,8 @@ class EXU(
     xdfaCounters.foreach(_ := 0.U)
     xdfaFinalCounters.foreach(_ := 0.U)
     xdfaPendingMask := 0.U
+    xdfaInternalState := 0.U
+    xdfaInternalStopped := true.B
   }
   when(numericDfaLocalFire && func3t === 3.U) {
     for (state <- 0 until 8) {
@@ -523,9 +559,12 @@ class EXU(
   special_in.bExtValid := isBExt
   special_in.crcValid := dinst.info.crcValid
   special_in.xbmulValid := dinst.info.xbmulValid
+  special_in.xmbmValid := dinst.info.xmbmValid
+  special_in.xmacaccValid := dinst.info.xmacaccValid
 
   val fastIntegerOut = fastInteger.io.out.bits
   val specialExecutionOut = alu.io.out.bits
+  val simpleAcceleratorOut = alu.io.acceleratorOut
   val resultIsFast = dinst.info.resultKind === ResultKind.fastInt
   val resultIsLong = dinst.info.resultKind === ResultKind.longArithmetic
   val resultIsAccelerator = dinst.info.resultKind === ResultKind.accelerator
@@ -743,7 +782,8 @@ class EXU(
   val acceleratorData = Mux(
     isNumericDfa,
     xdfaWordResult,
-    Mux(isListReverse, listReverseResult, Mux(isXmsum, xmsumResult, specialExecutionOut))
+    Mux(isListReverse, listReverseResult,
+      Mux(isListFind, io.dcache.listFindResult, Mux(isXmsum, xmsumResult, simpleAcceleratorOut)))
   )
 
   writeBackInfo.resultKind := dinst.info.resultKind
@@ -828,8 +868,18 @@ class EXU(
   io.dcache.queryIndex := dcacheQueryAddr(11, 2)
   io.dcache.queryTag   := dcacheQueryAddr(17, 11)
   io.dcache.lateQueryIndex := reg1AddImm(11, 2)
-  val cacheableStore = isTypStore && reg1AddImm(21, 20) === "b01".U
-  val cacheableStoreFire = memReqFire && cacheableStore
+  io.dcache.listFindStart := io.in.valid && isListFind && !io.dcache.listFindDone
+  io.dcache.listFindConsume := io.out.fire && isListFind
+  io.dcache.listFindAddress := reg_v1
+  io.dcache.listFindTarget := reg_v2(15, 0)
+  io.dcache.listFindDataMode := func7t === 3.U
+  io.dcache.listFindRequestFire := io.memReq.fire && isListFind
+  io.dcache.listFindMemResponse := io.memResp
+  // Accelerator requests share the external bus but cannot update the cache's
+  // normal store port. Qualify the architectural store locally so cache hit or
+  // accelerator state never enters a distributed-memory write-enable cone.
+  val normalStoreRequest = isTypStore && io.in.valid && io.out.ready
+  val cacheableStoreFire = io.memReq.fire && normalStoreRequest && reg1AddImm(21, 20) === "b01".U
   val listReverseStepCacheStore = isListReverseStep && listReverseState === ListReverseState.done &&
     listReverseStepStoreCommitted
   // Keep the asynchronous tag lookup out of this cross-module control and
@@ -845,23 +895,27 @@ class EXU(
 
   val listReverseLoadRequest = listReverseState === ListReverseState.loadRequest
   val listReverseRequest = listReverseLoadRequest || listReverseStoreRequest
+  val listFindRequest = io.dcache.listFindRequest
   val xmsumRequest = xmsumState === XmsumState.request
-  val xdfaWordRequest = xdfaWordState === NumericDfaState.request
+  val xdfaWordFirstRequest = xdfaWordState === NumericDfaState.idle && io.in.valid && isNumericDfaStep
+  val xdfaWordRequest = xdfaWordState === NumericDfaState.request || xdfaWordFirstRequest
   val normalMemReq = Wire(new MemReq)
   // The accelerator kind is held in ID/EX for the instruction's entire EXU
   // residence. Use that registered identity to select the request payload;
   // state-machine request bits only qualify valid. This keeps state decode out
   // of the shared address/data network and does not change the handshake.
-  normalMemReq.addr  := Mux(isNumericDfaStep, xdfaWordAddress & ~3.U(32.W),
-    Mux(isListReverse, listReverseCurrent, Mux(isXmsum, xmsumAddress, reg1AddImm)))
-  normalMemReq.size  := Mux(isNumericDfaStep || isListReverse || isXmsum, 2.U, func3t(1, 0))
+  normalMemReq.addr  := Mux(isNumericDfaStep,
+    Mux(xdfaWordFirstRequest, reg_v2, xdfaWordAddress) & ~3.U(32.W),
+    Mux(isListReverse, listReverseCurrent,
+      Mux(isListFind, io.dcache.listFindRequestAddress, Mux(isXmsum, xmsumAddress, reg1AddImm))))
+  normalMemReq.size  := Mux(isNumericDfaStep || isListReverse || isListFind || isXmsum, 2.U, func3t(1, 0))
   normalMemReq.wen   := Mux(isNumericDfaStep, false.B,
     Mux(isListReverse, listReverseStoreRequest, !isXmsum && isTypStore))
   normalMemReq.wdata := Mux(listReverseStoreRequest, listReversePrevious,
-    Mux(isXmsum || (isListReverse && !listReverseStoreRequest), 0.U, memWData))
+    Mux(isXmsum || isListFind || (isListReverse && !listReverseStoreRequest), 0.U, memWData))
   normalMemReq.wmask := Mux(listReverseStoreRequest, "b1111".U,
-    Mux(isXmsum || (isListReverse && !listReverseStoreRequest), 0.U, memWMask))
-  io.memReq.valid := xdfaWordRequest || listReverseRequest || xmsumRequest ||
+    Mux(isXmsum || isListFind || (isListReverse && !listReverseStoreRequest), 0.U, memWMask))
+  io.memReq.valid := xdfaWordRequest || listReverseRequest || listFindRequest || xmsumRequest ||
     (needMemReq && io.in.valid && io.out.ready)
   io.memReq.bits := normalMemReq
 
@@ -872,9 +926,12 @@ class EXU(
     io.in.valid && !needMemReq && exuResultValid
   )
   io.in.ready := Mux(isNumericDfaStep, xdfaWordDone && io.out.ready,
-    Mux(isListReverse, listReverseDone && io.out.ready, Mux(isXmsum, xmsumDone && io.out.ready, normalReady)))
+    Mux(isListReverse, listReverseDone && io.out.ready,
+      Mux(isListFind, io.dcache.listFindDone && io.out.ready,
+        Mux(isXmsum, xmsumDone && io.out.ready, normalReady))))
   io.out.valid := Mux(isNumericDfaStep, xdfaWordDone,
-    Mux(isListReverse, listReverseDone, Mux(isXmsum, xmsumDone, normalValid)))
+    Mux(isListReverse, listReverseDone,
+      Mux(isListFind, io.dcache.listFindDone, Mux(isXmsum, xmsumDone, normalValid))))
 
   writeBackInfo.iid := dinst.iid
 
@@ -913,8 +970,11 @@ class EXU(
     isTypBranch && (dinst.info.is_beq || dinst.info.is_bne) && hasLateLoadOperand && useRegisteredRawLoadEqual
   val adjacentFastBranchResolve = dinst.info.adjacentFastBranch
   val registeredBranchResolve = lateEqualityBranchResolve || adjacentFastBranchResolve
-  lsuInfo.lateBranchResolve := exuResultValid && registeredBranchResolve
-  lsuInfo.lateBranchMismatch := takeBranch ^ dinst.predTake
+  val lateEqualityTaken = Mux(dinst.info.is_beq, lsuLateEqual, !lsuLateEqual)
+  val registeredBranchRedirect =
+    (lateEqualityBranchResolve && (lateEqualityTaken ^ dinst.predTake)) ||
+      (adjacentFastBranchResolve && (takeBranch ^ dinst.predTake))
+  lsuInfo.lateBranchRedirect := exuResultValid && registeredBranchRedirect
   io.predWrong := exuResultValid && Mux(
     listReverseLoopBranch,
     listReverseLoopTaken ^ dinst.predTake,

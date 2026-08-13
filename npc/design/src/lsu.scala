@@ -17,8 +17,7 @@ class LSUInput(
   val lateLoadData = Types.UWord
   val dcacheStoreEpoch = Bool()
   val func3t       = UInt(3.W)
-  val lateBranchResolve = Bool()
-  val lateBranchMismatch = Bool()
+  val lateBranchRedirect = Bool()
   val exuWriteBack = new WriteBackInfo
 }
 

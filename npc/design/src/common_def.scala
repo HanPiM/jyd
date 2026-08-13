@@ -220,10 +220,20 @@ class DecodedInstInfo(implicit p : CPUParameters) extends InstMetaInfo with HasR
   // Bit-extract multiply is a single-cycle custom-0 operation.
   val xbmulValid = Bool()
 
+  // Fused halfword multiply + bit-extract field product, custom-0 funct7=1.
+  // Uses the 16x16 narrow multiplier lane, so it completes in one cycle.
+  val xmbmValid = Bool()
+
+  // Stateful matrix dot-product accumulation over the narrow multiplier lane.
+  val xmacaccValid = Bool()
+
   // In-place list reversal uses an init operation followed by a hardware loop.
   val listReverseValid = Bool()
   val listReverseStep = Bool()
   val listReverseLoop = Bool()
+
+  // Linked-list find walks nodes in hardware and compares either idx or data16.
+  val listFindValid = Bool()
 
   // Clipped matrix reduction is a blocking multi-cycle custom operation.
   val xmsumValid = Bool()

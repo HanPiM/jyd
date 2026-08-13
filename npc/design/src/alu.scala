@@ -13,6 +13,8 @@ class ALUInput extends Bundle {
   val bExtValid = Bool()
   val crcValid  = Bool()
   val xbmulValid = Bool()
+  val xmbmValid = Bool()
+  val xmacaccValid = Bool()
   val src1      = Types.UWord
   val src2      = Types.UWord
   val mulRawSrc1 = Types.UWord
@@ -86,7 +88,10 @@ class MultiplierInput extends Bundle {
   val prevRs1  = Bool()
   val prevRs2  = Bool()
   val noLate   = Bool()
+  val xmbm     = Bool()
+  val xmacacc  = Bool()
   val func3t   = UInt(3.W)
+  val func7t   = UInt(7.W)
 }
 
 class DividerInput extends Bundle {
@@ -235,6 +240,12 @@ class Multiplier extends Module {
   val narrowSelectReg = Reg(Bool())
   val narrowPrevAReg  = Reg(UInt(16.W))
   val narrowPrevBReg  = Reg(UInt(16.W))
+  val xmacaccReg      = Reg(Bool())
+  val xmacaccFirstReg = Reg(Bool())
+  val xmacaccBitReg   = Reg(Bool())
+  val xmacaccAReg     = Reg(UInt(16.W))
+  val xmacaccBReg     = Reg(UInt(16.W))
+  val matrixAccumulator = Reg(UInt(32.W))
   val resultReg       = Reg(Types.UWord)
   val slowValidPipe   = RegInit(0.U(MultiplierConfig.latency.W))
   val fastValidPipe   = RegInit(0.U(MultiplierConfig.fastLatency.W))
@@ -249,6 +260,8 @@ class Multiplier extends Module {
   val narrowMultiplier = Seq.fill(2)(Module(new mult_gen_mul16_fast))
 
   val inputFunc3t = io.in.bits.func3t
+  val inputIsXmbm = io.in.bits.xmbm
+  val inputIsXmacacc = io.in.bits.xmacacc
   val inputIsMulh = inputFunc3t === 1.U
   val inputIsMulhsu = inputFunc3t === 2.U
   val signedModeA = inputIsMulh || inputIsMulhsu
@@ -271,6 +284,12 @@ class Multiplier extends Module {
 
   val product = multiplier.io.P
   val narrowProduct = Mux(narrowSelectReg, narrowMultiplier(1).io.P, narrowMultiplier(0).io.P)
+  val xmacaccBitTerm = (narrowProduct(5, 2) * narrowProduct(11, 5)).pad(32)
+  val xmacaccSignedTerm = narrowProduct -
+    Mux(xmacaccAReg(15), Cat(xmacaccBReg, 0.U(16.W)), 0.U) -
+    Mux(xmacaccBReg(15), Cat(xmacaccAReg, 0.U(16.W)), 0.U)
+  val xmacaccTerm = Mux(xmacaccBitReg, xmacaccBitTerm, xmacaccSignedTerm)
+  val xmacaccResult = Mux(xmacaccFirstReg, xmacaccTerm, matrixAccumulator + xmacaccTerm)
   val result = Mux(isNarrowFastReg, narrowProduct, Mux(isFastReg, fastMultiplier.io.P, product(63, 32)))
   val resultValid = Mux(isNarrowFastReg, Mux(narrowSelectReg, narrowValidPipe(1), narrowValidPipe(0)), Mux(
     isFastReg,
@@ -279,20 +298,26 @@ class Multiplier extends Module {
   ))
 
   io.in.ready  := state === State.idle
-  io.out.valid := (state === State.done) || ((state === State.busy) && resultValid)
-  io.out.bits  := Mux(state === State.done, resultReg, result)
+  io.out.valid := state === State.done || (state === State.busy && resultValid)
+  io.out.bits  := Mux(state === State.done, resultReg, Mux(xmacaccReg, xmacaccResult, result))
 
   switch(state) {
     is(State.idle) {
       when(io.in.fire) {
-        val isMul = io.in.bits.func3t === 0.U
-        val isNarrowFast = isMul && io.in.bits.noLate && !io.in.bits.prevRs1 &&
-          io.in.bits.src1(31, 16) === 0.U && io.in.bits.src2(31, 16) === 0.U
+        val isMul = inputIsXmbm || inputIsXmacacc || io.in.bits.func3t === 0.U
+        val isNarrowFast = inputIsXmbm || inputIsXmacacc ||
+          (isMul && io.in.bits.noLate && !io.in.bits.prevRs1 &&
+          io.in.bits.src1(31, 16) === 0.U && io.in.bits.src2(31, 16) === 0.U)
         isFastReg := isMul
         isNarrowFastReg := isNarrowFast
         narrowSelectReg := io.in.bits.prevRs2
         narrowPrevAReg := io.in.bits.rawSrc1(15, 0)
         narrowPrevBReg := io.in.bits.prevData(15, 0)
+        xmacaccReg := inputIsXmacacc
+        xmacaccFirstReg := io.in.bits.func7t === 4.U || io.in.bits.func7t === 6.U
+        xmacaccBitReg := io.in.bits.func7t === 6.U || io.in.bits.func7t === 7.U || io.in.bits.func7t === 9.U
+        xmacaccAReg := io.in.bits.rawSrc1(15, 0)
+        xmacaccBReg := io.in.bits.rawSrc2(15, 0)
         slowValidPipe := Mux(isMul, 0.U, 1.U)
         fastValidPipe := Mux(isMul, 1.U, 0.U)
         narrowValidPipe := Mux(isNarrowFast, 1.U, 0.U)
@@ -304,7 +329,15 @@ class Multiplier extends Module {
       fastValidPipe := fastValidPipe << 1
       narrowValidPipe := narrowValidPipe << 1
       when(resultValid) {
-        when(io.out.ready) {
+        when(xmacaccReg) {
+          matrixAccumulator := xmacaccResult
+          when(io.out.ready) {
+            state := State.idle
+          }.otherwise {
+            resultReg := xmacaccResult
+            state := State.done
+          }
+        }.elsewhen(io.out.ready) {
           state := State.idle
         }.otherwise {
           resultReg := result
@@ -406,8 +439,9 @@ class Divider extends Module {
 
 class SpecialExecutionCluster extends Module {
   val io = IO(new Bundle {
-    val in  = Flipped(Decoupled(new ALUInput))
-    val out = Decoupled(Types.UWord)
+    val in             = Flipped(Decoupled(new ALUInput))
+    val out            = Decoupled(Types.UWord)
+    val acceleratorOut = Output(Types.UWord)
   })
 
   // alias
@@ -468,6 +502,7 @@ class SpecialExecutionCluster extends Module {
   val crcBits = VecInit(crcMasks.map(mask => (crcInput & mask.U(24.W)).xorR))
   val crcResult = Cat(0.U(16.W), crcBits.asUInt)
   val xbmulResult = (((src1(5, 2) * src1(11, 5))).pad(32))
+  io.acceleratorOut := Mux(inbits.crcValid, crcResult, xbmulResult)
 
   val aluResult = MuxCase(
     0.U,
@@ -496,8 +531,11 @@ class SpecialExecutionCluster extends Module {
   )
 
   val isBExt = inbits.bExtValid
+  val isXmbm = inbits.xmbmValid
+  val isXmacacc = inbits.xmacaccValid
 
-  val isMExt = !inbits.is_imm && inbits.func7t === "b0000001".U
+  // xmbm reuses funct7=1/funct3=5 under custom-0; it is not an M-extension divide.
+  val isMExt = !inbits.is_imm && inbits.func7t === "b0000001".U && !isXmbm
 
   val isMulOp = isMExt && ~inbits.func3t(2)
   val isDivOp = isMExt && inbits.func3t(2)
@@ -512,7 +550,7 @@ class SpecialExecutionCluster extends Module {
   bExtension.io.out.ready    := io.out.ready
 
   val multiplier = Module(new Multiplier)
-  multiplier.io.in.valid       := io.in.valid && isMulOp
+  multiplier.io.in.valid       := io.in.valid && (isMulOp || isXmbm || isXmacacc)
   multiplier.io.in.bits.src1   := src1
   multiplier.io.in.bits.src2   := src2
   multiplier.io.in.bits.rawSrc1 := inbits.mulRawSrc1
@@ -521,7 +559,10 @@ class SpecialExecutionCluster extends Module {
   multiplier.io.in.bits.prevRs1 := inbits.mulPrevRs1
   multiplier.io.in.bits.prevRs2 := inbits.mulPrevRs2
   multiplier.io.in.bits.noLate := inbits.mulNoLate
+  multiplier.io.in.bits.xmbm   := isXmbm
+  multiplier.io.in.bits.xmacacc := isXmacacc
   multiplier.io.in.bits.func3t := func3t
+  multiplier.io.in.bits.func7t := inbits.func7t
   multiplier.io.out.ready      := io.out.ready
 
   val divider = Module(new Divider)
@@ -534,18 +575,18 @@ class SpecialExecutionCluster extends Module {
   io.in.ready := Mux1H(
     Seq(
       isBExt -> bExtension.io.in.ready,
-      isMulOp -> multiplier.io.in.ready,
+      (isMulOp || isXmbm || isXmacacc) -> multiplier.io.in.ready,
       isDivOp -> divider.io.in.ready,
-      (!isBExt && !isMExt) -> io.out.ready
+      (!isBExt && !isMExt && !isXmbm && !isXmacacc) -> io.out.ready
     )
   )
 
   io.out.valid := Mux1H(
     Seq(
       isBExt -> bExtension.io.out.valid,
-      isMulOp -> multiplier.io.out.valid,
+      (isMulOp || isXmbm || isXmacacc) -> multiplier.io.out.valid,
       isDivOp -> divider.io.out.valid,
-      (!isBExt && !isMExt) -> io.in.valid
+      (!isBExt && !isMExt && !isXmbm && !isXmacacc) -> io.in.valid
     )
   )
   // Keep the single-cycle ALU result on a short two-way mux.  The multi-cycle
@@ -553,12 +594,15 @@ class SpecialExecutionCluster extends Module {
   // one-hot selection chain is off the writeback critical path; routing the
   // ALU result through the full 4-way Mux1H adds a second LUT level to every
   // ordinary arithmetic writeback.
+  val xmbmResult = (multiplier.io.out.bits(5, 2) * multiplier.io.out.bits(11, 5)).pad(32)
   val multiCycleResult = Mux1H(
     Seq(
       isBExt -> bExtension.io.out.bits,
       isMulOp -> multiplier.io.out.bits,
-      isDivOp -> divider.io.out.bits
+      isDivOp -> divider.io.out.bits,
+      isXmbm -> xmbmResult,
+      isXmacacc -> multiplier.io.out.bits
     )
   )
-  io.out.bits := Mux(isBExt || isMulOp || isDivOp, multiCycleResult, aluResult)
+  io.out.bits := Mux(isBExt || isMulOp || isDivOp || isXmbm || isXmacacc, multiCycleResult, aluResult)
 }

@@ -110,13 +110,18 @@ static bool has(const char *name) {
 }
 
 static const char *replacement_for(const char *name) {
+  if (has("xdfa4p") && !std::strcmp(name, "core_bench_state")) return "numeric_token_scan_xdfa4p";
   if (has("xdfa4h") && !std::strcmp(name, "core_bench_state")) return "numeric_token_scan_xdfa4h";
   if (has("xdfa4") && !std::strcmp(name, "core_bench_state")) return "numeric_token_scan_xdfa4";
   if (has("xdfa2") && !std::strcmp(name, "core_bench_state")) return "numeric_token_scan_xdfa2";
   if (has("xdfacnt") && !std::strcmp(name, "core_bench_state")) return "__xaccel_xdfacnt_bench";
+  if (has("xlistfind") && !std::strcmp(name, "core_list_find")) return "__xaccel_xlistfind";
   if (has("xlistrev") && !std::strcmp(name, "core_list_reverse")) return "__xaccel_xlistrev";
   if (has("xmsum") && !std::strcmp(name, "matrix_sum")) return "__xaccel_xmsum";
+  if (has("xmacacc") && !std::strcmp(name, "matrix_mul_matrix_bitextract")) return "__xaccel_xmacacc_bit_matrix";
+  if (has("xmacacc") && !std::strcmp(name, "matrix_mul_matrix")) return "__xaccel_xmacacc_matrix";
   if (has("xbmul") && !std::strcmp(name, "matrix_mul_matrix_bitextract")) return "__xaccel_xbmul_matrix";
+  if (has("xmbm") && !std::strcmp(name, "matrix_mul_matrix_bitextract")) return "__xaccel_xmbm_matrix";
   if (has("xdot16") && !std::strcmp(name, "matrix_mul_vect")) return "__xaccel_xdot_vect";
   if (has("xdot16") && !std::strcmp(name, "matrix_mul_matrix")) return "__xaccel_xdot_matrix";
   if (has("xmac16") && !std::strcmp(name, "matrix_mul_vect")) return "__xaccel_xmac_vect";

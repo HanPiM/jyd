@@ -31,6 +31,7 @@ test_run_dir/
 deps/
 
 !*.sh
+!scripts/estimate_coremark_cycles.py
 !*.lua
 !*.vlt
 !*.txt

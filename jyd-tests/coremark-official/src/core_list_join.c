@@ -434,6 +434,9 @@ core_list_undo_remove(list_head *item_removed, list_head *item_modified)
 list_head *
 core_list_find(list_head *list, list_data *info)
 {
+#if __COREMARK_XLISTFIND
+    return __xaccel_xlistfind(list, info);
+#else
     if (info->idx >= 0)
     {
         while (list && (list->info->idx != info->idx))
@@ -446,6 +449,7 @@ core_list_find(list_head *list, list_data *info)
             list = list->next;
         return list;
     }
+#endif
 }
 /* Function: core_list_reverse
         Reverse a list

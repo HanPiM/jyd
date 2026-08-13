@@ -278,7 +278,7 @@ class CPUCore(
   btb.io.update.actualTaken := branchUpdateTakenReg
 
   val immediateRedirectNow = exu.io.out.valid && exu.io.immediatePredWrong
-  val lateRedirectDetected = lsu.io.in.fire && lsu.io.in.bits.lateBranchResolve && lsu.io.in.bits.lateBranchMismatch
+  val lateRedirectDetected = lsu.io.in.fire && lsu.io.in.bits.lateBranchRedirect
   val lateRedirectNow = RegNext(lateRedirectDetected, false.B)
   val lateRedirectKill = lateRedirectDetected || lateRedirectNow
   val redirectNow = immediateRedirectNow || lateRedirectNow
@@ -342,6 +342,17 @@ class CPUCore(
   exu.io.dcache.hit    := dcache.io.hit && p.enableDCache.B
   exu.io.dcache.readData := dcache.io.readData
   exu.io.dcache.lateReadData := dcache.io.lateReadData
+  dcache.io.listFindStart := exu.io.dcache.listFindStart
+  dcache.io.listFindConsume := exu.io.dcache.listFindConsume
+  dcache.io.listFindAddress := exu.io.dcache.listFindAddress
+  dcache.io.listFindTarget := exu.io.dcache.listFindTarget
+  dcache.io.listFindDataMode := exu.io.dcache.listFindDataMode
+  dcache.io.listFindRequestFire := exu.io.dcache.listFindRequestFire
+  dcache.io.listFindMemResponse := exu.io.dcache.listFindMemResponse
+  exu.io.dcache.listFindRequest := dcache.io.listFindRequest
+  exu.io.dcache.listFindRequestAddress := dcache.io.listFindRequestAddress
+  exu.io.dcache.listFindDone := dcache.io.listFindDone
+  exu.io.dcache.listFindResult := dcache.io.listFindResult
   val dcacheStorePortMutation = exu.io.dcache.storeUpdate && p.enableDCache.B
   val dcacheStoreMutation = dcacheStorePortMutation || (exu.io.dcache.fullUpdate && p.enableDCache.B)
   val dcacheStoreEpoch    = RegInit(false.B)

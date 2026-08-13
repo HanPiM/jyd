@@ -1,9 +1,9 @@
 \begin{figure}[H]\centering\resizebox{\linewidth}{!}{%
 \begin{tikzpicture}[b/.style={draw,rounded corners=1.2pt,align=center,minimum width=2.25cm,minimum height=0.8cm,fill=blue!6},d/.style={draw,diamond,aspect=1.9,align=center,fill=orange!7},a/.style={-Stealth,thick},font=\small,node distance=0.72cm and 1.0cm]
-\node[b] (pc) {当前推测 PC}; \node[b,right=of pc] (q) {8 bank BTB\\异步查询}; \node[d,right=of q] (hit) {tag 命中？};
-\node[d,above right=0.55cm and 1.0cm of hit] (ret) {return 且 RAS 非空？};
+\node[b] (pc) {当前推测 PC}; \node[b,right=of pc] (q) {8 bank BTB\\异步查询}; \node[d,right=of q,xshift=-0.45cm] (hit) {tag 命中？};
+\node[d,above right=0.55cm and 1.0cm of hit,xshift=0.45cm] (ret) {return 且 RAS 非空？};
 \node[b,right=of ret] (rast) {预测 RAS 栈顶};
-\node[d,below right=0.55cm and 1.0cm of hit] (type) {JAL 或 branch\\计数器最高位为 1？};
+\node[d,below right=0.55cm and 1.0cm of hit,xshift=0.45cm] (type) {JAL 或 branch\\计数器最高位为 1？};
 \node[b,right=of type] (btbt) {预测 BTB 目标};
 \node[b,below=1.1cm of type] (fall) {预测 $pc+4$};
 \node[b,right=1.25cm of btbt,yshift=0.55cm] (pred) {形成 PredBundle\\hit / take / next PC\\随指令进入流水线};

@@ -20,6 +20,6 @@
   -- (reqrighthigh) -- (idlebelow) -- ($(idle.south)+(0.20,0)$);
 \draw[a](resp) edge[loop right] node{响应未到} (resp);
 \draw[a](req) edge[loop left] node{仍未就绪} (req);
-\draw[a](out) edge[loop below] node{继续反压} (out);
+\draw[a](out) edge[loop right] node[right]{继续反压} (out);
 \end{tikzpicture}
 \caption{IFU 四状态控制的简化关系}\end{figure}

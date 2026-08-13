@@ -53,16 +53,16 @@ Zbkx&\code{xperm4}&逐半字节置换\\
 
 \begin{table}[H]\centering\small
 \caption{CoreMark 10,000 次迭代中的 B 指令热点}\label{tab:b-hotspots}
-\begin{tabular*}{0.86\linewidth}{@{\extracolsep{\fill}}lr@{}}
+\begin{tabular*}{0.90\linewidth}{@{\extracolsep{\fill}}lrr@{}}
 \toprule
-\textbf{操作}&\textbf{动态次数}\\\midrule
-\code{sh1add}&60,280,009\\
-\code{sext.h}&16,060,001\\
-\code{sh2add}&12,120,153\\
-\code{pack/zext.h}&10,261,412\\
-\code{clmul}&5,840,008\\
-\code{clmulh}&5,840,008\\
-\code{bext}&2,341,195\\
+\textbf{操作}&\textbf{动态次数}&\textbf{占全程序动态指令比例}\\\midrule
+\code{sh1add}&60,280,009&2.4301\%\\
+\code{sext.h}&16,060,001&0.6474\%\\
+\code{sh2add}&12,120,153&0.4886\%\\
+\code{pack/zext.h}&10,261,412&0.4137\%\\
+\code{clmul}&5,840,008&0.2354\%\\
+\code{clmulh}&5,840,008&0.2354\%\\
+\code{bext}&2,341,195&0.0944\%\\
 \bottomrule
 \end{tabular*}
 \end{table}
@@ -72,8 +72,8 @@ Zbkx&\code{xperm4}&逐半字节置换\\
 编译器侧收益来自 Zbc；全 B 镜像中的 \code{clmul/clmulh} 已替代 CRC 热点内的大量移位和异或。
 因此，在相同 B ISA 下将软件 CRC 替换为 \code{xcrcu8} 时，板测由 10.07521570~s 降至
 9.56506582~s，严格同口径增量为 5.0634\%。历史上约 12.37\% 的数字混合了“无 B 软件 CRC”和
-“有 B 且启用 CRC 加速”两个变化，不能归因于 \code{xcrcu8} 单条指令。现有记录也没有提供严格
-同口径的 B-only 板级对照，故本文不报告 B 扩展单独带来的板级百分比。
+“有 B 且启用 CRC 加速”两个变化，不能归因于 \code{xcrcu8} 单条指令。受研发周期限制，本阶段未安排严格完整的
+B-only 板级对照测试，因此本文不报告 B 扩展单独带来的板级百分比。
 
 \subsection{自定义指令设计}\label{sec:custom}
 

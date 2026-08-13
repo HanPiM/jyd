@@ -83,6 +83,7 @@ P14&\code{4853eed}&链式循环融合和提交边界整理&7.160581&$-0.785$\\
 P15&\code{67b5d42}&硬件加速指令组合及镜像布局整理&7.106449&$-0.615$\\
 P16&\code{66f8fd5}&流式状态计数归约下沉到硬件&6.696372&$-0.733$\\
 P17&\code{6ff30cd}&乘法 IP 输出一致性修复与板级复测&6.714951&$-0.696$\\
+P18&\code{fabb599}&当前后端结果分区、控制流与缓存结构整合&6.745018&$-0.580$\\
 \bottomrule
 \end{tabularx}
 \end{table}
@@ -121,7 +122,9 @@ WNS 取对应实现可用的最终 post-route 或 post-route physical optimizati
 \textbf{从 P0 到 P16，板测时间由 10.695831\,s 降至 6.696372\,s，缩短约 37.39\%}。P0--P7 在性能不变的
 条件下将 WNS 改善 324\,ps，说明 bank 化和结果通路局部化主要贡献于物理结构；P8 以后通过减少动态
 指令、缩短高频数据依赖和保持存储一致性取得主要性能收益。P17 使用经校核的乘法 IP 输出产物重新
-实现并完成板测，性能为 6.71495094\,s，作为正确 IP 配置下的独立板级复测点。
+实现并完成板测，性能为 6.71495094\,s，作为正确 IP 配置下的独立板级复测点。P18 则以当前设计、
+正式 10,000 次程序镜像和经校核的一周期乘法 IP 重新生成 bitstream；四项 CRC 均正确，板测时间为
+\textbf{6.74501768\,s}，对应 routed WNS 为 $-0.590$\,ns，post-route physical optimization WNS 为 $-0.580$\,ns。
 
 \subsection{当前实现频率与 WNS}\label{sec:timing}
 
@@ -129,7 +132,8 @@ WNS 取对应实现可用的最终 post-route 或 post-route physical optimizati
 \textbf{$+0.009$\,ns，完成建立时序闭合}\evidence{E-FINAL-250}。280\,MHz 实现取得 routed WNS
 $-0.664$\,ns\evidence{E-FINAL-280}。300\,MHz 实现的 routed WNS 为 $-0.590$\,ns，post-route
 physical optimization 为 $-0.580$\,ns\evidence{E-FINAL-300}；该频率点已完成布局布线，但仍有
-setup 时序缺口。
+setup 时序缺口。该 300\,MHz 实现的精确重建 bitstream 已完成真实板测：10,000 次迭代用时
+\textbf{6.74501768\,s}，CRC 为 \code{e714/1fd7/8e3a/988c}。
 
 \begin{table}[H]\centering
 \caption{当前设计在不同频率下的实现结果}

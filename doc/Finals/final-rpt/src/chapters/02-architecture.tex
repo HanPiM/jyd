@@ -52,7 +52,7 @@ IDU 根据 opcode、funct3 和 funct7 完成指令类型、格式与执行类别
 并同时读取两个 GPR 源操作数和一个 CSR 操作数。为缩短后端组合路径，IDU 还预先形成
 $pc+4$、$pc+imm$、地址低位加法结果和 \code{ecall}/\code{mret} 的静态目标。
 
-\begin{archsignalstable}[@{}>{\raggedright\arraybackslash}p{0.13\linewidth}C{0.055\linewidth}>{\raggedright\arraybackslash}p{0.205\linewidth}>{\raggedright\arraybackslash}p{0.085\linewidth}>{\raggedright\arraybackslash}p{0.42\linewidth}@{}]{IDU 接口信号说明}
+\begin{archsignalstable}[@{}>{\raggedright\arraybackslash}p{0.13\linewidth}C{0.055\linewidth}>{\raggedright\arraybackslash}p{0.18\linewidth}>{\raggedright\arraybackslash}p{0.11\linewidth}>{\raggedright\arraybackslash}p{0.42\linewidth}@{}]{IDU 接口信号说明}
 in&输入&FetchedInst Decoupled&valid/ready&接收 IFU 输出的指令、PC 与预测记录\\
 rvec&双向&2-read GPR&组合读&给出 rs1/rs2 地址并取得两个通用寄存器值\\
 csrRead&双向&CSR single-read&组合读&按指令高 12 位读取 CSR 旧值\\

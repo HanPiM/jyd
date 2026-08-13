@@ -33,12 +33,11 @@
 \draw[a] (late)--(consumer);
 \draw[a] (write)--(broadcast);
 
-% 写广播均沿节点外侧通道布线。
-\draw[wa] ([xshift=-1.45cm]broadcast.north) -- ++(0,0.42)
-  -| ([xshift=1.35cm]shadow.south) -- (shadow.south);
-\draw[wa] ([xshift=-0.75cm]broadcast.south) -- ++(0,-0.38)
-  -- ++(-5.45,0) |- ([xshift=-1.15cm]tags.north) -- (tags.north);
-\draw[wa] ([xshift=0.75cm]broadcast.south) -- ++(0,-0.58)
-  -- ++(9.2,0) |- ([yshift=0.65cm]main.north) -- (main.north);
+% 三条写广播分别占用近端、左外侧和右外侧通道，互不共线。
+\draw[wa] (broadcast.west) -- ++(-0.65,0) -| (shadow.south);
+\draw[wa] ([xshift=-0.75cm]broadcast.south) -- ++(0,-0.75)
+  -- ++(-9.8,0) |- ([yshift=0.8cm]tags.north) -- (tags.north);
+\draw[wa] ([xshift=0.75cm]broadcast.south) -- ++(0,-1.05)
+  -- ++(9.45,0) |- ([yshift=1.1cm]main.north) -- (main.north);
 \end{tikzpicture}}
 \caption{4 KiB 双 bank D-cache：普通命中通路与 late-load 异步镜像}\end{figure}

@@ -99,7 +99,9 @@ class DCache extends Module {
   val lateReadData = lateDataMem.map { banks => Cat(banks.reverse.map(_.io.dpo)) }
   io.lateReadData := Mux(lateQueryBank, lateReadData(1), lateReadData(0))
 
-  val listQueryAddresses = Seq(listFindQueryAddress, listFindQueryAddressB)
+  val listFindCachedInfoLookup = listFindState === ListFindState.nodeResolve && listFindNextHit && listFindInfoHit
+  val listQueryAddressA = Mux(listFindCachedInfoLookup, listFindInfo, listFindQueryAddress)
+  val listQueryAddresses = Seq(listQueryAddressA, listFindQueryAddressB)
   val listQueryTags = listQueryAddresses.map(_(17, 11))
   val listQueryBanks = listQueryAddresses.map(_(11))
   val listQueryAddrs = listQueryAddresses.map(_(10, 2))
@@ -145,7 +147,9 @@ class DCache extends Module {
       }
     }.otherwise {
       listFindQueryAddress := listFindInfo
-      listFindState := ListFindState.dataLookup
+      listFindDataHit := listQueryHits(0)
+      listFindWord := listReadData(0)
+      listFindState := ListFindState.dataResolve
     }
   }.elsewhen(listFindState === ListFindState.nextMemory && io.listFindMemResponse.valid) {
     listFindNext := io.listFindMemResponse.bits

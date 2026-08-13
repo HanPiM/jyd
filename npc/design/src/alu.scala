@@ -231,7 +231,7 @@ class Multiplier extends Module {
   })
 
   object State extends ChiselEnum {
-    val idle, busy, macCommit, done = Value
+    val idle, busy, done = Value
   }
   val state = RegInit(State.idle)
 
@@ -241,10 +241,10 @@ class Multiplier extends Module {
   val narrowPrevAReg  = Reg(UInt(16.W))
   val narrowPrevBReg  = Reg(UInt(16.W))
   val xmacaccReg      = Reg(Bool())
+  val xmacaccFirstReg = Reg(Bool())
   val xmacaccBitReg   = Reg(Bool())
   val xmacaccAReg     = Reg(UInt(16.W))
   val xmacaccBReg     = Reg(UInt(16.W))
-  val xmacaccTermReg  = Reg(UInt(32.W))
   val matrixAccumulator = Reg(UInt(32.W))
   val resultReg       = Reg(Types.UWord)
   val slowValidPipe   = RegInit(0.U(MultiplierConfig.latency.W))
@@ -289,7 +289,7 @@ class Multiplier extends Module {
     Mux(xmacaccAReg(15), Cat(xmacaccBReg, 0.U(16.W)), 0.U) -
     Mux(xmacaccBReg(15), Cat(xmacaccAReg, 0.U(16.W)), 0.U)
   val xmacaccTerm = Mux(xmacaccBitReg, xmacaccBitTerm, xmacaccSignedTerm)
-  val xmacaccNextAccumulator = matrixAccumulator + xmacaccTermReg
+  val xmacaccResult = Mux(xmacaccFirstReg, xmacaccTerm, matrixAccumulator + xmacaccTerm)
   val result = Mux(isNarrowFastReg, narrowProduct, Mux(isFastReg, fastMultiplier.io.P, product(63, 32)))
   val resultValid = Mux(isNarrowFastReg, Mux(narrowSelectReg, narrowValidPipe(1), narrowValidPipe(0)), Mux(
     isFastReg,
@@ -298,9 +298,8 @@ class Multiplier extends Module {
   ))
 
   io.in.ready  := state === State.idle
-  io.out.valid := state === State.done || state === State.macCommit ||
-    (state === State.busy && resultValid && !xmacaccReg)
-  io.out.bits := Mux(state === State.done, resultReg, Mux(state === State.macCommit, xmacaccNextAccumulator, result))
+  io.out.valid := state === State.done || (state === State.busy && resultValid)
+  io.out.bits := Mux(state === State.done, resultReg, Mux(xmacaccReg, xmacaccResult, result))
 
   switch(state) {
     is(State.idle) {
@@ -315,15 +314,13 @@ class Multiplier extends Module {
         narrowPrevAReg := io.in.bits.rawSrc1(15, 0)
         narrowPrevBReg := io.in.bits.prevData(15, 0)
         xmacaccReg := inputIsXmacacc
+        xmacaccFirstReg := io.in.bits.func7t === 4.U || io.in.bits.func7t === 6.U
         xmacaccBitReg := io.in.bits.func7t === 6.U || io.in.bits.func7t === 7.U || io.in.bits.func7t === 9.U
         xmacaccAReg := io.in.bits.rawSrc1(15, 0)
         xmacaccBReg := io.in.bits.rawSrc2(15, 0)
         slowValidPipe := Mux(isMul, 0.U, 1.U)
         fastValidPipe := Mux(isMul, 1.U, 0.U)
         narrowValidPipe := Mux(isNarrowFast, 1.U, 0.U)
-        when(inputIsXmacacc && (io.in.bits.func7t === 4.U || io.in.bits.func7t === 6.U)) {
-          matrixAccumulator := 0.U
-        }
         state := State.busy
       }
     }
@@ -333,8 +330,13 @@ class Multiplier extends Module {
       narrowValidPipe := narrowValidPipe << 1
       when(resultValid) {
         when(xmacaccReg) {
-          xmacaccTermReg := xmacaccTerm
-          state := State.macCommit
+          matrixAccumulator := xmacaccResult
+          when(io.out.ready) {
+            state := State.idle
+          }.otherwise {
+            resultReg := xmacaccResult
+            state := State.done
+          }
         }.elsewhen(io.out.ready) {
           state := State.idle
         }.otherwise {
@@ -342,11 +344,6 @@ class Multiplier extends Module {
           state := State.done
         }
       }
-    }
-    is(State.macCommit) {
-      matrixAccumulator := xmacaccNextAccumulator
-      resultReg := xmacaccNextAccumulator
-      state := Mux(io.out.ready, State.idle, State.done)
     }
     is(State.done) {
       when(io.out.fire) {

@@ -124,8 +124,9 @@ object ExtractFwdInfoFromWrBack {
     val out = Wire(new WrBackForwardInfo)
     out.addr      := ResultLaneSelect.rd(wrBack)
     out.enWr      := ResultLaneSelect.anyValid(wrBack) && info.valid
-    out.dataVaild := false.B
-    out.data      := 0.U
+    val registeredLoadData = ExtLoadData(wrBack.lsuResult, wrBack.lsuAddrOffset, wrBack.lsuFunc3t)
+    out.dataVaild := info.valid && (!wrBack.loadResult.valid || (wrBack.cacheableLoad && wrBack.dcacheHit))
+    out.data      := Mux(wrBack.loadResult.valid, registeredLoadData, ResultLaneSelect.nonLoadData(wrBack))
     out.kind      := wrBack.resultKind
 
     out

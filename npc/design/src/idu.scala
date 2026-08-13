@@ -443,11 +443,13 @@ class IDU(
     needReg1AddImm && SingleByPassMux.conflict(res.rs1, io.wrBackInfo.lsu.addr, io.wrBackInfo.lsu.enWr)
   val addressLsuReady = addressLsuConflict && io.wrBackInfo.lsu.dataVaild
   // Address generation does not use the GPR file's same-cycle WBU write-through.
-  // Waiting one cycle reads the committed value from distributed RAM and keeps
-  // WBU/peripheral response data out of the 22-bit address-adder carry chain.
+  // The WBU forward value comes only from its registered payload, keeping the
+  // current peripheral response out of the address-adder carry chain.
   val addressWbuConflict =
     needReg1AddImm && SingleByPassMux.conflict(res.rs1, io.wrBackInfo.wbu.addr, io.wrBackInfo.wbu.enWr)
-  val needStallAddress = addressExuConflict || (addressLsuConflict && !addressLsuReady) || addressWbuConflict
+  val addressWbuReady = addressWbuConflict && io.wrBackInfo.wbu.dataVaild
+  val needStallAddress =
+    addressExuConflict || (addressLsuConflict && !addressLsuReady) || (addressWbuConflict && !addressWbuReady)
   val needStall = bypassMux.io.needStall || needStallAddress
 
   layer.block(PerfCounterLayer) {
@@ -473,7 +475,8 @@ class IDU(
     val high = Mux(crossesIntoPerip, "h20".U(6.W), Mux(crossesIntoDram, "h10".U(6.W), base(21, 16)))
     high ## lowSum(15, 0)
   }
-  val addressBase = Mux(addressLsuReady, io.wrBackInfo.lsu.data, io.rvec.rawData(0))
+  val addressBase =
+    Mux(addressLsuReady, io.wrBackInfo.lsu.data, Mux(addressWbuReady, io.wrBackInfo.wbu.data, io.rvec.rawData(0)))
   res.reg1AddImm := addAddrImm(addressBase)
 
   when(io.in.valid && needReg1AddImm) {

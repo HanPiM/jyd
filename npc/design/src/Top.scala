@@ -411,8 +411,12 @@ class CPUCore(
     pipelineConnect(lsuDifftest.io.out, wbuDifftest.io.in)
   }
 
-  val iduPipe = Wire(Decoupled(new FetchedInst))
-  pipelineConnect(ifu.io.out, iduPipe)
+  // A two-entry, non-flow-through queue keeps fetch throughput at one request
+  // per cycle while making IFU readiness depend only on registered occupancy.
+  // This cuts the IDU decode/RAW-ready path back into the PC and BTB query.
+  val iduQueue = Module(new Queue(new FetchedInst, 2, pipe = false, flow = false))
+  iduQueue.io.enq <> ifu.io.out
+  val iduPipe = iduQueue.io.deq
   val iduEpochMatch = iduPipe.bits.epoch === pipelineEpoch
   idu.io.in.bits := iduPipe.bits
   idu.io.in.valid := iduPipe.valid && iduEpochMatch

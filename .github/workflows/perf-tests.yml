@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'npc/design/**'
+      - 'jyd-tests/**'
       - '.github/workflows/perf-tests.yml'
       - '.github/workflows/reusable-setup.yml'
       - '.github/actions/common/action.yml'

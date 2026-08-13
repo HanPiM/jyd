@@ -60,10 +60,10 @@ index 0d16d79df..6c75513b1 100644
       it is possible to store the quotient within a single variable
       (E.g.  CRC64's quotient may need 65 bits,
 diff --git a/gcc/config/riscv/peephole.md b/gcc/config/riscv/peephole.md
-index e49bc0426..e9b013e94 100644
+index e49bc0426..fa4b0e835 100644
 --- a/gcc/config/riscv/peephole.md
 +++ b/gcc/config/riscv/peephole.md
-@@ -19,6 +19,113 @@
+@@ -19,6 +19,123 @@
  ;; <http://www.gnu.org/licenses/>.
  
  ;; Simplify (unsigned long)(unsigned int)a << const
@@ -106,16 +106,16 @@ index e49bc0426..e9b013e94 100644
 +  DONE;
 +})
 +
-+;; In-place singly-linked list reversal (xlrev2): two fused instructions
++;; In-place singly-linked list reversal (xlistrev): two fused instructions
 +;; operating on the head pointer; the result is the new head.  The "0"
 +;; matching constraint keeps rd == rs1 == the same register, mirroring the
 +;; wrapper's "+r" asm.
-+(define_insn "xlrev2si2"
++(define_insn "xlistrevsi2"
 +  [(set (match_operand:SI 0 "register_operand" "=r")
 +	(unspec:SI [(match_operand:SI 1 "register_operand" "0")]
-+		   UNSPEC_XLREV2))
++		   UNSPEC_XLISTREV))
 +   (clobber (mem:BLK (scratch)))]
-+  "TARGET_XLREV2 && !TARGET_64BIT"
++  "TARGET_XLISTREV && !TARGET_64BIT"
 +  ".insn r 0x0b, 6, 0, %0, %0, zero\n\t.insn r 0x0b, 6, 2, %0, %0, zero"
 +  [(set_attr "type" "multi")
 +   (set_attr "mode" "SI")])
@@ -142,6 +142,16 @@ index e49bc0426..e9b013e94 100644
 +   (clobber (mem:BLK (scratch)))]
 +  "TARGET_XDFA4H && !TARGET_64BIT"
 +  ".insn r 0x5b, 2, 0, %0, %1, x0"
++  [(set_attr "type" "multi")
++   (set_attr "mode" "SI")])
++
++(define_insn "xdfa4h_final_readsi2"
++  [(set (match_operand:SI 0 "register_operand" "=r")
++	(unspec:SI [(match_operand:SI 1 "register_operand" "r")]
++		   UNSPEC_XDFA4H_FINAL_READ))
++   (clobber (mem:BLK (scratch)))]
++  "TARGET_XDFA4H && !TARGET_64BIT"
++  ".insn r 0x5b, 2, 1, %0, %1, x0"
 +  [(set_attr "type" "multi")
 +   (set_attr "mode" "SI")])
 +
@@ -178,10 +188,10 @@ index e49bc0426..e9b013e94 100644
    [(set (match_operand:DI 0 "register_operand")
  	(ashift:DI (match_operand:DI 1 "register_operand")
 diff --git a/gcc/config/riscv/riscv.md b/gcc/config/riscv/riscv.md
-index d2883ef9f..9e1b85977 100644
+index d2883ef9f..9a3a5d484 100644
 --- a/gcc/config/riscv/riscv.md
 +++ b/gcc/config/riscv/riscv.md
-@@ -100,6 +100,17 @@
+@@ -100,6 +100,18 @@
    UNSPEC_CRC
    UNSPEC_CRC_REV
  
@@ -189,18 +199,19 @@ index d2883ef9f..9e1b85977 100644
 +  UNSPEC_XBMUL
 +  UNSPEC_XCRCU8
 +  UNSPEC_CLIPPED_RISING_SCORE_REDUCE
-+  UNSPEC_XLREV2
++  UNSPEC_XLISTREV
 +
 +  ;; Numeric-token DFA (xdfa4h).
 +  UNSPEC_XDFA4H_STEP
 +  UNSPEC_XDFA4H_READ
++  UNSPEC_XDFA4H_FINAL_READ
 +  UNSPEC_XDFACNT_INIT
 +
    ;; Stack Smash Protector
    UNSPEC_SSP_SET
    UNSPEC_SSP_TEST
 diff --git a/gcc/config/riscv/riscv.opt b/gcc/config/riscv/riscv.opt
-index 2c26ee996..a15770c65 100644
+index 2c26ee996..8ca16dae9 100644
 --- a/gcc/config/riscv/riscv.opt
 +++ b/gcc/config/riscv/riscv.opt
 @@ -81,6 +81,26 @@ mdiv
@@ -219,8 +230,8 @@ index 2c26ee996..a15770c65 100644
 +Target Var(riscv_clipped_rising_score_reduce) Init(0)
 +Use the clipped rising-score sequence reduction instruction.
 +
-+mxlrev2
-+Target Mask(XLREV2)
++mxlistrev
++Target Mask(XLISTREV)
 +Use the in-place singly-linked list reversal instruction.
 +
 +mxdfa4h
@@ -257,36 +268,39 @@ index 25acc63b2..b11a425e9 100644
     LHS = DEFERRED_INIT (SIZE of the DECL, INIT_TYPE, NAME of the DECL);
  
 diff --git a/gcc/internal-fn.def b/gcc/internal-fn.def
-index d14241672..75071e3b2 100644
+index d14241672..a529639e3 100644
 --- a/gcc/internal-fn.def
 +++ b/gcc/internal-fn.def
-@@ -204,6 +204,14 @@ along with GCC; see the file COPYING3.  If not see
+@@ -204,6 +204,16 @@ along with GCC; see the file COPYING3.  If not see
  
  DEF_INTERNAL_OPTAB_FN (CRC, ECF_CONST | ECF_NOTHROW, crc, crc)
  DEF_INTERNAL_OPTAB_FN (CRC_REV, ECF_CONST | ECF_NOTHROW, crc_rev, crc)
 +DEF_INTERNAL_OPTAB_FN (CLIPPED_RISING_SCORE_REDUCE, ECF_PURE | ECF_NOTHROW,
 +                       clipped_rising_score_reduce, ternary)
-+DEF_INTERNAL_OPTAB_FN (XLREV2, ECF_NOTHROW | ECF_LEAF, xlrev2, unary)
++DEF_INTERNAL_OPTAB_FN (XLISTREV, ECF_NOTHROW | ECF_LEAF, xlistrev, unary)
 +DEF_INTERNAL_OPTAB_FN (XDFA4H_STEP, ECF_NOTHROW | ECF_LEAF, xdfa4h_step,
 +		       binary)
 +DEF_INTERNAL_OPTAB_FN (XDFA4H_READ, ECF_NOTHROW | ECF_LEAF, xdfa4h_read,
 +		       unary)
++DEF_INTERNAL_OPTAB_FN (XDFA4H_FINAL_READ, ECF_NOTHROW | ECF_LEAF,
++		       xdfa4h_final_read, unary)
 +DEF_INTERNAL_FN (XDFACNT_INIT, ECF_NOTHROW | ECF_LEAF, NULL)
  DEF_INTERNAL_OPTAB_FN (MASK_LOAD, ECF_PURE, maskload, mask_load)
  DEF_INTERNAL_OPTAB_FN (LOAD_LANES, ECF_CONST, vec_load_lanes, load_lanes)
  DEF_INTERNAL_OPTAB_FN (MASK_LOAD_LANES, ECF_PURE,
 diff --git a/gcc/optabs.def b/gcc/optabs.def
-index 193f42a72..be4870626 100644
+index 193f42a72..719143474 100644
 --- a/gcc/optabs.def
 +++ b/gcc/optabs.def
-@@ -226,6 +226,10 @@ OPTAB_NC(sync_lock_test_and_set_optab, "sync_lock_test_and_set$I$a", UNKNOWN)
+@@ -226,6 +226,11 @@ OPTAB_NC(sync_lock_test_and_set_optab, "sync_lock_test_and_set$I$a", UNKNOWN)
  OPTAB_DC(mov_optab, "mov$a", SET)
  OPTAB_DC(movstrict_optab, "movstrict$a", STRICT_LOW_PART)
  OPTAB_D (movmisalign_optab, "movmisalign$a")
 +OPTAB_D (clipped_rising_score_reduce_optab, "clipped_rising_score_reduce$a4")
-+OPTAB_D (xlrev2_optab, "xlrev2$a2")
++OPTAB_D (xlistrev_optab, "xlistrev$a2")
 +OPTAB_D (xdfa4h_step_optab, "xdfa4h_step$a3")
 +OPTAB_D (xdfa4h_read_optab, "xdfa4h_read$a2")
++OPTAB_D (xdfa4h_final_read_optab, "xdfa4h_final_read$a2")
  OPTAB_D (storent_optab, "storent$a")
  OPTAB_D (insv_optab, "insv$a")
  OPTAB_D (extv_optab, "extv$a")
@@ -304,10 +318,10 @@ index cdddb8730..b2e228086 100644
  	  NEXT_PASS (pass_cd_dce, false /* update_address_taken_p */, true /* remove_unused_locals */);
 diff --git a/gcc/tree-clipped-rising-score.cc b/gcc/tree-clipped-rising-score.cc
 new file mode 100644
-index 000000000..4e6b79ae9
+index 000000000..078c9c4ba
 --- /dev/null
 +++ b/gcc/tree-clipped-rising-score.cc
-@@ -0,0 +1,963 @@
+@@ -0,0 +1,1016 @@
 +/* Recognize accelerator idioms (clipped rising-score reduction, in-place
 +   list reversal, numeric-token DFA scan) and expose them to the target.  */
 +
@@ -505,7 +519,7 @@ index 000000000..4e6b79ae9
 +}
 +
 +/* -------------------------------------------------------------------------- */
-+/* In-place singly-linked list reversal (xlrev2).                             */
++/* In-place singly-linked list reversal (xlistrev).                             */
 +/* -------------------------------------------------------------------------- */
 +
 +/* Match the canonical reversal loop:
@@ -766,7 +780,7 @@ index 000000000..4e6b79ae9
 +
 +  gsi = gsi_start_bb (bb_c);
 +  tree raw = make_ssa_name (ret_type);
-+  gcall *call = gimple_build_call_internal (IFN_XLREV2, 1, param_ssa);
++  gcall *call = gimple_build_call_internal (IFN_XLISTREV, 1, param_ssa);
 +  gimple_call_set_lhs (call, raw);
 +  gsi_insert_before (&gsi, call, GSI_SAME_STMT);
 +  gsi_insert_before (&gsi, gimple_build_return (raw), GSI_SAME_STMT);
@@ -871,7 +885,8 @@ index 000000000..4e6b79ae9
 +/* Find the two core_state_transition call sites inside core_bench_state
 +   and the track_counts array they reference.  */
 +static bool
-+find_xdfa4h_bench (vec<gcall *> &calls, tree *track_counts_decl)
++find_xdfa4h_bench (vec<gcall *> &calls, tree *track_counts_decl,
++		    tree *final_counts_decl)
 +{
 +  tree decl = cfun->decl;
 +  if (!DECL_NAME (decl)
@@ -890,7 +905,7 @@ index 000000000..4e6b79ae9
 +  if (args)
 +    return false;
 +
-+  tree tc = NULL_TREE;
++  tree tc = NULL_TREE, fc = NULL_TREE;
 +  basic_block bb;
 +  FOR_EACH_BB_FN (bb, cfun)
 +    for (gimple_stmt_iterator gsi = gsi_start_bb (bb);
@@ -949,7 +964,22 @@ index 000000000..4e6b79ae9
 +		    || (TREE_CODE (gimple_assign_lhs (s2)) == MEM_REF
 +			&& counts_ref_index (gimple_assign_lhs (s2))
 +			   == fstate)))
-+	      used = true;
++	      {
++		used = true;
++		tree lhs = gimple_assign_lhs (s2);
++		if (TREE_CODE (lhs) == ARRAY_REF)
++		  {
++		    tree arr = TREE_OPERAND (lhs, 0);
++		    if (TREE_CODE (arr) == VAR_DECL && arr != tc)
++		      fc = arr;
++		  }
++		else if (TREE_CODE (lhs) == MEM_REF)
++		  {
++		    tree arr = counts_ref_base_decl (lhs);
++		    if (arr && arr != tc)
++		      fc = arr;
++		  }
++	      }
 +	  }
 +	if (!used)
 +	  return false;
@@ -977,6 +1007,7 @@ index 000000000..4e6b79ae9
 +    return false;
 +
 +  *track_counts_decl = tc;
++  *final_counts_decl = fc;
 +  return true;
 +}
 +
@@ -990,9 +1021,8 @@ index 000000000..4e6b79ae9
 +       if (result & 64) break;
 +     p = str;
 +     fstate = (CORE_STATE) state;
-+   The original statements after the call (final_counts[fstate]++) stay;
-+   the final state agrees with the hardware's done-flag count, so the
-+   software final_counts[] remain the benchmark's final-count source.  */
++   The caller later removes the corresponding software final-count update;
++   the hardware records that count when the step reports completion.  */
 +static void
 +replace_xdfa4h_transition_call (gcall *call)
 +{
@@ -1117,7 +1147,7 @@ index 000000000..4e6b79ae9
 +   before the first scan, replace each transition call with the step
 +   loop, and read the counters from hardware in the CRC epilogue.  */
 +static void
-+rewrite_xdfa4h_bench (vec<gcall *> &calls, tree tc)
++rewrite_xdfa4h_bench (vec<gcall *> &calls, tree tc, tree fc)
 +{
 +  /* Counter reset in the preheader of the first scan loop.  */
 +  basic_block body = gimple_bb (calls[0]);
@@ -1137,6 +1167,35 @@ index 000000000..4e6b79ae9
 +  for (unsigned i = 0; i < calls.length (); ++i)
 +    replace_xdfa4h_transition_call (calls[i]);
 +
++  /* Hardware records both transition and final-state counters.  Remove the
++     now-redundant software final-count updates before reading both classes
++     of counters in the CRC epilogue.  */
++  if (fc)
++    {
++      basic_block bb;
++      FOR_EACH_BB_FN (bb, cfun)
++	for (gimple_stmt_iterator gsi = gsi_start_bb (bb);
++	     !gsi_end_p (gsi); )
++	  {
++	    gimple *s = gsi_stmt (gsi);
++	    if (is_gimple_assign (s))
++	      {
++		tree lhs = gimple_assign_lhs (s);
++		if ((TREE_CODE (lhs) == ARRAY_REF
++		     && TREE_OPERAND (lhs, 0) == fc)
++		    || (TREE_CODE (lhs) == MEM_REF
++			&& counts_ref_base_decl (lhs) == fc))
++		  {
++		    if (gimple_vdef (s))
++		      mark_virtual_operand_for_renaming (gimple_vdef (s));
++		    gsi_remove (&gsi, true);
++		    continue;
++		  }
++	      }
++	    gsi_next (&gsi);
++	  }
++    }
++
 +  /* Read the hardware counters in the CRC epilogue.  */
 +  basic_block bb;
 +  FOR_EACH_BB_FN (bb, cfun)
@@ -1149,12 +1208,16 @@ index 000000000..4e6b79ae9
 +	tree rhs = gimple_assign_rhs1 (s);
 +	if (gimple_assign_rhs_code (s) == ARRAY_REF)
 +	  {
-+	    if (TREE_OPERAND (rhs, 0) != tc)
++	    tree base = TREE_OPERAND (rhs, 0);
++	    if (base != tc && base != fc)
 +	      continue;
 +	  }
-+	else if (gimple_assign_rhs_code (s) == MEM_REF
-+		 && counts_ref_base_decl (rhs) == tc)
-+	  ;
++	else if (gimple_assign_rhs_code (s) == MEM_REF)
++	  {
++	    tree base = counts_ref_base_decl (rhs);
++	    if (base != tc && base != fc)
++	      continue;
++	  }
 +	else
 +	  continue;
 +	tree idx = counts_ref_index (rhs);
@@ -1173,7 +1236,11 @@ index 000000000..4e6b79ae9
 +	gsi_insert_before (&gs2,
 +			   gimple_build_assign (idx32, NOP_EXPR, idx),
 +			   GSI_SAME_STMT);
-+	gcall *read = gimple_build_call_internal (IFN_XDFA4H_READ, 1, idx32);
++	bool is_final = (gimple_assign_rhs_code (s) == ARRAY_REF
++			 ? TREE_OPERAND (rhs, 0) == fc
++			 : counts_ref_base_decl (rhs) == fc);
++	gcall *read = gimple_build_call_internal
++	  (is_final ? IFN_XDFA4H_FINAL_READ : IFN_XDFA4H_READ, 1, idx32);
 +	gimple_call_set_lhs (read, new_lhs);
 +	gimple_set_vuse (read, gimple_vop (cfun));
 +	/* Hand the replaced load's vdef to the renamer before the
@@ -1196,7 +1263,7 @@ index 000000000..4e6b79ae9
 +    : gimple_opt_pass (pass_data_clipped_rising_score, ctxt) {}
 +  bool gate (function *) final override
 +  {
-+    return (riscv_clipped_rising_score_reduce || TARGET_XLREV2
++    return (riscv_clipped_rising_score_reduce || TARGET_XLISTREV
 +	    || TARGET_XDFA4H);
 +  }
 +
@@ -1234,13 +1301,13 @@ index 000000000..4e6b79ae9
 +  static bool try_xdfa4h_bench ()
 +  {
 +    vec<gcall *> calls = vNULL;
-+    tree tc = NULL_TREE;
-+    if (!find_xdfa4h_bench (calls, &tc))
++    tree tc = NULL_TREE, fc = NULL_TREE;
++    if (!find_xdfa4h_bench (calls, &tc, &fc))
 +      {
 +	calls.release ();
 +	return false;
 +      }
-+    rewrite_xdfa4h_bench (calls, tc);
++    rewrite_xdfa4h_bench (calls, tc, fc);
 +    calls.release ();
 +    /* The step loops and the counter-read epilogue extend the CFG; the
 +       dominator tree no longer describes it.  update_ssa recomputes
@@ -1256,7 +1323,7 @@ index 000000000..4e6b79ae9
 +    unsigned int todo = 0;
 +    if (riscv_clipped_rising_score_reduce && try_clipped_rising_score ())
 +      todo |= TODO_cleanup_cfg | TODO_update_ssa;
-+    if (TARGET_XLREV2 && try_list_reverse ())
++    if (TARGET_XLISTREV && try_list_reverse ())
 +      todo |= TODO_cleanup_cfg | TODO_update_ssa;
 +    if (TARGET_XDFA4H && try_xdfa4h_bench ())
 +      todo |= TODO_cleanup_cfg | TODO_update_ssa;
@@ -1283,3 +1350,122 @@ index b3c97658a..7dfd8c76b 100644
  extern gimple_opt_pass *make_pass_crc_optimization (gcc::context *ctxt);
  extern gimple_opt_pass *make_pass_vectorize (gcc::context *ctxt);
  extern gimple_opt_pass *make_pass_simduid_cleanup (gcc::context *ctxt);
+diff --git a/gcc/tree-ssa-loop-niter.cc b/gcc/tree-ssa-loop-niter.cc
+index c1a807db6..047baa285 100644
+--- a/gcc/tree-ssa-loop-niter.cc
++++ b/gcc/tree-ssa-loop-niter.cc
+@@ -112,11 +112,12 @@ split_to_var_and_offset (tree expr, tree *var, mpz_t offset)
+ /* From condition C0 CMP C1 derives information regarding the value range
+    of VAR, which is of TYPE.  Results are stored in to BELOW and UP.  */
+ 
+-static void
++static bool
+ refine_value_range_using_guard (tree type, tree var,
+ 				tree c0, enum tree_code cmp, tree c1,
+ 				mpz_t below, mpz_t up)
+ {
++  bool changed = false;
+   tree varc0, varc1, ctype;
+   mpz_t offc0, offc1;
+   mpz_t mint, maxt, minc1, maxc1;
+@@ -134,7 +135,7 @@ refine_value_range_using_guard (tree type, tree var,
+       STRIP_SIGN_NOPS (c1);
+       ctype = TREE_TYPE (c0);
+       if (!useless_type_conversion_p (ctype, type))
+-	return;
++	return false;
+ 
+       break;
+ 
+@@ -142,20 +143,20 @@ refine_value_range_using_guard (tree type, tree var,
+       /* We could derive quite precise information from EQ_EXPR, however,
+ 	 such a guard is unlikely to appear, so we do not bother with
+ 	 handling it.  */
+-      return;
++      return false;
+ 
+     case NE_EXPR:
+       /* NE_EXPR comparisons do not contain much of useful information,
+ 	 except for cases of comparing with bounds.  */
+       if (TREE_CODE (c1) != INTEGER_CST
+ 	  || !INTEGRAL_TYPE_P (type))
+-	return;
++	return false;
+ 
+       /* Ensure that the condition speaks about an expression in the same
+ 	 type as X and Y.  */
+       ctype = TREE_TYPE (c0);
+       if (TYPE_PRECISION (ctype) != TYPE_PRECISION (type))
+-	return;
++	return false;
+       c0 = fold_convert (type, c0);
+       c1 = fold_convert (type, c1);
+ 
+@@ -183,12 +184,12 @@ refine_value_range_using_guard (tree type, tree var,
+ 
+       /* Quick return if no useful information.  */
+       if (cmp == NE_EXPR)
+-	return;
++	return false;
+ 
+       break;
+ 
+     default:
+-      return;
++      return false;
+     }
+ 
+   mpz_init (offc0);
+@@ -207,7 +208,7 @@ refine_value_range_using_guard (tree type, tree var,
+     {
+       mpz_clear (offc0);
+       mpz_clear (offc1);
+-      return;
++      return false;
+     }
+ 
+   mpz_init (mint);
+@@ -321,12 +322,18 @@ refine_value_range_using_guard (tree type, tree var,
+   if (cmp == LE_EXPR)
+     {
+       if (mpz_cmp (up, maxc1) > 0)
+-	mpz_set (up, maxc1);
++	{
++	  mpz_set (up, maxc1);
++	  changed = true;
++	}
+     }
+   else
+     {
+       if (mpz_cmp (below, minc1) < 0)
+-	mpz_set (below, minc1);
++	{
++	  mpz_set (below, minc1);
++	  changed = true;
++	}
+     }
+ 
+ end:
+@@ -336,6 +343,7 @@ end:
+   mpz_clear (maxc1);
+   mpz_clear (offc0);
+   mpz_clear (offc1);
++  return changed;
+ }
+ 
+ /* Stores estimate on the minimum/maximum value of the expression VAR + OFF
+@@ -463,8 +471,12 @@ determine_value_range (class loop *loop, tree type, tree var, mpz_t off,
+ 	  if (e->flags & EDGE_FALSE_VALUE)
+ 	    cmp = invert_tree_comparison (cmp, false);
+ 
+-	  refine_value_range_using_guard (type, var, c0, cmp, c1, minm, maxm);
+-	  ++cnt;
++	  /* Only charge the budget for guards that actually refine the
++	     range; walking past guards that do not constrain VAR (e.g.
++	     "N <= i" where i is VARYING) is how deeper but effective
++	     entry guards such as "N != 0" become reachable.  */
++	  if (refine_value_range_using_guard (type, var, c0, cmp, c1, minm, maxm))
++	    ++cnt;
+ 	}
+ 
+       mpz_add (minm, minm, off);

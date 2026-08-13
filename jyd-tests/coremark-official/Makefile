@@ -12,6 +12,7 @@ ENABLE_LTO ?= 0
 PSEUDO_FLOAT ?= 1
 COREMARK_OPT ?= -Os
 COREMARK_XEXTS ?=
+COREMARK_GCC_MD ?= 0
 
 empty :=
 space := $(empty) $(empty)
@@ -99,6 +100,9 @@ COREMARK_PLUGIN_FLAGS = -fplugin=$(COREMARK_ACCEL_PLUGIN) \
 	-fplugin-arg-xaccel_plugin-accels=$(COREMARK_PLUGIN_ACCELS) \
 	-fplugin-arg-xaccel_plugin-report=$(if $(filter 1,$(PSEUDO_FLOAT)),fp12,none) \
 	-include $(CURDIR)/accel/xaccel_wrappers.c
+ifeq ($(COREMARK_GCC_MD),1)
+COREMARK_PLUGIN_FLAGS =
+endif
 COREMARK_BENCH_FLAGS = $(COREMARK_OPT) $(COREMARK_PLUGIN_FLAGS) \
 	-include $(abspath $(COREMARK_FLAGS_HEADER))
 COREMARK_O3_FLAGS = -include $(CURDIR)/accel/force_o3.h
@@ -106,7 +110,9 @@ COREMARK_CRC_FLAGS = -include $(CURDIR)/accel/xcrc_hw.h \
 	-D__COREMARK_XCRCU8=1
 COREMARK_FP12_FLAGS = -include $(CURDIR)/accel/float_dump.h
 
+ifneq ($(COREMARK_GCC_MD),1)
 $(COREMARK_BENCH_OBJS): $(COREMARK_ACCEL_PLUGIN) accel/xaccel_wrappers.c
+endif
 $(COREMARK_BENCH_OBJS): $(COREMARK_FLAGS_HEADER)
 $(COREMARK_BENCH_OBJS): CFLAGS += $(COREMARK_BENCH_FLAGS)
 $(COREMARK_O3_OBJS): CFLAGS += $(COREMARK_O3_FLAGS)
@@ -126,9 +132,11 @@ FORCE:
 $(COREMARK_FLAGS_HEADER): FORCE accel/gen_flags_header.py
 	@python3 accel/gen_flags_header.py --output $@ -- \
 		'$(COREMARK_OPT)' $(foreach flag,$(COREMARK_REPORT_COMMON_FLAGS),'$(flag)') \
-		'-fplugin=$(notdir $(COREMARK_ACCEL_PLUGIN))' \
-		'-fplugin-arg-xaccel_plugin-accels=$(COREMARK_PLUGIN_ACCELS)' \
-		'-fplugin-arg-xaccel_plugin-report=$(if $(filter 1,$(PSEUDO_FLOAT)),fp12,none)'
+		$(if $(filter 1,$(COREMARK_GCC_MD)),\
+		  'GCC machine-description selection' $(foreach flag,$(filter -m%,$(EXTRA_CFLAGS)),'$(flag)'),\
+		  '-fplugin=$(notdir $(COREMARK_ACCEL_PLUGIN))' \
+		  '-fplugin-arg-xaccel_plugin-accels=$(COREMARK_PLUGIN_ACCELS)' \
+		  '-fplugin-arg-xaccel_plugin-report=$(if $(filter 1,$(PSEUDO_FLOAT)),fp12,none)')
 
 ifeq ($(ENABLE_LTO),1)
 CFLAGS += -flto

@@ -1,8 +1,8 @@
 #!/bin/bash
 # Check the xdfa4h core_bench_state rewrite: the 046t clippedscore dump must
-# contain the counter init, two step loops, and one hardware counter read,
+# contain the counter init, two step loops, and both hardware counter reads,
 # and the emitted assembly must decode to the .insn r 0x5b encodings
-# (0,0,0 init / 5,1 step / 2,0 read).
+# (0,0,0 init / 5,1 step / 2,0 transition read / 2,1 final read).
 set -eu
 
 if [ "$#" -ne 1 ]; then
@@ -26,13 +26,16 @@ includes="-I$coremark_dir/src -I$jyd_dir/abstract-machine/am/include -I$jyd_dir/
 test "$(grep -Fc '.XDFACNT_INIT ()' "$scratch/cs.046t.clippedscore")" -eq 1
 test "$(grep -Fc '.XDFA4H_STEP (' "$scratch/cs.046t.clippedscore")" -eq 2
 test "$(grep -Fc '.XDFA4H_READ (' "$scratch/cs.046t.clippedscore")" -eq 1
+test "$(grep -Fc '.XDFA4H_FINAL_READ (' "$scratch/cs.046t.clippedscore")" -eq 3
 
 # Parse the emitted .insn r 0x5b mnemonics: expect one init (funct3=0,
-# funct7=0), two steps (funct3=5, funct7=1), one read (funct3=2, funct7=0).
+# funct7=0), two steps (funct3=5, funct7=1), and the two counter-read forms.
 steps=$(grep -Fc '.insn r 0x5b, 5, 1' "$scratch/core.s")
 init=$(grep -Fc '.insn r 0x5b, 0, 0' "$scratch/core.s")
 read=$(grep -Fc '.insn r 0x5b, 2, 0' "$scratch/core.s")
+final_read=$(grep -Fc '.insn r 0x5b, 2, 1' "$scratch/core.s")
 test "$init" -eq 1
 test "$steps" -eq 2
 test "$read" -eq 1
+test "$final_read" -eq 1
 echo "xdfa4h numeric-token DFA scan: PASS"

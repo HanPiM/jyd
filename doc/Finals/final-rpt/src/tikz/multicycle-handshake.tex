@@ -1,16 +1,16 @@
 \begin{figure}[H]\centering\resizebox{0.98\linewidth}{!}{%
 \begin{tikzpicture}[
  s/.style={draw,rounded corners=1.2pt,minimum width=3.05cm,minimum height=0.86cm,align=center,fill=blue!6},
- d/.style={draw,diamond,aspect=2,align=center,fill=orange!7},
+ d/.style={draw,diamond,aspect=2,align=center,inner sep=2pt,minimum width=2.8cm,minimum height=1.25cm,fill=orange!7},
  a/.style={-Stealth,thick},font=\small]
 \node[s] (idle) at (0,0) {Idle：接受多周期指令};
-\node[s] (busy) at (4.9,0) {Busy：保持 rd 占用\\dataValid=0};
-\node[d] (valid) at (8.9,0) {结果有效？};
-\node[d] (ready) at (12.6,0) {后级 ready？};
-\node[s] (emit) at (17.1,0) {完成握手并释放};
-\node[s,fill=gray!10] (hold) at (12.6,-2.25) {Done：寄存并稳定保持结果};
+\node[s] (busy) at (5.1,0) {Busy：保持 rd 占用\\dataValid=0};
+\node[d] (valid) at (10.0,0) {结果有效？};
+\node[d] (ready) at (14.8,0) {后级 ready？};
+\node[s] (emit) at (19.6,0) {完成握手并释放};
+\node[s,fill=gray!10] (hold) at (14.8,-2.25) {Done：寄存并稳定保持结果};
 
-\draw[a] (idle)--node[midway,above,yshift=1pt]{$in.fire$}(busy);
+\draw[a] (idle)--node[pos=0.38,above,yshift=2pt,fill=white,inner sep=1pt]{$in.fire$}(busy);
 \draw[a] (busy)--(valid);
 \draw[a] (valid)--node[above]{是}(ready);
 \draw[a] (ready)--node[above]{是}(emit);

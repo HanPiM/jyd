@@ -412,16 +412,42 @@ class CPUCore(
     pipelineConnect(lsuDifftest.io.out, wbuDifftest.io.in)
   }
 
-  // A two-entry, non-flow-through queue keeps fetch throughput at one request
-  // per cycle while making IFU readiness depend only on registered occupancy.
-  // This cuts the IDU decode/RAW-ready path back into the PC and BTB query.
-  val iduQueue = Module(new Queue(new FetchedInst, 2, pipe = false, flow = false))
-  iduQueue.io.enq <> ifu.io.out
-  val iduPipe = iduQueue.io.deq
+  // Fixed slots prevent this small, wide buffer from becoming RAMD32 with a
+  // dynamic read address on every decode path. Like a non-pipe Queue, a full
+  // buffer does not accept a replacement in the same cycle it dequeues.
+  val fetchSlot0 = Reg(new FetchedInst)
+  val fetchSlot1 = Reg(new FetchedInst)
+  val fetchValid0 = RegInit(false.B)
+  val fetchValid1 = RegInit(false.B)
+  val iduPipe = Wire(Decoupled(new FetchedInst))
+  iduPipe.bits := fetchSlot0
+  iduPipe.valid := fetchValid0
   val iduEpochMatch = iduPipe.bits.epoch === pipelineEpoch
   idu.io.in.bits := iduPipe.bits
   idu.io.in.valid := iduPipe.valid && iduEpochMatch
   iduPipe.ready := idu.io.in.ready || !iduEpochMatch
+  ifu.io.out.ready := !fetchValid1
+
+  val fetchEnq = ifu.io.out.fire
+  val fetchDeq = iduPipe.fire
+  when(fetchDeq) {
+    when(fetchValid1) {
+      fetchSlot0 := fetchSlot1
+      fetchValid0 := true.B
+      fetchValid1 := false.B
+    }.otherwise {
+      fetchValid0 := false.B
+    }
+  }
+  when(fetchEnq) {
+    when(!fetchValid0 || (fetchDeq && !fetchValid1)) {
+      fetchSlot0 := ifu.io.out.bits
+      fetchValid0 := true.B
+    }.otherwise {
+      fetchSlot1 := ifu.io.out.bits
+      fetchValid1 := true.B
+    }
+  }
 
   val exuPipe = Wire(Decoupled(new DecodedInst))
   // A registered-branch redirect is known as that instruction leaves EXU.

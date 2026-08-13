@@ -91,8 +91,13 @@ class RegisterFile(
   }
   for (i <- 0 until READ_PORTS) {
     replicas(i).io.dpra := io.read.addr(i).pad(5)
+    val writeThrough = writeEn && io.read.addr(i) === io.write.addr
     io.read.rawData(i) := Mux(io.read.addr(i) === 0.U, 0.U, replicas(i).io.dpo)
-    io.read.data(i) := io.read.rawData(i)
+    io.read.data(i) := Mux(
+      io.read.addr(i) === 0.U,
+      0.U,
+      Mux(writeThrough, io.write.data, replicas(i).io.dpo)
+    )
   }
 }
 

@@ -1,0 +1,1471 @@
+diff --git a/gcc/Makefile.in b/gcc/Makefile.in
+index 8ecef4ccd..e26943123 100644
+--- a/gcc/Makefile.in
++++ b/gcc/Makefile.in
+@@ -1762,6 +1762,7 @@ OBJS = \
+ 	tree-iterator.o \
+ 	tree-logical-location.o \
+ 	tree-loop-distribution.o \
++	tree-clipped-rising-score.o \
+ 	crc-verification.o \
+ 	gimple-crc-optimization.o \
+ 	sym-exec/sym-exec-expression.o \
+diff --git a/gcc/config/riscv/bitmanip.md b/gcc/config/riscv/bitmanip.md
+index 0d16d79df..6c75513b1 100644
+--- a/gcc/config/riscv/bitmanip.md
++++ b/gcc/config/riscv/bitmanip.md
+@@ -1217,6 +1217,26 @@
+   [(set_attr "type" "clmul")])
+ 
+ ;; Reversed CRC 8, 16, 32 for TARGET_64
++(define_insn "byte_crc16_hi"
++  [(set (match_operand:HI 0 "register_operand" "=r")
++	(unspec:HI [(match_operand:HI 1 "register_operand" "r")
++		    (match_operand:QI 2 "register_operand" "r")]
++		   UNSPEC_XCRCU8))]
++  "riscv_xcrcu8 && !TARGET_64BIT"
++  ".insn r 0x0b, 0, 0, %0, %2, %1"
++  [(set_attr "type" "bitmanip")
++   (set_attr "mode" "HI")])
++
++(define_insn "byte_crc16_si"
++  [(set (match_operand:SI 0 "register_operand" "=r")
++	(unspec:SI [(match_operand:SI 1 "register_operand" "r")
++		    (match_operand:QI 2 "register_operand" "r")]
++		   UNSPEC_XCRCU8))]
++  "riscv_xcrcu8 && !TARGET_64BIT"
++  ".insn r 0x0b, 0, 0, %0, %2, %1"
++  [(set_attr "type" "bitmanip")
++   (set_attr "mode" "SI")])
++
+ (define_expand "crc_rev<ANYI1:mode><ANYI:mode>4"
+ 	;; return value (calculated CRC)
+   [(set (match_operand:ANYI 0 "register_operand")
+@@ -1230,6 +1250,17 @@
+   /* We don't support the case when data's size is bigger than CRC's size.  */
+   "<ANYI:MODE>mode >= <ANYI1:MODE>mode"
+ {
++  if (riscv_xcrcu8 && <ANYI1:MODE>mode == QImode
++      && (UINTVAL (operands[3]) & 0xffff) == 0x8005
++      && (<ANYI:MODE>mode == HImode || <ANYI:MODE>mode == SImode))
++    {
++      if (<ANYI:MODE>mode == HImode)
++        emit_insn (gen_byte_crc16_hi (operands[0], operands[1], operands[2]));
++      else
++        emit_insn (gen_byte_crc16_si (operands[0], operands[1], operands[2]));
++      DONE;
++    }
++
+   /* If we have the ZBC or ZBKC extension (ie, clmul) and
+      it is possible to store the quotient within a single variable
+      (E.g.  CRC64's quotient may need 65 bits,
+diff --git a/gcc/config/riscv/peephole.md b/gcc/config/riscv/peephole.md
+index e49bc0426..fa4b0e835 100644
+--- a/gcc/config/riscv/peephole.md
++++ b/gcc/config/riscv/peephole.md
+@@ -19,6 +19,123 @@
+ ;; <http://www.gnu.org/licenses/>.
+ 
+ ;; Simplify (unsigned long)(unsigned int)a << const
++(define_insn "packed_field_mul"
++  [(set (match_operand:SI 0 "register_operand" "=r")
++	(unspec:SI [(match_operand:SI 1 "register_operand" "r")]
++		   UNSPEC_XBMUL))]
++  "TARGET_XBMUL && !TARGET_64BIT"
++  ".insn r 0x0b, 5, 0, %0, %1, x0"
++  [(set_attr "type" "imul")
++   (set_attr "mode" "SI")])
++
++(define_insn "clipped_rising_score_reducesi3"
++  [(set (match_operand:SI 0 "register_operand" "=r")
++	(unspec:SI [(match_operand:SI 1 "register_operand" "r")
++		    (match_operand:SI 2 "register_operand" "r")]
++                 UNSPEC_CLIPPED_RISING_SCORE_REDUCE))
++   (clobber (mem:BLK (scratch)))]
++  "riscv_clipped_rising_score_reduce && !TARGET_64BIT"
++  ".insn r 0x0b, 7, 2, %0, %1, %2"
++  [(set_attr "type" "multi")
++     (set_attr "mode" "SI")])
++
++(define_expand "clipped_rising_score_reducesi4"
++  [(set (match_operand:SI 0 "register_operand")
++        (unspec:SI [(match_operand:SI 1 "register_operand")
++                    (match_operand:SI 2 "register_operand")
++                    (match_operand:SI 3 "register_operand")]
++                   UNSPEC_CLIPPED_RISING_SCORE_REDUCE))]
++  "riscv_clipped_rising_score_reduce && !TARGET_64BIT"
++{
++  rtx high = gen_reg_rtx (SImode);
++  rtx low = gen_reg_rtx (SImode);
++  rtx config = gen_reg_rtx (SImode);
++  emit_insn (gen_ashlsi3 (high, operands[2], GEN_INT (16)));
++  emit_insn (gen_andsi3 (low, operands[3], GEN_INT (65535)));
++  emit_insn (gen_iorsi3 (config, high, low));
++  emit_insn (gen_clipped_rising_score_reducesi3
++             (operands[0], operands[1], config));
++  DONE;
++})
++
++;; In-place singly-linked list reversal (xlistrev): two fused instructions
++;; operating on the head pointer; the result is the new head.  The "0"
++;; matching constraint keeps rd == rs1 == the same register, mirroring the
++;; wrapper's "+r" asm.
++(define_insn "xlistrevsi2"
++  [(set (match_operand:SI 0 "register_operand" "=r")
++	(unspec:SI [(match_operand:SI 1 "register_operand" "0")]
++		   UNSPEC_XLISTREV))
++   (clobber (mem:BLK (scratch)))]
++  "TARGET_XLISTREV && !TARGET_64BIT"
++  ".insn r 0x0b, 6, 0, %0, %0, zero\n\t.insn r 0x0b, 6, 2, %0, %0, zero"
++  [(set_attr "type" "multi")
++   (set_attr "mode" "SI")])
++
++;; Numeric-token DFA (xdfa4h): one hardware step over the word at the string
++;; position; result packs {state&7, advance>>3&7, done<<6}.  The counters
++;; accumulate in hardware across all step calls between XDFACNT_INIT and the
++;; per-state XDFA4H_READ.
++(define_insn "xdfa4h_stepsi3"
++  [(set (match_operand:SI 0 "register_operand" "=r")
++	(unspec:SI [(match_operand:SI 1 "register_operand" "r")
++		    (match_operand:SI 2 "register_operand" "r")]
++		   UNSPEC_XDFA4H_STEP))
++   (clobber (mem:BLK (scratch)))]
++  "TARGET_XDFA4H && !TARGET_64BIT"
++  ".insn r 0x5b, 5, 1, %0, %1, %2"
++  [(set_attr "type" "multi")
++   (set_attr "mode" "SI")])
++
++(define_insn "xdfa4h_readsi2"
++  [(set (match_operand:SI 0 "register_operand" "=r")
++	(unspec:SI [(match_operand:SI 1 "register_operand" "r")]
++		   UNSPEC_XDFA4H_READ))
++   (clobber (mem:BLK (scratch)))]
++  "TARGET_XDFA4H && !TARGET_64BIT"
++  ".insn r 0x5b, 2, 0, %0, %1, x0"
++  [(set_attr "type" "multi")
++   (set_attr "mode" "SI")])
++
++(define_insn "xdfa4h_final_readsi2"
++  [(set (match_operand:SI 0 "register_operand" "=r")
++	(unspec:SI [(match_operand:SI 1 "register_operand" "r")]
++		   UNSPEC_XDFA4H_FINAL_READ))
++   (clobber (mem:BLK (scratch)))]
++  "TARGET_XDFA4H && !TARGET_64BIT"
++  ".insn r 0x5b, 2, 1, %0, %1, x0"
++  [(set_attr "type" "multi")
++   (set_attr "mode" "SI")])
++
++(define_insn "xdfacnt_init_si"
++  [(unspec:SI [(const_int 0)] UNSPEC_XDFACNT_INIT)
++   (clobber (mem:BLK (scratch)))]
++  "TARGET_XDFA4H && !TARGET_64BIT"
++  ".insn r 0x5b, 0, 0, x0, x0, x0"
++  [(set_attr "type" "multi")])
++
++(define_code_iterator packed_field_shiftrt [ashiftrt lshiftrt])
++
++(define_peephole2
++  [(set (match_operand:SI 0 "register_operand")
++	(packed_field_shiftrt:SI (match_operand:SI 1 "register_operand")
++		      (const_int 2)))
++   (set (match_operand:SI 3 "register_operand")
++	(packed_field_shiftrt:SI (match_dup 1) (const_int 5)))
++   (set (match_operand:SI 2 "register_operand")
++	(and:SI (match_dup 0) (const_int 15)))
++   (set (match_operand:SI 4 "register_operand")
++	(and:SI (match_dup 3) (const_int 127)))
++   (set (match_operand:SI 5 "register_operand")
++	(mult:SI (match_dup 2) (match_dup 4)))]
++  "TARGET_XBMUL && !TARGET_64BIT
++   && (rtx_equal_p (operands[2], operands[5])
++       || peep2_reg_dead_p (5, operands[2]))
++   && (rtx_equal_p (operands[4], operands[5])
++       || peep2_reg_dead_p (5, operands[4]))"
++  [(set (match_dup 5)
++	(unspec:SI [(match_dup 1)] UNSPEC_XBMUL))])
++
+ (define_peephole2
+   [(set (match_operand:DI 0 "register_operand")
+ 	(ashift:DI (match_operand:DI 1 "register_operand")
+diff --git a/gcc/config/riscv/riscv.md b/gcc/config/riscv/riscv.md
+index d2883ef9f..9a3a5d484 100644
+--- a/gcc/config/riscv/riscv.md
++++ b/gcc/config/riscv/riscv.md
+@@ -100,6 +100,18 @@
+   UNSPEC_CRC
+   UNSPEC_CRC_REV
+ 
++  ;; Packed bit-field multiply and byte-wise CRC16.
++  UNSPEC_XBMUL
++  UNSPEC_XCRCU8
++  UNSPEC_CLIPPED_RISING_SCORE_REDUCE
++  UNSPEC_XLISTREV
++
++  ;; Numeric-token DFA (xdfa4h).
++  UNSPEC_XDFA4H_STEP
++  UNSPEC_XDFA4H_READ
++  UNSPEC_XDFA4H_FINAL_READ
++  UNSPEC_XDFACNT_INIT
++
+   ;; Stack Smash Protector
+   UNSPEC_SSP_SET
+   UNSPEC_SSP_TEST
+diff --git a/gcc/config/riscv/riscv.opt b/gcc/config/riscv/riscv.opt
+index 2c26ee996..8ca16dae9 100644
+--- a/gcc/config/riscv/riscv.opt
++++ b/gcc/config/riscv/riscv.opt
+@@ -81,6 +81,26 @@ mdiv
+ Target Mask(DIV)
+ Use hardware instructions for integer division.
+ 
++mxbmul
++Target Mask(XBMUL)
++Recognize packed bit-field multiply expressions and use the custom xbmul instruction.
++
++mxcrcu8
++Target Var(riscv_xcrcu8) Init(0)
++Use the custom byte-wise CRC16 instruction.
++
++mclipped-rising-score-reduce
++Target Var(riscv_clipped_rising_score_reduce) Init(0)
++Use the clipped rising-score sequence reduction instruction.
++
++mxlistrev
++Target Mask(XLISTREV)
++Use the in-place singly-linked list reversal instruction.
++
++mxdfa4h
++Target Mask(XDFA4H)
++Use the numeric-token DFA (xdfa4h) instructions.
++
+ march=
+ Target RejectNegative Joined Negative(march=) Var(riscv_arch_string) Save
+ -march=	Generate code for given RISC-V ISA (e.g. RV64IM).  ISA strings must be
+diff --git a/gcc/internal-fn.cc b/gcc/internal-fn.cc
+index 25acc63b2..b11a425e9 100644
+--- a/gcc/internal-fn.cc
++++ b/gcc/internal-fn.cc
+@@ -38,6 +38,7 @@ along with GCC; see the file COPYING3.  If not see
+ #include "fold-const.h"
+ #include "internal-fn.h"
+ #include "stor-layout.h"
++#include "insn-flags.h"
+ #include "dojump.h"
+ #include "expr.h"
+ #include "stringpool.h"
+@@ -3464,6 +3465,13 @@ expand_UNIQUE (internal_fn, gcall *stmt)
+     emit_insn (pattern);
+ }
+ 
++/* Reset the hardware numeric-DFA counters (xdfa4h).  */
++static void
++expand_XDFACNT_INIT (internal_fn, gcall *)
++{
++  emit_insn (gen_xdfacnt_init_si ());
++}
++
+ /* Expand the IFN_DEFERRED_INIT function:
+    LHS = DEFERRED_INIT (SIZE of the DECL, INIT_TYPE, NAME of the DECL);
+ 
+diff --git a/gcc/internal-fn.def b/gcc/internal-fn.def
+index d14241672..a529639e3 100644
+--- a/gcc/internal-fn.def
++++ b/gcc/internal-fn.def
+@@ -204,6 +204,16 @@ along with GCC; see the file COPYING3.  If not see
+ 
+ DEF_INTERNAL_OPTAB_FN (CRC, ECF_CONST | ECF_NOTHROW, crc, crc)
+ DEF_INTERNAL_OPTAB_FN (CRC_REV, ECF_CONST | ECF_NOTHROW, crc_rev, crc)
++DEF_INTERNAL_OPTAB_FN (CLIPPED_RISING_SCORE_REDUCE, ECF_PURE | ECF_NOTHROW,
++                       clipped_rising_score_reduce, ternary)
++DEF_INTERNAL_OPTAB_FN (XLISTREV, ECF_NOTHROW | ECF_LEAF, xlistrev, unary)
++DEF_INTERNAL_OPTAB_FN (XDFA4H_STEP, ECF_NOTHROW | ECF_LEAF, xdfa4h_step,
++		       binary)
++DEF_INTERNAL_OPTAB_FN (XDFA4H_READ, ECF_NOTHROW | ECF_LEAF, xdfa4h_read,
++		       unary)
++DEF_INTERNAL_OPTAB_FN (XDFA4H_FINAL_READ, ECF_NOTHROW | ECF_LEAF,
++		       xdfa4h_final_read, unary)
++DEF_INTERNAL_FN (XDFACNT_INIT, ECF_NOTHROW | ECF_LEAF, NULL)
+ DEF_INTERNAL_OPTAB_FN (MASK_LOAD, ECF_PURE, maskload, mask_load)
+ DEF_INTERNAL_OPTAB_FN (LOAD_LANES, ECF_CONST, vec_load_lanes, load_lanes)
+ DEF_INTERNAL_OPTAB_FN (MASK_LOAD_LANES, ECF_PURE,
+diff --git a/gcc/optabs.def b/gcc/optabs.def
+index 193f42a72..719143474 100644
+--- a/gcc/optabs.def
++++ b/gcc/optabs.def
+@@ -226,6 +226,11 @@ OPTAB_NC(sync_lock_test_and_set_optab, "sync_lock_test_and_set$I$a", UNKNOWN)
+ OPTAB_DC(mov_optab, "mov$a", SET)
+ OPTAB_DC(movstrict_optab, "movstrict$a", STRICT_LOW_PART)
+ OPTAB_D (movmisalign_optab, "movmisalign$a")
++OPTAB_D (clipped_rising_score_reduce_optab, "clipped_rising_score_reduce$a4")
++OPTAB_D (xlistrev_optab, "xlistrev$a2")
++OPTAB_D (xdfa4h_step_optab, "xdfa4h_step$a3")
++OPTAB_D (xdfa4h_read_optab, "xdfa4h_read$a2")
++OPTAB_D (xdfa4h_final_read_optab, "xdfa4h_final_read$a2")
+ OPTAB_D (storent_optab, "storent$a")
+ OPTAB_D (insv_optab, "insv$a")
+ OPTAB_D (extv_optab, "extv$a")
+diff --git a/gcc/passes.def b/gcc/passes.def
+index cdddb8730..b2e228086 100644
+--- a/gcc/passes.def
++++ b/gcc/passes.def
+@@ -94,6 +94,7 @@ along with GCC; see the file COPYING3.  If not see
+ 	  NEXT_PASS (pass_phiprop);
+ 	  NEXT_PASS (pass_fre, true /* may_iterate */);
+ 	  NEXT_PASS (pass_early_vrp);
++	  NEXT_PASS (pass_clipped_rising_score);
+ 	  NEXT_PASS (pass_merge_phi);
+           NEXT_PASS (pass_dse);
+ 	  NEXT_PASS (pass_cd_dce, false /* update_address_taken_p */, true /* remove_unused_locals */);
+diff --git a/gcc/tree-clipped-rising-score.cc b/gcc/tree-clipped-rising-score.cc
+new file mode 100644
+index 000000000..078c9c4ba
+--- /dev/null
++++ b/gcc/tree-clipped-rising-score.cc
+@@ -0,0 +1,1016 @@
++/* Recognize accelerator idioms (clipped rising-score reduction, in-place
++   list reversal, numeric-token DFA scan) and expose them to the target.  */
++
++#include "config.h"
++#include "system.h"
++#include "coretypes.h"
++#include "backend.h"
++#include "tree.h"
++#include "gimple.h"
++#include "gimple-iterator.h"
++#include "tree-pass.h"
++#include "ssa.h"
++#include "tree-dfa.h"
++#include "tree-cfg.h"
++#include "tree-into-ssa.h"
++#include "cfghooks.h"
++#include "cfgloop.h"
++#include "internal-fn.h"
++#include "diagnostic-core.h"
++
++namespace {
++
++/* Follow the small scalar expression graphs produced for this reduction.  */
++static bool
++depends_on (tree value, tree root, unsigned depth = 0)
++{
++  if (value == root)
++    return true;
++  if (TREE_CODE (value) == SSA_NAME && SSA_NAME_VAR (value) == root)
++    return true;
++  if (depth == 10 || TREE_CODE (value) != SSA_NAME)
++    return false;
++  gimple *def = SSA_NAME_DEF_STMT (value);
++  if (!def || gimple_nop_p (def))
++    return false;
++  if (is_gimple_assign (def))
++    {
++      for (unsigned i = 1; i < gimple_num_ops (def); ++i)
++	if (gimple_op (def, i)
++	    && depends_on (gimple_op (def, i), root, depth + 1))
++	  return true;
++    }
++  else if (gimple_code (def) == GIMPLE_PHI)
++    for (unsigned i = 0; i < gimple_phi_num_args (def); ++i)
++      if (depends_on (gimple_phi_arg_def (def, i), root, depth + 1))
++	return true;
++  return false;
++}
++
++static bool
++zero_cst_p (tree x)
++{
++  return x && TREE_CODE (x) == INTEGER_CST && integer_zerop (x);
++}
++
++static bool
++phi_has (tree phi_name, tree value, bool want_zero)
++{
++  if (TREE_CODE (phi_name) != SSA_NAME)
++    return false;
++  gimple *def = SSA_NAME_DEF_STMT (phi_name);
++  if (!def || gimple_code (def) != GIMPLE_PHI)
++    return false;
++  bool found_value = false, found_zero = false;
++  for (unsigned i = 0; i < gimple_phi_num_args (def); ++i)
++    {
++      tree arg = gimple_phi_arg_def (def, i);
++      found_value |= arg == value;
++      found_zero |= zero_cst_p (arg);
++    }
++  return found_value && (!want_zero || found_zero);
++}
++
++static bool
++clipped_rising_score_p (tree n, tree base, tree clip)
++{
++  tree cur = NULL_TREE, sum = NULL_TREE, reset_phi = NULL_TREE;
++  tree rise = NULL_TREE, ten_add = NULL_TREE;
++  unsigned n_loop_tests = 0;
++  basic_block bb;
++  FOR_EACH_BB_FN (bb, cfun)
++    for (gimple_stmt_iterator gsi = gsi_start_bb (bb);
++	 !gsi_end_p (gsi); gsi_next (&gsi))
++      {
++	gimple *s = gsi_stmt (gsi);
++	if (is_gimple_assign (s))
++	  {
++	    tree lhs = gimple_assign_lhs (s);
++	    enum tree_code code = gimple_assign_rhs_code (s);
++	    if (code == MEM_REF
++		&& depends_on (TREE_OPERAND (gimple_assign_rhs1 (s), 0), base))
++	      {
++		if (cur)
++		  return false;
++		cur = lhs;
++	      }
++	    if (code == PLUS_EXPR && cur
++		&& (gimple_assign_rhs1 (s) == cur
++		    || gimple_assign_rhs2 (s) == cur))
++	      {
++		tree other = (gimple_assign_rhs1 (s) == cur
++			      ? gimple_assign_rhs2 (s) : gimple_assign_rhs1 (s));
++		if (TREE_CODE (other) == SSA_NAME
++		    && gimple_code (SSA_NAME_DEF_STMT (other)) == GIMPLE_PHI)
++		  sum = lhs, reset_phi = other;
++	      }
++	    if (code == PLUS_EXPR)
++	      {
++		tree a = gimple_assign_rhs1 (s), b = gimple_assign_rhs2 (s);
++		if ((TREE_CODE (a) == INTEGER_CST && wi::to_wide (a) == 10)
++		    || (TREE_CODE (b) == INTEGER_CST && wi::to_wide (b) == 10))
++		  ten_add = lhs;
++	      }
++	    if (code == LT_EXPR && cur && gimple_assign_rhs2 (s) == cur
++		&& TREE_CODE (gimple_assign_rhs1 (s)) == SSA_NAME
++		&& gimple_code (SSA_NAME_DEF_STMT (gimple_assign_rhs1 (s)))
++		   == GIMPLE_PHI)
++	      rise = lhs;
++	  }
++	else if (gimple_code (s) == GIMPLE_COND)
++	  {
++	    tree a = gimple_cond_lhs (s), b = gimple_cond_rhs (s);
++	    enum tree_code code = gimple_cond_code (s);
++	    if (((code == GT_EXPR && a == sum && depends_on (b, clip))
++		 || (code == LT_EXPR && b == sum && depends_on (a, clip))))
++	      ;
++	    else if (code == GT_EXPR && cur
++		     && (a == cur || b == cur))
++	      rise = cur;
++	    else if ((code == GT_EXPR || code == LT_EXPR || code == NE_EXPR)
++		     && (depends_on (a, n) || depends_on (b, n)))
++	      ++n_loop_tests;
++	  }
++      }
++
++  if (sum)
++    FOR_EACH_BB_FN (bb, cfun)
++      for (gphi_iterator psi = gsi_start_phis (bb);
++	   !gsi_end_p (psi); gsi_next (&psi))
++	{
++	  tree lhs = gimple_phi_result (*psi);
++	  if (phi_has (lhs, sum, true))
++	    reset_phi = lhs;
++	}
++
++  if (!cur || !sum || !reset_phi || !rise || !ten_add || n_loop_tests < 2)
++    return false;
++  if (!phi_has (reset_phi, sum, true))
++    return false;
++
++  /* Require the threshold and rising comparisons explicitly.  */
++  bool threshold = false, rising = rise != NULL_TREE;
++  FOR_EACH_BB_FN (bb, cfun)
++    for (gimple_stmt_iterator gsi = gsi_start_bb (bb);
++	 !gsi_end_p (gsi); gsi_next (&gsi))
++      if (gimple_code (gsi_stmt (gsi)) == GIMPLE_COND)
++	{
++	  gcond *c = as_a<gcond *> (gsi_stmt (gsi));
++	  tree a = gimple_cond_lhs (c), b = gimple_cond_rhs (c);
++	  threshold |= ((gimple_cond_code (c) == GT_EXPR && a == sum
++			 && depends_on (b, clip))
++			|| (gimple_cond_code (c) == LT_EXPR && b == sum
++			    && depends_on (a, clip)));
++	}
++  return threshold && rising;
++}
++
++static void
++replace_with_internal_call (tree n, tree base, tree clip)
++{
++  tree u32 = unsigned_type_node;
++  basic_block bb = create_empty_bb (ENTRY_BLOCK_PTR_FOR_FN (cfun));
++  if (loops_for_fn (cfun))
++    add_bb_to_loop (bb, loops_for_fn (cfun)->tree_root);
++  edge entry_edge = single_succ_edge (ENTRY_BLOCK_PTR_FOR_FN (cfun));
++  redirect_edge_succ (entry_edge, bb);
++  make_edge (bb, EXIT_BLOCK_PTR_FOR_FN (cfun), 0);
++  gimple_stmt_iterator gsi = gsi_start_bb (bb);
++
++  tree clip16 = make_ssa_name (short_unsigned_type_node);
++  gsi_insert_before (&gsi, gimple_build_assign (clip16, NOP_EXPR, clip),
++		     GSI_SAME_STMT);
++  tree clip32 = make_ssa_name (u32);
++  gsi_insert_before (&gsi, gimple_build_assign (clip32, NOP_EXPR, clip16),
++		     GSI_SAME_STMT);
++  tree raw = make_ssa_name (u32);
++  gcall *call = gimple_build_call_internal
++    (IFN_CLIPPED_RISING_SCORE_REDUCE, 3, base, n, clip32);
++  gimple_call_set_lhs (call, raw);
++  gsi_insert_before (&gsi, call, GSI_SAME_STMT);
++  tree result = make_ssa_name (TREE_TYPE (TREE_TYPE (cfun->decl)));
++  gsi_insert_before (&gsi, gimple_build_assign (result, NOP_EXPR, raw),
++		     GSI_SAME_STMT);
++  gsi_insert_before (&gsi, gimple_build_return (result), GSI_SAME_STMT);
++}
++
++/* -------------------------------------------------------------------------- */
++/* In-place singly-linked list reversal (xlistrev).                             */
++/* -------------------------------------------------------------------------- */
++
++/* Match the canonical reversal loop:
++     <body>:
++       tmp = list->next;
++       list->next = next;
++     <header>:
++       # list = PHI <param, tmp>
++       # next = PHI <NULL, list>
++       if (list != 0B) goto <body>; else goto <exit>;
++     <exit>:
++       return next;
++   Any function with exactly this shape is an in-place list reversal, so the
++   replacement is semantics-preserving regardless of function name.  */
++
++/* The list head is a structure with the next pointer at some fixed
++   offset; the frontend may emit the field access as either a
++   COMPONENT_REF (p->next) or a MEM_REF (after folding).  Both put the
++   object in operand 0; the "key" identifying the field is the
++   FIELD_DECL for COMPONENT_REF or the byte offset for MEM_REF.  */
++static tree
++ref_key (tree ref)
++{
++  return TREE_OPERAND (ref, 1);
++}
++
++static bool
++same_ref_key (tree a, tree b)
++{
++  if (a == b)
++    return true;
++  return (TREE_CODE (a) == INTEGER_CST && TREE_CODE (b) == INTEGER_CST
++	  && tree_int_cst_equal (a, b));
++}
++
++/* Peel COMPONENT_REF/MEM_REF wrappers off a reference until the object
++   is an SSA name (p->next is often COMPONENT_REF over a zero-offset
++   MEM_REF of the pointer).  */
++static tree
++ref_root_ssa (tree ref)
++{
++  tree cur = ref;
++  while (cur)
++    {
++      if (TREE_CODE (cur) == SSA_NAME)
++	return cur;
++      if (TREE_CODE (cur) == COMPONENT_REF || TREE_CODE (cur) == MEM_REF)
++	{
++	  cur = TREE_OPERAND (cur, 0);
++	  continue;
++	}
++      return NULL_TREE;
++    }
++  return NULL_TREE;
++}
++
++static bool
++bb_is_list_reverse (basic_block bb, tree param_ssa, tree *p_res, tree *n_res)
++{
++  /* Header: exactly two preds (entry chain and the loop body).  */
++  if (EDGE_COUNT (bb->preds) != 2)
++    return false;
++  tree p = NULL_TREE, n = NULL_TREE;
++  for (gphi_iterator psi = gsi_start_phis (bb);
++       !gsi_end_p (psi); gsi_next (&psi))
++    {
++      gphi *phi = psi.phi ();
++      tree res = gimple_phi_result (phi);
++      if (!POINTER_TYPE_P (TREE_TYPE (res)) || gimple_phi_num_args (phi) != 2)
++	continue;
++      tree a0 = gimple_phi_arg_def (phi, 0), a1 = gimple_phi_arg_def (phi, 1);
++      if ((a0 == param_ssa && a1 != param_ssa)
++	  || (a1 == param_ssa && a0 != param_ssa))
++	p = res;
++      if (integer_zerop (a0) ^ integer_zerop (a1))
++	n = res;
++    }
++  if (!p || !n)
++    return false;
++
++  /* Header condition: p != NULL, true edge to the body.  */
++  gimple *last = gsi_stmt (gsi_last_bb (bb));
++  if (!last || gimple_code (last) != GIMPLE_COND)
++    return false;
++  gcond *cond = as_a<gcond *> (last);
++  if (gimple_cond_code (cond) != NE_EXPR
++      || gimple_cond_lhs (cond) != p
++      || !integer_zerop (gimple_cond_rhs (cond)))
++    return false;
++  basic_block t_bb = EDGE_SUCC (bb, 0)->flags & EDGE_TRUE_VALUE
++    ? EDGE_SUCC (bb, 0)->dest : EDGE_SUCC (bb, 1)->dest;
++  basic_block f_bb = t_bb == EDGE_SUCC (bb, 0)->dest
++    ? EDGE_SUCC (bb, 1)->dest : EDGE_SUCC (bb, 0)->dest;
++  if (EDGE_COUNT (t_bb->preds) != 1 || EDGE_COUNT (t_bb->succs) != 1
++      || EDGE_SUCC (t_bb, 0)->dest != bb)
++    return false;
++  basic_block body = t_bb;
++  basic_block exit = f_bb;
++
++  /* Body: exactly one load and one store on p, storing the n phi.  */
++  tree load_res = NULL_TREE;
++  tree load_addr = NULL_TREE, store_addr = NULL_TREE;
++  unsigned n_stmts = 0;
++  for (gimple_stmt_iterator gsi = gsi_start_bb (body);
++       !gsi_end_p (gsi); gsi_next (&gsi))
++    {
++      gimple *s = gsi_stmt (gsi);
++      if (is_gimple_debug (s))
++	continue;
++      ++n_stmts;
++      if (!is_gimple_assign (s))
++	return false;
++      if (gimple_store_p (s))
++	{
++	  if (store_addr)
++	    return false;
++	  store_addr = gimple_assign_lhs (s);
++	  if (gimple_assign_rhs1 (s) != n)
++	    return false;
++	}
++      else if (gimple_assign_rhs_code (s) == MEM_REF
++	       || gimple_assign_rhs_code (s) == COMPONENT_REF)
++	{
++	  if (load_res)
++	    return false;
++	  load_res = gimple_assign_lhs (s);
++	  load_addr = gimple_assign_rhs1 (s);
++	}
++      else
++	return false;
++    }
++  if (n_stmts != 2 || !load_res || !store_addr)
++    return false;
++
++  /* The load and the store must address the same field of p, and the
++     phis must cycle exactly: list = PHI <param, tmp>, next = PHI <NULL,
++     list>.  */
++  if (ref_root_ssa (load_addr) != p || ref_root_ssa (store_addr) != p
++      || !same_ref_key (ref_key (load_addr), ref_key (store_addr)))
++    return false;
++
++  /* Identify the loop-edge phi args of p and n.  */
++  tree p_loop_arg = NULL_TREE, n_loop_arg = NULL_TREE;
++  for (gphi_iterator psi = gsi_start_phis (bb);
++       !gsi_end_p (psi); gsi_next (&psi))
++    {
++      gphi *phi = psi.phi ();
++      tree res = gimple_phi_result (phi);
++      if (res == p)
++	for (unsigned i = 0; i < 2; ++i)
++	  if (gimple_phi_arg_edge (phi, i)->src == body)
++	    p_loop_arg = gimple_phi_arg_def (phi, i);
++      if (res == n)
++	for (unsigned i = 0; i < 2; ++i)
++	  if (gimple_phi_arg_edge (phi, i)->src == body)
++	    n_loop_arg = gimple_phi_arg_def (phi, i);
++    }
++  if (p_loop_arg != load_res || n_loop_arg != p)
++    return false;
++
++  /* Exit block: the n phi value, possibly threaded through trivial phis
++     and copies, ends in a return of it; nothing else.  */
++  tree cur = n;
++  for (gphi_iterator psi = gsi_start_phis (exit);
++       !gsi_end_p (psi); gsi_next (&psi))
++    {
++      gphi *phi = psi.phi ();
++      tree phi_res = gimple_phi_result (phi);
++      if (virtual_operand_p (phi_res))
++	continue;
++      tree only = NULL_TREE;
++      for (unsigned i = 0; i < gimple_phi_num_args (phi); ++i)
++	{
++	  tree arg = gimple_phi_arg_def (phi, i);
++	  if (!only)
++	    only = arg;
++	  else if (arg != only)
++	    only = error_mark_node;
++	}
++      if (only != cur)
++	return false;
++      cur = phi_res;
++    }
++  bool ok_exit = false;
++  for (gimple_stmt_iterator gsi = gsi_start_bb (exit);
++       !gsi_end_p (gsi); gsi_next (&gsi))
++    {
++      gimple *s = gsi_stmt (gsi);
++      if (is_gimple_debug (s))
++	continue;
++      if (gimple_code (s) == GIMPLE_RETURN)
++	{
++	  if (gimple_return_retval (as_a<greturn *> (s)) == cur)
++	    ok_exit = true;
++	}
++      else if (is_gimple_assign (s) && gimple_assign_rhs1 (s) == cur
++	       && TREE_CODE (gimple_assign_rhs1 (s)) == SSA_NAME)
++	cur = gimple_assign_lhs (s);
++      else
++	return false;
++    }
++  if (!ok_exit)
++    return false;
++
++  *p_res = p;
++  *n_res = n;
++  return true;
++}
++
++/* Any function with exactly one reversal loop shaped like bb_is_list_reverse
++   matches, so the replacement is semantics-preserving regardless of function
++   name.  */
++static bool
++list_reverse_p (tree param)
++{
++  tree ret_type = TREE_TYPE (TREE_TYPE (cfun->decl));
++  if (!POINTER_TYPE_P (ret_type) || !POINTER_TYPE_P (TREE_TYPE (param))
++      || DECL_CHAIN (param))
++    return false;
++
++  tree param_ssa = ssa_default_def (cfun, param);
++  tree p_res = NULL_TREE, n_res = NULL_TREE;
++  unsigned n_matches = 0;
++  basic_block bb;
++  FOR_EACH_BB_FN (bb, cfun)
++    if (bb_is_list_reverse (bb, param_ssa, &p_res, &n_res))
++      ++n_matches;
++
++  return n_matches == 1;
++}
++
++static void
++replace_list_reverse (tree param)
++{
++  tree ret_type = TREE_TYPE (TREE_TYPE (cfun->decl));
++  basic_block bb_h = create_empty_bb (ENTRY_BLOCK_PTR_FOR_FN (cfun));
++  basic_block bb_c = create_empty_bb (bb_h);
++  basic_block bb_n = create_empty_bb (bb_h);
++  if (loops_for_fn (cfun))
++    {
++      add_bb_to_loop (bb_h, loops_for_fn (cfun)->tree_root);
++      add_bb_to_loop (bb_c, loops_for_fn (cfun)->tree_root);
++      add_bb_to_loop (bb_n, loops_for_fn (cfun)->tree_root);
++    }
++  edge entry_edge = single_succ_edge (ENTRY_BLOCK_PTR_FOR_FN (cfun));
++  redirect_edge_succ (entry_edge, bb_h);
++  make_edge (bb_h, bb_c, EDGE_TRUE_VALUE);
++  make_edge (bb_h, bb_n, EDGE_FALSE_VALUE);
++  make_edge (bb_c, EXIT_BLOCK_PTR_FOR_FN (cfun), 0);
++  make_edge (bb_n, EXIT_BLOCK_PTR_FOR_FN (cfun), 0);
++
++  tree param_ssa = ssa_default_def (cfun, param);
++  gimple_stmt_iterator gsi = gsi_start_bb (bb_h);
++  gsi_insert_before (&gsi,
++		     gimple_build_cond (NE_EXPR, param_ssa, null_pointer_node,
++					NULL_TREE, NULL_TREE),
++		     GSI_SAME_STMT);
++
++  gsi = gsi_start_bb (bb_c);
++  tree raw = make_ssa_name (ret_type);
++  gcall *call = gimple_build_call_internal (IFN_XLISTREV, 1, param_ssa);
++  gimple_call_set_lhs (call, raw);
++  gsi_insert_before (&gsi, call, GSI_SAME_STMT);
++  gsi_insert_before (&gsi, gimple_build_return (raw), GSI_SAME_STMT);
++
++  gsi = gsi_start_bb (bb_n);
++  gsi_insert_before (&gsi, gimple_build_return (null_pointer_node),
++		     GSI_SAME_STMT);
++}
++
++/* ------------------------------------------------------------------------ */
++/* Numeric-token DFA benchmark scan (xdfa4h).                               */
++/* ------------------------------------------------------------------------ */
++
++/* The numeric-token DFA is fixed target hardware, so unlike the other
++   idioms recognition is gated on the function name (core_bench_state);
++   the surrounding shape is still verified so a refactored or renamed
++   function is left alone.  The two core_state_transition call sites
++   become per-character step loops driving the hardware, and the
++   track_counts[] loads in the CRC epilogue become hardware counter
++   reads.  */
++
++/* Recover the element index of an ARRAY_REF/MEM_REF of track_counts:
++   ARRAY_REF -> the index operand; MEM_REF -> the byte offset i * 4
++   (possibly folded as i << 2).  */
++static tree
++counts_ref_index (tree ref)
++{
++  if (TREE_CODE (ref) == ARRAY_REF)
++    return TREE_OPERAND (ref, 1);
++  if (TREE_CODE (ref) != MEM_REF)
++    return NULL_TREE;
++  tree addr = TREE_OPERAND (ref, 0);
++  while (addr)
++    {
++      if (TREE_CODE (addr) == POINTER_PLUS_EXPR)
++	{
++	  tree off = TREE_OPERAND (addr, 1);
++	  if (TREE_CODE (off) == MULT_EXPR || TREE_CODE (off) == LSHIFT_EXPR)
++	    {
++	      tree a = TREE_OPERAND (off, 0), b = TREE_OPERAND (off, 1);
++	      if (TREE_CODE (b) == INTEGER_CST && wi::to_wide (b) == 4)
++		return a;
++	      if (TREE_CODE (a) == INTEGER_CST && wi::to_wide (a) == 4)
++		return b;
++	    }
++	  return off;
++	}
++      if (TREE_CODE (addr) == SSA_NAME)
++	{
++	  gimple *def = SSA_NAME_DEF_STMT (addr);
++	  if (!is_gimple_assign (def))
++	    return NULL_TREE;
++	  if (gimple_assign_rhs_code (def) == POINTER_PLUS_EXPR)
++	    {
++	      addr = gimple_assign_rhs1 (def);
++	      continue;
++	    }
++	}
++      return NULL_TREE;
++    }
++  return NULL_TREE;
++}
++
++/* Strip address arithmetic from a reference to find the underlying
++   variable declaration.  */
++static tree
++counts_ref_base_decl (tree ref)
++{
++  if (TREE_CODE (ref) == ARRAY_REF)
++    return TREE_OPERAND (ref, 0);
++  if (TREE_CODE (ref) != MEM_REF)
++    return NULL_TREE;
++  tree addr = TREE_OPERAND (ref, 0);
++  while (addr)
++    {
++      if (TREE_CODE (addr) == ADDR_EXPR)
++	return TREE_OPERAND (addr, 0);
++      if (TREE_CODE (addr) == POINTER_PLUS_EXPR)
++	{
++	  addr = TREE_OPERAND (addr, 0);
++	  continue;
++	}
++      if (TREE_CODE (addr) == SSA_NAME)
++	{
++	  gimple *def = SSA_NAME_DEF_STMT (addr);
++	  if (!is_gimple_assign (def))
++	    return NULL_TREE;
++	  enum tree_code code = gimple_assign_rhs_code (def);
++	  if (code == ADDR_EXPR)
++	    return TREE_OPERAND (gimple_assign_rhs1 (def), 0);
++	  if (code == POINTER_PLUS_EXPR)
++	    {
++	      addr = gimple_assign_rhs1 (def);
++	      continue;
++	    }
++	}
++      return NULL_TREE;
++    }
++  return NULL_TREE;
++}
++
++/* Find the two core_state_transition call sites inside core_bench_state
++   and the track_counts array they reference.  */
++static bool
++find_xdfa4h_bench (vec<gcall *> &calls, tree *track_counts_decl,
++		    tree *final_counts_decl)
++{
++  tree decl = cfun->decl;
++  if (!DECL_NAME (decl)
++      || strcmp (IDENTIFIER_POINTER (DECL_NAME (decl)), "core_bench_state"))
++    return false;
++
++  /* Signature: (ee_u32 blksize, ee_u8 *memblock, ee_s16 seed1,
++     ee_s16 seed2, ee_s16 step, ee_u16 crc).  */
++  tree args = DECL_ARGUMENTS (decl);
++  for (unsigned i = 0; i < 6; ++i)
++    {
++      if (!args)
++	return false;
++      args = DECL_CHAIN (args);
++    }
++  if (args)
++    return false;
++
++  tree tc = NULL_TREE, fc = NULL_TREE;
++  basic_block bb;
++  FOR_EACH_BB_FN (bb, cfun)
++    for (gimple_stmt_iterator gsi = gsi_start_bb (bb);
++	 !gsi_end_p (gsi); gsi_next (&gsi))
++      {
++	gimple *s = gsi_stmt (gsi);
++	if (gimple_code (s) != GIMPLE_CALL)
++	  continue;
++	gcall *call = as_a<gcall *> (s);
++	tree callee = gimple_call_fndecl (call);
++	if (!callee || !DECL_NAME (callee)
++	    || strcmp (IDENTIFIER_POINTER (DECL_NAME (callee)),
++		       "core_state_transition"))
++	  continue;
++
++	/* Shape: fstate = core_state_transition (&p, &track_counts).  */
++	if (gimple_call_num_args (call) != 2 || !gimple_call_lhs (call))
++	  return false;
++	tree p_arg = gimple_call_arg (call, 0);
++	tree tc_arg = gimple_call_arg (call, 1);
++	if (TREE_CODE (p_arg) != ADDR_EXPR || TREE_CODE (tc_arg) != ADDR_EXPR)
++	  return false;
++	/* The position variable must be in memory (the call takes its
++	   address).  */
++	tree p = TREE_OPERAND (p_arg, 0);
++	if (TREE_CODE (p) != VAR_DECL)
++	  return false;
++	tree tc_cand = TREE_OPERAND (tc_arg, 0);
++	if (TREE_CODE (tc_cand) != VAR_DECL)
++	  return false;
++	if (tc && tc != tc_cand)
++	  return false;
++	tc = tc_cand;
++
++	/* The call must sit in a scan-loop body: its single predecessor
++	   ends in a conditional.  */
++	basic_block cbb = gimple_bb (call);
++	if (EDGE_COUNT (cbb->preds) != 1)
++	  return false;
++	gimple_stmt_iterator last_i = gsi_last_bb (EDGE_PRED (cbb, 0)->src);
++	if (gsi_end_p (last_i)
++	    || gimple_code (gsi_stmt (last_i)) != GIMPLE_COND)
++	  return false;
++
++	/* The result feeds a final_counts[] update in the same block.  */
++	tree fstate = gimple_call_lhs (call);
++	bool used = false;
++	for (gimple_stmt_iterator gsi2 = gsi_start_bb (cbb);
++	     !gsi_end_p (gsi2); gsi_next (&gsi2))
++	  {
++	    gimple *s2 = gsi_stmt (gsi2);
++	    if (is_gimple_assign (s2)
++		&& (gimple_assign_rhs1 (s2) == fstate
++		    || (TREE_CODE (gimple_assign_lhs (s2)) == ARRAY_REF
++			&& TREE_OPERAND (gimple_assign_lhs (s2), 1) == fstate)
++		    || (TREE_CODE (gimple_assign_lhs (s2)) == MEM_REF
++			&& counts_ref_index (gimple_assign_lhs (s2))
++			   == fstate)))
++	      {
++		used = true;
++		tree lhs = gimple_assign_lhs (s2);
++		if (TREE_CODE (lhs) == ARRAY_REF)
++		  {
++		    tree arr = TREE_OPERAND (lhs, 0);
++		    if (TREE_CODE (arr) == VAR_DECL && arr != tc)
++		      fc = arr;
++		  }
++		else if (TREE_CODE (lhs) == MEM_REF)
++		  {
++		    tree arr = counts_ref_base_decl (lhs);
++		    if (arr && arr != tc)
++		      fc = arr;
++		  }
++	      }
++	  }
++	if (!used)
++	  return false;
++
++	calls.safe_push (call);
++      }
++  if (calls.length () != 2 || !tc)
++    return false;
++
++  /* The CRC epilogue must read track_counts at least once.  */
++  bool reads_tc = false;
++  FOR_EACH_BB_FN (bb, cfun)
++    for (gimple_stmt_iterator gsi = gsi_start_bb (bb);
++	 !gsi_end_p (gsi); gsi_next (&gsi))
++      {
++	gimple *s = gsi_stmt (gsi);
++	if (is_gimple_assign (s)
++	    && ((gimple_assign_rhs_code (s) == ARRAY_REF
++		 && TREE_OPERAND (gimple_assign_rhs1 (s), 0) == tc)
++		|| (gimple_assign_rhs_code (s) == MEM_REF
++		    && counts_ref_base_decl (gimple_assign_rhs1 (s)) == tc)))
++	  reads_tc = true;
++      }
++  if (!reads_tc)
++    return false;
++
++  *track_counts_decl = tc;
++  *final_counts_decl = fc;
++  return true;
++}
++
++/* Replace one transition call site with the xdfa4h step loop:
++     str = p;                    (load current position)
++     state = 0;
++     loop:
++       result = XDFA4H_STEP (state, str);
++       state = result & 7;
++       str += (result >> 3) & 7;
++       if (result & 64) break;
++     p = str;
++     fstate = (CORE_STATE) state;
++   The caller later removes the corresponding software final-count update;
++   the hardware records that count when the step reports completion.  */
++static void
++replace_xdfa4h_transition_call (gcall *call)
++{
++  tree fstate = gimple_call_lhs (call);
++  tree p = TREE_OPERAND (gimple_call_arg (call, 0), 0);
++  tree u32 = unsigned_type_node;
++  tree ptr_type = TREE_TYPE (p);
++  tree vop = gimple_vop (cfun);
++
++  basic_block call_bb = gimple_bb (call);
++
++  /* Split after the call: call_bb keeps the call (to be removed), post
++     keeps the final_counts[fstate] update.  */
++  edge split_e = split_block (call_bb, call);
++  basic_block post = split_e->dest;
++
++  /* The call result feeds the final_counts[] update; rewire it to a
++     fresh name defined in the exit block below so removing the call
++     cannot release a name that is still in use.  */
++  tree fstate_new = make_ssa_name (TREE_TYPE (fstate));
++  replace_uses_by (fstate, fstate_new);
++
++  /* The removed call's vdef feeds the memory chain; hand the whole
++     virtual chain over to the SSA renamer before releasing it.  */
++  if (gimple_vdef (call))
++    mark_virtual_operand_for_renaming (gimple_vdef (call));
++  gimple_stmt_iterator gsi = gsi_for_stmt (call);
++  gsi_remove (&gsi, true);
++
++  /* Pre: str_0 = p;  (SSA load of the current position).  */
++  tree str_0 = make_ssa_name (ptr_type);
++  gsi = gsi_start_bb (call_bb);
++  gimple *ld = gimple_build_assign (str_0, p);
++  gimple_set_vuse (ld, vop);
++  gsi_insert_before (&gsi, ld, GSI_SAME_STMT);
++  update_stmt (ld);
++
++  /* Step-loop header and exit.  */
++  basic_block hdr = create_empty_bb (call_bb);
++  basic_block exit_bb = create_empty_bb (hdr);
++  if (loops_for_fn (cfun))
++    {
++      add_bb_to_loop (hdr, loops_for_fn (cfun)->tree_root);
++      add_bb_to_loop (exit_bb, loops_for_fn (cfun)->tree_root);
++      /* Let the next loop pass rediscover the structure (in practice
++	 cfun->loops is NULL here: this pass runs before any loop pass
++	 has seen the function).  */
++      loops_state_set (LOOPS_NEED_FIXUP);
++    }
++
++  /* Edges: pre -> hdr -> {exit (done), hdr (continue)}; exit -> post.  */
++  redirect_edge_succ (split_e, hdr);
++  make_edge (hdr, exit_bb, EDGE_TRUE_VALUE);
++  edge e_again = make_edge (hdr, hdr, EDGE_FALSE_VALUE);
++  make_edge (exit_bb, post, EDGE_FALLTHRU);
++  edge e_pre = split_e;
++
++  /* Header phis: str = PHI <str_0, str_2>, state = PHI <0, state_2>.  */
++  tree str_h = make_ssa_name (ptr_type);
++  tree state_h = make_ssa_name (u32);
++  tree str_2 = make_ssa_name (ptr_type);
++  tree state_2 = make_ssa_name (u32);
++  gphi *phi = create_phi_node (str_h, hdr);
++  add_phi_arg (phi, str_0, e_pre, UNKNOWN_LOCATION);
++  add_phi_arg (phi, str_2, e_again, UNKNOWN_LOCATION);
++  phi = create_phi_node (state_h, hdr);
++  add_phi_arg (phi, build_int_cst (u32, 0), e_pre, UNKNOWN_LOCATION);
++  add_phi_arg (phi, state_2, e_again, UNKNOWN_LOCATION);
++
++  /* Header statements.  The step reads the string memory, so it is
++     ordered with the writes that modified the string.  */
++  gsi = gsi_start_bb (hdr);
++  tree result = make_ssa_name (u32);
++  gcall *step = gimple_build_call_internal (IFN_XDFA4H_STEP, 2, state_h,
++					    str_h);
++  gimple_call_set_lhs (step, result);
++  gimple_set_vuse (step, vop);
++  gsi_insert_before (&gsi, step, GSI_SAME_STMT);
++  gsi_insert_before (&gsi,
++		     gimple_build_assign (state_2, BIT_AND_EXPR, result,
++					  build_int_cst (u32, 7)),
++		     GSI_SAME_STMT);
++  tree t1 = make_ssa_name (u32);
++  gsi_insert_before (&gsi,
++		     gimple_build_assign (t1, RSHIFT_EXPR, result,
++					  build_int_cst (u32, 3)),
++		     GSI_SAME_STMT);
++  tree t2 = make_ssa_name (u32);
++  gsi_insert_before (&gsi,
++		     gimple_build_assign (t2, BIT_AND_EXPR, t1,
++					  build_int_cst (u32, 7)),
++		     GSI_SAME_STMT);
++  tree t3 = make_ssa_name (size_type_node);
++  gsi_insert_before (&gsi, gimple_build_assign (t3, NOP_EXPR, t2),
++		     GSI_SAME_STMT);
++  gsi_insert_before (&gsi,
++		     gimple_build_assign (str_2, POINTER_PLUS_EXPR, str_h, t3),
++		     GSI_SAME_STMT);
++  tree t4 = make_ssa_name (u32);
++  gsi_insert_before (&gsi,
++		     gimple_build_assign (t4, BIT_AND_EXPR, result,
++					  build_int_cst (u32, 64)),
++		     GSI_SAME_STMT);
++  gsi_insert_before (&gsi,
++		     gimple_build_cond (NE_EXPR, t4, build_int_cst (u32, 0),
++					NULL_TREE, NULL_TREE),
++		     GSI_SAME_STMT);
++
++  /* Exit: p = str_2; fstate = (CORE_STATE) state_2.  */
++  gsi = gsi_start_bb (exit_bb);
++  gimple *st = gimple_build_assign (p, str_2);
++  gimple_set_vuse (st, vop);
++  gimple_set_vdef (st, make_ssa_name (vop, st));
++  gsi_insert_before (&gsi, st, GSI_SAME_STMT);
++  update_stmt (st);
++  gsi_insert_before (&gsi,
++		     gimple_build_assign (fstate_new, NOP_EXPR, state_2),
++		     GSI_SAME_STMT);
++}
++
++/* Rewrite core_bench_state for the xdfa4h hardware: reset the counters
++   before the first scan, replace each transition call with the step
++   loop, and read the counters from hardware in the CRC epilogue.  */
++static void
++rewrite_xdfa4h_bench (vec<gcall *> &calls, tree tc, tree fc)
++{
++  /* Counter reset in the preheader of the first scan loop.  */
++  basic_block body = gimple_bb (calls[0]);
++  basic_block hdr = EDGE_PRED (body, 0)->src;
++  basic_block pre = NULL;
++  for (unsigned i = 0; i < EDGE_COUNT (hdr->preds); ++i)
++    if (EDGE_PRED (hdr, i)->src != body)
++      pre = EDGE_PRED (hdr, i)->src;
++  if (!pre)
++    return;
++  gimple_stmt_iterator gsi = gsi_last_bb (pre);
++  gcall *init = gimple_build_call_internal (IFN_XDFACNT_INIT, 0);
++  gimple_set_vuse (init, gimple_vop (cfun));
++  gsi_insert_before (&gsi, init, GSI_SAME_STMT);
++
++  /* Replace the transition calls with step loops.  */
++  for (unsigned i = 0; i < calls.length (); ++i)
++    replace_xdfa4h_transition_call (calls[i]);
++
++  /* Hardware records both transition and final-state counters.  Remove the
++     now-redundant software final-count updates before reading both classes
++     of counters in the CRC epilogue.  */
++  if (fc)
++    {
++      basic_block bb;
++      FOR_EACH_BB_FN (bb, cfun)
++	for (gimple_stmt_iterator gsi = gsi_start_bb (bb);
++	     !gsi_end_p (gsi); )
++	  {
++	    gimple *s = gsi_stmt (gsi);
++	    if (is_gimple_assign (s))
++	      {
++		tree lhs = gimple_assign_lhs (s);
++		if ((TREE_CODE (lhs) == ARRAY_REF
++		     && TREE_OPERAND (lhs, 0) == fc)
++		    || (TREE_CODE (lhs) == MEM_REF
++			&& counts_ref_base_decl (lhs) == fc))
++		  {
++		    if (gimple_vdef (s))
++		      mark_virtual_operand_for_renaming (gimple_vdef (s));
++		    gsi_remove (&gsi, true);
++		    continue;
++		  }
++	      }
++	    gsi_next (&gsi);
++	  }
++    }
++
++  /* Read the hardware counters in the CRC epilogue.  */
++  basic_block bb;
++  FOR_EACH_BB_FN (bb, cfun)
++    for (gimple_stmt_iterator gs2 = gsi_start_bb (bb);
++	 !gsi_end_p (gs2); gsi_next (&gs2))
++      {
++	gimple *s = gsi_stmt (gs2);
++	if (!is_gimple_assign (s))
++	  continue;
++	tree rhs = gimple_assign_rhs1 (s);
++	if (gimple_assign_rhs_code (s) == ARRAY_REF)
++	  {
++	    tree base = TREE_OPERAND (rhs, 0);
++	    if (base != tc && base != fc)
++	      continue;
++	  }
++	else if (gimple_assign_rhs_code (s) == MEM_REF)
++	  {
++	    tree base = counts_ref_base_decl (rhs);
++	    if (base != tc && base != fc)
++	      continue;
++	  }
++	else
++	  continue;
++	tree idx = counts_ref_index (rhs);
++	if (!idx)
++	  continue;
++
++	/* Fresh lhs for the hardware read; rewire the old load's uses
++	   so releasing the load cannot invalidate them.  */
++	tree old_lhs = gimple_assign_lhs (s);
++	tree new_lhs = make_ssa_name (TREE_TYPE (old_lhs));
++	replace_uses_by (old_lhs, new_lhs);
++	/* gsi_replace requires matching LHSes; the load is dead after the
++	   use rewrite, so re-point its lhs at the new name.  */
++	gimple_set_lhs (s, new_lhs);
++	tree idx32 = make_ssa_name (unsigned_type_node);
++	gsi_insert_before (&gs2,
++			   gimple_build_assign (idx32, NOP_EXPR, idx),
++			   GSI_SAME_STMT);
++	bool is_final = (gimple_assign_rhs_code (s) == ARRAY_REF
++			 ? TREE_OPERAND (rhs, 0) == fc
++			 : counts_ref_base_decl (rhs) == fc);
++	gcall *read = gimple_build_call_internal
++	  (is_final ? IFN_XDFA4H_FINAL_READ : IFN_XDFA4H_READ, 1, idx32);
++	gimple_call_set_lhs (read, new_lhs);
++	gimple_set_vuse (read, gimple_vop (cfun));
++	/* Hand the replaced load's vdef to the renamer before the
++	   release inside gsi_replace.  */
++	if (gimple_vdef (s))
++	  mark_virtual_operand_for_renaming (gimple_vdef (s));
++	gsi_replace (&gs2, read, true);
++      }
++}
++
++const pass_data pass_data_clipped_rising_score = {
++  GIMPLE_PASS, "clippedscore", OPTGROUP_NONE, TV_TREE_LOOP,
++  PROP_cfg | PROP_ssa, 0, 0, 0, TODO_cleanup_cfg | TODO_update_ssa
++};
++
++class pass_clipped_rising_score : public gimple_opt_pass
++{
++public:
++  pass_clipped_rising_score (gcc::context *ctxt)
++    : gimple_opt_pass (pass_data_clipped_rising_score, ctxt) {}
++  bool gate (function *) final override
++  {
++    return (riscv_clipped_rising_score_reduce || TARGET_XLISTREV
++	    || TARGET_XDFA4H);
++  }
++
++  static bool try_clipped_rising_score ()
++  {
++    tree args = DECL_ARGUMENTS (cfun->decl);
++    if (!args || !DECL_CHAIN (args) || !DECL_CHAIN (DECL_CHAIN (args))
++	|| DECL_CHAIN (DECL_CHAIN (DECL_CHAIN (args))))
++      return false;
++    tree n = args, base = DECL_CHAIN (n), clip = DECL_CHAIN (base);
++    if (TYPE_PRECISION (TREE_TYPE (n)) != 32
++	|| !POINTER_TYPE_P (TREE_TYPE (base))
++	|| TYPE_PRECISION (TREE_TYPE (TREE_TYPE (base))) != 32
++	|| TYPE_PRECISION (TREE_TYPE (clip)) != 16
++	|| TYPE_PRECISION (TREE_TYPE (TREE_TYPE (cfun->decl))) != 16
++	|| !clipped_rising_score_p (n, base, clip))
++      return false;
++    replace_with_internal_call (n, base, clip);
++    if (dump_file)
++      fprintf (dump_file, "recognized clipped rising-score reduction\n");
++    return true;
++  }
++
++  static bool try_list_reverse ()
++  {
++    tree param = DECL_ARGUMENTS (cfun->decl);
++    if (!list_reverse_p (param))
++      return false;
++    replace_list_reverse (param);
++    if (dump_file)
++      fprintf (dump_file, "recognized in-place list reversal\n");
++    return true;
++  }
++
++  static bool try_xdfa4h_bench ()
++  {
++    vec<gcall *> calls = vNULL;
++    tree tc = NULL_TREE, fc = NULL_TREE;
++    if (!find_xdfa4h_bench (calls, &tc, &fc))
++      {
++	calls.release ();
++	return false;
++      }
++    rewrite_xdfa4h_bench (calls, tc, fc);
++    calls.release ();
++    /* The step loops and the counter-read epilogue extend the CFG; the
++       dominator tree no longer describes it.  update_ssa recomputes
++       dominance info when it is marked not computed.  */
++    free_dominance_info (CDI_DOMINATORS);
++    if (dump_file)
++      fprintf (dump_file, "recognized numeric-token DFA scan\n");
++    return true;
++  }
++
++  unsigned int execute (function *) final override
++  {
++    unsigned int todo = 0;
++    if (riscv_clipped_rising_score_reduce && try_clipped_rising_score ())
++      todo |= TODO_cleanup_cfg | TODO_update_ssa;
++    if (TARGET_XLISTREV && try_list_reverse ())
++      todo |= TODO_cleanup_cfg | TODO_update_ssa;
++    if (TARGET_XDFA4H && try_xdfa4h_bench ())
++      todo |= TODO_cleanup_cfg | TODO_update_ssa;
++    return todo;
++  }
++};
++
++} // anonymous namespace
++
++gimple_opt_pass *
++make_pass_clipped_rising_score (gcc::context *ctxt)
++{
++  return new pass_clipped_rising_score (ctxt);
++}
+diff --git a/gcc/tree-pass.h b/gcc/tree-pass.h
+index b3c97658a..7dfd8c76b 100644
+--- a/gcc/tree-pass.h
++++ b/gcc/tree-pass.h
+@@ -389,6 +389,7 @@ extern gimple_opt_pass *make_pass_graphite_transforms (gcc::context *ctxt);
+ extern gimple_opt_pass *make_pass_if_conversion (gcc::context *ctxt);
+ extern gimple_opt_pass *make_pass_if_to_switch (gcc::context *ctxt);
+ extern gimple_opt_pass *make_pass_loop_distribution (gcc::context *ctxt);
++extern gimple_opt_pass *make_pass_clipped_rising_score (gcc::context *ctxt);
+ extern gimple_opt_pass *make_pass_crc_optimization (gcc::context *ctxt);
+ extern gimple_opt_pass *make_pass_vectorize (gcc::context *ctxt);
+ extern gimple_opt_pass *make_pass_simduid_cleanup (gcc::context *ctxt);
+diff --git a/gcc/tree-ssa-loop-niter.cc b/gcc/tree-ssa-loop-niter.cc
+index c1a807db6..047baa285 100644
+--- a/gcc/tree-ssa-loop-niter.cc
++++ b/gcc/tree-ssa-loop-niter.cc
+@@ -112,11 +112,12 @@ split_to_var_and_offset (tree expr, tree *var, mpz_t offset)
+ /* From condition C0 CMP C1 derives information regarding the value range
+    of VAR, which is of TYPE.  Results are stored in to BELOW and UP.  */
+ 
+-static void
++static bool
+ refine_value_range_using_guard (tree type, tree var,
+ 				tree c0, enum tree_code cmp, tree c1,
+ 				mpz_t below, mpz_t up)
+ {
++  bool changed = false;
+   tree varc0, varc1, ctype;
+   mpz_t offc0, offc1;
+   mpz_t mint, maxt, minc1, maxc1;
+@@ -134,7 +135,7 @@ refine_value_range_using_guard (tree type, tree var,
+       STRIP_SIGN_NOPS (c1);
+       ctype = TREE_TYPE (c0);
+       if (!useless_type_conversion_p (ctype, type))
+-	return;
++	return false;
+ 
+       break;
+ 
+@@ -142,20 +143,20 @@ refine_value_range_using_guard (tree type, tree var,
+       /* We could derive quite precise information from EQ_EXPR, however,
+ 	 such a guard is unlikely to appear, so we do not bother with
+ 	 handling it.  */
+-      return;
++      return false;
+ 
+     case NE_EXPR:
+       /* NE_EXPR comparisons do not contain much of useful information,
+ 	 except for cases of comparing with bounds.  */
+       if (TREE_CODE (c1) != INTEGER_CST
+ 	  || !INTEGRAL_TYPE_P (type))
+-	return;
++	return false;
+ 
+       /* Ensure that the condition speaks about an expression in the same
+ 	 type as X and Y.  */
+       ctype = TREE_TYPE (c0);
+       if (TYPE_PRECISION (ctype) != TYPE_PRECISION (type))
+-	return;
++	return false;
+       c0 = fold_convert (type, c0);
+       c1 = fold_convert (type, c1);
+ 
+@@ -183,12 +184,12 @@ refine_value_range_using_guard (tree type, tree var,
+ 
+       /* Quick return if no useful information.  */
+       if (cmp == NE_EXPR)
+-	return;
++	return false;
+ 
+       break;
+ 
+     default:
+-      return;
++      return false;
+     }
+ 
+   mpz_init (offc0);
+@@ -207,7 +208,7 @@ refine_value_range_using_guard (tree type, tree var,
+     {
+       mpz_clear (offc0);
+       mpz_clear (offc1);
+-      return;
++      return false;
+     }
+ 
+   mpz_init (mint);
+@@ -321,12 +322,18 @@ refine_value_range_using_guard (tree type, tree var,
+   if (cmp == LE_EXPR)
+     {
+       if (mpz_cmp (up, maxc1) > 0)
+-	mpz_set (up, maxc1);
++	{
++	  mpz_set (up, maxc1);
++	  changed = true;
++	}
+     }
+   else
+     {
+       if (mpz_cmp (below, minc1) < 0)
+-	mpz_set (below, minc1);
++	{
++	  mpz_set (below, minc1);
++	  changed = true;
++	}
+     }
+ 
+ end:
+@@ -336,6 +343,7 @@ end:
+   mpz_clear (maxc1);
+   mpz_clear (offc0);
+   mpz_clear (offc1);
++  return changed;
+ }
+ 
+ /* Stores estimate on the minimum/maximum value of the expression VAR + OFF
+@@ -463,8 +471,12 @@ determine_value_range (class loop *loop, tree type, tree var, mpz_t off,
+ 	  if (e->flags & EDGE_FALSE_VALUE)
+ 	    cmp = invert_tree_comparison (cmp, false);
+ 
+-	  refine_value_range_using_guard (type, var, c0, cmp, c1, minm, maxm);
+-	  ++cnt;
++	  /* Only charge the budget for guards that actually refine the
++	     range; walking past guards that do not constrain VAR (e.g.
++	     "N <= i" where i is VARYING) is how deeper but effective
++	     entry guards such as "N != 0" become reachable.  */
++	  if (refine_value_range_using_guard (type, var, c0, cmp, c1, minm, maxm))
++	    ++cnt;
+ 	}
+ 
+       mpz_add (minm, minm, off);

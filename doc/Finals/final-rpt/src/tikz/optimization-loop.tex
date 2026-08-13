@@ -1,0 +1,7 @@
+\begin{figure}[H]\centering
+\begin{tikzpicture}[s/.style={draw,rounded corners=1.2pt,minimum width=2.55cm,minimum height=0.78cm,align=center,fill=blue!6},a/.style={-Stealth,thick},font=\small]
+\node[s] (measure) {完整运行与计数器};\node[s,right=0.75cm of measure] (locate) {定位高频停顿/关键路径};
+\node[s,right=0.75cm of locate] (rtl) {结构化 RTL 调整};\node[s,below=0.8cm of rtl] (verify) {功能与周期复核};
+\node[s,left=0.75cm of verify] (impl) {Vivado 实现与 WNS};\node[s,below=0.8cm of measure] (record) {证据归档与结果复核};
+\draw[a](measure)--(locate);\draw[a](locate)--(rtl);\draw[a](rtl)--(verify);\draw[a](verify)--(impl);\draw[a](impl)--(record);\draw[a](record)--(measure);
+\end{tikzpicture}\caption{以测量和物理结果驱动的优化闭环}\end{figure}

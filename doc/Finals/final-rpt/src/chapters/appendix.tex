@@ -1,0 +1,153 @@
+\clearpage
+\appendix
+\section{附录}
+
+\subsection{分赛区后续性能与 WNS 演进}
+
+本节完整保留《分赛区决赛后续优化说明报告》的两套量化结果。\texttt{withMext-v2} 用于贯穿分赛区
+主报告版本至后续版本的统一 RTL 仿真复测；西北赛区样例用于观察不同访存与分支组成下的效果。
+两套样例的绝对时间不可横向比较，折线只展示各自内部的性能与 WNS 变化。
+
+\begin{table}[H]
+  \centering
+  \caption{统一采用 withMext-v2 的完整 RTL 仿真性能演进}
+  \scriptsize
+  \setlength{\tabcolsep}{4pt}
+  \resizebox{\textwidth}{!}{%
+  \begin{tabular}{@{}lcccc@{}}
+      \toprule
+      优化里程碑 & 频率 & 仿真时间 & 较前基线提升 & 时序状态 \\
+      \midrule
+      主报告版本 & 280 MHz & 2.020 s & --- & WNS $+0.050$ ns \\
+      乘法与方向预测优化 & 280 MHz & 1.943 s & $3.8\%$ & WNS $+0.031$ ns \\
+      D-cache 整字写分配 & 280 MHz & 1.868 s & $3.9\%$ & WNS $+0.019$ ns \\
+      load-use 晚数据旁路 & 280 MHz & 1.643 s & $12.0\%$ & WNS $-0.084$ ns \\
+      迭代 RTL 除法器 & 280 MHz & 1.606910 s & $2.2\%$ & 通过 \\
+      LSU 地址通路与 280 MHz 收敛 & 280 MHz & 1.606910 s & $0.0\%$ & WNS $0.000$ ns \\
+      窄加载与 D-cache shadow & 280 MHz & 1.607404 s & $-0.031\%$ & WNS $0.000$ ns \\
+      32 项 BTB 与更新 shadow & 280 MHz & 1.607403 s & $+0.000055\%$ & WNS $-0.011$ ns \\
+      精确 ret 识别与预测 & 280 MHz & 1.607403 s & $+0.000013\%$ & WNS $-0.091$ ns \\
+      部分写命中保留 & 280 MHz & 1.607403 s & $+0.000001\%$ & WNS $-0.072$ ns \\
+      接口缩减与除法修正分拍 & 280 MHz & 1.607403 s & $-0.000003\%$ & WNS $-0.004$ ns \\
+      \textbf{最终时序闭合结果} & \textbf{280 MHz} & \textbf{1.607403 s} & $0.0\%$ & WNS $+0.013$ ns \\
+      \bottomrule
+  \end{tabular}}
+\end{table}
+
+最终结果完整运行 450,072,868 周期、380,344,384 条指令，CPI 为 1.183330；相对 2.020\,s
+基线缩短约 20.4\%。后期若干节点主要用于时序与资源整理，因此保留精确百分比，避免将时序优化误写
+成性能收益。
+
+\begin{table}[H]
+  \centering
+  \caption{西北赛区样例的性能与时序演进}
+  \small
+  \setlength{\tabcolsep}{5pt}
+  \begin{tabular}{@{}lccc@{}}
+    \toprule
+    优化里程碑 & 评估时间 & 较前基线提升 & 时序状态 \\
+    \midrule
+    多周期单元与 280 MHz 收敛 & 6.866 s & --- & WNS $0.000$ ns \\
+    窄加载与 D-cache shadow & 6.553 s & $4.6\%$ & WNS $0.000$ ns \\
+    32 项 BTB 与更新 shadow & 6.508 s & $0.7\%$ & WNS $-0.011$ ns \\
+    精确 ret 识别与预测 & 6.481 s & $0.4\%$ & WNS $-0.091$ ns \\
+    部分写命中保留 & 6.182 s & $4.6\%$ & WNS $-0.072$ ns \\
+    \textbf{接口整理与最终时序闭合} & \textbf{6.184 s} & $-0.03\%$ & WNS $+0.013$ ns \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+最终结果相对 6.866\,s 基线缩短约 9.9\%。6.182\,s 到 6.184\,s 的变化来自除法修正分拍和接口
+整理；每次普通除法或求余增加一拍，完整前缀中 12 次相关操作精确增加 12 周期，同时 WNS 收敛至
+$+0.013$\,ns。
+
+\input{src/tikz/regional-performance-full}
+
+\subsection{测评证据索引}
+
+\small
+\begin{longtable}{@{}p{0.19\linewidth}p{0.25\linewidth}p{0.48\linewidth}@{}}
+\caption{关键测评证据索引}\\\toprule
+\textbf{编号}&\textbf{证据类型}&\textbf{用途}\\\midrule\endhead\bottomrule\endfoot
+E-FINAL-250&250 MHz 实现归档&post-physopt WNS $+0.009$ ns\\
+E-FINAL-280&280 MHz 实现归档&routed WNS $-0.664$ ns\\
+E-FINAL-300&300 MHz 实现归档&routed/post-physopt WNS $-0.590/-0.580$ ns\\
+E-RF-01--04&分赛区后续报告与统计数据&withMext-v2、西北样例的性能与 WNS 演进\\
+E-BOARD-01&最佳阶段 UART 板测归档&6.696371860\,s、四项 CRC、板卡与 bitstream 身份\\
+E-BOARD-02&正确 IP 板级复测归档&6.714950940\,s、四项 CRC、300\,MHz 实现与 bitstream 身份\\
+E-BOARD-03&编译器自动选指令同硬件对照&6.691154040\,s、三次一致、四项 CRC 与程序镜像身份\\
+E-TEST&自动化测试记录&基础指令、CPU tests、体系结构测试和 RT-Thread 输出\\
+\end{longtable}
+\normalsize
+
+文档外的工程归档保存精确版本标识、程序镜像摘要、bitstream 摘要和原始日志，便于团队内部复核；
+正文仅保留评审理解设计与测评口径所需的信息。机器可读证据清单位于 \code{src/data/evidence.csv}。
+
+\subsection{工程目录结构}
+
+\makeatletter
+\newcommand{\mydotfill}{%
+  \leavevmode
+  \leaders\hbox to 1em{\hss\raisebox{0.3ex}{\textcolor{gray}{.}}\hss}\hfill\kern0pt}
+\makeatother
+
+\noindent\begin{minipage}{0.96\textwidth}
+\small
+\dirtree{%
+.1 jyd/ \mydotfill 工程根目录.
+.2 npc/ \mydotfill CPU、SoC 封装与仿真工程.
+.3 design/src/ \mydotfill 流水线、预测器、缓存、扩展与设备描述.
+.3 build/gened/verilog/ \mydotfill 生成的 Verilog/SystemVerilog.
+.3 sim/ \mydotfill Verilator 仿真、差分与性能统计.
+.3 scripts/ \mydotfill 打包、实现、报告提取与板测脚本.
+.2 nemu/ \mydotfill RISC-V 参考执行环境.
+.2 sdb/ \mydotfill 差分状态、调试器与指令环.
+.2 abstract-machine/ \mydotfill 裸机运行环境与 riscv32-jyd 平台.
+.2 jyd-vivado-proj/ \mydotfill 数字孪生 Vivado 工程、IP 与约束.
+.2 doc/Finals/final-rpt/ \mydotfill 总决赛技术文档.
+.3 src/chapters/ \mydotfill 分章节正文.
+.3 src/tikz/ \mydotfill 独立管理的 TikZ/pgfplots 图源.
+.3 src/assets/ \mydotfill 仿真截图、波形、照片与外部图片.
+.3 src/data/ \mydotfill 性能、时序和证据索引数据.
+}
+\end{minipage}
+
+\subsection{图片待补清单}
+
+\begin{enumerate}
+  \item 团队制作的作品核心结构快速预览图；
+  \item 团队制作的五级流水总体架构图；
+  \item 250\,MHz post-route physical optimization Timing Summary 截图；
+  \item 300\,MHz routed 与 post-route physical optimization Timing Summary 截图；
+  \item 总决赛核心结果拼图，包括 UART 原始输出、开发板运行照片和实现报告摘要；
+  \item 当前设计的 LUT、FF、BRAM、DSP 与时钟资源利用率图。
+  \item src0、src1、src2 的新同口径 IPC/CPI/运行时间，以及 CoreMark、Dhrystone 新仿真结果。
+\end{enumerate}
+
+\subsection{参考资料}
+
+\begin{enumerate}[label={\textup{[\arabic*]}},leftmargin=3em]
+  \item 全国大学生集成电路创新创业大赛组委会：《第十届集创赛作品提交要求》。
+  \item 竞业达企业命题组：《竞业达企业命题作品材料参考模板》。
+  \item 竞业达企业命题组：《FPGA 开发板远程连接操作手册》，2026。
+  \item RISC-V International, \emph{The RISC-V Instruction Set Manual, Volume I: Unprivileged ISA}.
+  \item RISC-V International, \emph{The RISC-V Instruction Set Manual, Volume II: Privileged Architecture}.
+  \item AMD Xilinx, \emph{Vivado Design Suite User Guide: Design Analysis and Closure Techniques}.
+  \item AMD Xilinx, \emph{7 Series FPGAs Memory Resources User Guide}.
+\end{enumerate}
+
+\subsection{AI 工具使用声明}
+
+项目研发和技术文档整理过程中使用 ChatGPT/Codex 系列 AI 工具提供辅助。团队对所有设计决策、代码、
+测试结果和最终文字负责，AI 工具不替代人工设计评审、功能验证、FPGA 实现或板级测评。具体用途如下：
+
+\begin{itemize}
+  \item \textbf{工程检索与影响分析：}辅助定位模块连接、接口定义、测试入口和实现报告中的关键路径；
+  \item \textbf{脚本与重复性工作：}辅助编写 COE 转换、日志整理、报告字段提取、批量回归和文档审计脚本；
+  \item \textbf{代码初稿与局部重构：}依据团队给出的结构方案生成局部实现草稿，再由团队审阅、修改和测试；
+  \item \textbf{验证用例补充：}辅助整理边界条件、RAW 相关、握手反压、缓存一致性和自定义指令参考语义；
+  \item \textbf{时序报告解读：}辅助汇总逻辑级数、布线占比、端点族和资源变化，优化方向由团队确定；
+  \item \textbf{技术文档编排：}辅助章节结构、表格排版、术语一致性检查、TikZ/pgfplots 图表草拟与文字润色；
+  \item \textbf{使用边界：}性能与 WNS 数据均来自仿真、Vivado 报告或板测原始记录；指令语义、接口时序和
+  硬件结构均经过团队审核，不使用 AI 生成的虚构数据或未经验证的结论。
+\end{itemize}

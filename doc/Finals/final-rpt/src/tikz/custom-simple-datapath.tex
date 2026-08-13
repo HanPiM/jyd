@@ -1,0 +1,13 @@
+\begin{figure}[H]\centering
+\begin{tikzpicture}[n/.style={draw,rounded corners=1.2pt,minimum height=0.72cm,minimum width=2.15cm,align=center,fill=blue!6},a/.style={-Stealth,thick},font=\scriptsize,node distance=0.65cm and 0.85cm]
+\node[n] (rs) {寄存器操作数\\rs1、rs2};
+\node[n,above right=0.35cm and 1.1cm of rs] (crc) {8 位数据 + 16 位状态\\固定 XOR 矩阵};
+\node[n,below right=0.35cm and 1.1cm of rs] (bmul) {位域抽取\\4 位 $\times$ 7 位};
+\node[n,right=1.2cm of crc] (cz) {16 位 CRC\\高位补零};
+\node[n,right=1.2cm of bmul] (bz) {11 位乘积\\高位补零};
+\node[n,right=1.2cm of $(cz)!0.5!(bz)$] (wb) {硬件加速通路\\单周期写回};
+\draw[a](rs)--(crc); \draw[a](rs)--(bmul); \draw[a](crc)--(cz); \draw[a](bmul)--(bz);
+\draw[a](cz)--(wb); \draw[a](bz)--(wb);
+\end{tikzpicture}
+\caption{\texttt{xcrcu8} 与 \texttt{xbmul} 的定宽单周期数据通路}
+\end{figure}

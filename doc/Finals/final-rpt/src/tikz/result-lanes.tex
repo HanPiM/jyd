@@ -1,0 +1,16 @@
+\begin{figure}[H]\centering
+\begin{tikzpicture}[u/.style={draw,rounded corners=1.2pt,align=center,minimum width=2.55cm,minimum height=0.78cm},a/.style={-Stealth,thick},font=\small]
+\node[u,fill=blue!6] (d) {DecodedInst};
+\node[u,fill=green!7,right=1.25cm of d,yshift=2.25cm] (fi) {快速整数通路};
+\node[u,fill=green!7,right=1.25cm of d,yshift=1.12cm] (di) {直接结果通路};
+\node[u,fill=orange!8,right=1.25cm of d] (la) {长算术通路};
+\node[u,fill=purple!7,right=1.25cm of d,yshift=-1.12cm] (ac) {硬件加速通路};
+\node[u,fill=cyan!7,right=1.25cm of d,yshift=-2.25cm] (ld) {加载结果通路};
+\node[u,fill=gray!10,right=3.0cm of la,minimum height=5.20cm] (wb) {按 ResultKind\\局部汇聚与写回};
+\foreach \x in {fi,di,la,ac,ld}{\draw[a] (d.east)--(\x.west);}
+\draw[a] (fi.east) -- ([yshift=2.25cm]wb.west);
+\draw[a] (di.east) -- ([yshift=1.12cm]wb.west);
+\draw[a] (la.east)--(wb.west);
+\draw[a] (ac.east) -- ([yshift=-1.12cm]wb.west);
+\draw[a] (ld.east) -- ([yshift=-2.25cm]wb.west);
+\end{tikzpicture}\caption{EXU 与写回结果通路分区}\end{figure}

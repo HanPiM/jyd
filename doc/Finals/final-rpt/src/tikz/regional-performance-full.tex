@@ -1,0 +1,62 @@
+\begin{figure}[H]
+  \centering
+  \begin{tikzpicture}
+    \begin{axis}[
+      width=0.835\textwidth,height=6.2cm,
+      symbolic x coords={主报告,乘分支,DCache,晚旁路,LSU地址通路,Shadow,BTB,Ret,部分写,最终},
+      xtick=data,x tick label style={rotate=32,anchor=east,font=\scriptsize},
+      ylabel={评估时间（s）},ymin=1.55,ymax=2.05,
+      axis y line*=left,axis x line*=bottom,grid=major,
+      legend style={at={(0,1.02)},anchor=south west,font=\scriptsize}]
+      \addplot[blue!75!black,mark=*] coordinates {
+        (主报告,2.020) (乘分支,1.943) (DCache,1.868) (晚旁路,1.643)
+        (LSU地址通路,1.606910) (Shadow,1.607404) (BTB,1.607403) (Ret,1.607403)
+        (部分写,1.607403) (最终,1.607403)};
+      \addlegendentry{性能}
+    \end{axis}
+    \begin{axis}[
+      width=0.835\textwidth,height=6.2cm,
+      symbolic x coords={主报告,乘分支,DCache,晚旁路,LSU地址通路,Shadow,BTB,Ret,部分写,最终},
+      xtick=\empty,ylabel={WNS（ns）},ymin=-0.11,ymax=0.07,
+      axis y line*=right,axis x line=none,
+      legend style={at={(1,1.02)},anchor=south east,font=\scriptsize}]
+      \draw[gray,dashed] (rel axis cs:0,0.6111) -- (rel axis cs:1,0.6111);
+      \addplot[red!75!black,dashed,mark=square*] coordinates {
+        (主报告,0.050) (乘分支,0.031) (DCache,0.019) (晚旁路,-0.084)
+        (LSU地址通路,0.000) (Shadow,0.000) (BTB,-0.011) (Ret,-0.091)
+        (部分写,-0.072) (最终,0.013)};
+      \addlegendentry{WNS}
+    \end{axis}
+  \end{tikzpicture}
+  \caption{withMext-v2 的性能与 WNS 走向}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \begin{tikzpicture}
+    \begin{axis}[
+      width=0.835\textwidth,height=6.0cm,
+      symbolic x coords={时序基线,窄加载,BTB,Ret,部分写,最终},
+      xtick=data,x tick label style={rotate=25,anchor=east,font=\scriptsize},
+      ylabel={评估时间（s）},ymin=6.05,ymax=6.95,
+      axis y line*=left,axis x line*=bottom,grid=major,
+      legend style={at={(0,1.02)},anchor=south west,font=\scriptsize}]
+      \addplot[blue!75!black,mark=*] coordinates {
+        (时序基线,6.866) (窄加载,6.553) (BTB,6.508) (Ret,6.481) (部分写,6.182) (最终,6.184)};
+      \addlegendentry{性能}
+    \end{axis}
+    \begin{axis}[
+      width=0.835\textwidth,height=6.0cm,
+      symbolic x coords={时序基线,窄加载,BTB,Ret,部分写,最终},
+      xtick=\empty,ylabel={WNS（ns）},ymin=-0.11,ymax=0.04,
+      axis y line*=right,axis x line=none,
+      legend style={at={(1,1.02)},anchor=south east,font=\scriptsize}]
+      \draw[gray,dashed] (rel axis cs:0,0.7333) -- (rel axis cs:1,0.7333);
+      \addplot[red!75!black,dashed,mark=square*] coordinates {
+        (时序基线,0.000) (窄加载,0.000) (BTB,-0.011) (Ret,-0.091)
+        (部分写,-0.072) (最终,0.013)};
+      \addlegendentry{WNS}
+    \end{axis}
+  \end{tikzpicture}
+  \caption{西北赛区样例的性能与 WNS 走向}
+\end{figure}

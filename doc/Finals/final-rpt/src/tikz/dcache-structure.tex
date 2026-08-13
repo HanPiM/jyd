@@ -1,0 +1,43 @@
+\begin{figure}[H]\centering\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[
+ m/.style={draw,rounded corners=1.2pt,align=center,minimum height=1.0cm,inner sep=5pt},
+ a/.style={-Stealth,thick},wa/.style={-Stealth,thick,dashed},font=\small]
+\node[m,fill=blue!6,text width=3.35cm] (addr) at (0,0.7)
+  {访问地址：tag=[17:11]\\bank=[11]，行=[10:2]};
+
+\node[m,fill=green!7,text width=3.75cm] (tags) at (4.7,2.8)
+  {双 bank tag LUTRAM\\valid + 7-bit tag，C0 组合读与比较};
+\node[m,fill=green!7,text width=4.0cm] (main) at (10.2,2.8)
+  {双 bank 主数据 BRAM\\每 bank 512$\times$32 bit，C1 同步读};
+\node[m,fill=gray!10,text width=3.75cm] (normal) at (15.55,2.8)
+  {普通命中通路\\延迟 bank 选择，LSU 取得数据并前递};
+
+\node[m,fill=orange!8,text width=4.25cm] (shadow) at (4.7,-1.25)
+  {异步数据镜像\\每 bank 四个 512$\times$8 LUTRAM，C0 读原始字};
+\node[m,fill=cyan!8,text width=4.05cm] (late) at (10.2,-1.25)
+  {EXU--LSU 寄存边界\\注册 offset、宽度与原始数据};
+\node[m,fill=cyan!8,text width=3.75cm] (consumer) at (15.55,-1.25)
+  {late-load 受限消费者\\C1 扩展后运算或比较};
+
+\node[m,fill=purple!7,text width=5.35cm] (write) at (1.0,-3.7)
+  {统一缓存写入：整字分配 / 窄写失效\\miss 回填 / 硬件加速更新};
+\node[m,fill=purple!3,text width=5.05cm] (broadcast) at (8.25,-3.7)
+  {同一地址、数据与字节掩码\\同步广播至 tag、主 BRAM 与镜像};
+
+\draw[a] (addr.north east) -- (tags.west);
+\draw[a] (tags)--node[above]{hit}(main);
+\draw[a] (main)--(normal);
+\draw[a] (addr.south east) -- (shadow.west);
+\draw[a] (tags.south) -- node[right]{tag 命中放行} (shadow.north);
+\draw[a] (shadow)--(late);
+\draw[a] (late)--(consumer);
+\draw[a] (write)--(broadcast);
+
+% 三条写广播分别占用近端、左外侧和右外侧通道，互不共线。
+\draw[wa] ([yshift=0.38cm]broadcast.west) -- ++(-0.65,0) -| (shadow.south);
+\draw[wa] ([xshift=-0.75cm]broadcast.south) -- ++(0,-0.75)
+  -- ++(-9.8,0) |- ([yshift=0.8cm]tags.north) -- (tags.north);
+\draw[wa] ([xshift=0.75cm]broadcast.south) -- ++(0,-1.05)
+  -- ++(9.45,0) |- ([yshift=1.1cm]main.north) -- (main.north);
+\end{tikzpicture}}
+\caption{4 KiB 双 bank D-cache：普通命中通路与 late-load 异步镜像}\end{figure}

@@ -1,0 +1,27 @@
+\begin{figure}[H]
+  \centering
+  \resizebox{0.98\linewidth}{!}{%
+  \begin{tikzpicture}[
+    font=\small,>=Latex,
+    box/.style={draw,rounded corners=1.2pt,align=center,minimum height=8mm,inner sep=4pt},
+    data/.style={box,fill=blue!7}, ctrl/.style={box,fill=orange!10},
+    use/.style={box,fill=green!9}, arr/.style={->,thick}, dasharr/.style={->,thick,dashed}]
+    \node[data] (addr) {LSU 地址\\index/tag/byte offset};
+    \node[data,right=12mm of addr,yshift=8mm] (bram) {主数据 BRAM\\同步读，顺序 LSU 结果};
+    \node[data,right=12mm of addr,yshift=-10mm] (shadow) {逐字节 LUTRAM 副本\\异步读并完成符号/零扩展};
+    \node[ctrl,right=13mm of shadow] (token) {late-load token\\valid + rd + data};
+    \node[use,right=13mm of bram] (normal) {普通消费者\\等待 LSU/WBU};
+    \node[use,right=13mm of token] (near) {受控相邻消费者\\匹配 rd 后提前取数};
+    \node[ctrl,below=13mm of token] (write) {统一缓存写入\\整字分配/窄写失效/epoch 保护};
+    \draw[arr] (addr) -- (bram);
+    \draw[arr] (addr) -- (shadow);
+    \draw[arr] (bram) -- (normal);
+    \draw[arr] (shadow) -- (token);
+    \draw[arr] (token) -- (near);
+    % 两条一致性写线分别从下方和外侧上方进入，避免穿越数据通路与节点。
+    \draw[dasharr] (write.west) -- ++(-14mm,0) -| (shadow.south);
+    \coordinate (bramtop) at ($(bram.north)+(0,7mm)$);
+    \draw[dasharr] (write.east) -- ++(43mm,0) |- (bramtop) -- (bram.north);
+  \end{tikzpicture}}
+  \caption{主数据通路与 late-load 受控旁路机制}\label{fig:late-load}
+\end{figure}

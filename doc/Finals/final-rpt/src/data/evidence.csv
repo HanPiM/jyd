@@ -1,0 +1,12 @@
+id,metric,value,unit,design_stage,frequency_mhz,workload,source
+E-RF-01,regional_withmext_runtime,2.020,s,regional-intermediate,280,withMext-v2,regional optimization report
+E-RF-02,regional_final_runtime,1.607403,s,regional-final,280,withMext-v2,regional optimization report
+E-RF-03,regional_xibei_baseline,6.866,s,regional-intermediate,280,xibei sample,regional optimization report
+E-RF-04,regional_xibei_final,6.184,s,regional-final,280,xibei sample,regional optimization report
+E-FINAL-250,post_route_physopt_wns,0.009,ns,final-design,250,formal COE pair,final implementation archive
+E-FINAL-280,routed_wns,-0.664,ns,final-design,280,formal COE pair,final implementation archive
+E-FINAL-300,routed_wns,-0.590,ns,final-design,300,implementation workload,final implementation archive
+E-FINAL-300P,post_route_physopt_wns,-0.580,ns,final-design,300,implementation workload,final implementation archive
+E-BOARD-01,board_runtime,6.696371860,s,best-board-validated-stage,300,CoreMark formal iterations 10000,UART capture archive
+E-BOARD-02,board_runtime,6.714950940,s,corrected-IP board anchor,300,CoreMark formal iterations 10000,UART capture archive
+E-BOARD-03,board_runtime,6.691154040,s,gcc-automatic-selection,300,CoreMark ordinary C source iterations 10000,gcc-md-finals-20260813 UART archive

@@ -1,0 +1,269 @@
+\section{CPU 架构与模块设计}\label{sec:architecture}
+
+\newenvironment{archsignalstable}[2][@{}>{\raggedright\arraybackslash}p{0.145\linewidth}C{0.06\linewidth}>{\raggedright\arraybackslash}p{0.14\linewidth}>{\raggedright\arraybackslash}p{0.14\linewidth}>{\raggedright\arraybackslash}p{0.41\linewidth}@{}]{%
+  \begin{table}[H]\centering\fontsize{6.8}{8.1}\selectfont\caption{#2}%
+  \begin{tabular}{#1}
+  \toprule\textbf{信号或信号组}&\textbf{方向}&\textbf{位宽/类型}&\textbf{握手关系}&\textbf{作用}\\\midrule
+}{\bottomrule\end{tabular}\end{table}}
+
+\subsection{总体架构}
+
+CPU 采用 IFU、IDU、EXU、LSU、WBU 五级顺序单发射流水线。级间寄存器遵循 ready/valid
+握手：后级不能接收时，前级保持有效位和数据；只有 valid 与 ready 同时成立，指令才向下一阶段推进。
+前端连续取指、三级数据旁路、多周期执行反压、缓存命中前递和控制流重定向共同构成完整的数据通路。
+
+\PlaceholderFigure{CPU 总体架构图}{此处将替换为团队绘制的新版总体架构图，图中将统一展示五级流水、级间寄存器、旁路网络、分支预测、D-cache、多周期执行单元和 SoC 接口。}
+
+\subsection{IFU 取指模块}
+
+IFU 接收待取指 PC，将取指请求送往 IROM，并把指令、PC、预测记录、指令编号和控制流世代标记（epoch）
+组合为 \code{FetchedInst}。预测记录在取指时与 PC 一起保存，后端无需重新查询预测器即可对照该条
+指令的原预测结果。控制流世代标记用于识别重定向前后两条不同的推测路径。
+
+\begin{archsignalstable}[@{}>{\raggedright\arraybackslash}p{0.115\linewidth}C{0.06\linewidth}>{\raggedright\arraybackslash}p{0.175\linewidth}>{\raggedright\arraybackslash}p{0.14\linewidth}>{\raggedright\arraybackslash}p{0.405\linewidth}@{}]{IFU 接口信号说明}
+pc&输入&32-bit Decoupled&valid/ready&接收当前待取指地址；接口握手后 IFU 对该地址负责\\
+predNext&输入&PredBundle&随 pc 同拍采样&保存 BTB 命中、预测方向和预测下一 PC\\
+epoch&输入&1 bit&随 pc 同拍采样&标记该请求所属的控制流世代（epoch）\\
+mem&输出&SimpleBus master&请求/响应&向 IROM 发出只读请求并接收指令字\\
+out&输出&FetchedInst Decoupled&valid/ready&向 IDU 交付指令、PC、预测记录、iid 与 epoch\\
+\end{archsignalstable}
+
+IFU 使用 Idle、WaitReq、WaitResp、WaitOut 四个状态区分“尚无请求”“等待存储端接受”“等待响应”
+和“响应已到但后级反压”。若 PC 已被 IFU 接收而存储端尚未 ready，PC、预测记录、iid 和 epoch
+共同进入 pending 寄存器；因此总线短暂反压不会造成元信息与地址错配。
+
+\input{src/tikz/ifu-state-simple}
+\input{src/tikz/ifu-state-detail}
+
+\textbf{连续取指的关键在于 WaitResp 的同拍快速转移}：当上一条指令响应到达且 IDU 同拍接收时，IFU 可以同时
+接收下一 PC；若 IROM 请求端也 ready，则新的请求在同一周期发出。稳态顺序执行中，每周期均可完成
+“消费上一响应—接收下一地址—发出下一请求”，从外部吞吐率上隐藏同步 IROM 的一周期读延迟。
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.96\linewidth]{design/imaged.png}\\[0.5em]
+\includegraphics[width=0.88\linewidth]{design/imagee.png}
+\caption{IFU 连续取指与 BRAM 延迟隐藏仿真波形}
+\end{figure}
+
+\subsection{IDU 译码、寄存器读取与相关处理}
+
+IDU 根据 opcode、funct3 和 funct7 完成指令类型、格式与执行类别译码，形成 I/S/B/U/J 五类立即数，
+并同时读取两个 GPR 源操作数和一个 CSR 操作数。为缩短后端组合路径，IDU 还预先形成
+$pc+4$、$pc+imm$、地址低位加法结果和 \code{ecall}/\code{mret} 的静态目标。
+
+\begin{archsignalstable}[@{}>{\raggedright\arraybackslash}p{0.13\linewidth}C{0.055\linewidth}>{\raggedright\arraybackslash}p{0.18\linewidth}>{\raggedright\arraybackslash}p{0.11\linewidth}>{\raggedright\arraybackslash}p{0.42\linewidth}@{}]{IDU 接口信号说明}
+in&输入&FetchedInst Decoupled&valid/ready&接收 IFU 输出的指令、PC 与预测记录\\
+rvec&双向&2-read GPR&组合读&给出 rs1/rs2 地址并取得两个通用寄存器值\\
+csrRead&双向&CSR single-read&组合读&按指令高 12 位读取 CSR 旧值\\
+csrJmpTarget&输入&mepc/mtvec&组合输入&提供 \code{mret}/\code{ecall} 的控制流目标\\
+wrBackInfo&输入&EXU/LSU/WBU 前递组&生产者状态&给出目的寄存器、写使能、结果和 dataValid\\
+lateLoadProducer&输入&load 生产者描述&专用相关协议&允许受支持的消费者把 load-use 解析推迟到 EXU\\
+pipelineFlush&输入&1 bit&高有效&抑制错误路径指令继续发射\\
+out&输出&DecodedInst Decoupled&valid/ready&输出操作数、预计算结果、控制信息和 ResultKind\\
+\end{archsignalstable}
+
+\textbf{对每个源寄存器，旁路网络总是选择距离最近的生产者}，并按 EXU、LSU、WBU 的次序判定。没有冲突时使用 GPR
+读数；冲突且数据有效时直接选择前递值；冲突但结果尚未产生时请求停顿。由此既解决普通 RAW
+相关，也能保证乘除法、迭代 B 扩展和 load 等延迟结果在可用前不会被消费者误读。
+
+\input{src/tikz/dependency-flow}
+
+相邻快速整数结果采用受限的专用旁路标记，只开放给普通整数运算、条件比较和 store-data 等短路径
+消费者；地址形成、多周期运算、自定义加速和 CSR 等通路采用注册化前递或保守停顿。CSR RAW 也按
+顺序语义处理：只要 EXU、LSU 或 WBU 中仍有未提交的 CSR 写事务，后续 CSR 读改写指令便留在 IDU。
+
+\subsection{EXU 分区执行与多周期控制}
+
+EXU 完成普通算术逻辑、分支裁决、访存请求构造、CSR 新值形成、M/B 扩展运算和硬件加速指令。
+为了避免所有结果进入同一个宽而深的多路选择器，译码阶段为每条寄存器生产者确定唯一
+\code{ResultKind}，后端按结果类别保持独立的数据 lane：
+
+\begin{itemize}
+\item \code{fastInt}：普通单周期整数 ALU 结果，可进入受限的相邻快速旁路；
+\item \code{direct}：LUI、AUIPC、JAL/JALR 链接地址和 CSR 旧值等预先确定的结果；
+\item \code{longArithmetic}：乘法、除法和迭代 B 扩展结果；
+\item \code{accelerator}：CRC、位提取乘法及硬件状态机结果；
+\item \code{load}：由 D-cache 或数据存储响应产生的加载结果。
+\end{itemize}
+
+\begin{archsignalstable}[@{}>{\raggedright\arraybackslash}p{0.135\linewidth}C{0.045\linewidth}>{\raggedright\arraybackslash}p{0.18\linewidth}>{\raggedright\arraybackslash}p{0.135\linewidth}>{\raggedright\arraybackslash}p{0.40\linewidth}@{}]{EXU 接口信号说明}
+in&输入&DecodedInst Decoupled&valid/ready&接收译码结果、操作数、预测方向与 ResultKind\\
+previousStageFwd&输入&FastForwardInfo&局部组合选择&只供被允许的相邻快速消费者使用\\
+lateLoad&输入&LateLoadInfo&valid/dataValid&在 EXU 内解析已放行的 load-use 相关\\
+dcache&双向&D-cache 查询/更新组&查询与更新&进行 tag 查询、取得同步/异步数据并处理 store 更新\\
+memReq/Resp&双向&Decoupled/Valid&请求/响应&承载普通访存和访存型自定义指令\\
+fwd&输出&ForwardInfo&生产者状态&公布 rd；结果未完成时保持 dataValid=0\\
+out&输出&LSUInput Decoupled&valid/ready&输出分区结果、访存属性、CSR 事务和控制流元信息\\
+branch/BTB update&输出&控制流更新组&随完成采样&给出真实类型、方向、目标、call 和 return 属性\\
+\end{archsignalstable}
+
+\input{src/tikz/result-lanes}
+
+乘法器、除法器和迭代 B 扩展单元通过统一的 Decoupled 接口接入特殊执行簇。指令被接受后，执行单元
+进入 busy，ID/EX 中的指令保持不变，EXU 向前传播反压；与此同时本级仍公布目的寄存器号，但把
+\code{dataValid} 保持为 0，使依赖指令在 IDU 停顿。结果到达时，若 LSU ready，则结果直接握手；
+否则进入 done 寄存器并稳定保持到 \code{out.fire}，不会因后级反压丢失结果。
+
+\input{src/tikz/multicycle-handshake}
+
+不同单元在统一外部握手下采用各自适合的内部节拍：乘法根据操作数和结果种类选择快速低字或完整
+高位路径；除法执行 32 轮迭代并在必要时完成符号校正；迭代 B 扩展最多推进 32 轮，其中无进位乘法
+可在剩余乘数为零时提前结束。对流水线而言，它们都表现为“占用当前 EXU 指令—结果无效—结果有效—
+完成握手”的同一协议，因此相关处理不需要为每个运算单元增加一套特殊规则。
+
+\subsection{LSU、WBU 与顺序提交}
+
+LSU 承接 EXU 已经形成的结果和访存元信息。对非访存指令，它寄存并继续传递选定的结果 lane；对
+load/store，它保存地址低位、访问宽度、缓存命中、store 世代和回填资格。D-cache 主数据经过同步
+BRAM 读延迟后在 LSU 周期对齐，命中 load 可以在此处形成提前旁路。
+
+\begin{archsignalstable}{LSU 接口信号说明}
+in&输入&LSUInput Decoupled&valid/ready&接收执行结果、访存元信息和 CSR 写事务\\
+dcacheReadData&输入&32 bit&同步 BRAM 返回&取得上一周期地址对应的主数据\\
+fwd&输出&ForwardInfo&生产者状态&提供 LSU 级普通结果或缓存命中结果状态\\
+out&输出&WBUInput Decoupled&valid/ready&向 WBU 交付统一提交信息\\
+\end{archsignalstable}
+
+WBU 是体系结构状态的顺序提交点。普通算术、自定义指令和控制流指令按选定 lane 写回 GPR；load
+根据 func3 与地址低位抽取字节、半字或整字并完成符号/零扩展；CSR 写事务在本级有效提交。符合条件
+的 load miss 在响应到达后回填 D-cache，而 store 世代变化会取消可能覆盖更新数据的旧回填。
+
+\begin{archsignalstable}{WBU 接口信号说明}
+in&输入&WBUInput Decoupled&valid/ready&接收 LSU 输出的结果与提交控制\\
+memResp&输入&Valid[UInt(32)]&与 load 对齐&接收数据存储返回字\\
+gpr&输出&GPR WriteIO&最终提交&写入 rd，写 x0 请求被忽略\\
+csr&输出&CSR WriteIO&最终提交&顺序更新可写机器态 CSR\\
+dcacheUpdate*&输出&地址/数据/掩码&提交时回填&把仍有效的 load miss 响应写入缓存\\
+\end{archsignalstable}
+
+\subsection{GPR 与 CSR 模块}
+
+GPR 使用两份 $32\times32$ 分布式存储器镜像，分别提供 rs1 和 rs2 的异步读端口，WBU 的同步写
+同时更新两份镜像；同址读写采用显式 write-through，\code{x0} 始终读为零。该组织在逻辑上仍是
+双读单写寄存器堆，同时利用 FPGA 分布式存储资源替代大规模寄存器读 Mux。
+
+CSR 寄存器文件是独立的体系结构状态模块。当前提供 \code{mstatus}、\code{mtvec}、\code{mepc}、
+\code{mcause} 四个可写机器态寄存器，以及 \code{mcycle}、\code{mcycleh}、\code{mvendorid}、
+\code{marchid} 等只读信息；周期计数使用 32 位低字，高字保持为零。\code{ecall} 提交时写入
+\code{mepc=pc} 并置 \code{mcause=11}，\code{mret} 则以 \code{mepc} 恢复控制流。
+
+CSR 指令按照流水级分工完成：IDU 读取旧值并选择 \code{mtvec}/\code{mepc} 控制流目标；EXU 根据
+CSRRW、CSRRS、CSRRC 及其立即数形式形成写地址和新值；该事务随指令经过 LSU，最后由 WBU 顺序
+提交。这样既保持了 CSR 的读改写语义，也避免在最终提交前过早改变体系结构状态。
+
+\begin{archsignalstable}[@{}>{\raggedright\arraybackslash}p{0.105\linewidth}C{0.08\linewidth}>{\raggedright\arraybackslash}p{0.18\linewidth}>{\raggedright\arraybackslash}p{0.115\linewidth}>{\raggedright\arraybackslash}p{0.415\linewidth}@{}]{CSR 接口信号说明}
+read&输入/输出&12-bit 地址/32-bit 数据&组合读取&供 IDU 取得当前 CSR 旧值\\
+write&输入&使能/地址/数据&WBU 提交&更新 mstatus、mepc、mcause 或 mtvec\\
+isEcall&输入&1 bit&随 WBU 提交&设置 ecall 对应的 mepc 与 mcause\\
+mepc/mtvec&输出&各 32 bit&组合输出&供 IDU 形成 mret/ecall 的静态目标\\
+mcycle64&输出&64 bit&连续计数&低 32 位递增，高 32 位保持为零\\
+\end{archsignalstable}
+
+\subsection{分支预测与控制流修正}\label{sec:frontend}
+
+控制流子系统由 BTB、逐表项动态方向预测、两项返回地址栈（RAS）、随指令传递的预测记录、EXU/LSU
+校验和注册化重定向邮箱组成。前端负责尽早给出下一 PC，后端以真实执行结果校验；二者通过明确的
+预测记录和训练接口解耦。
+
+\subsubsection{地址字段修剪}
+
+取指程序位于固定的 \code{0x80000000} 基地址窗口，指令按 4 字节对齐。早期优化曾按 64\,KiB 程序
+空间考虑只保留 14 位字地址；为容纳后续体积更大的完整程序，当前设计恢复一位并统一保存
+\code{pc[16:2]} 共 15 位。流水线紧凑 PC、重定向邮箱和 BTB 目标使用该表示，展开时补回固定高位
+与低两位零，因而覆盖 \code{0x80000000--0x8001ffff} 的 128\,KiB 取指窗口。BTB 的 512 项索引使用
+\code{pc[10:2]}：\code{pc[10:8]} 选择 8 个 bank，
+\code{pc[7:2]} 选择 bank 内 64 行，\code{pc[16:11]} 为 6-bit tag。
+
+\input{src/tikz/pc-trimming}
+
+修剪只用于取指和控制流目标，不代替 32 位访存地址；load/store 与 MMIO 始终使用完整访存地址形成
+通路。落在上述取指窗口之外的控制流目标不能使用这一紧凑表示。
+
+\subsubsection{512 项 8-bank BTB 与动态预测}
+
+BTB 查询阵列由 8 个 64 项异步 LUTRAM bank 组成。每项包含 2-bit 类型、2-bit 饱和方向计数器、
+6-bit tag 和 15-bit 目标；类型编码区分 invalid、branch、JAL 与 return。另设同索引更新 shadow，
+保存更新所需的 tag、类型和方向状态，使训练路径无需回读完整目标阵列。
+
+\input{src/tikz/btb-structure}
+
+复位后，初始化计数器逐项清零 512 个位置；初始化结束前查询统一返回 miss 且训练写入被屏蔽，避免
+未初始化的分布式存储位形成伪命中。条件分支的方向由计数器最高位给出，真实 taken 时饱和加一，
+真实 not-taken 时饱和减一。首次出现且 taken 的分支以弱 taken 状态建立表项；首次出现且 not-taken
+的分支本来就会被顺序取指正确预测，因此不分配表项，也不会驱逐同索引已有的有用目标。
+
+RAS 深度为两项。call（JAL/JALR 且 rd 非零）完成后压入 $pc+4$；\textbf{仅精确的标准
+\code{ret} 编码完成后弹栈}。BTB 命中 return 且 RAS 非空时，优先使用栈顶而非 BTB 历史目标，从而
+减少同一返回点服务多个调用点造成的目标混淆。普通 JAL 始终预测 taken；条件分支仅在计数器最高位
+为 1 时预测 taken；其余情况选择 $pc+4$。
+
+\input{src/tikz/branch-predict-flow}
+
+\subsubsection{后端校验、训练与重定向邮箱}
+
+预测结果以 \code{PredBundle} 随指令进入流水线。IDU 先处理可预测 return 的命中与目标条件，并把
+条件分支所需的预测方向送往 EXU；EXU 得到真实类型、方向和目标后进行校验。普通比较可在 EXU 当拍
+完成；若 BEQ/BNE 使用 late-load 或相邻快速结果，则解析信息跨入注册边界后再校验，避免把长旁路
+选择路径直接接入重定向关键路径。
+
+完成的控制流指令同时生成训练信息。BTB 更新地址、真实目标、类型和方向先注册，再写入目标阵列和
+更新 shadow；call/return 信息同步训练 RAS。直接 JAL 和标准 return 可形成无条件表项，普通 JALR
+保持后端重定向，不建立可复用的间接目标表项。
+
+\input{src/tikz/branch-resolve-flow}
+
+重定向邮箱是一个单项、注册化的待取 PC 包，包含 valid、15-bit 目标和新的 epoch。发现预测错误时，
+顶层立即翻转流水线 epoch，并把正确目标写入邮箱；邮箱保持有效，直到 IFU 真正接受该目标才清空。
+地址选择上，邮箱优先于普通推测 PC。重定向后的第一条取指强制使用 $pc+4$ 作为下一预测，随后再
+恢复 BTB/RAS 查询，避免把邮箱地址与异步预测路径拼成新的长组合链。
+
+\textbf{年轻指令无需等待集中清空所有级间寄存器}：IF/ID 和 ID/EX 边界比较指令 epoch 与当前 epoch，旧世代
+指令在本地被消费并丢弃。若错误在较晚的注册化分支校验点发现，还会显式压制年轻 EXU 指令、数据
+存储请求和 D-cache 更新，保证错误路径没有可见副作用。
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.96\linewidth]{design/img_flush.png}
+\caption{预测错误后的流水线冲刷波形}
+\end{figure}
+
+\subsection{存储系统与 D-cache}\label{sec:memory}
+
+D-cache 是 4 KiB 直接映射缓存，由两个 2 KiB bank 组成。地址 \code{[11]} 选择 bank，
+\code{[10:2]} 选择 512 行，\code{[17:11]} 作为 7-bit tag。每个 bank 包含一块
+$512\times32$ 同步 BRAM 主数据和一块 $512\times8$ 异步 tag LUTRAM；tag 项由 valid 与 tag 组成。
+
+主数据通路服务普通 load：EXU 同拍完成 tag 组合查询并向 BRAM 给出行地址；数据在下一周期到达，
+bank 选择也延迟一拍后在 LSU 对齐。命中数据随后进入 LSU 旁路，miss 则等待数据存储响应并在 WBU
+回填。缓存支持 DRAM 范围内且自然对齐的 LB/LH/LW/LBU/LHU，数据扩展仍依据地址低位与 func3
+统一完成。
+
+为缩短紧邻 load-use 的等待，两个 bank 各维护四个 $512\times8$ 逐字节异步镜像。镜像与主 BRAM
+共享写地址、数据和字节掩码，逻辑内容保持一致；它在 C0 组合读出原始 32-bit 字，但数据必须先跨过
+EXU--LSU 寄存边界，再根据已注册的 offset 和宽度做扩展，最后供受限消费者使用。\textbf{它不是第二套缓存，
+也不独立维护 tag 或替换策略}。
+
+\input{src/tikz/dcache-structure}
+\input{src/tikz/dcache-case-flow}
+
+写入侧遵循\textbf{“较新的 store 优先”}原则。全字 store 可以直接分配有效缓存行；窄 store 按字节写入数据，
+但为避免 tag 读—改—写长路径而保守失效该行。load miss 回填和加速单元更新也通过统一写端广播至
+主 BRAM 与异步镜像。全局 store epoch 标记 load 发出后是否发生过 store，避免旧 load 响应覆盖
+已被后续 store 修改或失效的行。
+
+\subsection{SoC、内存接口与 UART}
+
+CPU 通过独立取指与数据 SimpleBus 端口接入 JYD SoC。IROM 基址为 \code{0x80000000}，DRAM
+基址为 \code{0x80100000}，MMIO 位于 \code{0x80200000} 区域。FPGA 顶层使用 BRAM 承载指令和
+数据存储，UART 通过 AXI UARTLite、时钟转换和异步字节 FIFO 连接 CPU 时钟域与 50 MHz 外设
+时钟域，既支持长时间性能输出，也支持交互式软件运行。
+
+\begin{archsignalstable}{SimpleBus 与 SoC 外设接口信号说明}
+req.valid/ready&双向&各 1 bit&请求握手&表示一次取指、load 或 store 请求被接受\\
+req.addr&输出&32 bit&随请求稳定&给出统一物理地址\\
+wen/data/mask&输出&1/32/4 bit&写请求有效&表达 store 数据与逐字节写使能\\
+resp.valid/rdata&输入&1/32 bit&响应有效&返回指令字或 load 数据\\
+LED/SEG/CNT&输出&设备相关&地址译码&驱动板级显示与性能计时外设\\
+UART TX/RX&双向&串行字节流&异步 FIFO 跨域&输出运行记录并支持软件交互\\
+\end{archsignalstable}

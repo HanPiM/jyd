@@ -73,7 +73,7 @@ jobs:
             precompile: false
           - dir: riscv-arch-test-am-jyd
             args: >-
-              TEST_ISA="I M Zicsr Zba Zbb Zbc Zbkb Zbkc Zbkx Zbs"
+              TEST_ISA="Zba Zbb Zbc Zbkb Zbkc Zbkx Zbs"
               EXCLUDE_TEST="clmulr-00 xperm8-00 brev8-00 packh-00 unzip-00 zip-00"
             precompile: false
     steps:

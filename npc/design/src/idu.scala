@@ -141,22 +141,22 @@ object CacheAwareByPassMux {
     require(wrBacks.length == 3)
     val exuConflict = SingleByPassMux.conflict(rs, wrBacks(0).addr, wrBacks(0).enWr)
     val lsuConflict = SingleByPassMux.conflict(rs, wrBacks(1).addr, wrBacks(1).enWr)
+    val wbuConflict = SingleByPassMux.conflict(rs, wrBacks(2).addr, wrBacks(2).enWr)
     // This exception is independent of the combinational DCache hit result.
     // The dependent ADD/ADDI is held in EXU if the registered LSU source later
     // reports a miss.
     val lateLoadSelect = allowLateLoad && exuConflict && lateLoadProducer.valid
     val adjacentFastSelect = allowAdjacentFast && exuConflict && wrBacks(0).dataVaild
     val lsuSelect = !exuConflict && lsuConflict && wrBacks(1).dataVaild
+    val wbuSelect = !exuConflict && !lsuConflict && wbuConflict && wrBacks(2).dataVaild
 
     val needStall = Mux(
       exuConflict,
       !lateLoadSelect && !adjacentFastSelect,
-      lsuConflict && !lsuSelect
+      Mux(lsuConflict, !lsuSelect, wbuConflict && !wbuSelect)
     )
 
-    // An LSU result terminates at the ID/EX base-operand register. WBU is seen
-    // only through the register file's write-through behavior.
-    val outData = Mux(lsuSelect, wrBacks(1).data, regData)
+    val outData = Mux(lsuSelect, wrBacks(1).data, Mux(wbuSelect, wrBacks(2).data, regData))
     (needStall, outData, lateLoadSelect, adjacentFastSelect)
   }
 }
@@ -521,7 +521,8 @@ class IDU(
   // EXU data structurally even when the conservative redirect term is true.
   val returnTargetBase = io.rvec.data(0)
   val returnProducerPending = SingleByPassMux.conflict(res.rs1, io.wrBackInfo.exu.addr, io.wrBackInfo.exu.enWr) ||
-    SingleByPassMux.conflict(res.rs1, io.wrBackInfo.lsu.addr, io.wrBackInfo.lsu.enWr)
+    SingleByPassMux.conflict(res.rs1, io.wrBackInfo.lsu.addr, io.wrBackInfo.lsu.enWr) ||
+    SingleByPassMux.conflict(res.rs1, io.wrBackInfo.wbu.addr, io.wrBackInfo.wbu.enWr)
   val returnTargetPredWrong = isPredictableReturn && io.in.bits.pred.hit &&
     (returnProducerPending || returnTargetBase(16, 2) =/= TrimmedPC.trim(io.in.bits.pred.pc))
   res.notBranchPredWrong := isJmpCSR ||

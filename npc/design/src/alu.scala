@@ -434,7 +434,7 @@ class SpecialExecutionCluster extends Module {
   val isMaxu = !inbits.is_imm && inbits.func7t === "b0000101".U && inbits.func3t === "b111".U
   val isMin = !inbits.is_imm && inbits.func7t === "b0000101".U && inbits.func3t === "b100".U
   val isRol = !inbits.is_imm && inbits.func7t === "b0110000".U && inbits.func3t === "b001".U
-  val isRev8 = inbits.is_imm && inbits.func7t === "b0110100".U && inbits.func3t === "b101".U && src2(4, 0) === 25.U
+  val isRev8 = inbits.is_imm && inbits.func7t === "b0110100".U && inbits.func3t === "b101".U && src2(4, 0) === 24.U
 
   val sh1AddResult = src2 + (src1 << 1)
   val sh2AddResult = src2 + (src1 << 2)

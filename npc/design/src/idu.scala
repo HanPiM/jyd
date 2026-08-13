@@ -357,7 +357,7 @@ class IDU(
   val isBMaxu = !isFmtI && arithmeticFunc7 === "b0000101".U && arithmeticFunc3 === "b111".U
   val isBMin = !isFmtI && arithmeticFunc7 === "b0000101".U && arithmeticFunc3 === "b100".U
   val isBRol = !isFmtI && arithmeticFunc7 === "b0110000".U && arithmeticFunc3 === "b001".U
-  val isBRev8 = isFmtI && arithmeticFunc7 === "b0110100".U && arithmeticFunc3 === "b101".U && bImmLow5 === 25.U
+  val isBRev8 = isFmtI && arithmeticFunc7 === "b0110100".U && arithmeticFunc3 === "b101".U && bImmLow5 === 24.U
   val isCrcU8Custom = inst(31, 25) === 0.U && arithmeticFunc3 === 0.U && inst(6, 0) === "b0001011".U
   val isBitExtractMulCustom = inst(31, 25) === 0.U && arithmeticFunc3 === 5.U && inst(6, 0) === "b0001011".U
   val isListReverseCustom = isListReverseEncoding

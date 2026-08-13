@@ -213,7 +213,7 @@ class DCache extends Module {
   val listFindDataRequest = listFindState === ListFindState.dataResolve && !listFindDataHit
   io.listFindRequest := listFindNextRequest || listFindInfoRequest || listFindDataRequest
   io.listFindRequestAddress := Mux(listFindNextRequest, listFindCurrent,
-    Mux(listFindInfoRequest, listFindCurrent + 4.U, listFindQueryAddress))
+    Mux(listFindInfoRequest, listFindQueryAddressB, listFindQueryAddress))
   io.listFindDone := listFindState === ListFindState.done
   io.listFindResult := listFindResult
 

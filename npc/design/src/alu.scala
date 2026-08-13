@@ -243,6 +243,7 @@ class Multiplier extends Module {
   val xmacaccReg      = Reg(Bool())
   val xmacaccFirstReg = Reg(Bool())
   val xmacaccBitReg   = Reg(Bool())
+  val xmacaccLastReg  = Reg(Bool())
   val xmacaccAReg     = Reg(UInt(16.W))
   val xmacaccBReg     = Reg(UInt(16.W))
   val matrixAccumulator = Reg(UInt(32.W))
@@ -298,8 +299,9 @@ class Multiplier extends Module {
   ))
 
   io.in.ready  := state === State.idle
-  io.out.valid := state === State.done || (state === State.busy && resultValid)
-  io.out.bits := Mux(state === State.done, resultReg, Mux(xmacaccReg, xmacaccResult, result))
+  io.out.valid := state === State.done ||
+    (state === State.busy && resultValid && (!xmacaccReg || !xmacaccLastReg))
+  io.out.bits := Mux(state === State.done, resultReg, Mux(xmacaccReg, 0.U, result))
 
   switch(state) {
     is(State.idle) {
@@ -316,6 +318,7 @@ class Multiplier extends Module {
         xmacaccReg := inputIsXmacacc
         xmacaccFirstReg := io.in.bits.func7t === 4.U || io.in.bits.func7t === 6.U
         xmacaccBitReg := io.in.bits.func7t === 6.U || io.in.bits.func7t === 7.U || io.in.bits.func7t === 9.U
+        xmacaccLastReg := io.in.bits.func7t === 8.U || io.in.bits.func7t === 9.U
         xmacaccAReg := io.in.bits.rawSrc1(15, 0)
         xmacaccBReg := io.in.bits.rawSrc2(15, 0)
         slowValidPipe := Mux(isMul, 0.U, 1.U)
@@ -331,10 +334,13 @@ class Multiplier extends Module {
       when(resultValid) {
         when(xmacaccReg) {
           matrixAccumulator := xmacaccResult
-          when(io.out.ready) {
+          when(xmacaccLastReg) {
+            resultReg := xmacaccResult
+            state := State.done
+          }.elsewhen(io.out.ready) {
             state := State.idle
           }.otherwise {
-            resultReg := xmacaccResult
+            resultReg := 0.U
             state := State.done
           }
         }.elsewhen(io.out.ready) {

@@ -1,7 +1,7 @@
 package cpu
 
 import chisel3._
-import chisel3.util.{Cat, Valid}
+import chisel3.util.{Cat, RegEnable, Valid}
 import jyd.{BlkMemGen2KB, DistMemGen512x8}
 
 class DCache extends Module {
@@ -213,19 +213,33 @@ class DCache extends Module {
   io.listFindDone := listFindState === ListFindState.done
   io.listFindResult := listFindResult
 
+  // Register the ordinary store port at the cache boundary. The external store
+  // has already committed its request, while this local copy updates the cache
+  // one cycle later. This prevents EXU valid/decode from directly driving every
+  // mirrored distributed-memory write enable.
+  val storeUpdate = RegNext(io.storeUpdate, false.B)
+  val storeFull   = RegEnable(io.storeFull, io.storeUpdate)
+  val storeIndex  = RegEnable(io.queryIndex, io.storeUpdate)
+  val storeTag    = RegEnable(io.queryTag, io.storeUpdate)
+  val storeData   = RegEnable(io.storeData, io.storeUpdate)
+  val storeMask   = RegEnable(io.storeMask, io.storeUpdate)
+  when(storeUpdate) {
+    assert(!io.update, "A delayed store and cache refill must be mutually exclusive")
+  }
+
   // A store wins over an older WBU refill/update. Full-word stores allocate a
   // complete line. A narrow store conservatively invalidates the line: feeding
   // the asynchronous tag lookup back into the tag RAM write data forms a long
   // read/compare/write path, while retaining the line is only a performance
   // optimization. The backing memory and byte-masked data write remain exact.
   val updateTagData = Cat(io.updateAddr(17, 11), io.updateValid)
-  val tagWrite      = io.storeUpdate || io.update
-  val tagWriteIndex = Mux(io.storeUpdate, io.queryIndex, io.updateAddr(11, 2))
+  val tagWrite      = storeUpdate || io.update
+  val tagWriteIndex = Mux(storeUpdate, storeIndex, io.updateAddr(11, 2))
   val tagWriteBank  = tagWriteIndex(9)
   val tagWriteAddr  = tagWriteIndex(8, 0)
   tagMem.zipWithIndex.foreach { case (bank, index) =>
-    val storeTagData  = Cat(io.queryTag, io.storeFull)
-    val tagWriteData  = Mux(io.storeUpdate, storeTagData, updateTagData)
+    val storeTagData  = Cat(storeTag, storeFull)
+    val tagWriteData  = Mux(storeUpdate, storeTagData, updateTagData)
     bank.io.clk := clock
     bank.io.we  := tagWrite && tagWriteBank === index.U
     bank.io.a   := tagWriteAddr
@@ -233,20 +247,20 @@ class DCache extends Module {
   }
   listTagMem.flatten.zipWithIndex.foreach { case (bank, replicaIndex) =>
     val bankIndex = replicaIndex % 2
-    val storeTagData = Cat(io.queryTag, io.storeFull)
-    val tagWriteData = Mux(io.storeUpdate, storeTagData, updateTagData)
+    val storeTagData = Cat(storeTag, storeFull)
+    val tagWriteData = Mux(storeUpdate, storeTagData, updateTagData)
     bank.io.clk := clock
     bank.io.we := tagWrite && tagWriteBank === bankIndex.U
     bank.io.a := tagWriteAddr
     bank.io.d := tagWriteData
   }
 
-  val dataWrite = io.storeUpdate || io.update
-  val dataWriteMask = Mux(io.storeUpdate, io.storeMask, Mux(io.update, io.updateMask, 0.U))
-  val dataWriteIndex = Mux(io.storeUpdate, io.queryIndex, io.updateAddr(11, 2))
+  val dataWrite = storeUpdate || io.update
+  val dataWriteMask = Mux(storeUpdate, storeMask, Mux(io.update, io.updateMask, 0.U))
+  val dataWriteIndex = Mux(storeUpdate, storeIndex, io.updateAddr(11, 2))
   val dataWriteBank  = dataWriteIndex(9)
   val dataWriteAddr  = dataWriteIndex(8, 0)
-  val dataWriteData = Mux(io.storeUpdate, io.storeData, io.updateData)
+  val dataWriteData = Mux(storeUpdate, storeData, io.updateData)
   dataMem.zipWithIndex.foreach { case (bank, index) =>
     bank.io.clka  := clock
     bank.io.ena   := dataWrite && dataWriteBank === index.U

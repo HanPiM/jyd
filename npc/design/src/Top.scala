@@ -412,13 +412,41 @@ class CPUCore(
     pipelineConnect(lsuDifftest.io.out, wbuDifftest.io.in)
   }
 
-  // A two-entry, non-flow-through queue keeps fetch throughput at one request
-  // per cycle while making IFU readiness depend only on registered occupancy.
-  // This cuts the IDU decode/RAW-ready path back into the PC and BTB query.
-  val iduQueue = Module(new Queue(new FetchedInst, 2, pipe = false, flow = false))
-  iduQueue.io.enq <> ifu.io.out
-  val iduPipe = iduQueue.io.deq
-  val iduEpochMatch = iduPipe.bits.epoch === pipelineEpoch
+  // Keep the fetch FIFO as explicit registers. A generic 131-bit Queue was
+  // inferred as RAMD32, putting its read pointer on a long decode-valid path.
+  val fetchHead  = Reg(new FetchedInst)
+  val fetchTail  = Reg(new FetchedInst)
+  val fetchCount = RegInit(0.U(2.W))
+  val fetchHeadEpochMatch = fetchHead.epoch === pipelineEpoch
+  val fetchEnq   = ifu.io.out.valid && ifu.io.out.ready
+  val fetchDeq   = fetchCount =/= 0.U && (idu.io.in.ready || !fetchHeadEpochMatch)
+  ifu.io.out.ready := fetchCount =/= 2.U
+
+  when(fetchEnq && fetchDeq) {
+    when(fetchCount === 1.U) {
+      fetchHead := ifu.io.out.bits
+    }.otherwise {
+      fetchHead := fetchTail
+      fetchTail := ifu.io.out.bits
+    }
+  }.elsewhen(fetchEnq) {
+    when(fetchCount === 0.U) {
+      fetchHead := ifu.io.out.bits
+    }.otherwise {
+      fetchTail := ifu.io.out.bits
+    }
+    fetchCount := fetchCount + 1.U
+  }.elsewhen(fetchDeq) {
+    when(fetchCount === 2.U) {
+      fetchHead := fetchTail
+    }
+    fetchCount := fetchCount - 1.U
+  }
+
+  val iduPipe = Wire(Decoupled(new FetchedInst))
+  iduPipe.bits  := fetchHead
+  iduPipe.valid := fetchCount =/= 0.U
+  val iduEpochMatch = fetchHeadEpochMatch
   idu.io.in.bits := iduPipe.bits
   idu.io.in.valid := iduPipe.valid && iduEpochMatch
   iduPipe.ready := idu.io.in.ready || !iduEpochMatch

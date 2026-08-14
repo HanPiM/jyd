@@ -189,6 +189,7 @@ class IDU(
     val pipelineFlush = Input(Bool())
 
     val wrBackInfo           = Input(new WrBackInfoGroup)
+    val lsuFastAddressFwd    = Input(new WrBackForwardInfo)
 
     val out = Decoupled(new DecodedInst)
   })
@@ -391,8 +392,15 @@ class IDU(
     needReg1AddImm && SingleByPassMux.conflict(res.rs1, io.wrBackInfo.exu.addr, io.wrBackInfo.exu.enWr)
   val addressLsuConflict =
     needReg1AddImm && SingleByPassMux.conflict(res.rs1, io.wrBackInfo.lsu.addr, io.wrBackInfo.lsu.enWr)
-  // Do not feed the synchronous DCache read result into address generation in
-  // the same cycle.  Stall one cycle and consume the registered WBU value.
+  // Keep the synchronous DCache read result out of address generation. The
+  // registered fast-result lane is independent of DCache data and recovers the
+  // common ALU/B-extension address producer without reopening that path.
+  val addressLsuFastReady =
+    addressLsuConflict && SingleByPassMux.conflict(
+      res.rs1,
+      io.lsuFastAddressFwd.addr,
+      io.lsuFastAddressFwd.enWr
+    ) && io.lsuFastAddressFwd.dataVaild
   // Address generation does not use the GPR file's same-cycle WBU write-through.
   // The WBU forward value comes only from its registered payload, keeping the
   // current peripheral response out of the address-adder carry chain.
@@ -405,7 +413,8 @@ class IDU(
     addressWbuConflict && io.wrBackInfo.wbu.dataVaild &&
       io.wrBackInfo.wbu.kind =/= ResultKind.accelerator && io.wrBackInfo.wbu.kind =/= ResultKind.longArithmetic
   val needStallAddress =
-    addressExuConflict || addressLsuConflict || (addressWbuConflict && !addressWbuReady)
+    addressExuConflict || (addressLsuConflict && !addressLsuFastReady) ||
+      (addressWbuConflict && !addressWbuReady)
   val needStall = bypassMux.io.needStall || needStallAddress
 
   layer.block(PerfCounterLayer) {
@@ -426,7 +435,11 @@ class IDU(
   def addAddrImm(base: UInt): UInt = {
     (base(21, 0) + addrImm12.asSInt.pad(22).asUInt)(21, 0)
   }
-  val addressBase = Mux(addressWbuReady, io.wrBackInfo.wbu.data, io.rvec.rawData(0))
+  val addressBase = Mux(
+    addressLsuFastReady,
+    io.lsuFastAddressFwd.data,
+    Mux(addressWbuReady, io.wrBackInfo.wbu.data, io.rvec.rawData(0))
+  )
   res.reg1AddImm := addAddrImm(addressBase)
 
   when(io.in.valid && needReg1AddImm) {

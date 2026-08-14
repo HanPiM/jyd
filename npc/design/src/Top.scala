@@ -502,6 +502,7 @@ class CPUCore(
   idu.io.wrBackInfo.exu := exu.io.fwd
   idu.io.wrBackInfo.lsu := lsuFwdInfo
   idu.io.wrBackInfo.wbu := ExtractFwdInfoFromWrBack(wbu.io.in, wbu.io.memResp)
+  idu.io.lsuFastAddressFwd := lsuFastFwdInfo
   exu.io.previousStageFwd := lsuFastFwdInfo
 
   idu.io.pipelineFlush := activeRedirectValid

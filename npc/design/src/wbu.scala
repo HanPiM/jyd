@@ -124,8 +124,9 @@ object ExtractFwdInfoFromWrBack {
     val out = Wire(new WrBackForwardInfo)
     out.addr      := ResultLaneSelect.rd(wrBack)
     out.enWr      := ResultLaneSelect.anyValid(wrBack) && info.valid
-    out.dataVaild := false.B
-    out.data      := 0.U
+    val registeredLoadData = ExtLoadData(wrBack.lsuResult, wrBack.lsuAddrOffset, wrBack.lsuFunc3t)
+    out.dataVaild := info.valid && (!wrBack.loadResult.valid || (wrBack.cacheableLoad && wrBack.dcacheHit))
+    out.data      := Mux(wrBack.loadResult.valid, registeredLoadData, ResultLaneSelect.nonLoadData(wrBack))
     out.kind      := wrBack.resultKind
 
     out
@@ -212,6 +213,7 @@ class WBU(implicit p:CPUParameters) extends Module {
 }
 
 class DifftestWriteBackInfo extends Bundle {
+  val code = Types.UWord
   val pc= Types.UWord
   val nxtPC = Types.UWord
   val isEBreak = Bool()
@@ -227,6 +229,9 @@ class WBUForDifftest extends Module {
 
   val isEBreak = WireDefault(wbinfo.isEBreak && valid)
   dontTouch(isEBreak)
+  when(valid) {
+    RawClockedVoidFunctionCall("retire_inst")(clock, valid, wbinfo.code)
+  }
   when(isEBreak) {
     RawClockedVoidFunctionCall("raise_ebreak")(clock, isEBreak)
     // stop()

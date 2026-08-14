@@ -49,20 +49,39 @@
 #define MASK_XACCEL_CRCU32  MASK_XACCEL_CRC
 
 #define MATCH_XACCEL_XMAC16 0x0000300b
+#define MATCH_XACCEL_XMACACC_FIRST 0x0800300b
+#define MATCH_XACCEL_XMACACC_ADD 0x0a00300b
+#define MATCH_XACCEL_XMACACC_BIT_FIRST 0x0c00300b
+#define MATCH_XACCEL_XMACACC_BIT_ADD 0x0e00300b
+#define MATCH_XACCEL_XMACACC_LAST 0x1000300b
+#define MATCH_XACCEL_XMACACC_BIT_LAST 0x1200300b
 #define MATCH_XACCEL_XDOT16 0x0000400b
 #define MATCH_XACCEL_XBMUL  0x0000500b
+#define MATCH_XACCEL_XMBM   0x0200500b
 #define MATCH_XACCEL_XLISTREV_INIT 0x0000600b
+#define MATCH_XACCEL_XLISTFIND_IDX 0x0200600b
 #define MATCH_XACCEL_XLISTREV_LOOP 0x0400600b
+#define MATCH_XACCEL_XLISTFIND_DATA 0x0600600b
 #define MATCH_XACCEL_XMSUM  0x0400700b
 #define MASK_XACCEL_XACCEL  0xfe00707f
 #define MASK_XACCEL_XMAC16 MASK_XACCEL_XACCEL
+#define MASK_XACCEL_XMACACC_FIRST MASK_XACCEL_XACCEL
+#define MASK_XACCEL_XMACACC_ADD MASK_XACCEL_XACCEL
+#define MASK_XACCEL_XMACACC_BIT_FIRST MASK_XACCEL_XACCEL
+#define MASK_XACCEL_XMACACC_BIT_ADD MASK_XACCEL_XACCEL
+#define MASK_XACCEL_XMACACC_LAST MASK_XACCEL_XACCEL
+#define MASK_XACCEL_XMACACC_BIT_LAST MASK_XACCEL_XACCEL
 #define MASK_XACCEL_XDOT16 MASK_XACCEL_XACCEL
 #define MASK_XACCEL_XBMUL  MASK_XACCEL_XACCEL
+#define MASK_XACCEL_XMBM   MASK_XACCEL_XACCEL
 #define MASK_XACCEL_XLISTREV_INIT MASK_XACCEL_XACCEL
+#define MASK_XACCEL_XLISTFIND_IDX MASK_XACCEL_XACCEL
 #define MASK_XACCEL_XLISTREV_LOOP MASK_XACCEL_XACCEL
+#define MASK_XACCEL_XLISTFIND_DATA MASK_XACCEL_XACCEL
 #define MASK_XACCEL_XMSUM  MASK_XACCEL_XACCEL
 
 static vaddr_t list_reverse_previous;
+static word_t matrix_accumulator;
 
 #define MATCH_XACCEL_XDFACNT_INIT 0x0000005b
 #define MATCH_XACCEL_XDFACNT_INC  0x0000105b
@@ -72,6 +91,7 @@ static vaddr_t list_reverse_previous;
 #define MATCH_XACCEL_XDFA4_STEP 0x0000505b
 #define MATCH_XACCEL_XDFA4H_FINAL_READ 0x0200205b
 #define MATCH_XACCEL_XDFA4H_STEP 0x0200505b
+#define MATCH_XACCEL_XDFA4H_STEP_PTR 0x0400505b
 #define MASK_XACCEL_XDFACNT       0xfe00707f
 #define MASK_XACCEL_XDFACNT_INIT  MASK_XACCEL_XDFACNT
 #define MASK_XACCEL_XDFACNT_INC   MASK_XACCEL_XDFACNT
@@ -81,12 +101,15 @@ static vaddr_t list_reverse_previous;
 #define MASK_XACCEL_XDFA4_STEP MASK_XACCEL_XDFACNT
 #define MASK_XACCEL_XDFA4H_FINAL_READ MASK_XACCEL_XDFACNT
 #define MASK_XACCEL_XDFA4H_STEP MASK_XACCEL_XDFACNT
+#define MASK_XACCEL_XDFA4H_STEP_PTR MASK_XACCEL_XDFACNT
 
-enum { XA_MAC16, XA_DOT16, XA_BMUL, XA_LISTREV, XA_UNUSED, XA_MSUM };
+enum { XA_MAC16, XA_DOT16, XA_BMUL, XA_LISTREV, XA_LISTFIND, XA_MSUM };
 
 static uint32_t numeric_dfa_transition_counts[8];
 static uint32_t numeric_dfa_final_counts[8];
 static uint32_t numeric_dfa_pending_mask;
+static uint32_t numeric_dfa_internal_state;
+static uint32_t numeric_dfa_internal_stopped = 1;
 
 static word_t numeric_dfa_word_step(word_t state, word_t symbols,
                                         unsigned width, bool format2) {
@@ -364,6 +387,32 @@ static int decode_exec(Decode *s) {
     riscv_profile_record_xaccel(XA_MAC16, 1, 3);
     matched = true;
   }
+  if (IS_INST(XACCEL_XMACACC_FIRST)) {
+    matrix_accumulator = (word_t)(sx16(R(rs1)) * sx16(R(rs2)));
+    riscv_profile_record_xaccel(XA_MAC16, 1, 1);
+    matched = true;
+  }
+  if (IS_INST(XACCEL_XMACACC_ADD)) {
+    matrix_accumulator += (word_t)(sx16(R(rs1)) * sx16(R(rs2)));
+    riscv_profile_record_xaccel(XA_MAC16, 1, 1);
+    matched = true;
+  }
+  if (IS_INST(XACCEL_XMACACC_BIT_FIRST) || IS_INST(XACCEL_XMACACC_BIT_ADD) ||
+      IS_INST(XACCEL_XMACACC_BIT_LAST)) {
+    word_t value = (R(rs1) & 0xffffu) * (R(rs2) & 0xffffu);
+    word_t term = ((value >> 2) & 0xfu) * ((value >> 5) & 0x7fu);
+    matrix_accumulator = IS_INST(XACCEL_XMACACC_BIT_FIRST) ? term : matrix_accumulator + term;
+    riscv_profile_record_xaccel(XA_MAC16, 1, 1);
+    if (IS_INST(XACCEL_XMACACC_BIT_LAST))
+      R(rd) = matrix_accumulator;
+    matched = true;
+  }
+  if (IS_INST(XACCEL_XMACACC_LAST)) {
+    matrix_accumulator += (word_t)(sx16(R(rs1)) * sx16(R(rs2)));
+    R(rd) = matrix_accumulator;
+    riscv_profile_record_xaccel(XA_MAC16, 1, 1);
+    matched = true;
+  }
   if (IS_INST(XACCEL_XDOT16)) {
     int32_t lo = sx16(R(rs1)) * sx16(R(rs2));
     int32_t hi = (int16_t)(R(rs1) >> 16) * (int16_t)(R(rs2) >> 16);
@@ -377,12 +426,37 @@ static int decode_exec(Decode *s) {
     riscv_profile_record_xaccel(XA_BMUL, 1, 1);
     matched = true;
   }
+  if (IS_INST(XACCEL_XMBM)) {
+    word_t value = (R(rs1) & 0xffffu) * (R(rs2) & 0xffffu);
+    R(rd) = ((value >> 2) & 0xfu) * ((value >> 5) & 0x7fu);
+    riscv_profile_record_xaccel(XA_BMUL, 1, 1);
+    matched = true;
+  }
   if (IS_INST(XACCEL_XLISTREV_INIT)) {
     vaddr_t current = R(rs1);
     R(rd) = vaddr_read(current, 4);
     vaddr_write(current, 4, 0);
     list_reverse_previous = current;
     riscv_profile_record_xaccel(XA_LISTREV, 1, 4);
+    matched = true;
+  }
+  if (IS_INST(XACCEL_XLISTFIND_IDX) || IS_INST(XACCEL_XLISTFIND_DATA)) {
+    vaddr_t current = R(rs1);
+    word_t target = R(rs2) & 0xffffu;
+    uint64_t nodes = 0;
+    bool find_data = (inst & MASK_XACCEL_XLISTFIND_DATA) == MATCH_XACCEL_XLISTFIND_DATA;
+    while (current != 0) {
+      vaddr_t next = vaddr_read(current, 4);
+      vaddr_t info = vaddr_read(current + 4, 4);
+      word_t fields = vaddr_read(info, 4);
+      word_t value = find_data ? (fields & 0xffu) : (fields >> 16);
+      nodes++;
+      if (value == target)
+        break;
+      current = next;
+    }
+    R(rd) = current;
+    riscv_profile_record_xaccel(XA_LISTFIND, nodes, 5 * nodes);
     matched = true;
   }
   if (IS_INST(XACCEL_XLISTREV_LOOP)) {
@@ -413,6 +487,8 @@ static int decode_exec(Decode *s) {
     memset(numeric_dfa_transition_counts, 0, sizeof(numeric_dfa_transition_counts));
     memset(numeric_dfa_final_counts, 0, sizeof(numeric_dfa_final_counts));
     numeric_dfa_pending_mask = 0;
+    numeric_dfa_internal_state = 0;
+    numeric_dfa_internal_stopped = 1;
     riscv_profile_record_xdfacnt(0);
     matched = true;
   }
@@ -474,6 +550,33 @@ static int decode_exec(Decode *s) {
       numeric_dfa_pending_mask = 0;
     }
     R(rd) = result;
+    riscv_profile_record_xdfacnt(5);
+    matched = true;
+  }
+  if (IS_INST(XACCEL_XDFA4H_STEP_PTR)) {
+    vaddr_t address = R(rs2);
+    unsigned offset = address & 3u;
+    word_t symbols = vaddr_read(address & ~3u, 4) >> (8 * offset);
+    word_t start_state = numeric_dfa_internal_stopped ? 0 : numeric_dfa_internal_state;
+    word_t result = numeric_dfa_word_step(start_state, symbols, 4 - offset, false);
+    word_t mask = result >> 7;
+    numeric_dfa_pending_mask |= mask;
+    if (result & (1u << 6)) {
+      unsigned consumed = (result >> 3) & 7u;
+      // A NUL-first-byte stop with no pending transitions is the terminal
+      // empty-token step; the software loop never executes it, so it must
+      // not record a final state.
+      if (consumed != 0 || numeric_dfa_pending_mask != 0) {
+        for (unsigned state = 0; state < 8; state++)
+          if (numeric_dfa_pending_mask & (1u << state))
+            numeric_dfa_transition_counts[state]++;
+        numeric_dfa_final_counts[result & 7u]++;
+      }
+      numeric_dfa_pending_mask = 0;
+    }
+    numeric_dfa_internal_state = result & 7u;
+    numeric_dfa_internal_stopped = (result >> 6) & 1u;
+    R(rd) = address + ((result >> 3) & 7u);
     riscv_profile_record_xdfacnt(5);
     matched = true;
   }

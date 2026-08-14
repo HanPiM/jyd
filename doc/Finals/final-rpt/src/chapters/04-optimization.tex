@@ -9,6 +9,43 @@
 
 \input{src/tikz/optimization-loop}
 
+\subsection{性能计数器驱动的结构取舍}
+
+热点判断不只依据函数名或静态代码大小，而是使用 NEMU 动态指令画像、NPC 定向周期计数和同口径板测
+交叉验证。表~\ref{tab:counter-decisions} 给出已经完成实验中对最终结构影响最大的四组观测；这些数据
+均来自 10,000 次正式负载或表内注明的 10,000-call 定向测试，并保持正确 CRC 或 good trap。
+
+\begin{table}[H]\centering
+\caption{性能计数器到结构决策的定量映射}\label{tab:counter-decisions}
+\scriptsize
+\setlength{\tabcolsep}{3.2pt}
+\begin{tabularx}{\linewidth}{@{}>{\raggedright\arraybackslash}p{0.13\linewidth}
+  >{\raggedright\arraybackslash}p{0.32\linewidth}
+  >{\raggedright\arraybackslash}p{0.29\linewidth}
+  >{\raggedright\arraybackslash}X@{}}\toprule
+\textbf{对象}&\textbf{计数器观测}&\textbf{据此作出的结构决定}&\textbf{实测结果或代价}\\\midrule
+CRC 字节更新&动态执行 \code{xcrcu8} 5,840,008 次；过度内联版本相对无加速基线多出 20.13M 次 load
+和 25.95M 次 store\evidence{E-PROF-CRC}&保留单周期 CRC 数据通路，但把多字节包装函数保持为非内联边界，
+避免寄存器压力转化为栈溢出&板测 10.07521570~s 降至 9.56506582~s；内联版本仅为 9.79736726~s\\
+矩阵热点&\code{xbmul} 动态 29.16M 次；\code{xmsum} 160,000 次调用、覆盖 12.96M 个元素
+\evidence{E-PROF-MATRIX}&把高频定宽位域乘法做成组合通路，把长顺序归约放入阻塞状态机，避免为低频
+控制建立宽通用接口&加入 \code{xmsum} 后板测由 9.07727378~s 降至 8.57272290~s\\
+DFA 状态处理&10.24M 次调用共处理 52.8M 字节，平均每次仅 5.15625 字节；软件定向测试为
+1,261,599 cycles/10,000 calls\evidence{E-PROF-XSTATE}&采用有界字输入、跨调用状态和硬件计数提交，减少
+短 token 的指针、分支及计数器读改写&删除无效查询状态后为 691,555 cycles/10,000 calls，定向测试缩短
+45.2\%；同 DCP 板测缩短 8.4666\%\\
+链表反转&早期阻塞原型执行 2.04M 次、遍历 61.2M 个节点，平均每次 30 节点
+\evidence{E-PROF-XLREV}&不保留“每节点总线 load 后再总线 store”的串行结构；后续改为 D-cache 命中查询、
+一致写入、预取和硬件循环&早期原型相对软件多约 96.28M CPU cycles，即每节点净增 1.57 cycles；该代价
+直接给出后续 cache-aware 重构目标\\
+\bottomrule\end{tabularx}
+\end{table}
+
+这些观测也说明“减少动态指令”并不自动等于减少周期：早期链表原型虽然覆盖了高频节点循环，却把原本
+可走 D-cache 的访存改成严格串行总线事务，并因 \code{memory} clobber 使 \code{core\_bench\_list} 从
+1,244 B 增至 1,492 B（增加 19.9\%）。因此最终取舍同时检查调用频次、每次处理规模、访存层次、编译器
+副作用和实际周期，而不是只采用理想化的每节点指令节省量。
+
 \subsection{前端控制流优化}
 
 控制流优化围绕“查询深度、容量冲突、后端修正开销”同步展开。BTB 扩展为 512 项后，采用 8 个 64 项
@@ -22,19 +59,20 @@ JAL 和 return 直接采用目标，return 可由两项 RAS 消除 BTB 目标别
 随后恢复正常预测，从而切断“后端比较---重定向---异步 BTB 查询---下一 PC”在同一拍内形成的组合链。
 预测、校验、更新与冲刷的完整流程见第\ref{sec:frontend}节。
 
-\subsection{缓存与 load-use 优化}
+\subsection{缓存、同步 load 与专用查询优化}
 
 数据缓存由 2\,KiB 扩展为 4\,KiB 双 bank，以容量和 bank 选择共同降低直接映射冲突。主数据使用
-同步 BRAM，逐字节 LUTRAM 副本提供异步窄加载值。\textbf{late-load 并非把任意 load 数据广播到所有消费者}，
-而是仅向已定义的短路径消费者提供一个带 valid、目的寄存器号、地址低位和扩展后数据的旁路 token。
-普通消费者仍等待 LSU/WBU 的顺序结果；被允许的相邻消费者在 token 命中时提前取得数据。
+同步 BRAM，普通命中 load 在 LSU 周期取得数据并形成顺序前递。此前的通用 late-load 异步副本已从
+最终结构已移除，避免 tag/data、扩展选择和多个消费者重新构成长组合路径。load 相关消费者统一遵守
+EXU/LSU/WBU 的生产者有效协议；数据尚未从同步 BRAM 对齐时保持停顿。
 
 \input{src/tikz/late-load}
 
-图\ref{fig:late-load}中，查询副本与主 BRAM 接收相同的有效写入，因而窄加载值和主数据保持一致。
-分支比较、地址生成等消费者分别在自己的入口选择 late-load token，选择条件不进入 D-cache tag/data
-写入路径。store 能完整覆盖一个字时直接更新并分配缓存行；窄 store 无法安全合并时使对应行失效；
-store epoch 阻止较早 load 的延迟回填覆盖较新的写入。
+图\ref{fig:late-load}中，地址生成只接受 GPR 原始读值、LSU 已注册快速结果和 WBU 已注册普通结果，
+明确排除同步 D-cache 数据、长算术和加速 lane。链表查找的高并发读需求由 D-cache 内两组私有 tag/data
+副本承担；它们只连接查找状态机局部寄存器，不作为普通 load 旁路。store 能完整覆盖一个字时直接更新
+并分配缓存行；窄 store 无法安全合并时使对应行失效；store epoch 阻止较早 load 的延迟回填覆盖较新
+写入。普通 store 写口在缓存边界注册，进一步切断 EXU decode/valid 到多个 RAM 写使能的高扇出路径。
 
 \subsection{执行和后端通路优化}
 
@@ -43,69 +81,115 @@ store epoch 阻止较早 load 的延迟回填覆盖较新的写入。
 所需 index/tag；加速单元的请求、响应和结果分别设置边界寄存。该结构让每类消费者只观察必需的数据
 与有效标志，减小宽选择器、扇出和跨模块组合回路。
 
+结果分区阶段还采用 routed 报告作定量验收：未分区起点的 WNS/TNS/失败端点数为
+$-1.242$~ns/$-3223.578$~ns/9022，分区候选变为 $-0.767$~ns/$-653.245$~ns/3472，绝对 TNS
+减少 79.7\%，失败端点减少 61.5\%\evidence{E-PROF-BACKEND}。对应 16M 指令定向运行由
+24,071,573 cycles 增至 24,143,856 cycles，仅增加 0.3003\%。因此该方案的保留依据是显著压缩后端
+违例路径总体规模，同时把流水停顿代价限制在预设阈值内，而不是宣称它本身提高 CoreMark 运行速度。
+
+最终结构进一步把 IFU 输出改为两个固定槽，避免动态队列读 Mux 进入所有译码路径；ID/EX 使用独立
+payload/valid 寄存器，重定向直接清除 valid。紧邻快速整数结果的分支插入一拍，并在 LSU 边界解析
+注册后的比较结果；即 EXU 完成比较后先把错误标志写入 EXU/LSU 寄存器，下一拍再触发重定向，从而
+把分支比较从 ID/EX valid 输入锥移开。CSR 文件也局部化到 EXU，以两阶段
+事务切断 IDU 到 CSR 旧值及 \code{mepc/mtvec} 的宽路径。
+
 \subsection{乘法与位操作优化}
 
-普通低位乘法使用较短 DSP 流水；操作数满足定宽条件时进入一周期窄乘法通路，高位乘法仍使用完整
+普通低位乘法使用较短 DSP 流水；操作数满足定宽条件时进入窄乘法通路，高位乘法仍使用完整
 有符号或无符号乘积。部分 RISC-V B 扩展按逻辑深度分为短组合操作和迭代操作，避免简单的移位加法
 或符号扩展承担通用迭代延迟。多周期指令在结果未就绪期间持续提供目的寄存器占用信息，使 IDU 对
 相关消费者保持停顿；结果有效后才允许旁路或提交。
 
-\subsection{总决赛阶段完整性能与 WNS 演进}\label{sec:performance}
+矩阵整数路径新增 \code{xmbm/xmacacc}：前者融合 16-bit 乘法和乘积位域运算，后者让 first/add/last
+序列在乘法器局部累加。最终 \code{xmacacc} 结果直接从累加器寄存器退休，消除复制到通用结果寄存器的
+额外跳转。当前迭代 B 单元则裁剪到工作负载实际保留的 \code{clz/ctz}，使未用的迭代操作硬件可被综合删除。
 
-表\ref{tab:final-full-evolution}保留从 300\,MHz 前端扩容开始，到自定义指令与后端边界整理完成后的
-板测成功记录。P0--P7 使用同一 10000 次正式负载且运行时间保持不变，重点表现结构调整如何逐级改善
-WNS；P8 以后继续采用 10000 次正式负载和四项正确 CRC，但程序能力随已保留的指令与硬件结构演进，
-因此同时列出“结构变化”以限定比较含义。所有时间均来自原始 UART 计数结果。
+\subsection{最终合入结构与证据边界}
 
-\begin{table}[H]
-\centering
-\caption{总决赛阶段板测性能与 WNS 完整演进}\label{tab:final-full-evolution}
-\scriptsize
-\setlength{\tabcolsep}{3.2pt}
-\begin{tabularx}{\linewidth}{@{}C{0.045\linewidth}C{0.085\linewidth}Y C{0.13\linewidth}C{0.11\linewidth}@{}}
-\toprule
-\textbf{点}&\textbf{短提交号}&\textbf{保留的结构改进}&\textbf{板测时间/s}&\textbf{WNS/ns}\\\midrule
-P0&\code{851d51c}&512 项 BTB&10.695831&$-0.776$\\
-P1&\code{1b73639}&BTB valid 并入 LUTRAM&10.695831&$-0.764$\\
-P2&\code{7941852}&BTB 两 bank 与更新写流水&10.695831&$-0.677$\\
-P3&\code{677d6fa}&BTB 四 bank&10.695831&$-0.571$\\
-P4&\code{fb6496e}&BTB 8-bank&10.695831&$-0.550$\\
-P5&\code{0358870}&EXU 写回选择器拍平&10.695831&$-0.507$\\
-P6&\code{5728ae3}&ALU 结果选择局部化&10.695831&$-0.495$\\
-P7&\code{5728ae3}&同一结构独立实现复测&10.695831&$-0.452$\\
-P8&\code{2b04bbd}&D-cache tag 缩减、late-load 注册与地址通路缩短&10.078266&$-0.285$\\
-P9&\code{f1218e5}&单周期 CRC 字节更新指令&9.565066&$-0.534$\\
-P10&\code{a3b090b}&定宽位域乘法进入单周期结果通路&9.077274&$-0.520$\\
-P11&\code{b680bff}&顺序访存矩阵归约单元&8.572723&$-0.733$\\
-P12&\code{dbda89f}&字输入、分拍处理的流式状态单元&7.745942&$-0.684$\\
-P13&\code{bdd8f0e}&链式结构单步变换与存储一致性控制&7.516036&$-0.745$\\
-P14&\code{4853eed}&链式循环融合和提交边界整理&7.160581&$-0.785$\\
-P15&\code{67b5d42}&硬件加速指令组合及镜像布局整理&7.106449&$-0.615$\\
-P16&\code{66f8fd5}&流式状态计数归约下沉到硬件&6.696372&$-0.733$\\
-P17&\code{6ff30cd}&乘法 IP 输出一致性修复与板级复测&6.714951&$-0.696$\\
-P18&\code{fabb599}&当前后端结果分区、控制流与缓存结构整合&6.745018&$-0.580$\\
-P19&\code{f927d98}&编译器自动识别普通 C 语义并选择自定义指令&6.691154&$-0.580$\\
-\bottomrule
-\end{tabularx}
+本文最终对应提交 \code{8591368}\evidence{E-CAND-01}。该提交完整包含此前从 \code{f46206d} 延续的
+流水边界与加速器结构，并把自定义指令生成从探索性插件迁移到 GCC 中端/后端的正式选择路径。
+表~\ref{tab:f462-structure} 汇总相对前一文档基线的主要结构变化。
+
+\begin{table}[H]\centering
+\caption{最终合入版本的主要结构变化}\label{tab:f462-structure}
+\small
+\begin{tabularx}{\linewidth}{@{}p{0.19\linewidth}YY@{}}\toprule
+\textbf{边界}&\textbf{最终结构}&\textbf{目的}\\\midrule
+IFU--IDU&两个固定 fetch slot，payload 与出队反压分离&消除动态读地址和宽 payload 选择锥\\
+IDU--EXU&显式 payload/valid；相邻结果分支延后一拍&隔离 epoch、比较器与 EXU valid\\
+CSR&寄存器文件移入 EXU，两阶段准备/提交&移除 IDU 的 CSR 旧值和跳转目标宽路径\\
+地址与 D-cache&22-bit 专用地址加法、注册 query index、普通同步 load&隔离缓存数据、长结果和地址 carry chain\\
+链表查找&两端口私有异步 tag/data 副本与 miss 状态机&并行读取 next/info，且不污染普通 load 通路\\
+矩阵加速&\code{xmbm/xmacacc} 复用窄 DSP，末项从累加器退休&融合热点运算并缩短最终结果路径\\
+DFA&\code{xdfa4p} 保存内部状态并返回下一指针&减少软件状态打包、解包与循环控制\\
+\bottomrule\end{tabularx}
 \end{table}
 
-WNS 取对应实现可用的最终 post-route 或 post-route physical optimization 结果；P15 与 P19 均只在
-相同物理实现上替换程序镜像，因此沿用对应 bitstream 的 WNS。折线采用独立左右轴，蓝线观察性能，红线
-观察建立时序余量，二者不进行数值尺度上的相互比较。
+最终 GCC 迁移不改变 RTL 和自定义指令编码，因此它沿用同一硬件结构独立实现得到的 routed WNS
+$-0.699$\,ns；由于硬件结构未变，此步骤不重复运行 Vivado。迁移后的程序通过短迭代 NPC 差分和完整 NEMU 回归；
+10/100 次 NPC 仿真线性拟合得到 10,000 次运行时间 5.292462350\,s。该点尚未上板，后文以青色明确
+区别于 UART 板测时间。
+
+\subsection{总决赛阶段完整性能与 WNS 演进}\label{sec:performance}
+
+表\ref{tab:final-full-evolution}保留从 300\,MHz 前端扩容开始，到自定义指令、后端边界和正式 GCC
+选择路径完成后的保留提交链。P0--P21 的时间来自 10,000 次正式负载 UART 板测；P22--P29 尚未上板，
+时间由 CRC 正确的 ITERATIONS=10/100 NPC 周期作仿射拟合。青色时间只用于展示已保留结构的演进趋势，
+不与板测值混称；各点 WNS 均来自相应 RTL 的最终可用实现报告。为使完整表与图~\ref{fig:finals-performance-wns}
+保持同页，表内按编号分为左右连续两段：左半为 P0--P14，右半为 P15--P29，数据并未省略。
+
+\begin{samepage}
+\begin{table}[H]
+\centering
+\caption{总决赛阶段性能与 WNS 完整演进}\label{tab:final-full-evolution}
+\fontsize{6.2}{7.2}\selectfont
+\setlength{\tabcolsep}{1.25pt}
+\begin{tabular*}{\linewidth}{@{\extracolsep{\fill}}C{0.028\linewidth}C{0.061\linewidth}p{0.170\linewidth}C{0.077\linewidth}C{0.058\linewidth}@{\hspace{4pt}}C{0.028\linewidth}C{0.061\linewidth}p{0.170\linewidth}C{0.077\linewidth}C{0.058\linewidth}@{}}
+\toprule
+\multicolumn{5}{c}{\textbf{前半段：P0--P14}}&\multicolumn{5}{c}{\textbf{后半段：P15--P29（续）}}\\
+\cmidrule(lr){1-5}\cmidrule(lr){6-10}
+\textbf{点}&\textbf{提交}&\textbf{保留改进}&\textbf{时间/s}&\textbf{WNS}&
+\textbf{点}&\textbf{提交}&\textbf{保留改进}&\textbf{时间/s}&\textbf{WNS}\\\midrule
+P0&\code{851d51c}&512 项 BTB&10.695831&$-.776$&P15&\code{67b5d42}&加速组合与镜像布局&7.106449&$-.615$\\
+P1&\code{1b73639}&valid 并入 LUTRAM&10.695831&$-.764$&P16&\code{66f8fd5}&状态计数归约下沉&6.696372&$-.733$\\
+P2&\code{7941852}&两 bank、更新流水&10.695831&$-.677$&P17&\code{6ff30cd}&乘法 IP 修复复测&6.714951&$-.696$\\
+P3&\code{677d6fa}&四 bank BTB&10.695831&$-.571$&P18&\code{fabb599}&前一结构基线&6.745018&$-.580$\\
+P4&\code{fb6496e}&8-bank BTB&10.695831&$-.550$&P19&\code{f927d98}&编译器自动选指令&6.691154&$-.580$\\
+P5&\code{0358870}&写回选择器拍平&10.695831&$-.507$&P20&\code{3885218}&固定取指、乘累加&5.855369&$-.772$\\
+P6&\code{5728ae3}&ALU 选择局部化&10.695831&$-.495$&P21&\code{9f0b3b0}&链表查询与私有副本&5.346451&$-1.058$\\
+P7&\code{5728ae3}&独立实现复测&10.695831&$-.452$&P22&\code{2affb53}&普通 load 同步化&\textcolor{cyan!60!blue}{5.352969*}&$-1.379$\\
+P8&\code{2b04bbd}&D-cache/地址通路&10.078266&$-.285$&P23&\code{045a0c8}&分支结果延后重定向&\textcolor{cyan!60!blue}{5.352969*}&$-1.198$\\
+P9&\code{f1218e5}&CRC 字节更新&9.565066&$-.534$&P24&\code{7c65345}&显式 WBU 旁路&\textcolor{cyan!60!blue}{5.387708*}&$-1.167$\\
+P10&\code{a3b090b}&定宽位域乘法&9.077274&$-.520$&P25&\code{45e3768}&load 停顿、窄地址&\textcolor{cyan!60!blue}{5.509123*}&$-.788$\\
+P11&\code{b680bff}&矩阵归约单元&8.572723&$-.733$&P26&\code{aa68e11}&LSU 快速结果前递&\textcolor{cyan!60!blue}{5.465097*}&$-.719$\\
+P12&\code{dbda89f}&状态单元字输入&7.745942&$-.684$&P27&\code{f46206d}&累加器直接退休&\textcolor{cyan!60!blue}{5.465097*}&$-.699$\\
+P13&\code{bdd8f0e}&链式单步变换&7.516036&$-.745$&P28&\code{7ac1aaf}&保留指针式 DFA&\textcolor{cyan!60!blue}{5.394728*}&$-.699$\\
+P14&\code{4853eed}&链式循环融合&7.160581&$-.785$&P29&\code{8591368}&GCC 中端/MD 生成&\textcolor{cyan!60!blue}{5.292462*}&$-.699$\\
+\bottomrule
+\end{tabular*}
+\par\vspace{2pt}{\raggedright\scriptsize\textcolor{cyan!60!blue}{\textsuperscript{*} 未上板；由 ITERATIONS=10/100 周期仿射拟合到 10,000 次。}\par}
+\end{table}
 
 \input{src/tikz/finals-performance-wns}
+\end{samepage}
+
+WNS 取对应实现可用的最终 post-route 或 post-route physical optimization 结果；P15、P19 与 P29
+只改变程序镜像或编译器生成路径，因 RTL 未变而复用相应硬件实现的 WNS。折线采用独立左右轴：深蓝
+为板测，青色虚线为未上板拟合，红线为建立时序余量，三者不作数值尺度上的相互比较。
 
 \subsubsection{关键里程碑提炼}
 
-完整演进中可归纳出九个对体系结构或性能产生显著影响的里程碑，如表\ref{tab:major-milestones}所示。
-“阶段收益”均以同口径的前一里程碑时间计算，WNS 则用于观察性能改进对物理实现的影响。
+完整演进中选取对体系结构或性能产生显著影响的里程碑，如表\ref{tab:major-milestones}所示。时间口径
+与完整表一致；青色项目是未上板拟合值，WNS 用于观察性能改进对物理实现的影响。
 
+\begin{samepage}
 \begin{table}[H]\centering
 \caption{总决赛阶段关键优化里程碑}\label{tab:major-milestones}
-\small
+\fontsize{7.2}{8.3}\selectfont
+\setlength{\tabcolsep}{3pt}
 \begin{tabularx}{\linewidth}{@{}p{0.16\linewidth}Y C{0.14\linewidth}C{0.12\linewidth}@{}}
 \toprule
-\textbf{提交/点}&\textbf{关键里程碑}&\textbf{板测时间/s}&\textbf{WNS/ns}\\\midrule
+\textbf{提交/点}&\textbf{关键里程碑}&\textbf{时间/s}&\textbf{WNS/ns}\\\midrule
 \code{851d51c}/P0&512 项 BTB 建立容量基线&10.695831&$-0.776$\\
 \code{5728ae3}/P7&8-bank、更新流水和结果选择局部化&10.695831&$-0.452$\\
 \code{2b04bbd}/P8&缓存、late-load 与窄地址路径协同&10.078266&$-0.285$\\
@@ -115,45 +199,69 @@ WNS 取对应实现可用的最终 post-route 或 post-route physical optimizati
 \code{67b5d42}/P15&链式变换与硬件加速指令组合完成&7.106449&$-0.615$\\
 \code{66f8fd5}/P16&状态计数归约下沉，形成最佳板测点&6.696372&$-0.733$\\
 \code{f927d98}/P19&普通 C 语义的编译器自动指令选择&6.691154&$-0.580$\\
+\code{3885218}/P20&固定取指槽与融合乘累加形成稳定板测点&5.855369&$-0.772$\\
+\code{9f0b3b0}/P21&链表查询、矩阵乘累加与私有缓存副本协同&5.346451&$-1.058$\\
+\code{2affb53}/P22&同步 load 边界替代异步普通加载副本&\textcolor{cyan!60!blue}{5.352969\textsuperscript{*}}&$-1.379$\\
+\code{8591368}/P29&全部加速指令迁移到 GCC 中端/MD&\textcolor{cyan!60!blue}{5.292462\textsuperscript{*}}&$-0.699$\\
 \bottomrule
 \end{tabularx}
 \end{table}
 
 \input{src/tikz/finals-major-milestones}
+\end{samepage}
 
-\textbf{从 P0 到 P19，板测时间由 10.695831\,s 降至 6.691154\,s，缩短约 37.44\%}。P0--P7 在性能不变的
+\textbf{已上板的 P0--P21 由 10.695831\,s 降至 5.346451\,s，缩短约 50.01\%}。P0--P7 在性能不变的
 条件下将 WNS 改善 324\,ps，说明 bank 化和结果通路局部化主要贡献于物理结构；P8 以后通过减少动态
 指令、缩短高频数据依赖和保持存储一致性取得主要性能收益。P17 使用经校核的乘法 IP 输出产物重新
-实现并完成板测，性能为 6.71495094\,s，作为正确 IP 配置下的独立板级复测点。P18 则以当前设计、
+实现并完成板测，性能为 6.71495094\,s，作为正确 IP 配置下的独立板级复测点。P18 则以前一基线设计、
 正式 10,000 次程序镜像和经校核的一周期乘法 IP 重新生成 bitstream；四项 CRC 均正确，板测时间为
 \textbf{6.74501768\,s}，对应 routed WNS 为 $-0.590$\,ns，post-route physical optimization WNS 为 $-0.580$\,ns。
 P19 保持 P18 的 RTL、DCP 与测试源码不变，仅由 GCC 自动识别计算结构并选择目标指令；三次板测均为
-\textbf{6.69115404\,s}，相对 P18 缩短约 \textbf{0.799\%}，四项 CRC 保持一致。
+\textbf{6.69115404\,s}。此后的上板点将融合位域乘法、指针式 DFA、链表查询和乘累加逐步纳入硬件，
+P21 的三次正确 capture 均为 5.346451040\,s\evidence{E-BOARD-COMB}。P22--P29 记录保留提交链上的结构重整：其中 P22 删除
+八组普通 load 异步数据副本，只付出约 8.786\,ms 拟合代价；P25 用相关停顿换取地址组合链缩短；P29
+在相同 RTL 上完成 GCC 后端迁移后，最终拟合时间为 \textbf{5.292462350\,s}，但尚未上板。
 
-\subsection{当前实现频率与 WNS}\label{sec:timing}
+\subsection{已验证基线频率与最终合入状态}\label{sec:timing}
 
-当前设计在 250\,MHz 下 routed WNS 为 $-0.087$\,ns，经 post-route physical optimization 后达到
-\textbf{$+0.009$\,ns，完成建立时序闭合}\evidence{E-FINAL-250}。280\,MHz 实现取得 routed WNS
-$-0.664$\,ns\evidence{E-FINAL-280}。300\,MHz 实现的 routed WNS 为 $-0.590$\,ns，post-route
-physical optimization 为 $-0.580$\,ns\evidence{E-FINAL-300}；该频率点已完成布局布线，但仍有
-setup 时序缺口。该 300\,MHz 实现使用普通 C 源码经 GCC 自动选择自定义指令后完成真实板测：
+最终合入 RTL 在 240\,MHz 下 routed WNS 为
+\textbf{$+0.014$\,ns，TNS 为 0，完成建立时序闭合}\evidence{E-FINAL-240}。该结果来自 Vivado 2024.2
+的 \code{impl\_NetDelay\_high} routed 报告，核心时钟周期为 4.167\,ns，25,020 个该时钟域端点均无
+setup 违例。前一基线的 300\,MHz 实现 routed WNS 为 $-0.590$\,ns，post-route physical optimization
+为 $-0.580$\,ns\evidence{E-FINAL-300}；该频率点已完成布局布线，但仍有 setup 时序缺口。该实现使用
+普通 C 源码经 GCC 自动选择自定义指令后完成真实板测：
 10,000 次迭代用时 \textbf{6.69115404\,s}，CRC 为 \code{e714/1fd7/8e3a/988c}。
 
+最终合入 RTL 在 300\,MHz 下 routed WNS 为 \textbf{$-0.699$\,ns}\evidence{E-FINAL-CUR}，相对同一
+RTL 的 240\,MHz 闭合点仍有 0.713\,ns 的 setup 差异。最终 GCC 迁移只改变程序生成方式；
+其 5.292462350\,s 是未上板拟合值，不替代板级 capture。当前最新真实板测点仍是 P21 的
+5.346451040\,s，其实现 WNS 为 $-1.058$\,ns。
+
 \begin{table}[H]\centering
-\caption{当前设计在不同频率下的实现结果}
+\caption{240 MHz 最终闭合点与 300 MHz 两代实现结果}
 \small
-\begin{tabularx}{\linewidth}{@{}C{0.13\linewidth}C{0.19\linewidth}C{0.22\linewidth}Y@{}}\toprule
-\textbf{频率}&\textbf{Routed WNS}&\textbf{Post-physopt WNS}&\textbf{实现状态}\\\midrule
-250 MHz&$-0.087$ ns&$+0.009$ ns&建立时序闭合\\
-280 MHz&$-0.664$ ns&---&完成 routed 结果记录\\
-300 MHz&$-0.590$ ns&$-0.580$ ns&完成实现，继续进行结构级时序优化\\
+\begin{tabularx}{\linewidth}{@{}C{0.15\linewidth}C{0.17\linewidth}C{0.19\linewidth}C{0.22\linewidth}Y@{}}\toprule
+\textbf{实现点}&\textbf{频率}&\textbf{Routed WNS}&\textbf{Post-physopt WNS}&\textbf{状态}\\\midrule
+最终 RTL&240 MHz&$+0.014$ ns&---&routed 建立时序闭合\\
+前一基线&300 MHz&$-0.590$ ns&$-0.580$ ns&完成实现，仍有 setup 缺口\\
+最终 RTL&300 MHz&$-0.699$ ns&---&最终合入结构的 routed 结果\\
 \bottomrule\end{tabularx}
 \end{table}
 
 \input{src/tikz/frequency-wns}
 
-\PlaceholderFigure{250 MHz 时序报告截图}{请插入 post-route physical optimization Timing Summary 的关键区域。}
-\PlaceholderFigure{300 MHz 时序报告截图}{请并列插入 routed 与 post-route physical optimization Timing Summary 的关键区域。}
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.96\linewidth]{verify/240mhz-timing-summary.png}
+  \caption{最终合入 RTL 的 240 MHz Timing Summary 与最差建立时序路径}
+  \label{fig:final-240mhz-timing}
+\end{figure}
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.96\linewidth]{verify/300mhz-timing-summary.png}
+  \caption{最终合入 RTL 的 300 MHz Timing Summary 与关键违例路径}
+  \label{fig:final-300mhz-timing}
+\end{figure}
 
 \subsection{工程可复现性}
 

@@ -1,0 +1,54 @@
+\clearpage
+\section{RT-Thread Nano 系统移植}\label{sec:system-port}
+
+赛题要求在处理器上完成操作系统移植。工程选择 RT-Thread Nano 3.1.5，在
+\code{jyd-tests/rtthread-nano} 中保留上游内核，并补充 JYD AbstractMachine 平台适配层、精简配置、
+FinSH/msh 命令和链接脚本。内核固定到官方 \code{v3.1.5} 标签对应版本，平台改动以独立源文件和补丁
+维护，避免把移植代码直接混入上游内核\evidence{E-RTTNANO}。
+
+移植思路参考南京大学 PA 的 RT-Thread 选做讲义\footnote{\href{https://ysyx.oscc.cc/docs/ics-pa/4.1.html\#rt-thread-\%E9\%80\%89\%E5\%81\%9A}{南京大学 PA：RT-Thread 选做讲义}。}及教学分支
+\href{https://github.com/NJU-ProjectN/rt-thread-am}{NJU-ProjectN/rt-thread-am}。该教学分支只把依赖库
+替换到 AbstractMachine（AM）裸机环境，不能直接用于本处理器；本项目以官方 Nano 3.1.5 为内核，
+根据 JYD 的异常入口、地址空间和串口接口独立编写平台层、上下文切换连接代码及链接配置。本文所说
+“参考”是指借鉴 AM 事件和自陷组织方法，不表示直接复用一份可运行的 BSP。相关讲义、教学分支和
+AM 工程均列入附录参考资料。
+
+\subsection{启动与基础运行环境}
+
+系统入口先调用 \code{ioe\_init} 初始化 JYD 外设，再建立异常处理环境，依次初始化 Nano 的定时器、
+调度器、FinSH/msh 和空闲线程，最后进入 \code{rt\_system\_scheduler\_start}。JYD 平台没有 CLINT，
+因此该移植采用协作式调度，不依赖周期时钟中断；线程在主动让出 CPU 或内核要求切换时进入调度路径。
+
+新线程的初始栈通过 AM 的 \code{kcontext} 构造。移植层在栈顶保存入口函数、参数和退出函数，再把
+首个 PC 设置为统一的线程包装入口；线程第一次被调度时，包装入口取出参数并调用 Nano 线程函数，
+线程返回后再进入其退出处理。这样无需为 Nano 另写一套 RISC-V 上下文布局。
+
+\subsection{基于自陷的上下文切换}
+
+Nano 调度器把当前线程和下一线程的栈指针地址传给 \code{rt\_hw\_context\_switch}。移植层记录这两个
+地址后调用 AM 的 \code{yield()}；在 RV32 平台上，\code{yield} 先把 \code{a7} 置为 $-1$，再执行
+\code{ecall} 主动产生机器态自陷。异常入口保存通用寄存器、\code{mcause}、\code{mstatus} 和
+\code{mepc}，AM 将该事件识别为 \code{EVENT\_YIELD} 并进入 Nano 注册的事件处理函数。
+
+事件处理函数把当前 \code{Context} 写入旧线程的栈指针槽，并返回新线程保存的 \code{Context}。
+汇编异常出口随后从新上下文恢复寄存器和 \code{mepc}，通过 \code{mret} 回到新线程。整个切换可以概括为：
+
+\begin{center}
+\small
+Nano 调度请求 $\rightarrow$ \code{rt\_hw\_context\_switch}
+$\rightarrow$ \code{yield/ecall} 自陷 $\rightarrow$ 保存旧上下文
+$\rightarrow$ 选择新上下文 $\rightarrow$ \code{mret} 恢复执行
+\end{center}
+
+首次启动线程复用同一恢复出口，后续线程切换则保存并恢复实际运行现场。该实现同时覆盖处理器的
+\code{mtvec}、\code{mepc}、\code{mcause}、\code{ecall/mret} 和通用寄存器保存恢复路径。
+
+\subsection{控制台、Shell 与链接适配}
+
+Nano 的控制台输出映射到 AM \code{putch}，输入由非阻塞 \code{try\_getch} 提供，不引入完整设备框架
+和 POSIX 层。配置保留信号量、精简 \code{rt\_kprintf} 及 FinSH/msh，并提供 \code{version}、
+\code{ps}、\code{list\_thread} 和 \code{list\_semaphore} 等基本命令。链接脚本保留 FinSH 的函数与变量
+符号表区间；JYD 的 IROM/DRAM 分离镜像和平坦仿真镜像分别使用对应的放置方式。
+
+移植完成后，系统能够进入 \code{msh >}，报告 Nano 3.1.5，并列出 shell、空闲线程和信号量对象。
+该运行结果既验证 Nano 本身的启动与命令分派，也为处理器机器态异常和上下文恢复提供系统级负载。

@@ -171,16 +171,32 @@ __xaccel_xdfa4_transition(ee_u8 **instr)
 }
 
 static inline __attribute__((always_inline)) void
+__xaccel_xdfa4p_transition(ee_u8 **instr)
+{
+    ee_u8 *p = *instr;
+    /* Keep the step and equality test together so GCC does not add pointer moves. */
+    asm volatile("1:\n\t"
+                 "mv t0, %0\n\t"
+                 ".insn r 0x5b, 5, 2, %0, x0, %0\n\t"
+                 "bne t0, %0, 1b"
+                 : "+r"(p)
+                 :
+                 : "t0", "memory");
+    *instr = p;
+}
+
+static inline __attribute__((always_inline)) void
 __xaccel_xdfa4h_transition(ee_u8 **instr)
 {
+    ee_u32 state = 0;
     ee_u8 *str = *instr;
-    ee_u32 state = __XACCEL_NUM_STATE_START;
-
-    for (;;) {
+    for (;;)
+    {
         ee_u32 result = __xaccel_xdfa4h_step(state, str);
         state = result & 7u;
         str += (result >> 3) & 7u;
-        if (result & (1u << 6)) break;
+        if (result & (1u << 6))
+            break;
     }
     *instr = str;
 }
@@ -281,6 +297,26 @@ numeric_token_scan_xdfa4h(ee_u32 blksize, ee_u8 *memblock, ee_s16 seed1,
     return crc;
 }
 
+static __attribute__((noinline, used, optimize("O3"))) ee_u16
+numeric_token_scan_xdfa4p(ee_u32 blksize, ee_u8 *memblock, ee_s16 seed1,
+                          ee_s16 seed2, ee_s16 step, ee_u16 crc)
+{
+    ee_u8 *p = memblock;
+    __xaccel_xdfacnt_init();
+    while (*p != 0) __xaccel_xdfa4p_transition(&p);
+    p = memblock;
+    while (p < memblock + blksize) { if (*p != ',') *p ^= (ee_u8)seed1; p += step; }
+    p = memblock;
+    while (*p != 0) __xaccel_xdfa4p_transition(&p);
+    p = memblock;
+    while (p < memblock + blksize) { if (*p != ',') *p ^= (ee_u8)seed2; p += step; }
+    for (ee_u32 i = 0; i < 8; i++) {
+        crc = __xaccel_crc32_u8(__xaccel_xdfa4h_final_read(i), crc);
+        crc = __xaccel_crc32_u8(__xaccel_xdfacnt_read(i), crc);
+    }
+    return crc;
+}
+
 static inline ee_s32
 xmac16(ee_s32 acc, ee_s16 a, ee_s16 b)
 {
@@ -288,6 +324,54 @@ xmac16(ee_s32 acc, ee_s16 a, ee_s16 b)
                  : "+r"(acc)
                  : "r"((ee_s32)a), "r"((ee_s32)b));
     return acc;
+}
+
+static inline void
+xmacacc_first(ee_s16 a, ee_s16 b)
+{
+    asm volatile(".insn r 0x0b, 3, 4, x0, %0, %1"
+                 :: "r"((ee_s32)a), "r"((ee_s32)b));
+}
+
+static inline void
+xmacacc_add(ee_s16 a, ee_s16 b)
+{
+    asm volatile(".insn r 0x0b, 3, 5, x0, %0, %1"
+                 :: "r"((ee_s32)a), "r"((ee_s32)b));
+}
+
+static inline ee_s32
+xmacacc_last(ee_s16 a, ee_s16 b)
+{
+    ee_s32 result;
+    asm volatile(".insn r 0x0b, 3, 8, %0, %1, %2"
+                 : "=r"(result)
+                 : "r"((ee_s32)a), "r"((ee_s32)b));
+    return result;
+}
+
+static inline void
+xmacacc_bit_first(ee_s16 a, ee_s16 b)
+{
+    asm volatile(".insn r 0x0b, 3, 6, x0, %0, %1"
+                 :: "r"((ee_s32)a), "r"((ee_s32)b));
+}
+
+static inline void
+xmacacc_bit_add(ee_s16 a, ee_s16 b)
+{
+    asm volatile(".insn r 0x0b, 3, 7, x0, %0, %1"
+                 :: "r"((ee_s32)a), "r"((ee_s32)b));
+}
+
+static inline ee_s32
+xmacacc_bit_last(ee_s16 a, ee_s16 b)
+{
+    ee_s32 result;
+    asm volatile(".insn r 0x0b, 3, 9, %0, %1, %2"
+                 : "=r"(result)
+                 : "r"((ee_s32)a), "r"((ee_s32)b));
+    return result;
 }
 
 static inline ee_s32
@@ -307,6 +391,34 @@ xbmul(ee_s32 value)
     asm volatile(".insn r 0x0b, 5, 0, %0, %1, x0"
                  : "=r"(result)
                  : "r"(value));
+    return result;
+}
+
+static inline ee_s32
+xmbm(ee_s32 a, ee_s32 b)
+{
+    ee_s32 result;
+    asm volatile(".insn r 0x0b, 5, 1, %0, %1, %2"
+                 : "=r"(result)
+                 : "r"(a), "r"(b));
+    return result;
+}
+
+static inline __attribute__((always_inline, used)) void *
+__xaccel_xlistfind(void *list, void *info)
+{
+    const ee_s16 *fields = (const ee_s16 *)info;
+    void *result;
+    if (fields[1] >= 0)
+        asm volatile(".insn r 0x0b, 6, 1, %0, %1, %2"
+                     : "=r"(result)
+                     : "r"(list), "r"((ee_s32)fields[1])
+                     : "memory");
+    else
+        asm volatile(".insn r 0x0b, 6, 3, %0, %1, %2"
+                     : "=r"(result)
+                     : "r"(list), "r"((ee_s32)fields[0])
+                     : "memory");
     return result;
 }
 
@@ -348,6 +460,45 @@ __xaccel_xbmul_matrix(ee_u32 n, MATRES *c, MATDAT *a, MATDAT *b)
                 acc += xbmul(product);
             }
             c[i * n + j] = acc;
+        }
+}
+
+static inline __attribute__((always_inline, used)) void
+__xaccel_xmbm_matrix(ee_u32 n, MATRES *c, MATDAT *a, MATDAT *b)
+{
+    for (ee_u32 i = 0; i < n; i++)
+        for (ee_u32 j = 0; j < n; j++)
+        {
+            MATRES acc = 0;
+            for (ee_u32 k = 0; k < n; k++)
+                acc += xmbm(a[i * n + k], b[k * n + j]);
+            c[i * n + j] = acc;
+        }
+}
+
+static inline __attribute__((always_inline, used)) void
+__xaccel_xmacacc_matrix(ee_u32 n, MATRES *c, MATDAT *a, MATDAT *b)
+{
+    for (ee_u32 i = 0; i < n; i++)
+        for (ee_u32 j = 0; j < n; j++)
+        {
+            xmacacc_first(a[i * n], b[j]);
+            for (ee_u32 k = 1; k + 1 < n; k++)
+                xmacacc_add(a[i * n + k], b[k * n + j]);
+            c[i * n + j] = xmacacc_last(a[i * n + n - 1], b[(n - 1) * n + j]);
+        }
+}
+
+static inline __attribute__((always_inline, used)) void
+__xaccel_xmacacc_bit_matrix(ee_u32 n, MATRES *c, MATDAT *a, MATDAT *b)
+{
+    for (ee_u32 i = 0; i < n; i++)
+        for (ee_u32 j = 0; j < n; j++)
+        {
+            xmacacc_bit_first(a[i * n], b[j]);
+            for (ee_u32 k = 1; k + 1 < n; k++)
+                xmacacc_bit_add(a[i * n + k], b[k * n + j]);
+            c[i * n + j] = xmacacc_bit_last(a[i * n + n - 1], b[(n - 1) * n + j]);
         }
 }
 

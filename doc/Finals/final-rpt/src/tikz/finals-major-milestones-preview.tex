@@ -1,0 +1,38 @@
+\begin{figure}[H]
+  \centering
+  \begin{tikzpicture}
+    \begin{axis}[
+      width=0.88\textwidth,height=5.6cm,
+      symbolic x coords={BTB512,通路局部化,缓存同步,CRC字节更新,位乘矩阵,状态分拍,硬件组合,状态计数,旧编译选指令,固定取指槽,查询乘累加,同步load边界,最终GCC后端},
+      xtick={BTB512,通路局部化,缓存同步,CRC字节更新,位乘矩阵,状态分拍,硬件组合,状态计数,旧编译选指令,固定取指槽,查询乘累加,同步load边界,最终GCC后端},
+      x tick label style={rotate=28,anchor=east,font=\scriptsize},
+      ylabel={10,000 次时间（s）},ymin=5.0,ymax=11.1,
+      axis y line*=left,axis x line*=bottom,grid=major,
+      legend style={at={(0,1.02)},anchor=south west,font=\scriptsize}]
+      \addplot[blue!75!black,mark=*] coordinates {
+        (BTB512,10.695831) (通路局部化,10.695831) (缓存同步,10.078266)
+        (CRC字节更新,9.565066) (位乘矩阵,8.572723) (状态分拍,7.745942)
+        (硬件组合,7.106449) (状态计数,6.696372) (旧编译选指令,6.691154)
+        (固定取指槽,5.855369) (查询乘累加,5.346451)};
+      \addlegendentry{板测时间}
+      \addplot[cyan!65!blue,dashed,mark=triangle*] coordinates {
+        (查询乘累加,5.346451) (同步load边界,5.352969) (最终GCC后端,5.292462)};
+      \addlegendentry{未上板拟合}
+    \end{axis}
+    \begin{axis}[
+      width=0.88\textwidth,height=5.6cm,
+      symbolic x coords={BTB512,通路局部化,缓存同步,CRC字节更新,位乘矩阵,状态分拍,硬件组合,状态计数,旧编译选指令,固定取指槽,查询乘累加,同步load边界,最终GCC后端},
+      xtick=\empty,ylabel={WNS（ns）},ymin=-1.5,ymax=-0.20,
+      axis y line*=right,axis x line=none,
+      legend style={at={(1,1.02)},anchor=south east,font=\scriptsize}]
+      \addplot[red!75!black,dashed,mark=square*] coordinates {
+        (BTB512,-0.776) (通路局部化,-0.452) (缓存同步,-0.285)
+        (CRC字节更新,-0.534) (位乘矩阵,-0.733) (状态分拍,-0.684)
+        (硬件组合,-0.615) (状态计数,-0.733) (旧编译选指令,-0.580)
+        (固定取指槽,-0.772) (查询乘累加,-1.058) (同步load边界,-1.379)
+        (最终GCC后端,-0.699)};
+      \addlegendentry{WNS}
+    \end{axis}
+  \end{tikzpicture}
+  \caption*{关键优化里程碑的板测/拟合时间与 WNS 走向}
+\end{figure}

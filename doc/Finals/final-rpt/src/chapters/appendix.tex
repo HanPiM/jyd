@@ -63,22 +63,148 @@ $+0.013$\,ns。
 
 \input{src/tikz/regional-performance-full}
 
+\subsection{GCC 自定义指令匹配摘要}\label{app:gcc-custom-match}
+
+本节概括普通 C 源码到自定义指令的自动选择路径。局部算术结构在 GIMPLE 或 RTL
+数据依赖上匹配；包含循环、访存或跨基本块状态的结构先由 GIMPLE pass 验证，再转换为 internal
+function（IFN），经 optab 或目标展开器下沉到机器描述（MD）。各路径受独立 target option 控制，
+选项关闭时保留标准 RV32 指令。正式构建不加载探索性插件，也不以包装函数强制替换源码。
+
+\begin{table}[H]\centering\scriptsize
+\caption{当前已实现的 GCC 自动匹配路径}\label{tab:gcc-custom-implemented}
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{@{}p{0.15\linewidth}p{0.15\linewidth}p{0.42\linewidth}p{0.20\linewidth}@{}}
+\toprule
+\textbf{指令}&\textbf{匹配层}&\textbf{主要约束}&\textbf{下沉路径}\\\midrule
+\code{xcrcu8}&GIMPLE CRC 与 MD&
+八次反向 CRC 更新、8-bit 数据、16-bit 状态及固定多项式&
+\TopStack{\code{CRC\_REV} IFN/optab\\$\rightarrow$ \code{bitmanip.md}}\\
+\code{xbmul}&RTL peephole2&
+同一源值分别右移 2/5 位、与 15/127 掩码后相乘，且被消除的临时量均已死亡&
+\TopStack{\code{packed\_field\_mul}\\\code{define\_insn}}\\
+\code{xmbm}&GIMPLE pass&
+同一 16-bit 乘积分别右移 2/5 位、与 15/127 掩码后再相乘；两条字段链必须追溯到同一乘积&
+\code{IFN\_XMBM} $\rightarrow$ optab/MD\\
+\code{xmsum}&GIMPLE pass&
+参数类型、$n^2$ 遍历、带裁剪累计、相邻元素比较及归约返回值同时满足&
+\TopStack{\code{IFN\_CLIPPED\_}\\\code{RISING\_SCORE\_REDUCE}\\$\rightarrow$ optab/MD}\\
+\code{xlistrev}&GIMPLE pass&
+恰有一个规范的链表遍历与 next 指针反向写回循环，并保留空链表返回路径&
+\code{IFN\_XLISTREV} $\rightarrow$ 两条指令的 MD pattern\\
+\TopStack{\code{xlistfind.idx}\\\code{xlistfind.data}}&GIMPLE pass&
+两参数链表查找的返回类型、遍历结构和索引/数据两种比较分支一致&
+\code{IFN\_XLISTFIND} $\rightarrow$ 两条 MD pattern\\
+\TopStack{\code{xmacacc.*}\\六个阶段编码}&GIMPLE + 目标展开&
+矩阵维度、三数组数据流与两类矩阵点积循环结构一致；目标展开器为每个点积产生 first/add/last，$n<2$ 回到标量序列&
+\TopStack{\code{IFN\_XMACACC\_*}\\\code{\_MATRIX}\\$\rightarrow$ target expand/MD}\\
+\TopStack{DFA 计数/步进族\\\code{xdfa4p}}&GIMPLE pass&
+字符扫描、位置指针、计数数组更新与 CRC 读取的数据流一致&
+\TopStack{\code{IFN\_XDFACNT\_}\\\code{INIT}, \code{IFN\_XDFA4H\_*}\\\code{XDFA4P\_STEP} $\rightarrow$ MD}\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\code{xbmul} 的关键点不是源码文本匹配，而是 RTL 数据依赖和临时量活跃性。删减后的 MD 结构示意为：
+{\small
+\begin{verbatim}
+(define_peephole2
+  [shift-by-2; shift-by-5; and-15; and-127; multiply]
+  "TARGET_XBMUL && eliminated_temporaries_are_dead"
+  [(set rd (unspec:SI [src] UNSPEC_XBMUL))])
+\end{verbatim}
+}
+只要移位量、掩码、源操作数或中间值用途不同，模式就不成立。跨基本块指令则先证明整个语义结构；
+其 GIMPLE pass 的核心流程可概括为：
+{\small
+\begin{verbatim}
+if (clipped_rising_score_p(n, base, clip))
+  replace_with_internal_call(
+      IFN_CLIPPED_RISING_SCORE_REDUCE, n, base, clip);
+\end{verbatim}
+}
+其中判定函数同时检查循环边界、加载地址、递推关系和返回值。链表反转采用同类方法验证重链接循环。
+关闭对应 \code{-m} 选项或任一结构条件不满足时，均保留原软件控制流。
+
+\code{xmbm} 的 GIMPLE 匹配先沿两个字段表达式回溯到共同乘积，再以二输入 IFN 替换末端乘法。关键
+逻辑可简化为：
+{\small
+\begin{verbatim}
+if (field_p(lhs, 2, 15, &p2)
+    && field_p(rhs, 5, 127, &p5) && p2 == p5)
+  replace_with_ifn(IFN_XMBM, product_arg0, product_arg1);
+\end{verbatim}
+}
+
+\code{xmacacc} 不只把单条乘法换成目标指令。GIMPLE pass 先把经过校验的矩阵循环变为带 $n,C,A,B$
+四个参数的 IFN；RISC-V 目标展开器随后构造三层地址循环，并对每个点积生成：
+{\small
+\begin{verbatim}
+emit xmacacc.first  (A[0],   B[0]);
+emit xmacacc.add    (A[k],   B[k]);   // 0 < k < n-1
+result = xmacacc.last(A[n-1], B[n-1]);
+store result to C;
+\end{verbatim}
+}
+位域矩阵入口选择 bfirst/badd/blast；$n=0$ 不写结果，$n=1$ 使用标量乘法与字段提取。这样点积的局部
+累加状态留在执行单元，只有 last 产生一次 GPR 结果。\code{xlistfind} 则把已验证的查找函数降为
+\code{IFN\_XLISTFIND(list,info)}，MD 展开先检查目标索引符号，再选择 idx 或 data 编码。
+
+编译器实现通过六组正、反例检查。正式 ELF 静态审计同时要求各已启用指令族出现、六个
+\code{xmacacc} 阶段和两个 \code{xlistfind} 子操作齐全，并确认不存在强制包装调用；审计结果为
+38/1/5/2/4/6 个 \code{xcrcu8/xlistrev/xmsum/xdfa4p/xlistfind/xmacacc} 位置。组合矩阵热点由
+\code{xmacacc} 整体展开，因此 \code{xmbm} 在该 ELF 中被覆盖；单独开启 \code{-mxmbm} 的正例仍能
+生成对应两处指令。
+
+\subsection{自动化验证截图（补充证据）}
+
+下列两图保留分赛区阶段的可视化记录，用于展示测试输出形式。它们不替代正文中按提交标识、
+任务链接、日志摘录和计数器构成的最新可复现证据。
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[height=0.58\textheight,trim=0 0 669bp 0,clip]{verify/image13.png}%
+  \includegraphics[height=0.58\textheight,trim=0 0 644bp 0,clip]{verify/image14.png}%
+  \includegraphics[height=0.58\textheight,trim=0 0 654bp 0,clip]{verify/image15.png}
+  \caption{RV32I 基本指令测试结果}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.82\linewidth,trim=0 365bp 0 0,clip]{verify/image16.png}
+  \caption{src0 仿真日志与性能统计}
+\end{figure}
+
 \subsection{测评证据索引}
 
-\small
-\begin{longtable}{@{}p{0.19\linewidth}p{0.25\linewidth}p{0.48\linewidth}@{}}
-\caption{关键测评证据索引}\\\toprule
-\textbf{编号}&\textbf{证据类型}&\textbf{用途}\\\midrule\endhead\bottomrule\endfoot
-E-FINAL-250&250 MHz 实现归档&post-physopt WNS $+0.009$ ns\\
-E-FINAL-280&280 MHz 实现归档&routed WNS $-0.664$ ns\\
+\begin{table}[H]\centering
+\caption{关键测评证据索引}
+\scriptsize
+\setlength{\tabcolsep}{3pt}
+\resizebox{\linewidth}{!}{\begin{tabular}{@{}lll@{}}
+\toprule
+\textbf{编号}&\textbf{证据类型}&\textbf{用途}\\\midrule
+E-FINAL-240&最终合入 RTL 的 240 MHz 实现归档&routed WNS $+0.014$ ns、TNS 0、无失败端点\\
 E-FINAL-300&300 MHz 实现归档&routed/post-physopt WNS $-0.590/-0.580$ ns\\
+E-FINAL-CUR&最终合入 RTL 实现归档&routed WNS $-0.699$ ns；最终 GCC 迁移未改变 RTL\\
 E-RF-01--04&分赛区后续报告与统计数据&withMext-v2、西北样例的性能与 WNS 演进\\
 E-BOARD-01&最佳阶段 UART 板测归档&6.696371860\,s、四项 CRC、板卡与 bitstream 身份\\
 E-BOARD-02&正确 IP 板级复测归档&6.714950940\,s、四项 CRC、300\,MHz 实现与 bitstream 身份\\
 E-BOARD-03&编译器自动选指令同硬件对照&6.691154040\,s、三次一致、四项 CRC 与程序镜像身份\\
-E-TEST&自动化测试记录&基础指令、CPU tests、体系结构测试和 RT-Thread 输出\\
-\end{longtable}
-\normalsize
+E-BOARD-COMB&组合加速板测归档&5.346451040\,s、三次一致、四项 CRC 与修正后的 COE 身份\\
+E-CI-01&GitHub Actions 可复现回归&run 31680203475、提交 75329078；无硬件加速 CoreMark 5,000 次迭代及其他负载日志与计数器\\
+E-CI-ACC&较早硬件加速自动化回归&run 31708291526、任务 94474591976、提交 fa30e65e；5,000 次迭代日志与完整计数器\\
+E-CAND-01&当前文档对应版本&最终合入提交 8591368；包含 RTL 结构与 GCC 后端迁移\\
+E-GCC-FINAL&最终 GCC 后端回归&NPC 10/100 次、5.292462350\,s 拟合值、NEMU 10,000 次及 ELF 审计\\
+E-PROF-CRC&CRC 热点画像与板测记录&5,840,008 次动态操作、内联溢出访存和同 ISA 板测对照\\
+E-PROF-MATRIX&矩阵热点画像&29.16M 次位域乘法、160,000 次归约及 12.96M 个处理元素\\
+E-PROF-XSTATE&DFA 定向周期记录&10,000-call 软件/硬件周期及正式负载调用、字节计数\\
+E-PROF-XLREV&早期链表原型评估&2.04M 次调用、61.2M 节点及串行访存净周期代价\\
+E-PROF-BACKEND&后端分区实现审计&routed WNS/TNS、失败端点数及 16M 指令周期对照\\
+E-TEST&自动化测试记录&基础指令、CPU tests 与体系结构测试输出\\
+E-RTTNANO&系统移植与运行记录&Nano 3.1.5 固定版本；NEMU 命令通过、最终 RTL 启动及 D-cache 断言边界\\
+\bottomrule
+\end{tabular}}
+\end{table}
 
 文档外的工程归档保存精确版本标识、程序镜像摘要、bitstream 摘要和原始日志，便于团队内部复核；
 正文仅保留评审理解设计与测评口径所需的信息。机器可读证据清单位于 \code{src/data/evidence.csv}。
@@ -103,6 +229,7 @@ E-TEST&自动化测试记录&基础指令、CPU tests、体系结构测试和 RT
 .2 nemu/ \mydotfill RISC-V 参考执行环境.
 .2 sdb/ \mydotfill 差分状态、调试器与指令环.
 .2 abstract-machine/ \mydotfill 裸机运行环境与 riscv32-jyd 平台.
+.2 jyd-tests/rtthread-nano/ \mydotfill RT-Thread Nano 3.1.5 的 AM 移植与系统测试.
 .2 jyd-vivado-proj/ \mydotfill 数字孪生 Vivado 工程、IP 与约束.
 .2 doc/Finals/final-rpt/ \mydotfill 总决赛技术文档.
 .3 src/chapters/ \mydotfill 分章节正文.
@@ -112,21 +239,11 @@ E-TEST&自动化测试记录&基础指令、CPU tests、体系结构测试和 RT
 }
 \end{minipage}
 
-\subsection{图片待补清单}
-
-\begin{enumerate}
-  \item 团队制作的作品核心结构快速预览图；
-  \item 团队制作的五级流水总体架构图；
-  \item 250\,MHz post-route physical optimization Timing Summary 截图；
-  \item 300\,MHz routed 与 post-route physical optimization Timing Summary 截图；
-  \item 总决赛核心结果拼图，包括 UART 原始输出、开发板运行照片和实现报告摘要；
-  \item 当前设计的 LUT、FF、BRAM、DSP 与时钟资源利用率图。
-  \item src0、src1、src2 的新同口径 IPC/CPI/运行时间，以及 CoreMark、Dhrystone 新仿真结果。
-\end{enumerate}
-
+\clearpage
 \subsection{参考资料}
 
-\begin{enumerate}[label={\textup{[\arabic*]}},leftmargin=3em]
+\small
+\begin{enumerate}[label={\textup{[\arabic*]}},leftmargin=3em,itemsep=0.08em,topsep=0.2em]
   \item 全国大学生集成电路创新创业大赛组委会：《第十届集创赛作品提交要求》。
   \item 竞业达企业命题组：《竞业达企业命题作品材料参考模板》。
   \item 竞业达企业命题组：《FPGA 开发板远程连接操作手册》，2026。
@@ -134,12 +251,57 @@ E-TEST&自动化测试记录&基础指令、CPU tests、体系结构测试和 RT
   \item RISC-V International, \emph{The RISC-V Instruction Set Manual, Volume II: Privileged Architecture}.
   \item AMD Xilinx, \emph{Vivado Design Suite User Guide: Design Analysis and Closure Techniques}.
   \item AMD Xilinx, \emph{7 Series FPGAs Memory Resources User Guide}.
+  \item GNU Project, \emph{GCC Internals Manual}: Machine Descriptions, Insn Patterns and Peephole Definitions,
+  \href{https://gcc.gnu.org/onlinedocs/gccint/Machine-Desc.html}{online documentation}.
+  \item GNU Project, \emph{GCC Internals Manual}: Tree SSA, Internal Functions, Pass Manager and Target Option Files,
+  \href{https://gcc.gnu.org/onlinedocs/gccint/Tree-SSA.html}{online documentation}.
+  \item GCC Project, ``RISC-V: Add XTheadBa support,'' official GCC revision record,
+  \href{https://gcc.gnu.org/pipermail/gcc-cvs/2023-March/379446.html}{2023}.
+  \item EEMBC, \emph{CoreMark: An EEMBC Benchmark},
+  \href{https://github.com/eembc/coremark}{official source and run rules}.
+  \item Reinhold P. Weicker, ``DHRYSTONE: A Synthetic Systems Programming Benchmark,''
+  \emph{Communications of the ACM}, 27(10), 1984,
+  DOI: \href{https://doi.org/10.1145/358274.358283}{10.1145/358274.358283}.
+  \item Verilator Project, \emph{Verilator User's Guide},
+  \href{https://verilator.org/guide/latest/}{latest online edition}.
+  \item Nanjing University ProjectN, \emph{NEMU: Nanjing University Emulator},
+  \href{https://github.com/NJU-ProjectN/nemu}{official repository}.
+  \item RT-Thread Project, \emph{RT-Thread Nano v3.1.5},
+  \href{https://github.com/RT-Thread/rtthread-nano/tree/v3.1.5}{official source archive}.
+  \item RISC-V International, \emph{RISC-V Architecture Test},
+  \href{https://github.com/riscv-non-isa/riscv-arch-test}{official repository}; RISC-V Software,
+  \href{https://github.com/riscv-software-src/riscv-tests}{riscv-tests}.
+  \item Nanjing University ProjectN, \emph{AbstractMachine},
+  \href{https://github.com/NJU-ProjectN/abstract-machine}{official repository}.
+  \item Nanjing University ProjectN, \emph{PA: RT-Thread 选做讲义},
+  \href{https://ysyx.oscc.cc/docs/ics-pa/4.1.html\#rt-thread-\%E9\%80\%89\%E5\%81\%9A}{online course notes}.
+  \item Nanjing University ProjectN, \emph{rt-thread-am},
+  \href{https://github.com/NJU-ProjectN/rt-thread-am}{teaching branch adapted to AbstractMachine}.
+  \item Nanjing University ProjectN, \emph{riscv-tests-am},
+  \href{https://github.com/NJU-ProjectN/riscv-tests-am}{riscv-tests port for AbstractMachine}.
+  \item Nanjing University ProjectN, \emph{riscv-arch-test-am},
+  \href{https://github.com/NJU-ProjectN/riscv-arch-test-am}{architecture-test port for AbstractMachine}.
+  \item Nanjing University ProjectN, \emph{am-kernels},
+  \href{https://github.com/NJU-ProjectN/am-kernels}{AbstractMachine kernels and cpu-tests}.
+  \item Chisel Project, \emph{Chisel Documentation},
+  \href{https://www.chisel-lang.org/docs}{official documentation}.
+  \item GitHub, \emph{Using workflow run logs},
+  \href{https://docs.github.com/en/actions/how-tos/monitor-workflows/use-workflow-run-logs}{GitHub Actions documentation};
+  \href{https://github.com/HanPiM/jyd/actions/runs/31680203475}{run 31680203475}.
 \end{enumerate}
+\normalsize
 
+\clearpage
 \subsection{AI 工具使用声明}
 
-项目研发和技术文档整理过程中使用 ChatGPT/Codex 系列 AI 工具提供辅助。团队对所有设计决策、代码、
-测试结果和最终文字负责，AI 工具不替代人工设计评审、功能验证、FPGA 实现或板级测评。具体用途如下：
+项目研发和技术文档整理过程中使用 OpenAI 的 ChatGPT/Codex 系列工具提供辅助。分赛区阶段主要使用
+ChatGPT（GPT-4o），总决赛阶段主要使用 Codex（GPT-5 系列，Codex CLI 0.147.0）；版本号按实际使用
+阶段记录，云端模型的小版本由服务端滚动更新。团队对体系结构决策、代码合入、测试结果和最终文字负责，
+AI 工具不替代人工设计评审、功能验证、FPGA 实现或板级测评。
+
+按各类工作的投入量粗略估算，AI 辅助约占：体系结构分析与优化决策 15\%，RTL/GCC/脚本代码编写与
+修改 30\%，验证方案与日志整理 30\%，技术文档文字、LaTeX 排版和 TikZ 图表 60\%；折合项目总体工作量
+约 25\%。这些比例表示工具参与草拟、检索或整理的工作量，不表示内容未经人工复核。主要用途如下：
 
 \begin{itemize}
   \item \textbf{工程检索与影响分析：}辅助定位模块连接、接口定义、测试入口和实现报告中的关键路径；

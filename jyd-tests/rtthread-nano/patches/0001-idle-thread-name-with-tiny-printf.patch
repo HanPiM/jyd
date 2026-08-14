@@ -1,22 +1,13 @@
 diff --git a/rt-thread/src/idle.c b/rt-thread/src/idle.c
-index 4b8a002..0d6adf9 100644
+index 02a234b..2a6e669 100644
 --- a/rt-thread/src/idle.c
 +++ b/rt-thread/src/idle.c
-@@ -306,11 +306,17 @@ static void rt_thread_system_entry(void *parameter)
- void rt_thread_idle_init(void)
+@@ -211,7 +211,7 @@ void rt_thread_idle_init(void)
  {
-     rt_ubase_t i;
-+#ifndef RT_USING_TINY_PRINTF
-     char tidle_name[RT_NAME_MAX];
-+#endif
- 
-     for (i = 0; i < _CPUS_NR; i++)
-     {
-+#ifdef RT_USING_TINY_PRINTF
-+        const char *tidle_name = "tidle0";
-+#else
-         rt_sprintf(tidle_name, "tidle%d", i);
-+#endif
-         rt_thread_init(&idle[i],
-                 tidle_name,
-                 rt_thread_idle_entry,
+     /* initialize thread */
+     rt_thread_init(&idle,
+-                   "tidle",
++                   "tidle0",
+                    rt_thread_idle_entry,
+                    RT_NULL,
+                    &rt_thread_stack[0],

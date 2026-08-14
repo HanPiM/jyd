@@ -295,13 +295,6 @@ void OptimizationDirectionPerfCounter::update() {
       crcClmulhCount++;
     }
 
-    const bool lateRs1 = exu->io_in_bits_info_lateLoadRs1;
-    const bool lateRs2 = exu->io_in_bits_info_lateLoadRs2;
-    if (lateRs1 || lateRs2) {
-      lateLoadAddCount[lateRs1 && lateRs2
-                           ? BothRs
-                           : (lateRs1 ? Rs1Only : Rs2Only)]++;
-    }
   }
 
   if (exu->io_dcache_storeUpdate && exu->memWMask == 0xf) {
@@ -349,6 +342,10 @@ void updatePerfCounters() {
 void dumpPerfCountersStatistics(std::ostream &os, bool printFullPerf) {
   auto cycle_count = sim_get_cycle();
   auto inst_count = sim_get_inst_count();
+  auto custom_inst_count = sim_get_custom_inst_count();
+  auto non_custom_inst_count = sim_get_non_custom_inst_count();
+  auto custom_attributed_cycles = sim_get_custom_attributed_cycle_count();
+  auto non_custom_attributed_cycles = sim_get_non_custom_attributed_cycle_count();
 
   os << "Perf Counters Report\n";
   os << "Git commit: " << _STR(GIT_COMMIT_HASH) << "\n\n";
@@ -364,6 +361,14 @@ void dumpPerfCountersStatistics(std::ostream &os, bool printFullPerf) {
   os << "cycle and instruction counts:\n";
   os << "  total cycle count: " << cycle_count << "\n";
 	os << fmt::format("  total instruction count: {} ({}M)\n", inst_count, inst_count / 1000000);
+	os << fmt::format("  custom retired instruction count: {}\n", custom_inst_count);
+	os << fmt::format("  non-custom retired instruction count: {}\n", non_custom_inst_count);
+	os << fmt::format("  custom retirement-attributed cycle count: {}\n", custom_attributed_cycles);
+	os << fmt::format("  non-custom retirement-attributed cycle count: {}\n", non_custom_attributed_cycles);
+	os << "  retirement attribution heuristic (in-order single-retire): cycles since the previous "
+	      "retirement are assigned to the current instruction; dependency/overlap effects follow the "
+	      "next retirement, and reset/post-retirement tail cycles are excluded\n";
+	os << "  non-custom IPC/CPI denominator: total cycles (including custom instruction latency)\n";
 
   if (cycle_count == 0) {
     spdlog::warn("cycle count is 0, cannot calc IPC");
@@ -376,6 +381,30 @@ void dumpPerfCountersStatistics(std::ostream &os, bool printFullPerf) {
   } else {
     double cpi = (double)cycle_count / (double)inst_count;
     os << fmt::format("  CPI: {:.4f}\n", cpi);
+  }
+  if (cycle_count == 0) {
+    spdlog::warn("cycle count is 0, cannot calc non-custom IPC");
+  } else {
+    double ipc = (double)non_custom_inst_count / (double)cycle_count;
+    os << fmt::format("  non-custom IPC (total cycles): {:.4f}\n", ipc);
+  }
+  if (non_custom_inst_count == 0) {
+    spdlog::warn("no non-custom instruction retired, cannot calc non-custom CPI");
+  } else {
+    double cpi = (double)cycle_count / (double)non_custom_inst_count;
+    os << fmt::format("  non-custom CPI (total cycles): {:.4f}\n", cpi);
+  }
+  if (non_custom_attributed_cycles == 0) {
+    spdlog::warn("non-custom attributed cycle count is 0, cannot calc attributed IPC");
+  } else {
+    double ipc = (double)non_custom_inst_count / (double)non_custom_attributed_cycles;
+    os << fmt::format("  non-custom IPC (retirement-attributed cycles): {:.4f}\n", ipc);
+  }
+  if (non_custom_inst_count == 0) {
+    spdlog::warn("no non-custom instruction retired, cannot calc attributed CPI");
+  } else {
+    double cpi = (double)non_custom_attributed_cycles / (double)non_custom_inst_count;
+    os << fmt::format("  non-custom CPI (retirement-attributed cycles): {:.4f}\n", cpi);
   }
 
   if (!printFullPerf) {
@@ -472,16 +501,12 @@ void to_json(nlohmann::json &j, const BranchPredPerfCounter &c) {
 void to_json(nlohmann::json &j, const OptimizationDirectionPerfCounter &c) {
   static const char *mOpNames[] = {"mul",  "mulh", "mulhsu", "mulhu",
                                    "div",  "divu", "rem",    "remu"};
-  static const char *lateLoadNames[] = {"rs1_only", "rs2_only", "both"};
   static const char *lateAddNames[] = {"rs1_only", "rs2_only", "both"};
   j["ctrName"] = c.ctrName;
   for (int i = 0; i < OptimizationDirectionPerfCounter::MOpNum; i++) {
     j["m_ops"][mOpNames[i]] = c.mOpCount[i];
   }
   j["cacheable_full_word_stores"] = c.cacheableFullWordStores;
-  for (int i = 0; i < OptimizationDirectionPerfCounter::LateLoadUseNum; i++) {
-    j["late_load_add"][lateLoadNames[i]] = c.lateLoadAddCount[i];
-  }
   for (int i = 0; i < OptimizationDirectionPerfCounter::LateAddUseNum; i++) {
     j["late_add_successor"][lateAddNames[i]] = c.lateAddSuccessorCount[i];
   }
@@ -498,6 +523,10 @@ void dumpPerfCounterTo(std::ostream &os) {
       {"partial", instruction_limit != 0 && sim_get_inst_count() == instruction_limit && !sim_halted()},
       {"instruction_limit", instruction_limit},
       {"instruction_count", sim_get_inst_count()},
+      {"custom_retired_instruction_count", sim_get_custom_inst_count()},
+      {"non_custom_retired_instruction_count", sim_get_non_custom_inst_count()},
+      {"custom_retirement_attributed_cycle_count", sim_get_custom_attributed_cycle_count()},
+      {"non_custom_retirement_attributed_cycle_count", sim_get_non_custom_attributed_cycle_count()},
       {"cycle_count", sim_get_cycle()},
   };
 

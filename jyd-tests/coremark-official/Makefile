@@ -17,7 +17,7 @@ COREMARK_GCC_MD ?= 0
 empty :=
 space := $(empty) $(empty)
 comma := ,
-COREMARK_SUPPORTED_XEXTS := xbmul xcrcu8 xdot16 xlistrev xmac16 xmsum xdfacnt xdfa2 xdfa4 xdfa4h
+COREMARK_SUPPORTED_XEXTS := xbmul xcrcu8 xdot16 xlistfind xlistrev xmac16 xmacacc xmsum xdfacnt xdfa2 xdfa4 xdfa4h xdfa4p xmbm
 COREMARK_XEXT_WORDS := $(filter x%,$(subst _, ,$(strip $(COREMARK_XEXTS))))
 COREMARK_UNKNOWN_XEXTS := $(filter-out $(COREMARK_SUPPORTED_XEXTS),$(COREMARK_XEXT_WORDS))
 ifneq ($(strip $(COREMARK_UNKNOWN_XEXTS)),)
@@ -27,7 +27,7 @@ COREMARK_ACCEL_WORDS := $(filter-out xcrcu8,$(COREMARK_XEXT_WORDS))
 COREMARK_ACCELS := $(subst $(space),$(comma),$(strip $(COREMARK_ACCEL_WORDS)))
 COREMARK_PLUGIN_ACCELS := $(if $(COREMARK_ACCELS),$(COREMARK_ACCELS),none)
 sanitize = $(subst $(space),_,$(subst /,_,$(subst :,_,$(subst =,_,$(subst ',_,$(1))))))
-COREMARK_CONFIG_ID = iter$(ITERATIONS)-data$(TOTAL_DATA_SIZE)-z$(call sanitize,$(if $(strip $(RISCV_ZEXTS)),$(RISCV_ZEXTS),none))-x$(call sanitize,$(if $(strip $(COREMARK_XEXTS)),$(COREMARK_XEXTS),none))-c$(call sanitize,$(if $(strip $(EXTRA_CFLAGS)),$(EXTRA_CFLAGS),default))-lto$(ENABLE_LTO)-pf$(PSEUDO_FLOAT)
+COREMARK_CONFIG_ID = iter$(ITERATIONS)-data$(TOTAL_DATA_SIZE)-z$(call sanitize,$(if $(strip $(RISCV_ZEXTS)),$(RISCV_ZEXTS),none))-x$(call sanitize,$(if $(strip $(COREMARK_XEXTS)),$(COREMARK_XEXTS),none))-e$(call sanitize,$(if $(strip $(COREMARK_XACCEL_EXPLORE)),$(COREMARK_XACCEL_EXPLORE),none))-c$(call sanitize,$(if $(strip $(EXTRA_CFLAGS)),$(EXTRA_CFLAGS),default))-lto$(ENABLE_LTO)-pf$(PSEUDO_FLOAT)
 BUILD_DIR ?= build/$(COREMARK_CONFIG_ID)
 LIB_BUILD_DIR_softfloat = build/$(ARCH)-z$(call sanitize,$(if $(strip $(RISCV_ZEXTS)),$(RISCV_ZEXTS),none))
 
@@ -63,6 +63,7 @@ CFLAGS += -Os
 CFLAGS += -DITERATIONS=$(ITERATIONS) -DTOTAL_DATA_SIZE=$(TOTAL_DATA_SIZE)
 CFLAGS += -DCOREMARK_PSEUDO_FLOAT=$(PSEUDO_FLOAT)
 CFLAGS += -D__COREMARK_XEXTS=\"$(COREMARK_XEXTS)\"
+CFLAGS += $(if $(filter xlistfind,$(subst $(comma),$(space),$(COREMARK_XACCEL_EXPLORE))),-D__COREMARK_XLISTFIND=1,)
 CFLAGS += $(EXTRA_CFLAGS)
 COREMARK_COMMON_FLAGS := $(strip $(CFLAGS))
 COREMARK_REPORT_COMMON_FLAGS := $(filter -O% -march=% -mabi=% -flto \
@@ -102,8 +103,15 @@ COREMARK_PLUGIN_FLAGS = -fplugin=$(COREMARK_ACCEL_PLUGIN) \
 	-include $(CURDIR)/accel/xaccel_wrappers.c
 ifeq ($(COREMARK_GCC_MD),1)
 COREMARK_PLUGIN_FLAGS =
+ifneq ($(strip $(COREMARK_XACCEL_EXPLORE)),)
+$(error COREMARK_XACCEL_EXPLORE is plugin-only; select GCC-generated instructions with EXTRA_CFLAGS)
+endif
+ifeq ($(PSEUDO_FLOAT),1)
+COREMARK_MD_FLAGS += -mcoremark-fp12-report
+endif
 endif
 COREMARK_BENCH_FLAGS = $(COREMARK_OPT) $(COREMARK_PLUGIN_FLAGS) \
+	$(COREMARK_MD_FLAGS) \
 	-include $(abspath $(COREMARK_FLAGS_HEADER))
 COREMARK_O3_FLAGS = -include $(CURDIR)/accel/force_o3.h
 COREMARK_CRC_FLAGS = -include $(CURDIR)/accel/xcrc_hw.h \
@@ -133,7 +141,8 @@ $(COREMARK_FLAGS_HEADER): FORCE accel/gen_flags_header.py
 	@python3 accel/gen_flags_header.py --output $@ -- \
 		'$(COREMARK_OPT)' $(foreach flag,$(COREMARK_REPORT_COMMON_FLAGS),'$(flag)') \
 		$(if $(filter 1,$(COREMARK_GCC_MD)),\
-		  'GCC machine-description selection' $(foreach flag,$(filter -m%,$(EXTRA_CFLAGS)),'$(flag)'),\
+		  'GCC machine-description selection' \
+		  $(foreach flag,$(COREMARK_MD_FLAGS) $(filter -m%,$(EXTRA_CFLAGS)),'$(flag)'),\
 		  '-fplugin=$(notdir $(COREMARK_ACCEL_PLUGIN))' \
 		  '-fplugin-arg-xaccel_plugin-accels=$(COREMARK_PLUGIN_ACCELS)' \
 		  '-fplugin-arg-xaccel_plugin-report=$(if $(filter 1,$(PSEUDO_FLOAT)),fp12,none)')

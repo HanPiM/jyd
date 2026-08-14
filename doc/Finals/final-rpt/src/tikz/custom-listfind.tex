@@ -1,0 +1,39 @@
+\begin{figure}[H]\centering
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[
+  s/.style={draw,rounded corners=1.2pt,align=center,minimum width=2.25cm,minimum height=0.78cm,fill=blue!6},
+  d/.style={draw,diamond,aspect=2.15,align=center,fill=orange!8,inner sep=2pt},
+  a/.style={-Stealth,thick},font=\scriptsize]
+\node[s] (idle) at (6.0,6.5) {idle\\锁存参数};
+\node[s] (lookup) at (6.0,5.2) {nodeLookup\\并行查 next/info};
+\node[s] (resolve) at (6.0,3.9) {nodeResolve\\解析两路命中};
+\node[s] (nextmem) at (2.3,3.0) {nextMemory\\等待 next};
+\node[s] (inforeq) at (2.3,1.6) {infoRequest\\发出 info 请求};
+\node[s] (infomem) at (6.0,1.6) {infoMemory\\等待 info};
+\node[s] (dlookup) at (6.0,0.1) {dataLookup\\查询 $[info]$};
+\node[s] (dresolve) at (9.6,0.1) {dataResolve\\解析数据命中};
+\node[s] (dmem) at (9.6,-1.7) {dataMemory\\等待数据};
+\node[d] (judge) at (6.0,-1.7) {匹配或到尾?};
+\node[s] (done) at (2.3,-1.7) {done\\保持返回值};
+
+\draw[a] (idle)--(lookup);
+\draw[a] (lookup)--(resolve);
+\draw[a] (resolve.west) -- ++(-0.55,0) -| node[pos=0.25,above]{next miss} (nextmem.north);
+\draw[a] (resolve)--node[right]{next hit、info miss}(infomem);
+\draw[a] (resolve.east) -- ++(0.55,0) -| node[pos=0.65,right]{两者命中} (dresolve.north);
+\draw[a] (nextmem)--node[right]{info miss}(inforeq);
+\draw[a] (nextmem.west) -- ++(-0.8,0) -- ++(0,-2.9) --
+  node[above]{info hit} (dlookup.west);
+\draw[a] (inforeq)--node[above]{请求握手}(infomem);
+\draw[a] (infomem)--(dlookup);
+\draw[a] (dlookup)--(dresolve);
+\draw[a] (dresolve.south) to[out=245,in=35] node[pos=0.52,above,sloped]{数据命中} (judge.north);
+\draw[a] (dresolve)--node[right]{数据 miss}(dmem);
+\draw[a] (dmem)--node[above]{响应}(judge);
+\draw[a] (judge)--node[above]{是}(done);
+\draw[a] (judge.south) -- ++(0,-0.7) -- ++(5.3,0) |-
+  node[pos=0.25,below]{否：装入 next} (lookup.east);
+\draw[a] (done.west) -- ++(-1.5,0) |- node[pos=0.25,left]{写回握手} (idle.west);
+\end{tikzpicture}}
+\caption{\texttt{xlistfind} 的缓存命中/未命中状态机}\label{fig:custom-listfind}
+\end{figure}

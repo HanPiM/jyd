@@ -5,18 +5,18 @@
  a/.style={-Stealth,thick},font=\small]
 \node[b] (source) at (0,0) {普通 C 源码\\保持测试程序源文件不变};
 \node[b] (gimple) at (4.1,0) {GIMPLE\\语言无关中间表示};
-\node[p] (shape) at (8.6,1.25) {跨基本块结构识别\\循环、链式更新与归约};
-\node[p] (rtl) at (8.6,-1.25) {RTL 局部模式识别\\算术与位操作序列};
-\node[b,fill=cyan!7] (ifn) at (13.0,1.25) {internal function\\保留明确硬件语义};
-\node[b,fill=orange!8] (insn) at (17.2,0) {机器描述 \code{define\_insn}\\约束、调度属性与编码};
-\node[b,fill=gray!10] (code) at (21.4,0) {目标机器码\\自动生成自定义指令};
+\node[p] (shape) at (8.7,1.35) {跨基本块结构识别\\循环、链式更新与归约};
+\node[p] (rtl) at (8.7,-1.35) {RTL 局部模式识别\\算术与位操作序列};
+\node[b,fill=cyan!7] (ifn) at (12.9,1.35) {internal function\\保留明确硬件语义};
+\node[b,fill=orange!8] (insn) at (17.0,0) {机器描述 \code{define\_insn}\\约束、调度属性与编码};
+\node[b,fill=gray!10] (code) at (21.2,0) {目标机器码\\自动生成自定义指令};
 
 \draw[a] (source)--(gimple);
-\draw[a] (gimple.east) -| (shape.west);
-\draw[a] (gimple.east) -| (rtl.west);
+\draw[a] ([yshift=0.18cm]gimple.east) -- (shape.west);
+\draw[a] ([yshift=-0.18cm]gimple.east) -- (rtl.west);
 \draw[a] (shape)--(ifn);
-\draw[a] (ifn.east) -| (insn.north);
-\draw[a] (rtl.east) -| node[pos=0.30,below]{\code{peephole2}} (insn.south);
+\draw[a] (ifn.east) -- ([yshift=0.2cm]insn.west);
+\draw[a] (rtl.east) -- node[pos=0.53,below]{\code{peephole2}} ([yshift=-0.2cm]insn.west);
 \draw[a] (insn)--(code);
 \end{tikzpicture}}
 \caption{从普通 C 程序语义到厂商自定义指令的 GCC 自动选择流程}

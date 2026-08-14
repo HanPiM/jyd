@@ -1,0 +1,81 @@
+\begin{figure}[H]
+\centering
+\begin{minipage}{0.495\linewidth}
+\centering
+\begin{tikzpicture}
+\begin{axis}[
+  xbar stacked,width=0.93\linewidth,height=5.3cm,
+  xmin=0,xmax=100,xtick={0,20,40,60,80,100},
+  xlabel={周期占比（\%）},
+  symbolic y coords={LSU,EXU,IDU,IFU},ytick=data,
+  tick label style={font=\scriptsize},label style={font=\scriptsize},
+  legend style={font=\tiny,at={(0.5,1.03)},anchor=south,legend columns=3},
+  bar width=8pt,grid=major]
+\addplot[fill=blue!55,draw=blue!70!black] coordinates {(90.3949,IFU) (87.7479,IDU) (85.6317,EXU) (85.6317,LSU)};
+\addplot[fill=gray!35,draw=gray!60] coordinates {(0,IFU) (9.06667,IDU) (14.3683,EXU) (14.3683,LSU)};
+\addplot[fill=orange!60,draw=orange!80!black] coordinates {(9.60514,IFU) (3.1854,IDU) (0,EXU) (0,LSU)};
+\legend{有效传递,气泡,反压}
+\end{axis}
+\end{tikzpicture}
+
+\small (a) 流水级周期构成
+\end{minipage}\hfill
+\begin{minipage}{0.495\linewidth}
+\centering
+\begin{tikzpicture}
+\begin{axis}[
+  xbar,width=0.93\linewidth,height=5.3cm,
+  xmin=0,xmax=64,xtick={0,10,...,60},
+  xlabel={占总周期比例（\%）},
+  symbolic y coords={依赖停顿,实际停顿,检测到冲突},ytick=data,
+  tick label style={font=\scriptsize},label style={font=\scriptsize},
+  nodes near coords,nodes near coords style={font=\tiny},
+  bar width=9pt,grid=major]
+\addplot[fill=red!55,draw=red!70!black] coordinates {(52.6685,检测到冲突) (8.87407,实际停顿) (7.5237,依赖停顿)};
+\end{axis}
+\end{tikzpicture}
+
+\small (b) RAW 相关与真实停顿
+\end{minipage}
+
+\vspace{0.7em}
+\begin{minipage}{0.495\linewidth}
+\centering
+\begin{tikzpicture}
+\begin{axis}[
+  xbar,width=0.93\linewidth,height=5.3cm,
+  xmin=88,xmax=102,xtick={88,90,...,100},
+  xlabel={预测准确率（\%）},
+  symbolic y coords={总体,JALR,JAL,条件分支},ytick=data,
+  tick label style={font=\scriptsize},label style={font=\scriptsize},
+  nodes near coords,nodes near coords style={font=\tiny},
+  bar width=8pt,grid=major]
+\addplot[fill=green!55,draw=green!60!black] coordinates {(91.7674,条件分支) (98.7406,JAL) (99.3424,JALR) (92.3432,总体)};
+\end{axis}
+\end{tikzpicture}
+
+\small (c) 控制流预测准确率
+\end{minipage}\hfill
+\begin{minipage}{0.495\linewidth}
+\centering
+\begin{tikzpicture}
+\begin{axis}[
+  xbar stacked,width=0.93\linewidth,height=5.3cm,
+  xmin=0,xmax=106,xtick={0,20,40,60,80,100},
+  xlabel={可缓存 load 比例（\%）},
+  ymin=-0.5,ymax=0.5,ytick={0},yticklabels={D-cache},
+  tick label style={font=\scriptsize},label style={font=\scriptsize},
+  legend style={font=\scriptsize,at={(0.5,1.03)},anchor=south,legend columns=2},
+  nodes near coords,nodes near coords style={font=\scriptsize},
+  bar width=12pt,grid=major]
+\addplot[fill=cyan!55,draw=cyan!65!black] coordinates {(96.7793,0)};
+\addplot[fill=purple!45,draw=purple!65!black] coordinates {(3.2207,0)};
+\legend{命中,未命中}
+\end{axis}
+\end{tikzpicture}
+
+\small (d) D-cache load 命中构成
+\end{minipage}
+\caption{无硬件加速 CoreMark 5,000 次迭代的主要微架构性能计数器}
+\label{fig:coremark-counters}
+\end{figure}

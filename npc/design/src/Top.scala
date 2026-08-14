@@ -278,9 +278,8 @@ class CPUCore(
   btb.io.update.actualTaken := branchUpdateTakenReg
 
   val immediateRedirectNow = exu.io.out.valid && exu.io.immediatePredWrong
-  val lateRedirectDetected = lsu.io.in.fire && lsu.io.in.bits.lateBranchResolve && lsu.io.in.bits.lateBranchMismatch
-  val lateRedirectNow = RegNext(lateRedirectDetected, false.B)
-  val lateRedirectKill = lateRedirectDetected || lateRedirectNow
+  val lateRedirectBlocked = lsu.io.in.valid && lsu.io.in.bits.lateBranchRedirect
+  val lateRedirectNow = lateRedirectBlocked && lsu.io.in.ready
   val redirectNow = immediateRedirectNow || lateRedirectNow
   dontTouch(lateRedirectNow)
   val redirectPacket      = Wire(new RedirectPacket)
@@ -338,10 +337,19 @@ class CPUCore(
   wbu.io.memResp <> dataMemBus.io.memResp
   dcache.io.queryIndex := exu.io.dcache.queryIndex
   dcache.io.queryTag   := exu.io.dcache.queryTag
-  dcache.io.lateQueryIndex := exu.io.dcache.lateQueryIndex
   exu.io.dcache.hit    := dcache.io.hit && p.enableDCache.B
   exu.io.dcache.readData := dcache.io.readData
-  exu.io.dcache.lateReadData := dcache.io.lateReadData
+  dcache.io.listFindStart := exu.io.dcache.listFindStart
+  dcache.io.listFindConsume := exu.io.dcache.listFindConsume
+  dcache.io.listFindAddress := exu.io.dcache.listFindAddress
+  dcache.io.listFindTarget := exu.io.dcache.listFindTarget
+  dcache.io.listFindDataMode := exu.io.dcache.listFindDataMode
+  dcache.io.listFindRequestFire := exu.io.dcache.listFindRequestFire
+  dcache.io.listFindMemResponse := exu.io.dcache.listFindMemResponse
+  exu.io.dcache.listFindRequest := dcache.io.listFindRequest
+  exu.io.dcache.listFindRequestAddress := dcache.io.listFindRequestAddress
+  exu.io.dcache.listFindDone := dcache.io.listFindDone
+  exu.io.dcache.listFindResult := dcache.io.listFindResult
   val dcacheStorePortMutation = exu.io.dcache.storeUpdate && p.enableDCache.B
   val dcacheStoreMutation = dcacheStorePortMutation || (exu.io.dcache.fullUpdate && p.enableDCache.B)
   val dcacheStoreEpoch    = RegInit(false.B)
@@ -400,22 +408,86 @@ class CPUCore(
     pipelineConnect(lsuDifftest.io.out, wbuDifftest.io.in)
   }
 
+  // Fixed slots prevent this small, wide buffer from becoming RAMD32 with a
+  // dynamic read address on every decode path. Keep dequeue/backpressure in
+  // slot0's write enable instead of its payload data cone.
+  val fetchSlot0 = Reg(new FetchedInst)
+  val fetchSlot1 = Reg(new FetchedInst)
+  val fetchValid0 = RegInit(false.B)
+  val fetchValid1 = RegInit(false.B)
   val iduPipe = Wire(Decoupled(new FetchedInst))
-  pipelineConnect(ifu.io.out, iduPipe)
+  iduPipe.bits := fetchSlot0
+  iduPipe.valid := fetchValid0
   val iduEpochMatch = iduPipe.bits.epoch === pipelineEpoch
   idu.io.in.bits := iduPipe.bits
   idu.io.in.valid := iduPipe.valid && iduEpochMatch
   iduPipe.ready := idu.io.in.ready || !iduEpochMatch
+  ifu.io.out.ready := !fetchValid1
 
-  val exuPipe = Wire(Decoupled(new DecodedInst))
-  pipelineConnect(idu.io.out, exuPipe)
-  val exuEpochMatch = exuPipe.bits.epoch === pipelineEpoch
+  val fetchEnq = ifu.io.out.fire
+  val fetchDeq = iduPipe.fire
+  val fetchShift = fetchDeq && fetchValid1
+  val fetchReplaceHead = fetchEnq && (!fetchValid0 || fetchDeq)
+  val fetchSlot0Write = fetchShift || fetchReplaceHead
+  val fetchSlot0Data = Mux(fetchValid1, fetchSlot1, ifu.io.out.bits)
+  when(fetchSlot0Write) {
+    fetchSlot0 := fetchSlot0Data
+  }
+  when(fetchEnq && fetchValid0 && !fetchDeq) {
+    fetchSlot1 := ifu.io.out.bits
+  }
+  switch(Cat(fetchEnq, fetchDeq)) {
+    is("b10".U) {
+      when(fetchValid0) {
+        fetchValid1 := true.B
+      }.otherwise {
+        fetchValid0 := true.B
+      }
+    }
+    is("b01".U) {
+      when(fetchValid1) {
+        fetchValid1 := false.B
+      }.otherwise {
+        fetchValid0 := false.B
+      }
+    }
+  }
+
+  val exuPipe       = Wire(Decoupled(new DecodedInst))
+  val exuPayloadReg = Reg(new DecodedInst)
+  val exuValidReg   = RegInit(false.B)
+  // Resolve adjacent-result branches from their registered LSU payload. This
+  // keeps the branch comparator out of the ID/EX valid-register input cone.
+  exuPipe.bits  := exuPayloadReg
+  exuPipe.valid := exuValidReg
   exu.io.in.bits := exuPipe.bits
-  exu.io.in.valid := exuPipe.valid && exuEpochMatch && !lateRedirectKill
-  exuPipe.ready := exu.io.in.ready || !exuEpochMatch || lateRedirectKill
+  exu.io.in.valid := exuPipe.valid
+  exuPipe.ready := exu.io.in.ready
+  val adjacentBranchBubble = exu.io.in.fire && exu.io.in.bits.info.adjacentFastBranch
+  val exuAllowIn = !exuValidReg || exuPipe.ready
+  // Hold the younger IDU instruction for one cycle after an adjacent-result
+  // branch. If the registered comparison redirects on the following cycle,
+  // the redirect clears this slot. All epoch changes originate from a redirect,
+  // so clearing the valid register also keeps the epoch out of every EXU unit's
+  // combinational input-valid path.
+  idu.io.out.ready := exuAllowIn && !adjacentBranchBubble && !lateRedirectBlocked
+  when(adjacentBranchBubble || lateRedirectBlocked || immediateRedirectNow) {
+    exuValidReg := false.B
+  }.elsewhen(exuAllowIn) {
+    exuPayloadReg := idu.io.out.bits
+    exuValidReg   := idu.io.out.valid
+  }
+  // Keep the ordinary cache index on a dedicated resettable register so it is
+  // physically independent of the high-fanout address/result payload. It is
+  // captured by the same ID/EX handshake and therefore adds no pipeline cycle.
+  val stagedDcacheQueryIndex = RegInit(0.U(10.W))
+  when(idu.io.out.fire) {
+    stagedDcacheQueryIndex := idu.io.out.bits.info.reg1AddImm(11, 2)
+  }
+  exu.io.stagedDcacheQueryIndex := stagedDcacheQueryIndex
   pipelineConnect(exu.io.out, lsu.io.in, lsu.io.out)
 
-  when(lateRedirectKill) {
+  when(lateRedirectBlocked) {
     assert(!immediateRedirectNow, "late and immediate redirects must be mutually exclusive")
     assert(!exu.io.in.valid && !exu.io.out.valid, "a late redirect must discard the younger EXU instruction")
     assert(!exu.io.memReq.valid, "a late redirect must suppress the younger EXU memory request")
@@ -425,44 +497,14 @@ class CPUCore(
 
   idu.io.rvec <> gprs.io.read
 
-  val lsuFwdInfo = ExtractFwdInfoFromLSU(lsu.io.in)
+  val lsuFwdInfo = ExtractFwdInfoFromLSU(lsu.io.in, dcache.io.readData)
   val lsuFastFwdInfo = ExtractFastFwdInfoFromLSU(lsu.io.in)
-  val lsuLateLoadData =
-    ExtLoadData(lsu.io.in.bits.lateLoadData, lsu.io.in.bits.destAddr(1, 0), lsu.io.in.bits.func3t)
   idu.io.wrBackInfo.exu := exu.io.fwd
-  idu.io.lateLoadProducer := exu.io.lateLoadProducer
   idu.io.wrBackInfo.lsu := lsuFwdInfo
   idu.io.wrBackInfo.wbu := ExtractFwdInfoFromWrBack(wbu.io.in, wbu.io.memResp)
+  idu.io.lsuFastAddressFwd := lsuFastFwdInfo
   exu.io.previousStageFwd := lsuFastFwdInfo
 
-  val lateLoadLSUWidthSupported =
-    lsu.io.in.bits.func3t === "b000".U || lsu.io.in.bits.func3t === "b001".U ||
-      lsu.io.in.bits.func3t === "b010".U || lsu.io.in.bits.func3t === "b100".U ||
-      lsu.io.in.bits.func3t === "b101".U
-  val lateLoadLSUValid = lsu.io.in.valid && lsu.io.in.bits.isLoad && lateLoadLSUWidthSupported
-  exu.io.lateLoadLSU.valid := lateLoadLSUValid
-  exu.io.lateLoadLSU.dataValid :=
-    lateLoadLSUValid && lsu.io.in.bits.cacheableLoad && lsu.io.in.bits.dcacheHit
-  // The asynchronous shadow crossed the EXU-to-LSU pipeline register as raw
-  // data; extend it from the registered address/width metadata in C1.
-  exu.io.lateLoadLSU.data := lsuLateLoadData
-  exu.io.lateLoadLSU.rawData := lsu.io.in.bits.lateLoadData
-  exu.io.lateLoadLSU.func3t  := lsu.io.in.bits.func3t
-  exu.io.lateLoadLSU.offset  := lsu.io.in.bits.destAddr(1, 0)
-
-  val lateLoadWBUWidthSupported =
-    wbu.io.in.bits.lsuFunc3t === "b000".U || wbu.io.in.bits.lsuFunc3t === "b001".U ||
-      wbu.io.in.bits.lsuFunc3t === "b010".U || wbu.io.in.bits.lsuFunc3t === "b100".U ||
-      wbu.io.in.bits.lsuFunc3t === "b101".U
-  val lateLoadWBUValid = wbu.io.in.valid && wbu.io.in.bits.isLoad && lateLoadWBUWidthSupported
-  exu.io.lateLoadWBU.valid := lateLoadWBUValid
-  // A valid WBU load is aligned with a valid response, as checked by WBU.
-  exu.io.lateLoadWBU.dataValid := lateLoadWBUValid
-  exu.io.lateLoadWBU.data :=
-    ExtLoadData(wbu.io.memResp.bits, wbu.io.in.bits.lsuAddrOffset, wbu.io.in.bits.lsuFunc3t)
-  exu.io.lateLoadWBU.rawData := wbu.io.memResp.bits
-  exu.io.lateLoadWBU.func3t  := wbu.io.in.bits.lsuFunc3t
-  exu.io.lateLoadWBU.offset  := wbu.io.in.bits.lsuAddrOffset
   idu.io.pipelineFlush := activeRedirectValid
 
   StageLogger(

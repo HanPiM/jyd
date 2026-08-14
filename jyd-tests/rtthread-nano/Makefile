@@ -85,7 +85,11 @@ INC_PATH += $(ROOT_DIR)/include $(NANO_DIR)/include $(NANO_DIR)/components/finsh
             $(COREMARK_BENCH_DIR) $(COREMARK_PORT_DIR) $(COREMARK_ACCEL_DIR)
 CFLAGS += -DHAVE_CCONFIG_H -D__RTTHREAD__ -DCOREMARK_ENABLE=$(COREMARK_ENABLE) \
           $(COREMARK_CFLAGS) -Wno-nonnull-compare -Wno-maybe-uninitialized
+ifeq ($(ARCH),riscv32-jyd)
 LDFLAGS += -T $(ROOT_DIR)/extra.ld
+else
+LDFLAGS += -T $(ROOT_DIR)/extra-flat.ld
+endif
 LIB_BUILD_DIR_softfloat := build/$(ARCH)-coremark-$(subst -O,,$(COREMARK_SUPPORT_OPT))
 LIB_MAKE_ARGS_softfloat = \
 	SOFTFLOAT_MARCH=$(patsubst -march=%,%,$(filter -march=%,$(COMMON_CFLAGS))) \
@@ -199,7 +203,7 @@ $(NANO_SRCS): fetch
 
 fetch: $(NANO_CHECKOUT)/.pinned-$(NANO_COMMIT)
 
-$(NANO_CHECKOUT)/.pinned-$(NANO_COMMIT):
+$(NANO_CHECKOUT)/.pinned-$(NANO_COMMIT): $(ROOT_DIR)/SOURCE_COMMIT $(wildcard $(ROOT_DIR)/patches/*.patch)
 	@if [ ! -d "$(NANO_CHECKOUT)/.git" ]; then \
 		git clone --filter=blob:none "$(NANO_REPO)" "$(NANO_CHECKOUT)"; \
 	fi
@@ -208,9 +212,7 @@ $(NANO_CHECKOUT)/.pinned-$(NANO_COMMIT):
 	fi
 	@git -C "$(NANO_CHECKOUT)" checkout -f --detach "$(NANO_COMMIT)"
 	@test "$$(git -C "$(NANO_CHECKOUT)" rev-parse HEAD)" = "$(NANO_COMMIT)"
-	@if ! git -C "$(NANO_CHECKOUT)" apply --reverse --check $(ROOT_DIR)/patches/*.patch 2>/dev/null; then \
-		git -C "$(NANO_CHECKOUT)" apply $(ROOT_DIR)/patches/*.patch; \
-	fi
+	@git -C "$(NANO_CHECKOUT)" apply $(ROOT_DIR)/patches/*.patch
 	@touch "$@"
 
 .PHONY: fetch

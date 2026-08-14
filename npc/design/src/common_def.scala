@@ -191,12 +191,6 @@ class DecodedInstInfo(implicit p : CPUParameters) extends InstMetaInfo with HasR
   // bits cross ID/EX; EXU reconstructs the fixed JYD address prefix.
   val reg1AddImm = UInt(22.W)
 
-  // A compact supported consumer may enter EXU before a load result is
-  // available. EXU resolves these operands from the registered LSU/WBU
-  // producer stages and holds the instruction until the data is valid.
-  val lateLoadRs1 = Bool()
-  val lateLoadRs2 = Bool()
-
   // Each adjacent-fast token is stored as eight token-XOR-base groups. EXU
   // reconstructs one selector per four data bits, preventing synthesis from
   // merging equivalent selector registers back into a high-fanout net.
@@ -220,10 +214,20 @@ class DecodedInstInfo(implicit p : CPUParameters) extends InstMetaInfo with HasR
   // Bit-extract multiply is a single-cycle custom-0 operation.
   val xbmulValid = Bool()
 
+  // Fused halfword multiply + bit-extract field product, custom-0 funct7=1.
+  // Uses the 16x16 narrow multiplier lane, so it completes in one cycle.
+  val xmbmValid = Bool()
+
+  // Stateful matrix dot-product accumulation over the narrow multiplier lane.
+  val xmacaccValid = Bool()
+
   // In-place list reversal uses an init operation followed by a hardware loop.
   val listReverseValid = Bool()
   val listReverseStep = Bool()
   val listReverseLoop = Bool()
+
+  // Linked-list find walks nodes in hardware and compares either idx or data16.
+  val listFindValid = Bool()
 
   // Clipped matrix reduction is a blocking multi-cycle custom operation.
   val xmsumValid = Bool()

@@ -3,6 +3,7 @@
 \usepackage{graphicx,booktabs,longtable,tabularx,array,calc}
 \usepackage{amsmath,amssymb,enumitem,caption,fancyhdr,float,dirtree}
 \usepackage{algorithm,algpseudocode}
+\usepackage{listings}
 \usepackage[hidelinks]{hyperref}
 \usepackage{xcolor,tikz,pgfplots}
 \usepackage{seqsplit}
@@ -27,12 +28,58 @@
 \newcolumntype{Y}{>{\raggedright\arraybackslash}X}
 \newcolumntype{C}[1]{>{\centering\arraybackslash}p{#1}}
 \newcommand{\code}[1]{\texttt{\seqsplit{#1}}}
+\newcommand{\TopStack}[1]{\begin{tabular}[t]{@{}l@{}}#1\end{tabular}}
 \newcommand{\evidence}[1]{\textsuperscript{\textcolor{blue!60!black}{[#1]}}}
 \newcommand{\MetricPending}[1]{\textcolor{orange!75!black}{\textbf{[\,待补：#1\,]}}}
-\newcommand{\PlaceholderFigure}[2]{%
-  \begin{figure}[H]\centering
-  \fcolorbox{orange!70!black}{orange!4}{\parbox[c][4.3cm][c]{0.88\linewidth}{\centering\bfseries #1\\[0.6em]\normalfont #2}}
-  \caption{#1（资料占位）}\end{figure}}
+\definecolor{codekeyword}{RGB}{28,79,145}
+\definecolor{codecomment}{RGB}{42,111,73}
+\definecolor{coderegister}{RGB}{135,47,47}
+\lstdefinelanguage{RV32Asm}{
+  alsoletter={.},
+  morekeywords={.insn,add,addi,and,andi,beq,bne,j,lbu,lhu,lw,mul,or,slli,srli,sw,xor},
+  morekeywords=[2]{zero,ra,sp,t0,t1,t2,t3,t4,t5,t6,a0,a1,a2,a3,a4,a5,a6,a7},
+  morecomment=[l]{\#}
+}
+\lstdefinestyle{cstatement}{
+  language=C,
+  basicstyle=\ttfamily\scriptsize,
+  keywordstyle=\color{codekeyword}\bfseries,
+  commentstyle=\color{codecomment}\itshape,
+  stringstyle=\color{violet!70!black},
+  frame=none,
+  columns=fullflexible,
+  keepspaces=true,
+  showstringspaces=false,
+  breaklines=true,
+  aboveskip=3pt,
+  belowskip=2pt
+}
+\lstdefinestyle{rv32statement}{
+  language=RV32Asm,
+  basicstyle=\ttfamily\scriptsize,
+  keywordstyle=\color{codekeyword}\bfseries,
+  keywordstyle=[2]\color{coderegister},
+  commentstyle=\color{codecomment}\itshape,
+  frame=none,
+  columns=fullflexible,
+  keepspaces=true,
+  showstringspaces=false,
+  breaklines=true,
+  escapeinside={(*@}{@*)},
+  aboveskip=3pt,
+  belowskip=2pt
+}
+\newcommand{\CustomInsn}[2]{%
+  {\strut\ttfamily\fontsize{6.4}{7.2}\selectfont #1\ \textcolor{codecomment}{\itshape\# #2}}}
+\newcommand{\CodeCompareBegin}[2]{%
+  \par\noindent\begin{minipage}{\linewidth}
+  \hrule height 0.8pt\relax\vspace{2pt}
+  \noindent\begin{minipage}[t]{0.48\linewidth}{\small\bfseries #1}\end{minipage}\hfill
+  \begin{minipage}[t]{0.48\linewidth}{\small\bfseries #2}\end{minipage}
+  \par\vspace{2pt}\hrule height 0.4pt\relax\vspace{1pt}}
+\newcommand{\CodeCompareEnd}{%
+  \par\vspace{1pt}\hrule height 0.8pt\relax
+  \end{minipage}\par\smallskip}
 \newcommand{\coverfield}[2]{%
   {\zihao{4}\noindent\makebox[6em][l]{\heiti#1：}%
    \underline{\makebox[\dimexpr\textwidth-6em\relax][l]{\strut\heiti #2}}\par}}
@@ -50,20 +97,23 @@
 \begin{document}
 \begin{titlepage}
   \centering
-  \vspace*{1.2cm}
-  {\zihao{2}\bfseries 第十届全国大学生集成电路创新创业大赛\par}
-  \vspace{2.0cm}
-  {\zihao{1}\bfseries 基于 RISC-V 指令集的 CPU 设计\par}
-  \vspace{0.8cm}
-  {\zihao{2}\bfseries 总决赛技术文档\par}
-  \vfill
-  \begin{minipage}{0.86\textwidth}
+  \includegraphics[width=0.35\textwidth]{common/competition-logo.png}\par\vspace{1.2cm}
+  {\zihao{2}\bfseries 第十届\\全国大学生集成电路创新创业大赛\par}
+  \vspace*{\fill}
+  \begin{minipage}{\textwidth}
+    \raggedright
+    \setlength{\parindent}{0pt}
+    \coverfield{报告类型}{决赛技术文档}
+    \vspace{0.45cm}
     \coverfield{参赛杯赛}{``竞业达''企业命题}
-    \vspace{0.45cm}\coverfield{队伍编号}{CICC1004252}
-    \vspace{0.45cm}\coverfield{团队名称}{和溢位}
-    \vspace{0.45cm}\coverfield{文档日期}{2026 年 8 月}
+    \vspace{0.45cm}
+    \coverfield{作品名称}{基于RISC-V指令集的CPU设计}
+    \vspace{0.45cm}
+    \coverfield{队伍编号}{CICC1004252}
+    \vspace{0.45cm}
+    \coverfield{团队名称}{和溢位}
+    \vspace{2cm}
   \end{minipage}
-  \vspace{1.8cm}
 \end{titlepage}
 
 \tableofcontents
@@ -71,6 +121,7 @@
 \input{src/chapters/00-preview}
 \input{src/chapters/01-overview}
 \input{src/chapters/02-architecture}
+\input{src/chapters/03-system-port}
 \input{src/chapters/03-extensions}
 \input{src/chapters/04-optimization}
 \input{src/chapters/05-verification}

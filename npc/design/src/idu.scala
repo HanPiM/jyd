@@ -118,14 +118,13 @@ object CacheAwareByPassMux {
     regData:    UInt,
     wrBacks:    Seq[WrBackForwardInfo],
     allowAdjacentFast: Bool
-  ): (Bool, UInt, Bool, Bool) = {
+  ): (Bool, UInt, Bool) = {
     require(wrBacks.length == 3)
     val exuConflict = SingleByPassMux.conflict(rs, wrBacks(0).addr, wrBacks(0).enWr)
     val lsuConflict = SingleByPassMux.conflict(rs, wrBacks(1).addr, wrBacks(1).enWr)
     val wbuConflict = SingleByPassMux.conflict(rs, wrBacks(2).addr, wrBacks(2).enWr)
     val adjacentFastSelect = allowAdjacentFast && exuConflict && wrBacks(0).dataVaild
     val lsuSelect = !exuConflict && lsuConflict && wrBacks(1).dataVaild
-    val deferredLoadSelect = lsuSelect && wrBacks(1).kind === ResultKind.load
     val wbuSelect = !exuConflict && !lsuConflict && wbuConflict && wrBacks(2).dataVaild
 
     val needStall = Mux(
@@ -135,7 +134,7 @@ object CacheAwareByPassMux {
     )
 
     val outData = Mux(lsuSelect, wrBacks(1).data, Mux(wbuSelect, wrBacks(2).data, regData))
-    (needStall, outData, adjacentFastSelect, deferredLoadSelect)
+    (needStall, outData, adjacentFastSelect)
   }
 }
 
@@ -154,21 +153,19 @@ class ByPassMux(
     val needStall  = Output(Bool())
     val adjacentFastRs1 = Output(Bool())
     val adjacentFastRs2 = Output(Bool())
-    val deferredLoadRs1 = Output(Bool())
-    val deferredLoadRs2 = Output(Bool())
 
     val outData1 = Output(Types.UWord)
     val outData2 = Output(Types.UWord)
   })
 
   val wrBacks    = Seq(io.wrBackInfo.exu, io.wrBackInfo.lsu, io.wrBackInfo.wbu)
-  val (needStall1, outData1, adjacentFastRs1, deferredLoadRs1) = CacheAwareByPassMux(
+  val (needStall1, outData1, adjacentFastRs1) = CacheAwareByPassMux(
     io.rs1,
     io.regData1,
     wrBacks,
     io.allowAdjacentFastRs1
   )
-  val (needStall2, outData2, adjacentFastRs2, deferredLoadRs2) = CacheAwareByPassMux(
+  val (needStall2, outData2, adjacentFastRs2) = CacheAwareByPassMux(
     io.rs2,
     io.regData2,
     wrBacks,
@@ -178,8 +175,6 @@ class ByPassMux(
   io.needStall := needStall1 || needStall2
   io.adjacentFastRs1 := adjacentFastRs1
   io.adjacentFastRs2 := adjacentFastRs2
-  io.deferredLoadRs1 := deferredLoadRs1
-  io.deferredLoadRs2 := deferredLoadRs2
   io.outData1  := outData1
   io.outData2  := outData2
 }
@@ -372,9 +367,6 @@ class IDU(
   val fastBranchRs1Token = bypassMux.io.adjacentFastRs1 && isTypBranch
   val fastBranchRs2Token = bypassMux.io.adjacentFastRs2 && isTypBranch
   val fastStoreRs2Token = bypassMux.io.adjacentFastRs2 && isTypStore
-  val deferredLoadRs1Token = bypassMux.io.deferredLoadRs1 && !needReg1AddImm
-  val deferredLoadRs2Token = bypassMux.io.deferredLoadRs2 && !isFmtI
-  val deferredLoadBranch = isTypBranch && (deferredLoadRs1Token || deferredLoadRs2Token)
   res.resultKind := Mux(
     isTypLoad,
     ResultKind.load,
@@ -394,9 +386,7 @@ class IDU(
   res.fastBranchRs1       := Fill(8, fastBranchRs1Token) ^ res.reg1(7, 0)
   res.fastBranchRs2       := Fill(8, fastBranchRs2Token) ^ res.reg2(7, 0)
   res.fastStoreRs2        := Fill(8, fastStoreRs2Token) ^ res.reg2(7, 0)
-  res.deferredLoadRs1     := Fill(8, deferredLoadRs1Token) ^ res.reg1(7, 0)
-  res.deferredLoadRs2     := Fill(8, deferredLoadRs2Token) ^ res.reg2(7, 0)
-  res.adjacentFastBranch  := fastBranchRs1Token || fastBranchRs2Token || deferredLoadBranch
+  res.adjacentFastBranch  := fastBranchRs1Token || fastBranchRs2Token
 
   val addressExuConflict =
     needReg1AddImm && SingleByPassMux.conflict(res.rs1, io.wrBackInfo.exu.addr, io.wrBackInfo.exu.enWr)

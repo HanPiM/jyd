@@ -497,15 +497,13 @@ class CPUCore(
 
   idu.io.rvec <> gprs.io.read
 
-  val lsuFwdInfo = ExtractFwdInfoFromLSU(lsu.io.in)
+  val lsuFwdInfo = ExtractFwdInfoFromLSU(lsu.io.in, dcache.io.readData)
   val lsuFastFwdInfo = ExtractFastFwdInfoFromLSU(lsu.io.in)
-  val wbuFwdInfo = ExtractFwdInfoFromWrBack(wbu.io.in, wbu.io.memResp)
   idu.io.wrBackInfo.exu := exu.io.fwd
   idu.io.wrBackInfo.lsu := lsuFwdInfo
-  idu.io.wrBackInfo.wbu := wbuFwdInfo
+  idu.io.wrBackInfo.wbu := ExtractFwdInfoFromWrBack(wbu.io.in, wbu.io.memResp)
   idu.io.lsuFastAddressFwd := lsuFastFwdInfo
   exu.io.previousStageFwd := lsuFastFwdInfo
-  exu.io.committedStageFwd := wbuFwdInfo
 
   idu.io.pipelineFlush := activeRedirectValid
 

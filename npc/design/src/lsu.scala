@@ -19,18 +19,17 @@ class LSUInput(
 }
 
 object ExtractFwdInfoFromLSU {
-  def apply(info: DecoupledIO[LSUInput])(
+  def apply(info: DecoupledIO[LSUInput], dcacheReadData: UInt)(
     implicit p: CPUParameters
   ): WrBackForwardInfo = {
     val wrBack = info.bits.exuWriteBack
+    val loadData = ExtLoadData(dcacheReadData, info.bits.destAddr(1, 0), info.bits.func3t)
     val loadDataValid = info.bits.isLoad && info.bits.cacheableLoad && info.bits.dcacheHit
     val out = Wire(new WrBackForwardInfo)
     out.addr      := ResultLaneSelect.rd(wrBack)
     out.enWr      := ResultLaneSelect.anyValid(wrBack) && info.valid
     out.dataVaild := info.valid && (!info.bits.isLoad || loadDataValid)
-    // A cache-hit load is represented by metadata at IDU and recovered from the
-    // registered WBU payload in EXU. Keep synchronous BRAM data out of ID/EX.
-    out.data      := ResultLaneSelect.nonLoadData(wrBack)
+    out.data      := Mux(info.bits.isLoad, loadData, ResultLaneSelect.nonLoadData(wrBack))
     out.kind      := wrBack.resultKind
 
     out

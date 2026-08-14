@@ -70,6 +70,8 @@ class DCache extends Module {
   val listFindInfoHit = Reg(Bool())
   val listFindDataHit = Reg(Bool())
   val listFindInfo = Reg(UInt(32.W))
+  val listFindRequestValid = RegInit(false.B)
+  val listFindRequestAddressReg = Reg(UInt(32.W))
 
   val queryBank  = io.queryIndex(9)
   val queryAddr  = io.queryIndex(8, 0)
@@ -117,6 +119,7 @@ class DCache extends Module {
   }
 
   when(listFindState === ListFindState.idle && io.listFindStart) {
+    listFindRequestValid := false.B
     listFindCurrent := io.listFindAddress
     listFindQueryAddress := io.listFindAddress
     listFindQueryAddressB := io.listFindAddress + 4.U
@@ -137,6 +140,8 @@ class DCache extends Module {
     // captured info target for the following resolve cycle without feeding
     // the hit decision back through the asynchronous RAM address.
     listFindQueryAddress := listReadData(1)
+    listFindRequestValid := !listQueryHits(0) || !listQueryHits(1)
+    listFindRequestAddressReg := Mux(listQueryHits(0), listFindQueryAddressB, listFindCurrent)
     listFindState := ListFindState.nodeResolve
   }.elsewhen(listFindState === ListFindState.nodeResolve) {
     when(!listFindNextHit) {
@@ -151,6 +156,8 @@ class DCache extends Module {
       listFindQueryAddress := listFindInfo
       listFindDataHit := listQueryHits(0)
       listFindWord := listReadData(0)
+      listFindRequestValid := !listQueryHits(0)
+      listFindRequestAddressReg := listFindInfo
       listFindState := ListFindState.dataResolve
     }
   }.elsewhen(listFindState === ListFindState.nextMemory && io.listFindMemResponse.valid) {
@@ -159,6 +166,8 @@ class DCache extends Module {
       listFindQueryAddress := listFindInfo
       listFindState := ListFindState.dataLookup
     }.otherwise {
+      listFindRequestValid := true.B
+      listFindRequestAddressReg := listFindQueryAddressB
       listFindState := ListFindState.infoRequest
     }
   }.elsewhen(listFindState === ListFindState.infoRequest) {
@@ -171,6 +180,8 @@ class DCache extends Module {
   }.elsewhen(listFindState === ListFindState.dataLookup) {
     listFindDataHit := listQueryHits(0)
     listFindWord := listReadData(0)
+    listFindRequestValid := !listQueryHits(0)
+    listFindRequestAddressReg := listFindQueryAddress
     listFindState := ListFindState.dataResolve
   }.elsewhen(listFindState === ListFindState.dataResolve) {
     when(listFindDataHit) {
@@ -206,16 +217,16 @@ class DCache extends Module {
       listFindState := ListFindState.nodeLookup
     }
   }.elsewhen(listFindState === ListFindState.done && io.listFindConsume) {
+    listFindRequestValid := false.B
     listFindState := ListFindState.idle
   }
 
-  val listFindNextRequest = listFindState === ListFindState.nodeResolve && !listFindNextHit
-  val listFindInfoRequest = (listFindState === ListFindState.nodeResolve && listFindNextHit && !listFindInfoHit) ||
-    listFindState === ListFindState.infoRequest
-  val listFindDataRequest = listFindState === ListFindState.dataResolve && !listFindDataHit
-  io.listFindRequest := listFindNextRequest || listFindInfoRequest || listFindDataRequest
-  io.listFindRequestAddress := Mux(listFindNextRequest, listFindCurrent,
-    Mux(listFindInfoRequest, listFindQueryAddressB, listFindQueryAddress))
+  when(io.listFindRequestFire) {
+    listFindRequestValid := false.B
+  }
+
+  io.listFindRequest := listFindRequestValid
+  io.listFindRequestAddress := listFindRequestAddressReg
   io.listFindDone := listFindState === ListFindState.done
   io.listFindResult := listFindResult
 

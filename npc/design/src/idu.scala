@@ -424,12 +424,7 @@ class IDU(
   // res.snpc       := io.in.bits.pc + 4.U
   res.pcAddImm := io.in.bits.pc + res.imm
   def addAddrImm(base: UInt): UInt = {
-    val lowSum = base(15, 0) +& addrImm12.asSInt.pad(16).asUInt
-    val positiveOffset = !addrImm12(11)
-    val crossesIntoDram = positiveOffset && base(19, 12) === "hff".U && lowSum(16)
-    val crossesIntoPerip = positiveOffset && base(20, 12) === "h1ff".U && lowSum(16)
-    val high = Mux(crossesIntoPerip, "h20".U(6.W), Mux(crossesIntoDram, "h10".U(6.W), base(21, 16)))
-    high ## lowSum(15, 0)
+    (base(21, 0) + addrImm12.asSInt.pad(22).asUInt)(21, 0)
   }
   val addressBase = Mux(addressWbuReady, io.wrBackInfo.wbu.data, io.rvec.rawData(0))
   res.reg1AddImm := addAddrImm(addressBase)

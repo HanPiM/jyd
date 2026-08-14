@@ -231,7 +231,7 @@ class Multiplier extends Module {
   })
 
   object State extends ChiselEnum {
-    val idle, busy, done = Value
+    val idle, busy, xmacaccDone, done = Value
   }
   val state = RegInit(State.idle)
 
@@ -299,9 +299,13 @@ class Multiplier extends Module {
   ))
 
   io.in.ready  := state === State.idle
-  io.out.valid := state === State.done ||
+  io.out.valid := state === State.done || state === State.xmacaccDone ||
     (state === State.busy && resultValid && xmacaccReg && !xmacaccLastReg)
-  io.out.bits := Mux(state === State.done, resultReg, Mux(xmacaccReg, 0.U, result))
+  io.out.bits := Mux(
+    state === State.done,
+    resultReg,
+    Mux(state === State.xmacaccDone, matrixAccumulator, Mux(xmacaccReg, 0.U, result))
+  )
 
   switch(state) {
     is(State.idle) {
@@ -335,8 +339,7 @@ class Multiplier extends Module {
         when(xmacaccReg) {
           matrixAccumulator := xmacaccResult
           when(xmacaccLastReg) {
-            resultReg := xmacaccResult
-            state := State.done
+            state := State.xmacaccDone
           }.elsewhen(io.out.ready) {
             state := State.idle
           }.otherwise {
@@ -349,6 +352,11 @@ class Multiplier extends Module {
           resultReg := result
           state := State.done
         }
+      }
+    }
+    is(State.xmacaccDone) {
+      when(io.out.fire) {
+        state := State.idle
       }
     }
     is(State.done) {

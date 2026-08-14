@@ -9,7 +9,9 @@ Usage: run_digital_twin_vivado.sh [impl|write_bitstream|bitstream] [--jobs N] [-
 Build npc pack-fpga, replace the Vivado project's imported pack-fpga directory,
 then run the digital_twin Vivado project to impl or write_bitstream.
 
-By default, completed IP/OOC and synth_1 checkpoints are reused and impl_1 is rerun.
+Implementation mode reuses completed IP/OOC checkpoints and reruns top-level
+synthesis and implementation. Write-bitstream mode opens the latest completed
+routed checkpoint directly and does not relaunch impl_1.
 Pass --reset-runs for a clean IP/OOC, synth_1, and impl_1 rebuild.
 Bitstream mode always replaces the routed DCP's memories from DIR/irom.coe and
 DIR/dram.coe (default: <repo>/cur_coe), then records their hashes beside top.bit.
@@ -293,6 +295,10 @@ if [ -z "$coe_dir" ]; then
   coe_dir="$repo_root/cur_coe"
 fi
 if [ "$mode" = write_bitstream ]; then
+  if [ "$reset_runs" -eq 1 ] || [ "$reuse_ip" -eq 1 ]; then
+    echo "write_bitstream reuses an implemented checkpoint; run impl separately before using --reset-runs or --reuse-ip" >&2
+    exit 2
+  fi
   if [ "${coe_dir#/}" = "$coe_dir" ]; then
     coe_dir="$PWD/$coe_dir"
   fi
@@ -787,6 +793,60 @@ if {$expected_cpu_mhz ne "" && abs(double($expected_cpu_mhz) - $configured_cpu_m
   error [format "Configured CPU clock does not match expected frequency: expected=%.6f actual=%.6f MHz" \
     $expected_cpu_mhz $configured_cpu_mhz]
 }
+
+if {$mode eq "write_bitstream"} {
+  if {[llength [get_runs impl_1]] != 1} {
+    error "Vivado run impl_1 was not found"
+  }
+  set impl_run [get_runs impl_1]
+  set impl_dir [file normalize [get_property DIRECTORY $impl_run]]
+  set routed_dcp [file join $impl_dir top_routed.dcp]
+  set postroute_dcp [file join $impl_dir top_postroute_physopt.dcp]
+  set postroute_end [file join $impl_dir .postroute_physopt_design.end.rst]
+  set postroute_enabled [get_property STEPS.POST_ROUTE_PHYS_OPT_DESIGN.IS_ENABLED $impl_run]
+
+  # A failed post-route physopt can leave a stale DCP behind.  Select it only
+  # when this implementation enabled the step, its completion marker exists,
+  # and the checkpoint is at least as new as the routed design.
+  set bitstream_dcp $routed_dcp
+  if {$postroute_enabled && [file isfile $postroute_end] && [file isfile $postroute_dcp] &&
+      [file isfile $routed_dcp] && [file mtime $postroute_dcp] >= [file mtime $routed_dcp]} {
+    set bitstream_dcp $postroute_dcp
+  }
+  if {![file isfile $bitstream_dcp]} {
+    error "Implemented checkpoint does not exist: $bitstream_dcp; run impl first"
+  }
+
+  puts "Opening completed implementation checkpoint for bitstream: $bitstream_dcp"
+  open_checkpoint $bitstream_dcp
+  set cpu_clocks [get_clocks -quiet clk_out2_mypll]
+  if {[llength $cpu_clocks] != 1} {
+    error "Expected exactly one implemented clk_out2_mypll clock, got [llength $cpu_clocks]"
+  }
+  set cpu_period_ns [get_property PERIOD $cpu_clocks]
+  set expected_cpu_period_ns [expr {1000.0 / $configured_cpu_mhz}]
+  set cpu_period_error_ns [expr {abs(double($cpu_period_ns) - $expected_cpu_period_ns)}]
+  puts [format "Implemented CPU clock: configured=%.6f MHz reported_period=%.6f ns expected_period=%.6f ns" \
+    $configured_cpu_mhz $cpu_period_ns $expected_cpu_period_ns]
+  if {$cpu_period_error_ns > 0.0005} {
+    error [format "Implemented CPU clock period does not match configured PLL: %.6f ns" $cpu_period_error_ns]
+  }
+
+  set raw_bit [file join $impl_dir top.bit]
+  set_property XPM_LIBRARIES {XPM_CDC XPM_MEMORY} [current_project]
+  catch {write_mem_info -force -no_partial_mmi [file join $impl_dir top.mmi]}
+  write_bitstream -force $raw_bit
+  set checkpoint_record [file join $impl_dir top.bit.base-checkpoint]
+  set checkpoint_file [open $checkpoint_record w]
+  puts $checkpoint_file $bitstream_dcp
+  close $checkpoint_file
+  puts "BITSTREAM_CHECKPOINT=$bitstream_dcp"
+  puts "BITSTREAM_OUTPUT=$raw_bit"
+  close_design
+  close_project
+  exit 0
+}
+
 if {$reset_runs} {
   puts "Resetting and regenerating [llength $project_ips] project IP output products"
   reset_target all $project_ips
@@ -1075,13 +1135,10 @@ if {$cpu_period_error_ns > 0.0005} {
 }
 close_design
 
-if {$mode eq "impl"} {
-  launch_runs impl_1 -jobs $jobs
-} elseif {$mode eq "write_bitstream"} {
-  launch_runs impl_1 -to_step write_bitstream -jobs $jobs
-} else {
+if {$mode ne "impl"} {
   error "Unsupported mode: $mode"
 }
+launch_runs impl_1 -jobs $jobs
 
 wait_on_run impl_1
 set status [get_property STATUS [get_runs impl_1]]
@@ -1204,11 +1261,12 @@ fi
 if [ "$mode" = write_bitstream ]; then
   impl_dir="$vivado_proj_home/digital_twin.runs/impl_1"
   raw_bit="$impl_dir/top.bit"
-  if [ "$flow_profile" = default ] || [ "$post_route_phys_opt_directive" = Disabled ]; then
-    routed_dcp="$impl_dir/top_routed.dcp"
-  else
-    routed_dcp="$impl_dir/top_postroute_physopt.dcp"
+  checkpoint_record="$impl_dir/top.bit.base-checkpoint"
+  if [ ! -f "$checkpoint_record" ]; then
+    echo "Vivado did not record the checkpoint used for bitstream generation: $checkpoint_record" >&2
+    exit 1
   fi
+  IFS= read -r routed_dcp <"$checkpoint_record"
   replace_tool="$repo_root/coe_replace/coe_replace.py"
   replaced_bit="$impl_dir/top.cur-coe.bit"
   raw_saved_bit="$impl_dir/top.project-init.bit"

@@ -154,6 +154,7 @@ class LSU(
 }
 
 class LSUInputForDifftest extends Bundle {
+  val code     = Types.UWord
   val isLoad   = Bool()
   val isStore  = Bool()
   val destAddr = Types.UWord
@@ -199,6 +200,7 @@ class LSUForDifftest(
   //   (isMemOp && (isSerialAddr || isSPIAddr || isClintAddr || isVGAAddr || isPS2Addr)) || (isLoadOp && isClintAddr)
 
   val outInfo = io.out.bits
+  outInfo.code        := io.in.bits.code
   outInfo.pc          := io.in.bits.pc
   outInfo.needSkipRef := needSkipDifftest
   outInfo.isEBreak    := io.in.bits.isEBreak

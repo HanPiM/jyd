@@ -213,6 +213,7 @@ class WBU(implicit p:CPUParameters) extends Module {
 }
 
 class DifftestWriteBackInfo extends Bundle {
+  val code = Types.UWord
   val pc= Types.UWord
   val nxtPC = Types.UWord
   val isEBreak = Bool()
@@ -228,6 +229,9 @@ class WBUForDifftest extends Module {
 
   val isEBreak = WireDefault(wbinfo.isEBreak && valid)
   dontTouch(isEBreak)
+  when(valid) {
+    RawClockedVoidFunctionCall("retire_inst")(clock, valid, wbinfo.code)
+  }
   when(isEBreak) {
     RawClockedVoidFunctionCall("raise_ebreak")(clock, isEBreak)
     // stop()

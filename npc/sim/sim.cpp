@@ -60,6 +60,11 @@ std::shared_ptr<VerilatedFstC> tfp;
 static uint64_t sim_time = 0;
 static uint64_t cycle_count = 0;
 static uint64_t inst_count = 0;
+static uint64_t custom_inst_count = 0;
+static uint64_t non_custom_inst_count = 0;
+static uint64_t custom_attributed_cycle_count = 0;
+static uint64_t non_custom_attributed_cycle_count = 0;
+static uint64_t previous_retire_cycle = 0;
 
 sim_time_t sim_get_time() { return sim_time; }
 sim_cycle_t sim_get_cycle() { return cycle_count; }
@@ -68,6 +73,14 @@ sim_config *sim_get_config() { return &sim_cfg; }
 sim_cpu_state *sim_get_cpu_state() { return &cpu; }
 
 uint64_t sim_get_inst_count() { return inst_count; }
+uint64_t sim_get_custom_inst_count() { return custom_inst_count; }
+uint64_t sim_get_non_custom_inst_count() { return non_custom_inst_count; }
+uint64_t sim_get_custom_attributed_cycle_count() {
+  return custom_attributed_cycle_count;
+}
+uint64_t sim_get_non_custom_attributed_cycle_count() {
+  return non_custom_attributed_cycle_count;
+}
 
 class sim_time_formatter : public spdlog::custom_flag_formatter {
 public:
@@ -127,6 +140,14 @@ static void reset(int n) {
     sim_step_cycle();
   }
   dut.reset = 0;
+  // Exclude reset cycles. retire_inst() uses the end of the current cycle as
+  // its timestamp, so consecutive retirements have an interval of one cycle.
+  inst_count = 0;
+  custom_inst_count = 0;
+  non_custom_inst_count = 0;
+  custom_attributed_cycle_count = 0;
+  non_custom_attributed_cycle_count = 0;
+  previous_retire_cycle = cycle_count;
 }
 
 static bool is_running = true;
@@ -239,6 +260,23 @@ extern "C" void gpr_upd(char regno, int data) {
   if (regno == 0)
     return;
   cpu.gpr[(int)regno] = data;
+}
+
+extern "C" void retire_inst(int inst) {
+  // RISC-V reserves these four major opcodes for custom extensions.
+  const uint32_t opcode = static_cast<uint32_t>(inst) & 0x7f;
+  const bool is_custom = opcode == 0x0b || opcode == 0x2b ||
+                         opcode == 0x5b || opcode == 0x7b;
+  const uint64_t retire_cycle = cycle_count + 1;
+  const uint64_t attributed_cycles = retire_cycle - previous_retire_cycle;
+  previous_retire_cycle = retire_cycle;
+  if (is_custom) {
+    custom_inst_count++;
+    custom_attributed_cycle_count += attributed_cycles;
+  } else {
+    non_custom_inst_count++;
+    non_custom_attributed_cycle_count += attributed_cycles;
+  }
 }
 
 bool pc_changed = false;

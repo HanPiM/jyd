@@ -1027,6 +1027,7 @@ class EXUForDifftest(
   io.out.valid := io.actual.outValid
 
   val outInfo = io.out.bits
+  outInfo.code     := io.in.bits.code
   outInfo.isLoad   := InstType.hasSame(io.in.bits.info.typ, InstType.load)
   outInfo.isStore  := InstType.hasSame(io.in.bits.info.typ, InstType.store)
   outInfo.pc       := io.actual.pc

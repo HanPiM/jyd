@@ -79,6 +79,7 @@ class EXU(
 
     val fwd = Output(new WrBackForwardInfo)
     val previousStageFwd = Input(new WrBackForwardInfo)
+    val committedStageFwd = Input(new WrBackForwardInfo)
     val stagedDcacheQueryIndex = Input(UInt(10.W))
 
     val dcache = new Bundle {
@@ -195,20 +196,38 @@ class EXU(
   val baseRegV2 = dinst.info.reg2
   def decodeAdjacentFastGroups(encoded: UInt, base: UInt): UInt = encoded ^ base(7, 0)
   def expandAdjacentFastGroups(groups: UInt): UInt = Cat((7 to 0 by -1).map(i => Fill(4, groups(i))))
-  def selectAdjacentFast(groups: UInt, base: UInt): UInt = {
+  def selectDeferredGroups(groups: UInt, base: UInt, data: UInt): UInt = {
     val mask = expandAdjacentFastGroups(groups)
-    (io.previousStageFwd.data & mask) | (base & ~mask)
+    (data & mask) | (base & ~mask)
   }
+  val deferredLoadRs1Groups = decodeAdjacentFastGroups(dinst.info.deferredLoadRs1, baseRegV1)
+  val deferredLoadRs2Groups = decodeAdjacentFastGroups(dinst.info.deferredLoadRs2, baseRegV2)
+  val deferredLoadTokenActive = io.in.valid && (deferredLoadRs1Groups.orR || deferredLoadRs2Groups.orR)
+  val deferredLoadAligned = io.committedStageFwd.dataVaild && io.committedStageFwd.kind === ResultKind.load
+  val deferredLoadStarted = RegInit(false.B)
+  val deferredLoadData = Reg(UInt(32.W))
+  when(deferredLoadTokenActive && !deferredLoadStarted) {
+    assert(deferredLoadAligned, "deferred load token lost its registered WBU result")
+  }
+  when(!io.in.valid || io.in.fire) {
+    deferredLoadStarted := false.B
+  }.elsewhen(deferredLoadTokenActive && !deferredLoadStarted && deferredLoadAligned) {
+    deferredLoadData := io.committedStageFwd.data
+    deferredLoadStarted := true.B
+  }
+  val activeDeferredLoadData = Mux(deferredLoadStarted, deferredLoadData, io.committedStageFwd.data)
+  val loadRegV1 = selectDeferredGroups(deferredLoadRs1Groups, baseRegV1, activeDeferredLoadData)
+  val loadRegV2 = selectDeferredGroups(deferredLoadRs2Groups, baseRegV2, activeDeferredLoadData)
   val fastAluRs1Groups = decodeAdjacentFastGroups(dinst.info.fastAluRs1, baseRegV1)
   val fastAluRs2Groups = decodeAdjacentFastGroups(dinst.info.fastAluRs2, baseRegV2)
   val fastBranchRs1Groups = decodeAdjacentFastGroups(dinst.info.fastBranchRs1, baseRegV1)
   val fastBranchRs2Groups = decodeAdjacentFastGroups(dinst.info.fastBranchRs2, baseRegV2)
   val fastStoreRs2Groups = decodeAdjacentFastGroups(dinst.info.fastStoreRs2, baseRegV2)
-  val fastRegV1 = selectAdjacentFast(fastAluRs1Groups, baseRegV1)
-  val fastRegV2 = selectAdjacentFast(fastAluRs2Groups, baseRegV2)
-  val branchRegV1 = selectAdjacentFast(fastBranchRs1Groups, baseRegV1)
-  val branchRegV2 = selectAdjacentFast(fastBranchRs2Groups, baseRegV2)
-  val storeRegV2 = selectAdjacentFast(fastStoreRs2Groups, baseRegV2)
+  val fastRegV1 = selectDeferredGroups(fastAluRs1Groups, loadRegV1, io.previousStageFwd.data)
+  val fastRegV2 = selectDeferredGroups(fastAluRs2Groups, loadRegV2, io.previousStageFwd.data)
+  val branchRegV1 = selectDeferredGroups(fastBranchRs1Groups, loadRegV1, io.previousStageFwd.data)
+  val branchRegV2 = selectDeferredGroups(fastBranchRs2Groups, loadRegV2, io.previousStageFwd.data)
+  val storeRegV2 = selectDeferredGroups(fastStoreRs2Groups, loadRegV2, io.previousStageFwd.data)
   // Preserve each adjacent-result selector as a local 2:1 boundary. Without
   // these nets Vivado can absorb the selector into every downstream ALU or
   // comparator LUT, turning the one-bit token into a high-fanout control net.
@@ -217,9 +236,11 @@ class EXU(
   dontTouch(branchRegV1)
   dontTouch(branchRegV2)
   dontTouch(storeRegV2)
+  dontTouch(loadRegV1)
+  dontTouch(loadRegV2)
 
-  val reg_v1       = baseRegV1
-  val reg_v2       = baseRegV2
+  val reg_v1       = loadRegV1
+  val reg_v2       = loadRegV2
   val listReverseActiveCurrent = Mux(isListReverseLoop, listReverseLoopAddress, reg_v1)
 
   // A numeric-token scan consumes at most the configured data-region size, so 16-bit
@@ -469,10 +490,10 @@ class EXU(
   fast_in.func3t := func3t
   fast_in.func7t := func7t
 
-  special_in.src1   := baseRegV1
-  special_in.src2   := baseRegV2
-  special_in.mulRawSrc1 := baseRegV1
-  special_in.mulRawSrc2 := baseRegV2
+  special_in.src1   := loadRegV1
+  special_in.src2   := loadRegV2
+  special_in.mulRawSrc1 := loadRegV1
+  special_in.mulRawSrc2 := loadRegV2
   special_in.mulPrevData := 0.U
   special_in.mulPrevRs1 := false.B
   special_in.mulPrevRs2 := false.B
@@ -515,7 +536,6 @@ class EXU(
     assert(io.previousStageFwd.dataVaild && io.previousStageFwd.kind === ResultKind.fastInt,
       "deferred result entered the store-data fast path")
   }
-
   // --- CSR ---
   val is_mret  = dinst.info.isMRet
   val is_ecall = dinst.info.isECall

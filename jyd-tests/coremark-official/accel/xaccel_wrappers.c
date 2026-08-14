@@ -170,28 +170,18 @@ __xaccel_xdfa4_transition(ee_u8 **instr)
     return state;
 }
 
-static inline __attribute__((always_inline)) ee_u8 *
-__xaccel_xdfa4p_step(ee_u8 *str)
-{
-    ee_u8 *result;
-    asm volatile(".insn r 0x5b, 5, 2, %0, x0, %1"
-                 : "=r"(result)
-                 : "r"(str)
-                 : "memory");
-    return result;
-}
-
 static inline __attribute__((always_inline)) void
 __xaccel_xdfa4p_transition(ee_u8 **instr)
 {
     ee_u8 *p = *instr;
-    for (;;)
-    {
-        ee_u8 *next = __xaccel_xdfa4p_step(p);
-        if (next == p)
-            break;
-        p = next;
-    }
+    /* Keep the step and equality test together so GCC does not add pointer moves. */
+    asm volatile("1:\n\t"
+                 "mv t0, %0\n\t"
+                 ".insn r 0x5b, 5, 2, %0, x0, %0\n\t"
+                 "bne t0, %0, 1b"
+                 : "+r"(p)
+                 :
+                 : "t0", "memory");
     *instr = p;
 }
 

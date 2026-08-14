@@ -78,20 +78,15 @@ class EXU(
     val nxtPC = Output(Types.UWord)
 
     val fwd = Output(new WrBackForwardInfo)
-    val lateLoadProducer = Output(new LateLoadProducerInfo)
-    val lateLoadLSU = Input(new LateLoadSourceInfo)
-    val lateLoadWBU = Input(new LateLoadSourceInfo)
     val previousStageFwd = Input(new WrBackForwardInfo)
     val stagedDcacheQueryIndex = Input(UInt(10.W))
 
     val dcache = new Bundle {
       val hit        = Input(Bool())
       val readData   = Input(Types.UWord)
-      val lateReadData = Input(Types.UWord)
       val storeEpoch = Input(Bool())
       val queryIndex = Output(UInt(10.W))
       val queryTag   = Output(UInt(7.W))
-      val lateQueryIndex = Output(UInt(10.W))
       val listFindStart = Output(Bool())
       val listFindConsume = Output(Bool())
       val listFindAddress = Output(Types.UWord)
@@ -196,34 +191,6 @@ class EXU(
   val xmsumResponseNextRet = Mux(xmsumResponseClipped, xmsumRet + 10.U,
     Mux(xmsumResponseIncreased, xmsumRet + 1.U, xmsumRet))
 
-  // DCache hits still resolve a dependent consumer in this cycle.  A miss or
-  // peripheral load reaches WBU later; capture that response first so the
-  // memory-response mux cannot drive branch resolution and pipeline flush in
-  // the same cycle.
-  val capturedLateLoadValid = RegInit(false.B)
-  val capturedLateLoadData  = Reg(Types.UWord)
-  capturedLateLoadData := io.lateLoadWBU.data
-  val captureLateLoadWBU =
-    io.in.valid && (dinst.info.lateLoadRs1 || dinst.info.lateLoadRs2) &&
-      !io.lateLoadLSU.valid && io.lateLoadWBU.valid && io.lateLoadWBU.dataValid && !capturedLateLoadValid
-
-  when(!io.in.valid || io.in.fire) {
-    capturedLateLoadValid := false.B
-  }.elsewhen(captureLateLoadWBU) {
-    capturedLateLoadValid := true.B
-  }
-
-  // A late-load operand first looks at LSU. This priority is required when an
-  // older instruction happens to target the same register. A miss keeps the
-  // payload held until the WBU response has crossed the capture register.
-  def resolveLateLoadOperand(late: Bool, normalData: UInt): (Bool, UInt) = {
-    val lsuMatch = late && io.lateLoadLSU.valid
-    val capturedMatch = late && !lsuMatch && capturedLateLoadValid
-    val ready = !late || (lsuMatch && io.lateLoadLSU.dataValid) || capturedMatch
-    val data = Mux(lsuMatch, io.lateLoadLSU.data, Mux(capturedMatch, capturedLateLoadData, normalData))
-    (ready, data)
-  }
-
   val baseRegV1 = dinst.info.reg1
   val baseRegV2 = dinst.info.reg2
   def decodeAdjacentFastGroups(encoded: UInt, base: UInt): UInt = encoded ^ base(7, 0)
@@ -251,31 +218,6 @@ class EXU(
   dontTouch(branchRegV2)
   dontTouch(storeRegV2)
 
-  val (lateRs1Ready, lateRegV1) =
-    resolveLateLoadOperand(dinst.info.lateLoadRs1, branchRegV1)
-  val (lateRs2Ready, lateRegV2) =
-    resolveLateLoadOperand(dinst.info.lateLoadRs2, branchRegV2)
-  val hasLateLoadOperand = dinst.info.lateLoadRs1 || dinst.info.lateLoadRs2
-  val lateDataReady = lateRs1Ready && lateRs2Ready
-  val lateDataReadyFromLSU = hasLateLoadOperand && io.lateLoadLSU.dataValid
-
-  // Speculative late-load consumers are limited to fixed ANDI 1 and SRLI 1,
-  // whose compact result paths avoid a general ALU or adder.
-  val lateForwardRegV1 = Mux(dinst.info.lateLoadRs1, io.lateLoadLSU.data, dinst.info.reg1)
-  // Reuse the IDU invariant instead of repeating a 32-bit immediate
-  // comparison in the EXU-to-IDU ready/forwarding cone.
-  val isLateLoadAndi1 = hasLateLoadOperand && func3t === "b111".U
-  val isLateLoadSrli1 = hasLateLoadOperand && func3t === "b101".U
-  val lateBitResult = Mux(
-    isLateLoadAndi1,
-    Cat(0.U(31.W), lateRegV1(0)),
-    Cat(0.U(1.W), lateRegV1(31, 1))
-  )
-  val lateBitForwardResult = Mux(
-    isLateLoadAndi1,
-    Cat(0.U(31.W), lateForwardRegV1(0)),
-    Cat(0.U(1.W), lateForwardRegV1(31, 1))
-  )
   val reg_v1       = baseRegV1
   val reg_v2       = baseRegV2
   val listReverseActiveCurrent = Mux(isListReverseLoop, listReverseLoopAddress, reg_v1)
@@ -512,22 +454,6 @@ class EXU(
     xmsumResponsePending := false.B
   }
 
-  val lateOtherOperandCaptured = RegInit(false.B)
-  val capturedLateOtherRegV1 = Reg(Types.UWord)
-  val capturedLateOtherRegV2 = Reg(Types.UWord)
-  when(hasLateLoadOperand && !lateOtherOperandCaptured) {
-    capturedLateOtherRegV1 := branchRegV1
-    capturedLateOtherRegV2 := branchRegV2
-  }
-  when(!io.in.valid || io.in.fire) {
-    lateOtherOperandCaptured := false.B
-  }.elsewhen(hasLateLoadOperand && !lateOtherOperandCaptured) {
-    lateOtherOperandCaptured := true.B
-  }
-  val stableLateOtherRegV1 = Mux(lateOtherOperandCaptured, capturedLateOtherRegV1, branchRegV1)
-  val stableLateOtherRegV2 = Mux(lateOtherOperandCaptured, capturedLateOtherRegV2, branchRegV2)
-  val equalityRegV1 = Mux(dinst.info.lateLoadRs1, lateRegV1, stableLateOtherRegV1)
-  val equalityRegV2 = Mux(dinst.info.lateLoadRs2, lateRegV2, stableLateOtherRegV2)
   // val pcAddImm   = dinst.pc + dinst.info.imm
   val pcAddImm   = dinst.info.pcAddImm
   val reg1AddImm = "h80".U(8.W) ## 0.U(2.W) ## dinst.info.reg1AddImm
@@ -570,7 +496,7 @@ class EXU(
   val resultIsAccelerator = dinst.info.resultKind === ResultKind.accelerator
   val simpleAccelerator = dinst.info.crcValid || dinst.info.xbmulValid
 
-  fastInteger.io.in.valid := io.in.valid && isTypArithmetic && resultIsFast && !hasLateLoadOperand
+  fastInteger.io.in.valid := io.in.valid && isTypArithmetic && resultIsFast
   alu.io.in.valid :=
     io.in.valid && isTypArithmetic && (resultIsLong || (resultIsAccelerator && simpleAccelerator))
 
@@ -675,43 +601,13 @@ class EXU(
 
   val isFmtB = InstFmt.hasSame(dinst.info.fmt, InstFmt.branch)
 
-  val equalityDiff = equalityRegV1 ^ equalityRegV2
+  val equalityDiff = branchRegV1 ^ branchRegV2
   dontTouch(equalityDiff)
   val equalityChunkNonZero = VecInit((0 until 4).map(i => equalityDiff(8 * i + 7, 8 * i).orR))
   dontTouch(equalityChunkNonZero)
   val extendedLoadEqual = !equalityChunkNonZero.asUInt.orR
 
-  def rawLoadEqual(rawData: UInt, offset: UInt, loadFunc3t: UInt, other: UInt): Bool = {
-    val selectedHalf = Mux(offset(1), rawData(31, 16), rawData(15, 0))
-    val selectedByte = MuxLookup(offset, rawData(7, 0))(
-      Seq(
-        1.U -> rawData(15, 8),
-        2.U -> rawData(23, 16),
-        3.U -> rawData(31, 24)
-      )
-    )
-    val unsignedLoad = loadFunc3t(2)
-    val byteUpperMatches = Mux(unsignedLoad, !other(31, 8).orR, other(31, 8) === Fill(24, selectedByte(7)))
-    val halfUpperMatches = Mux(unsignedLoad, !other(31, 16).orR, other(31, 16) === Fill(16, selectedHalf(15)))
-    Mux(
-      loadFunc3t(1),
-      rawData === other,
-      Mux(loadFunc3t(0), selectedHalf === other(15, 0) && halfUpperMatches,
-        selectedByte === other(7, 0) && byteUpperMatches)
-    )
-  }
-
-  val lsuLateEqual = Mux(
-    dinst.info.lateLoadRs1 && dinst.info.lateLoadRs2,
-    true.B,
-    Mux(
-      dinst.info.lateLoadRs1,
-      rawLoadEqual(io.lateLoadLSU.rawData, io.lateLoadLSU.offset, io.lateLoadLSU.func3t, stableLateOtherRegV2),
-      rawLoadEqual(io.lateLoadLSU.rawData, io.lateLoadLSU.offset, io.lateLoadLSU.func3t, stableLateOtherRegV1)
-    )
-  )
-  val useRegisteredRawLoadEqual = hasLateLoadOperand && io.lateLoadLSU.dataValid
-  val isEqual     = Mux(useRegisteredRawLoadEqual, lsuLateEqual, extendedLoadEqual)
+  val isEqual     = extendedLoadEqual
   val isLessThan  = branchRegV1.asSInt < branchRegV2.asSInt
   val isLessThanU = branchRegV1 < branchRegV2
 
@@ -729,19 +625,7 @@ class EXU(
       dinst.info.is_bgeu -> !isLessThanU
     )
   )
-  val capturedLateEqual = Mux(
-    dinst.info.lateLoadRs1 && dinst.info.lateLoadRs2,
-    true.B,
-    Mux(
-      dinst.info.lateLoadRs1,
-      capturedLateLoadData === stableLateOtherRegV2,
-      capturedLateLoadData === stableLateOtherRegV1
-    )
-  )
-  // Immediate redirect must be physically independent of the adjacent-fast
-  // selector. Those branches resolve through the registered LSU token below;
-  // a validity condition alone does not remove their data arc from STA.
-  val immediateBranchEqual = Mux(hasLateLoadOperand, capturedLateEqual, baseRegV1 === baseRegV2)
+  val immediateBranchEqual = baseRegV1 === baseRegV2
   val immediateIsLessThan = baseRegV1.asSInt < baseRegV2.asSInt
   val immediateIsLessThanU = baseRegV1 < baseRegV2
   val immediateTakeBranch = Mux1H(
@@ -767,18 +651,11 @@ class EXU(
   lsuInfo.cacheableLoad :=
     isTypLoad && supportedLoadWidth && loadAddressAligned && reg1AddImm(21, 20) === "b01".U
   lsuInfo.dcacheHit := lsuInfo.cacheableLoad && io.dcache.hit
-  // Capture the asynchronous shadow result without sign extension. Extending
-  // byte/half loads before this register lets synthesis map the replicated
-  // sign bit onto slow synchronous-set pins; registered offset/width metadata
-  // performs the extension in C1 instead.
-  // Accelerator cache queries must not populate the ordinary load-result lane.
-  lsuInfo.lateLoadData := Mux(lsuInfo.cacheableLoad, io.dcache.lateReadData, 0.U)
   lsuInfo.dcacheStoreEpoch := io.dcache.storeEpoch
 
   val snpc = Mux(isTypSys, csrNextPCReg, dinst.info.staticNextPCOrCSRTarget)
 
-  val useSingleCycleForward = isTypArithmetic && resultIsFast && !hasLateLoadOperand
-  val isLateLoadBit = isLateLoadAndi1 || isLateLoadSrli1
+  val useSingleCycleForward = isTypArithmetic && resultIsFast
   val acceleratorData = Mux(
     isNumericDfa,
     xdfaWordResult,
@@ -789,7 +666,7 @@ class EXU(
   writeBackInfo.resultKind := dinst.info.resultKind
   writeBackInfo.fastResult.valid := dinst.info.rdWrEn && resultIsFast
   writeBackInfo.fastResult.rd := dinst.info.rd
-  writeBackInfo.fastResult.data := Mux(isLateLoadBit, lateBitResult, fastIntegerOut)
+  writeBackInfo.fastResult.data := fastIntegerOut
   writeBackInfo.directResult.valid := dinst.info.rdWrEn && dinst.info.resultKind === ResultKind.direct
   writeBackInfo.directResult.rd := dinst.info.rd
   writeBackInfo.directResult.data := Mux(isTypSys, csrReadDataReg, dinst.info.preMuxWrBackData)
@@ -830,11 +707,8 @@ class EXU(
   val xmsumDone = isXmsum && xmsumState === XmsumState.done
   val xdfaWordDone = isNumericDfaStep && xdfaWordState === NumericDfaState.done
   val ordinaryResultValid =
-    (!isTypSys || csrPrepared) && Mux(
-      hasLateLoadOperand,
-      lateDataReady,
-      !isTypArithmetic || isNumericDfa || Mux(resultIsFast, fastInteger.io.out.valid, alu.io.out.valid)
-    )
+    (!isTypSys || csrPrepared) &&
+      (!isTypArithmetic || isNumericDfa || Mux(resultIsFast, fastInteger.io.out.valid, alu.io.out.valid))
   val exuResultValid =
     Mux(isNumericDfaStep, xdfaWordDone,
       Mux(isListReverse, listReverseDone, Mux(isXmsum, xmsumDone, ordinaryResultValid)))
@@ -842,19 +716,10 @@ class EXU(
   // result mux.  A multi-cycle producer still advertises its destination while it is
   // in EXU, but its data remains unavailable to IDU; a dependent consumer
   // waits one cycle and receives the registered result from LSU instead.
-  val useLateBitForward = (isLateLoadAndi1 || isLateLoadSrli1) && exuResultValid && lateDataReadyFromLSU
-  val exuForwardData = Mux(useLateBitForward, lateBitForwardResult, fastIntegerOut)
   // Only producers carried by the dedicated fast lane may arm the adjacent
   // EXU bypass token. Other single-cycle results wait one cycle and use the
   // ordinary LSU-to-IDU bypass, keeping them out of the ALU recurrence.
-  val exuForwardDataValid = useSingleCycleForward || useLateBitForward
-  io.fwd := WrBackForwardInfo(io.in.valid, dinst, exuForwardDataValid, exuForwardData)
-  // The producer token is decode-only.  In particular, do not feed the
-  // current load address/cacheability back into IDU ready; cache hit only
-  // decides whether the already-issued consumer completes in the next cycle.
-  val lateLoadWidthSupported =
-    func3t === "b000".U || func3t === "b001".U || func3t === "b010".U || func3t === "b100".U || func3t === "b101".U
-  io.lateLoadProducer.valid := io.in.valid && isTypLoad && lateLoadWidthSupported
+  io.fwd := WrBackForwardInfo(io.in.valid, dinst, useSingleCycleForward, fastIntegerOut)
 
   val memWMask = GenMemWMask(reg1AddImm(1, 0), func3t)
 
@@ -870,7 +735,6 @@ class EXU(
   val dcacheQueryAddr = Mux(isListReverse, listReverseQueryAddress, reg1AddImm)
   io.dcache.queryIndex := Mux(isListReverse, listReverseQueryAddress(11, 2), io.stagedDcacheQueryIndex)
   io.dcache.queryTag   := dcacheQueryAddr(17, 11)
-  io.dcache.lateQueryIndex := io.stagedDcacheQueryIndex
   io.dcache.listFindStart := io.in.valid && isListFind && !io.dcache.listFindDone
   io.dcache.listFindConsume := io.out.fire && isListFind
   io.dcache.listFindAddress := reg_v1
@@ -969,14 +833,9 @@ class EXU(
   io.isCall      := (isTypJAL || isTypJALR) && dinst.info.rd =/= 0.U
   io.branchTaken := Mux(listReverseLoopBranch, listReverseLoopTaken, takeBranch)
   io.btbUpdateEn := isTypBranch || isTypJAL || isTypJALR || listReverseLoopBranch
-  val lateEqualityBranchResolve =
-    isTypBranch && (dinst.info.is_beq || dinst.info.is_bne) && hasLateLoadOperand && useRegisteredRawLoadEqual
   val adjacentFastBranchResolve = dinst.info.adjacentFastBranch
-  val registeredBranchResolve = lateEqualityBranchResolve || adjacentFastBranchResolve
-  val lateEqualityTaken = Mux(dinst.info.is_beq, lsuLateEqual, !lsuLateEqual)
-  val registeredBranchRedirect =
-    (lateEqualityBranchResolve && (lateEqualityTaken ^ dinst.predTake)) ||
-      (adjacentFastBranchResolve && (takeBranch ^ dinst.predTake))
+  val registeredBranchResolve = adjacentFastBranchResolve
+  val registeredBranchRedirect = adjacentFastBranchResolve && (takeBranch ^ dinst.predTake)
   lsuInfo.lateBranchRedirect := exuResultValid && registeredBranchRedirect
   io.predWrong := exuResultValid && Mux(
     listReverseLoopBranch,

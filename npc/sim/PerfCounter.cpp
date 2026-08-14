@@ -295,13 +295,6 @@ void OptimizationDirectionPerfCounter::update() {
       crcClmulhCount++;
     }
 
-    const bool lateRs1 = exu->io_in_bits_info_lateLoadRs1;
-    const bool lateRs2 = exu->io_in_bits_info_lateLoadRs2;
-    if (lateRs1 || lateRs2) {
-      lateLoadAddCount[lateRs1 && lateRs2
-                           ? BothRs
-                           : (lateRs1 ? Rs1Only : Rs2Only)]++;
-    }
   }
 
   if (exu->io_dcache_storeUpdate && exu->memWMask == 0xf) {
@@ -508,16 +501,12 @@ void to_json(nlohmann::json &j, const BranchPredPerfCounter &c) {
 void to_json(nlohmann::json &j, const OptimizationDirectionPerfCounter &c) {
   static const char *mOpNames[] = {"mul",  "mulh", "mulhsu", "mulhu",
                                    "div",  "divu", "rem",    "remu"};
-  static const char *lateLoadNames[] = {"rs1_only", "rs2_only", "both"};
   static const char *lateAddNames[] = {"rs1_only", "rs2_only", "both"};
   j["ctrName"] = c.ctrName;
   for (int i = 0; i < OptimizationDirectionPerfCounter::MOpNum; i++) {
     j["m_ops"][mOpNames[i]] = c.mOpCount[i];
   }
   j["cacheable_full_word_stores"] = c.cacheableFullWordStores;
-  for (int i = 0; i < OptimizationDirectionPerfCounter::LateLoadUseNum; i++) {
-    j["late_load_add"][lateLoadNames[i]] = c.lateLoadAddCount[i];
-  }
   for (int i = 0; i < OptimizationDirectionPerfCounter::LateAddUseNum; i++) {
     j["late_add_successor"][lateAddNames[i]] = c.lateAddSuccessorCount[i];
   }

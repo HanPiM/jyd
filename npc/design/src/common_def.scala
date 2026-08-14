@@ -191,12 +191,6 @@ class DecodedInstInfo(implicit p : CPUParameters) extends InstMetaInfo with HasR
   // bits cross ID/EX; EXU reconstructs the fixed JYD address prefix.
   val reg1AddImm = UInt(22.W)
 
-  // A compact supported consumer may enter EXU before a load result is
-  // available. EXU resolves these operands from the registered LSU/WBU
-  // producer stages and holds the instruction until the data is valid.
-  val lateLoadRs1 = Bool()
-  val lateLoadRs2 = Bool()
-
   // Each adjacent-fast token is stored as eight token-XOR-base groups. EXU
   // reconstructs one selector per four data bits, preventing synthesis from
   // merging equivalent selector registers back into a high-fanout net.

@@ -84,23 +84,6 @@ class WrBackInfoGroup(
   val wbu = new WrBackForwardInfo
 }
 
-class LateLoadProducerInfo(
-  implicit p: CPUParameters)
-    extends Bundle {
-  val valid = Bool()
-}
-
-class LateLoadSourceInfo(
-  implicit p: CPUParameters)
-    extends Bundle {
-  val valid     = Bool()
-  val dataValid = Bool()
-  val data      = Types.UWord
-  val rawData   = Types.UWord
-  val func3t    = UInt(3.W)
-  val offset    = UInt(2.W)
-}
-
 object SingleByPassMux {
   def conflict(rs: UInt, rd: UInt, en: Bool): Bool = (rs === rd) && (rd =/= 0.U) && en
   def apply(
@@ -134,30 +117,24 @@ object CacheAwareByPassMux {
     rs:         UInt,
     regData:    UInt,
     wrBacks:    Seq[WrBackForwardInfo],
-    lateLoadProducer: LateLoadProducerInfo,
-    allowLateLoad: Bool,
     allowAdjacentFast: Bool
-  ): (Bool, UInt, Bool, Bool) = {
+  ): (Bool, UInt, Bool) = {
     require(wrBacks.length == 3)
     val exuConflict = SingleByPassMux.conflict(rs, wrBacks(0).addr, wrBacks(0).enWr)
     val lsuConflict = SingleByPassMux.conflict(rs, wrBacks(1).addr, wrBacks(1).enWr)
-    // This exception is independent of the combinational DCache hit result.
-    // The dependent ADD/ADDI is held in EXU if the registered LSU source later
-    // reports a miss.
-    val lateLoadSelect = allowLateLoad && exuConflict && lateLoadProducer.valid
     val adjacentFastSelect = allowAdjacentFast && exuConflict && wrBacks(0).dataVaild
     val lsuSelect = !exuConflict && lsuConflict && wrBacks(1).dataVaild
 
     val needStall = Mux(
       exuConflict,
-      !lateLoadSelect && !adjacentFastSelect,
+      !adjacentFastSelect,
       lsuConflict && !lsuSelect
     )
 
     // An LSU result terminates at the ID/EX base-operand register. WBU is seen
     // only through the register file's write-through behavior.
     val outData = Mux(lsuSelect, wrBacks(1).data, regData)
-    (needStall, outData, lateLoadSelect, adjacentFastSelect)
+    (needStall, outData, adjacentFastSelect)
   }
 }
 
@@ -171,14 +148,9 @@ class ByPassMux(
     val regData2 = Input(Types.UWord)
 
     val wrBackInfo = Input(new WrBackInfoGroup)
-    val lateLoadProducer = Input(new LateLoadProducerInfo)
-    val allowLateLoadRs1 = Input(Bool())
-    val allowLateLoadRs2 = Input(Bool())
     val allowAdjacentFastRs1 = Input(Bool())
     val allowAdjacentFastRs2 = Input(Bool())
     val needStall  = Output(Bool())
-    val lateLoadRs1 = Output(Bool())
-    val lateLoadRs2 = Output(Bool())
     val adjacentFastRs1 = Output(Bool())
     val adjacentFastRs2 = Output(Bool())
 
@@ -187,26 +159,20 @@ class ByPassMux(
   })
 
   val wrBacks    = Seq(io.wrBackInfo.exu, io.wrBackInfo.lsu, io.wrBackInfo.wbu)
-  val (needStall1, outData1, lateLoadRs1, adjacentFastRs1) = CacheAwareByPassMux(
+  val (needStall1, outData1, adjacentFastRs1) = CacheAwareByPassMux(
     io.rs1,
     io.regData1,
     wrBacks,
-    io.lateLoadProducer,
-    io.allowLateLoadRs1,
     io.allowAdjacentFastRs1
   )
-  val (needStall2, outData2, lateLoadRs2, adjacentFastRs2) = CacheAwareByPassMux(
+  val (needStall2, outData2, adjacentFastRs2) = CacheAwareByPassMux(
     io.rs2,
     io.regData2,
     wrBacks,
-    io.lateLoadProducer,
-    io.allowLateLoadRs2,
     io.allowAdjacentFastRs2
   )
 
   io.needStall := needStall1 || needStall2
-  io.lateLoadRs1 := lateLoadRs1
-  io.lateLoadRs2 := lateLoadRs2
   io.adjacentFastRs1 := adjacentFastRs1
   io.adjacentFastRs2 := adjacentFastRs2
   io.outData1  := outData1
@@ -223,7 +189,6 @@ class IDU(
     val pipelineFlush = Input(Bool())
 
     val wrBackInfo           = Input(new WrBackInfoGroup)
-    val lateLoadProducer     = Input(new LateLoadProducerInfo)
 
     val out = Decoupled(new DecodedInst)
   })
@@ -310,16 +275,6 @@ class IDU(
   bypassMux.io.regData1   := io.rvec.data(0)
   bypassMux.io.regData2   := io.rvec.data(1)
   bypassMux.io.wrBackInfo := io.wrBackInfo
-  bypassMux.io.lateLoadProducer := io.lateLoadProducer
-  // Only compact dedicated results may consume a load whose hit/miss is not
-  // known in IDU. The fixed-immediate forms cover the hot xibei bit-extraction
-  // loop without placing a general AND or barrel shifter in the late path.
-  val isLateLoadAndi1 = isTypArithmetic && isFmtI && inst(14, 12) === "b111".U && inst(31, 20) === 1.U
-  val isLateLoadSrli1 = isTypArithmetic && isFmtI && inst(14, 12) === "b101".U && inst(31, 20) === 1.U
-  val isEqualityBranch = isTypBranch && inst(14, 13) === 0.U
-  val allowLateLoadRs1 = isLateLoadAndi1 || isLateLoadSrli1 || isEqualityBranch
-  bypassMux.io.allowLateLoadRs1 := allowLateLoadRs1
-  bypassMux.io.allowLateLoadRs2 := isEqualityBranch
   val arithmeticFunc3 = inst(14, 12)
   val arithmeticFunc7 = inst(31, 25)
   val isMExtArithmetic = inst(6, 0) === "b0110011".U && arithmeticFunc7 === "b0000001".U
@@ -329,8 +284,6 @@ class IDU(
     (inst(31, 25) === 0.U || inst(31, 25) === 2.U)
   val isListFindEncoding = inst(6, 0) === "b0001011".U && arithmeticFunc3 === 6.U &&
     (inst(31, 25) === 1.U || inst(31, 25) === 3.U)
-  res.lateLoadRs1 := bypassMux.io.lateLoadRs1
-  res.lateLoadRs2 := bypassMux.io.lateLoadRs2
   // Only operations that still use the iterative B unit assert bExtValid.
   // Short B operations are evaluated by the ordinary ALU path so they retain
   // same-cycle forwarding and do not inherit the old universal 32-cycle cost.

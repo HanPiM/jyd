@@ -288,11 +288,6 @@ void OptimizationDirectionPerfCounter::dumpStatistics(std::ostream &os) {
   dependencyTable.add_row({"Dependency selection", "rs1 only", "rs2 only",
                            "both"});
   dependencyTable.add_row(RowStream{}
-                          << "late-load ADD/ADDI"
-                          << lateLoadAddCount[Rs1Only]
-                          << lateLoadAddCount[Rs2Only]
-                          << lateLoadAddCount[BothRs]);
-  dependencyTable.add_row(RowStream{}
                           << "late-add successor"
                           << lateAddSuccessorCount[LateAddRs1Only]
                           << lateAddSuccessorCount[LateAddRs2Only]

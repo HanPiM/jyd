@@ -363,7 +363,6 @@ struct BranchPredPerfCounter : public PerfCounterBase {
 
 struct OptimizationDirectionPerfCounter : public PerfCounterBase {
   enum MOp { Mul, Mulh, Mulhsu, Mulhu, Div, Divu, Rem, Remu, MOpNum };
-  enum LateLoadUse { Rs1Only, Rs2Only, BothRs, LateLoadUseNum };
   enum LateAddUse { LateAddRs1Only, LateAddRs2Only, LateAddBothRs, LateAddUseNum };
 
   size_t mOpCount[MOpNum] = {0};
@@ -373,7 +372,6 @@ struct OptimizationDirectionPerfCounter : public PerfCounterBase {
   size_t mulBothUnsigned16 = 0;
   size_t crcClmulhCount = 0;
   size_t cacheableFullWordStores = 0;
-  size_t lateLoadAddCount[LateLoadUseNum] = {0};
   size_t lateAddSuccessorCount[LateAddUseNum] = {0};
 
   OptimizationDirectionPerfCounter() {

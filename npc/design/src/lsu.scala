@@ -12,9 +12,6 @@ class LSUInput(
   val destAddr     = Types.UWord
   val cacheableLoad = Bool()
   val dcacheHit    = Bool()
-  // Raw asynchronous shadow data crosses the EXU-to-LSU payload register;
-  // registered address/width metadata selects and extends it in C1.
-  val lateLoadData = Types.UWord
   val dcacheStoreEpoch = Bool()
   val func3t       = UInt(3.W)
   val lateBranchRedirect = Bool()
@@ -22,11 +19,11 @@ class LSUInput(
 }
 
 object ExtractFwdInfoFromLSU {
-  def apply(info: DecoupledIO[LSUInput])(
+  def apply(info: DecoupledIO[LSUInput], dcacheReadData: UInt)(
     implicit p: CPUParameters
   ): WrBackForwardInfo = {
     val wrBack = info.bits.exuWriteBack
-    val loadData = ExtLoadData(info.bits.lateLoadData, info.bits.destAddr(1, 0), info.bits.func3t)
+    val loadData = ExtLoadData(dcacheReadData, info.bits.destAddr(1, 0), info.bits.func3t)
     val loadDataValid = info.bits.isLoad && info.bits.cacheableLoad && info.bits.dcacheHit
     val out = Wire(new WrBackForwardInfo)
     out.addr      := ResultLaneSelect.rd(wrBack)

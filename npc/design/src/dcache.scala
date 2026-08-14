@@ -8,10 +8,8 @@ class DCache extends Module {
   val io = IO(new Bundle {
     val queryIndex = Input(UInt(10.W))
     val queryTag   = Input(UInt(7.W))
-    val lateQueryIndex = Input(UInt(10.W))
     val hit       = Output(Bool())
     val readData  = Output(UInt(32.W))
-    val lateReadData = Output(UInt(32.W))
 
     val listFindStart = Input(Bool())
     val listFindConsume = Input(Bool())
@@ -42,11 +40,6 @@ class DCache extends Module {
   // the proven 512 x 8 configuration.
   val dataMem = Seq.fill(2)(Module(new BlkMemGen2KB))
   val tagMem  = Seq.fill(2)(Module(new DistMemGen512x8))
-  // The normal LSU/WBU path keeps using the synchronous BRAM.  Four byte-wide
-  // distributed memories mirror its writes and provide an asynchronous C0
-  // lookup for the narrow late-load path.  EXU captures this value in its
-  // registered LSU payload; it is never consumed directly by the C1 adder.
-  val lateDataMem = Seq.fill(2)(Seq.fill(4)(Module(new DistMemGen512x8)))
   // Two private asynchronous read replicas let the list walker fetch a node's
   // next and info words in parallel.  Their outputs terminate at walker-local
   // registers and never drive the ordinary DCache hit/result cone.
@@ -92,14 +85,6 @@ class DCache extends Module {
   // aliases a load with the following instruction's bank.
   val readBank = RegNext(queryBank)
   io.readData := Mux(readBank, dataMem(1).io.doutb, dataMem(0).io.doutb)
-
-  val lateQueryBank = io.lateQueryIndex(9)
-  val lateQueryAddr = io.lateQueryIndex(8, 0)
-  lateDataMem.flatten.foreach { bank =>
-    bank.io.dpra := lateQueryAddr
-  }
-  val lateReadData = lateDataMem.map { banks => Cat(banks.reverse.map(_.io.dpo)) }
-  io.lateReadData := Mux(lateQueryBank, lateReadData(1), lateReadData(0))
 
   val listQueryAddresses = Seq(listFindQueryAddress, listFindQueryAddressB)
   val listQueryTags = listQueryAddresses.map(_(17, 11))
@@ -286,14 +271,6 @@ class DCache extends Module {
     bank.io.dina  := dataWriteData
   }
 
-  lateDataMem.zipWithIndex.foreach { case (banks, bankIndex) =>
-    banks.zipWithIndex.foreach { case (bank, byte) =>
-      bank.io.clk := clock
-      bank.io.we  := dataWrite && dataWriteBank === bankIndex.U && dataWriteMask(byte)
-      bank.io.a   := dataWriteAddr
-      bank.io.d   := dataWriteData(8 * byte + 7, 8 * byte)
-    }
-  }
   listDataMem.foreach { portBanks =>
     portBanks.zipWithIndex.foreach { case (banks, bankIndex) =>
       banks.zipWithIndex.foreach { case (bank, byte) =>

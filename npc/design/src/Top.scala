@@ -281,8 +281,11 @@ class CPUCore(
   val lateRedirectPreKill = exu.io.out.fire && exu.io.out.bits.lateBranchRedirect
   val lateRedirectDetected = lsu.io.in.fire && lsu.io.in.bits.lateBranchRedirect
   val lateRedirectNow = RegNext(lateRedirectDetected, false.B)
-  val lateRedirectPipelineKill = lateRedirectPreKill || lateRedirectDetected || lateRedirectNow
-  val redirectNow = immediateRedirectNow || lateRedirectNow
+  // A late branch has a stable result and target when it leaves EXU. Toggle
+  // the epoch at that boundary so its younger successor is filtered by the
+  // existing ID/EX epoch check, without driving the pipeline-valid register's
+  // data input through the branch comparator.
+  val redirectNow = immediateRedirectNow || lateRedirectPreKill
   dontTouch(lateRedirectNow)
   val redirectPacket      = Wire(new RedirectPacket)
   val redirectPendingFire = ifu.io.pc.fire && redirectPendingReg
@@ -339,8 +342,7 @@ class CPUCore(
   wbu.io.memResp <> dataMemBus.io.memResp
   dcache.io.queryIndex := exu.io.dcache.queryIndex
   dcache.io.queryTag   := exu.io.dcache.queryTag
-  dcache.io.stageLateQueryIndex := idu.io.out.bits.info.reg1AddImm(11, 2)
-  dcache.io.stageLateQueryEnable := idu.io.out.fire
+  dcache.io.lateQueryIndex := exu.io.dcache.lateQueryIndex
   exu.io.dcache.hit    := dcache.io.hit && p.enableDCache.B
   exu.io.dcache.readData := dcache.io.readData
   exu.io.dcache.lateReadData := dcache.io.lateReadData
@@ -438,7 +440,10 @@ class CPUCore(
   when(fetchSlot0Write) {
     fetchSlot0 := fetchSlot0Data
   }
-  when(fetchEnq && fetchValid0 && !fetchDeq) {
+  // Capturing an otherwise-unused copy is harmless when enqueue replaces the
+  // head. Keeping dequeue/backpressure out of this wide register's clock
+  // enable removes a control path from EXU through IDU into all payload bits.
+  when(fetchEnq) {
     fetchSlot1 := ifu.io.out.bits
   }
   switch(Cat(fetchEnq, fetchDeq)) {
@@ -459,10 +464,10 @@ class CPUCore(
   }
 
   val exuPipe = Wire(Decoupled(new DecodedInst))
-  // A registered-branch redirect is known as that instruction leaves EXU.
-  // Bubble its younger successor at this register boundary so the following
-  // late-redirect signal never has to gate EXU datapaths or RAM write enables.
-  pipelineConnect(idu.io.out, exuPipe, kill = lateRedirectPipelineKill)
+  // Redirects toggle the epoch as the resolving instruction leaves EXU. The
+  // younger payload can be captured here because the epoch check below makes
+  // it invalid before it can reach any EXU datapath or memory side effect.
+  pipelineConnect(idu.io.out, exuPipe)
   val exuEpochMatch = exuPipe.bits.epoch === pipelineEpoch
   exu.io.in.bits := exuPipe.bits
   exu.io.in.valid := exuPipe.valid && exuEpochMatch

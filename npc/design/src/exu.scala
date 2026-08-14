@@ -91,6 +91,7 @@ class EXU(
       val storeEpoch = Input(Bool())
       val queryIndex = Output(UInt(10.W))
       val queryTag   = Output(UInt(7.W))
+      val lateQueryIndex = Output(UInt(10.W))
       val listFindStart = Output(Bool())
       val listFindConsume = Output(Bool())
       val listFindAddress = Output(Types.UWord)
@@ -869,6 +870,7 @@ class EXU(
   val dcacheQueryAddr = Mux(isListReverse, listReverseQueryAddress, reg1AddImm)
   io.dcache.queryIndex := Mux(isListReverse, listReverseQueryAddress(11, 2), io.stagedDcacheQueryIndex)
   io.dcache.queryTag   := dcacheQueryAddr(17, 11)
+  io.dcache.lateQueryIndex := io.stagedDcacheQueryIndex
   io.dcache.listFindStart := io.in.valid && isListFind && !io.dcache.listFindDone
   io.dcache.listFindConsume := io.out.fire && isListFind
   io.dcache.listFindAddress := reg_v1

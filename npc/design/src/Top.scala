@@ -453,14 +453,29 @@ class CPUCore(
     }
   }
 
-  val exuPipe = Wire(Decoupled(new DecodedInst))
+  val exuPipe       = Wire(Decoupled(new DecodedInst))
+  val exuPayloadReg = Reg(new DecodedInst)
+  val exuValidReg   = RegInit(false.B)
   // Resolve adjacent-result branches from their registered LSU payload. This
   // keeps the branch comparator out of the ID/EX valid-register input cone.
-  pipelineConnect(idu.io.out, exuPipe, kill = lateRedirectBlocked)
+  exuPipe.bits  := exuPayloadReg
+  exuPipe.valid := exuValidReg
   val exuEpochMatch = exuPipe.bits.epoch === pipelineEpoch
   exu.io.in.bits := exuPipe.bits
-  exu.io.in.valid := exuPipe.valid && exuEpochMatch && !lateRedirectBlocked
+  exu.io.in.valid := exuPipe.valid && exuEpochMatch
   exuPipe.ready := exu.io.in.ready || !exuEpochMatch
+  val adjacentBranchBubble = exu.io.in.fire && exu.io.in.bits.info.adjacentFastBranch
+  val exuAllowIn = !exuValidReg || exuPipe.ready
+  // Hold the younger IDU instruction for one cycle after an adjacent-result
+  // branch. If the registered comparison redirects on the following cycle,
+  // the epoch filter discards it without gating every EXU side effect.
+  idu.io.out.ready := exuAllowIn && !adjacentBranchBubble && !lateRedirectBlocked
+  when(adjacentBranchBubble || lateRedirectBlocked) {
+    exuValidReg := false.B
+  }.elsewhen(exuAllowIn) {
+    exuPayloadReg := idu.io.out.bits
+    exuValidReg   := idu.io.out.valid
+  }
   // Keep the ordinary cache index on a dedicated resettable register so it is
   // physically independent of the high-fanout address/result payload. It is
   // captured by the same ID/EX handshake and therefore adds no pipeline cycle.

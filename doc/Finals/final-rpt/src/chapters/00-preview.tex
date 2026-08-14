@@ -3,10 +3,31 @@
 
 本项目实现了一款面向 FPGA 的 RV32 顺序单发射五级流水处理器。设计以
 IFU--IDU--EXU--LSU--WBU 为主流水，在统一反压与控制流重定向机制上集成动态分支预测、
-4\,KiB 数据缓存、分区式执行/写回通路、多周期整数扩展和硬件加速指令。技术文档重点给出
+两项固定槽取指缓冲、4\,KiB 总容量数据缓存、分区式执行/写回通路、多周期整数扩展和硬件加速指令。技术文档重点给出
 处理器结构、接口时序、指令语义、性能与 WNS 演进，以及从指令语义到板级运行的验证闭环。
 
-\PlaceholderFigure{作品核心结构快速预览}{后续替换为团队制作的总决赛核心结构总览图；建议同时标注五级流水、预测器、缓存、多周期单元、自定义指令单元与板级系统。}
+最终合入 RTL 在 240\,MHz 下 routed WNS 为 \textbf{$+0.014$\,ns}，TNS 为 0，完成建立时序收敛；
+同一结构在 300\,MHz 下 routed WNS 为 \textbf{$-0.699$\,ns}。300\,MHz 保留提交链的最新正确板测
+时间为 \textbf{5.346451040\,s}；后续完成同步 load 边界和 GCC 中端/MD 生成路径后，10/100 次 NPC
+周期仿射拟合的最优时间为 \textcolor{cyan!60!blue}{\textbf{5.292462350\,s}}，该结果尚未上板。
+
+\input{src/tikz/finals-major-milestones-preview}
+
+\clearpage
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.96\linewidth]{verify/240mhz-worst-paths.png}
+  \caption*{240 MHz 最差建立时序路径}
+  \vspace{0.2em}
+  \includegraphics[width=0.96\linewidth]{verify/300mhz-worst-paths.png}
+  \caption*{300 MHz 最差建立时序路径}
+  \vspace{0.35em}
+  \includegraphics[width=0.82\linewidth,trim=0 55bp 0 45bp,clip]{verify/official-platform-uart-no-accel.png}
+  \caption*{300 MHz 官方平台上板结果（无硬件加速的较早程序版本）}
+\end{figure}
+
+\clearpage
 
 \begin{table}[H]
 \centering
@@ -17,19 +38,19 @@ IFU--IDU--EXU--LSU--WBU 为主流水，在统一反压与控制流重定向机�
 \textbf{核心内容}&\textbf{快速结论}&\textbf{查阅位置}\\\midrule
 处理器架构&\textbf{五级顺序单发射}、ready/valid 反压、epoch 冲刷、分区结果通路&第\ref{sec:architecture}节\\
 控制流前端&\textbf{512 项 8-bank BTB}、2-bit 方向计数器、2 项 RAS&第\ref{sec:frontend}节\\
-存储系统&\textbf{4\,KiB 双 bank D-cache}，主 BRAM 与异步镜像协同&第\ref{sec:memory}节\\
+存储系统&\textbf{4\,KiB 总容量双 bank D-cache}，同步普通加载与链表查询专用镜像副本&第\ref{sec:memory}节\\
 指令能力&RV32I/M/Zicsr、机器态、部分 B 扩展及自定义指令&第\ref{sec:extensions}节\\
 硬件加速&CRC、位域乘法、链式变换、矩阵归约、流式状态识别&第\ref{sec:custom}节\\
-物理实现&\textbf{250\,MHz 时序闭合}；300\,MHz 完成布局布线&第\ref{sec:timing}节\\
-性能演进&板测 10.695831\,s $\rightarrow$ 6.691154\,s，\textbf{缩短约 37.44\%}&第\ref{sec:performance}节\\
+系统移植&RT-Thread Nano 3.1.5；基于 \code{yield/ecall} 自陷的协作式任务切换&第\ref{sec:system-port}节\\
+物理实现&最终 RTL 在 240\,MHz 为 \textbf{$+0.014$\,ns}，在 300\,MHz 为 \textbf{$-0.699$\,ns}&第\ref{sec:timing}节\\
+性能演进&板测降至 5.346451\,s；最终 GCC 版本未上板拟合为 \textbf{5.292462\,s}&第\ref{sec:performance}节\\
 验证体系&Vivado Sim、差分、指令/系统测试与板测闭环&第\ref{sec:verification}节\\
 \bottomrule
 \end{tabularx}
 \end{table}
 
-\noindent\textbf{指标口径说明：}性能折线仅连接采用相同正式负载、相同迭代规模且 CRC 正确的板测记录；
-WNS 与其对应实现一一配对。当前设计另在 250\,MHz 下取得 post-route physical optimization
-WNS $+0.009$\,ns，在 300\,MHz 下取得 $-0.580$\,ns。不同实现点在正文中分别列示，不拼接为同一结果。
-
-\PlaceholderFigure{总决赛核心结果实物与报告拼图}{建议放置正式板测 UART 输出、开发板运行照片，以及 250\,MHz 和 300\,MHz Timing Summary 的关键区域。}
+\noindent\textbf{指标口径说明：}性能图只纳入正确 CRC 的同迭代规模记录；深蓝为 UART 板测，青色为
+ITERATIONS=10/100 周期拟合且尚未上板。本文最终提交为 \code{8591368}；240/300\,MHz WNS 均来自
+最终合入 RTL 的 routed 实现。最终拟合 5.292462350\,s 不能替代板测，最新真实板测值为
+5.346451040\,s。
 \clearpage

@@ -7,19 +7,16 @@
 实现范围；这里的指令列表即为本设计支持的子集，不表示已经覆盖对应扩展的全部指令。
 
 \begin{table}[H]\centering\scriptsize
-\caption{主要标准扩展能力与已实现指令}\label{tab:implemented-extensions}
+\caption{提交 \texttt{8591368} 的标准扩展能力与已实现指令}\label{tab:implemented-extensions}
 \begin{tabularx}{\linewidth}{@{}C{0.095\linewidth}p{0.57\linewidth}Y@{}}
 \toprule
 \textbf{扩展}&\textbf{已实现的指令或能力}&\textbf{实现通路}\\\midrule
 RV32M&\code{mul/mulh/mulhsu/mulhu/div/divu/rem/remu}&DSP 流水乘法与迭代除法\\
 Zicsr&\code{csrrw/csrrs/csrrc} 及三种立即数形式&CSR 读改写通路\\
 Zba&\code{sh1add/sh2add/sh3add}&单周期移位加法\\
-Zbb&\code{clz/ctz/cpop/orc.b/ror/rori/sext.b/sext.h/minu}&短组合或迭代通路\\
-Zbc&\code{clmul/clmulh}&无进位迭代乘法\\
-Zbs&\code{bext/bexti}&单周期位抽取\\
-Zbkb&\code{ror/rori/pack}&旋转与半字拼接\\
-Zbkc&\code{clmul/clmulh}&与 Zbc 共用无进位乘法编码及硬件\\
-Zbkx&\code{xperm4}&逐半字节置换\\
+Zbb&\code{clz/ctz/sext.b/sext.h/min/minu/max/maxu/rol/andn/orn/xnor/rev8}&短组合或 32 轮计数通路\\
+Zbs&\code{bext/bexti/bset/bseti/bclr/bclri/binv/binvi}&单周期位操作\\
+Zbkb&\code{pack}&单周期半字拼接\\
 \bottomrule
 \end{tabularx}
 \normalsize\end{table}
@@ -27,8 +24,10 @@ Zbkx&\code{xperm4}&逐半字节置换\\
 \subsection{乘除法与 B 扩展多周期控制}
 
 乘法器按操作类型选择普通低位、全宽高位或窄操作数快速通路；除法器采用恢复除法，每拍执行移位、
-比较与减法，最后单独完成符号修正。计数、循环移位、无进位乘法和半字节置换等 B 扩展操作进入
-迭代单元，移位加法、符号扩展、无符号最小值和位抽取则保持在短组合通路。
+比较与减法，最后单独完成符号修正。当前 RTL 的迭代 B 单元只保留 \code{clz/ctz}，逐位执行 32 轮；
+移位加法、符号扩展、最小/最大值、逻辑否定组合、\code{rol} 左旋、字节反序和单比特操作保留在短组合
+通路。当前支持范围仅以表~\ref{tab:implemented-extensions} 为准；旧迭代单元中的其余操作不再支持。
+\code{pack} 由当前单周期快速整数通路实现。
 
 多周期请求被接受后，流水线相关信息仍保留目的寄存器号，但将 \code{dataValid} 保持为 0；因此依赖
 该结果的年轻指令会在 IDU 停顿，而无关指令不会把未完成的数据误认为可前递结果。执行单元寄存最终
@@ -39,37 +38,46 @@ Zbkx&\code{xperm4}&逐半字节置换\\
 
 \subsection{B 扩展的动态热点与性能边界}
 
-为区分编译器利用 ISA 后的指令数变化与具体硬件实现的周期代价，本文采用相同 CoreMark 源码、
+本小节记录早期 B 扩展探索的动态剖析，用于解释后续为何将更多热点改由自定义指令承担；其中
+\code{clmul/clmulh} 等操作不属于提交 \code{8591368} 当前保留的硬件子集。为区分编译器利用 ISA 后的
+指令数变化与具体硬件实现的周期代价，本文采用相同 CoreMark 源码、
 \code{-O2} 优化级别和 10,000 次迭代的 NEMU 动态剖析进行 ISA 侧比较。未启用 B 扩展时执行
 2,848,523,042 条指令；启用 Zba、Zbb、Zbc 和 Zbs 后执行 2,480,540,948 条，减少
 367,982,094 条，即 12.918\%。后者包含 112,742,813 条 B 指令，占该镜像动态指令的 4.545\%。
 这两个比例分别表示全程序动态指令缩减和 B 指令在新镜像中的占比，不能直接等同为处理器周期或板级
 运行时间的缩减。
 
-表~\ref{tab:b-hotspots} 列出 B 镜像中出现次数最多的操作。\code{sh1add} 主要承担地址生成；
+表~\ref{tab:b-hotspots} 列出历史全 B 镜像中出现次数最多的操作，并同时标出当前硬件是否保留。
+\code{sh1add} 主要承担地址生成；
 \code{sext.h}、\code{sh2add} 与 \code{pack/zext.h} 构成第二组热点。GNU 反汇编器会把
 \code{pack rd,rs1,x0} 显示为 \code{zext.h}，因此二者合并计数。\code{clmul} 与 \code{clmulh}
 各执行 5,840,008 次，合计 11,680,016 次，是 CRC 路径的关键替代操作。
 
-\begin{table}[H]\centering\small
-\caption{CoreMark 10,000 次迭代中的 B 指令热点}\label{tab:b-hotspots}
-\begin{tabular*}{0.90\linewidth}{@{\extracolsep{\fill}}lrr@{}}
+\begin{table}[H]\centering\scriptsize
+\caption{CoreMark 10,000 次迭代中的历史 B 指令热点及当前状态}\label{tab:b-hotspots}
+\begin{tabularx}{\linewidth}{@{}lrrY@{}}
 \toprule
-\textbf{操作}&\textbf{动态次数}&\textbf{占全程序动态指令比例}\\\midrule
-\code{sh1add}&60,280,009&2.4301\%\\
-\code{sext.h}&16,060,001&0.6474\%\\
-\code{sh2add}&12,120,153&0.4886\%\\
-\code{pack/zext.h}&10,261,412&0.4137\%\\
-\code{clmul}&5,840,008&0.2354\%\\
-\code{clmulh}&5,840,008&0.2354\%\\
-\code{bext}&2,341,195&0.0944\%\\
+\textbf{操作}&\textbf{动态次数}&\textbf{占全程序动态指令比例}&\textbf{提交 \texttt{8591368} 状态}\\\midrule
+\code{sh1add}&60,280,009&2.4301\%&保留\\
+\code{sext.h}&16,060,001&0.6474\%&保留\\
+\code{sh2add}&12,120,153&0.4886\%&保留\\
+\code{pack/zext.h}&10,261,412&0.4137\%&保留，由单周期 \code{pack} 实现\\
+\code{clmul}&5,840,008&0.2354\%&移除；其已观测用途由 \code{xcrcu8} 覆盖\\
+\code{clmulh}&5,840,008&0.2354\%&移除；其已观测用途由 \code{xcrcu8} 覆盖\\
+\code{bext}&2,341,195&0.0944\%&保留\\
 \bottomrule
-\end{tabular*}
+\end{tabularx}
 \end{table}
+
+被移除的 \code{clmul/clmulh} 在历史镜像中合计占 0.4708\%，且本次观测到的热点用途集中在 CRC
+更新；以固定异或网络实现的 \code{xcrcu8} 已覆盖该计算，同时避免保留通用迭代无进位乘法器。
+其余被裁掉的迭代操作未进入上述热点集合；当前正式程序在迭代 B 单元中只使用
+\code{clz/ctz}，因此删除它们可减少状态、选择和结果汇聚逻辑，不影响当前程序镜像。
 
 1,000 次迭代的扩展子集剖析进一步给出：无 B 扩展为 284,879,140 条，仅启用 Zbc 为
 251,874,680 条，启用 Zba、Zbb、Zbc、Zbs 全集为 248,080,124 条。由此可见，该工作负载的大部分
-编译器侧收益来自 Zbc；全 B 镜像中的 \code{clmul/clmulh} 已替代 CRC 热点内的大量移位和异或。
+编译器侧收益来自 Zbc；这是历史 ISA 探索结果，不表示当前处理器仍支持 Zbc。全 B 镜像中的
+\code{clmul/clmulh} 曾替代 CRC 热点内的大量移位和异或。
 因此，在相同 B ISA 下将软件 CRC 替换为 \code{xcrcu8} 时，板测由 10.07521570~s 降至
 9.56506582~s，严格同口径增量为 5.0634\%。历史上约 12.37\% 的数字混合了“无 B 软件 CRC”和
 “有 B 且启用 CRC 加速”两个变化，不能归因于 \code{xcrcu8} 单条指令。受研发周期限制，本阶段未安排严格完整的
@@ -78,7 +86,8 @@ B-only 板级对照测试，因此本文不报告 B 扩展单独带来的板级�
 \subsection{自定义指令设计}\label{sec:custom}
 
 自定义指令使用 custom-0（\code{0001011}）与 custom-2（\code{1011011}）操作码空间，采用 R 型
-字段组织。GCC 支持生成这些自定义指令。表~\ref{tab:custom-encoding} 给出助记符与固定编码，随后给出
+字段组织。GCC 中端与目标后端扩展支持从普通 C 结构选择这些自定义指令。表~\ref{tab:custom-encoding} 给出当前 RTL 接受的
+主要助记符与固定编码，随后给出
 其输入、输出、状态和访存副作用的完整定义。
 
 \begin{table}[H]\centering\scriptsize
@@ -88,8 +97,13 @@ B-only 板级对照测试，因此本文不报告 B 扩展单独带来的板级�
 \textbf{助记符}&\textbf{opcode}&\textbf{funct7}&\textbf{funct3}&\textbf{操作形式}\\\midrule
 \code{xcrcu8}&\code{0001011}&\code{0000000}&\code{000}&\code{rd=f(rs1[7:0],rs2[15:0])}\\
 \code{xbmul}&\code{0001011}&\code{0000000}&\code{101}&\code{rd=rs1[5:2]*rs1[11:5]}\\
+\code{xmbm}&\code{0001011}&\code{0000001}&\code{101}&16-bit 乘法后执行位域乘法\\
+\code{xmacacc.first/add/last}&\code{0001011}&\code{0000100/0000101/0001000}&\code{011}&有符号 16-bit 乘累加序列\\
+\code{xmacacc.bfirst/badd/blast}&\code{0001011}&\code{0000110/0000111/0001001}&\code{011}&位域乘法累加序列\\
 \code{xlistrev.init}&\code{0001011}&\code{0000000}&\code{110}&首节点初始化并完成第一步\\
 \code{xlistrev.loop}&\code{0001011}&\code{0000010}&\code{110}&内部链式状态推进及同 PC 循环\\
+\code{xlistfind.idx}&\code{0001011}&\code{0000001}&\code{110}&按 info 数据高 16 位查找节点\\
+\code{xlistfind.data}&\code{0001011}&\code{0000011}&\code{110}&按 info 数据低 8 位查找节点\\
 \code{xmsum}&\code{0001011}&\code{0000010}&\code{111}&\code{rs1=base, rs2={n,clip}}\\
 \code{xdfacnt.init}&\code{1011011}&\code{0000000}&\code{000}&清零转移与终态计数器\\
 \code{xdfacnt.read}&\code{1011011}&\code{0000000}&\code{010}&读取指定转移计数\\
@@ -97,48 +111,15 @@ B-only 板级对照测试，因此本文不报告 B 扩展单独带来的板级�
 \code{xdfa4}&\code{1011011}&\code{0000000}&\code{101}&至多处理四个字节\\
 \code{xdfa4h.step}&\code{1011011}&\code{0000001}&\code{101}&四字节处理并在终止时提交计数\\
 \code{xdfa4h.read}&\code{1011011}&\code{0000001}&\code{010}&读取指定终态计数\\
+\code{xdfa4p}&\code{1011011}&\code{0000010}&\code{101}&内部状态推进并返回下一字符指针\\
 \bottomrule
 \end{tabular*}
 \normalsize\end{table}
 
-\subsubsection{编译器自动指令选择}
-
-硬件指令只有被编译器从普通程序语义中稳定识别，才能形成可复用的体系结构能力。为此，我们在 GCC 的
-RISC-V 目标支持中补充受目标选项控制的指令选择：\textbf{测试程序仍使用原有 C 源文件，不嵌入
-面向自定义指令的手写汇编片段，也不把原函数替换为手工编写的专用实现}。关闭相应目标选项时，编译器继续
-生成标准 RV32 指令序列；开启后，只有满足语义、数据类型和操作数约束的结构才会被选择为自定义指令。
-
-实现路径遵循 GCC 公开的目标后端扩展机制。局部算术表达式先进入 RTL，由机器描述中的
-\code{define\_peephole2} 识别等价序列，再由 \code{define\_insn} 约束操作数并输出目标编码；跨基本块的
-循环、链式更新和归约结构则在语言无关的 GIMPLE 表示上识别，经具有明确语义的 internal function
-下沉至 RTL，最后汇入同一机器描述完成选择。GCC 官方将机器描述定义为目标指令模式的载体，并允许
-其中包含目标相关的指令与 peephole 模式\footnote{GCC Internals：
-\href{https://gcc.gnu.org/onlinedocs/gccint/Machine-Desc.html}{Machine Descriptions}、
-\href{https://gcc.gnu.org/onlinedocs/gccint/Patterns.html}{Insn Patterns}、
-\href{https://gcc.gnu.org/onlinedocs/gccint/Peephole-Definitions.html}{Peephole Definitions}。}；GIMPLE、内部函数和优化 pass
-则是 GCC 中端表达并逐级降低较大语义结构的公开接口\footnote{GCC Internals：
-\href{https://gcc.gnu.org/onlinedocs/gccint/Tree-SSA.html}{Tree SSA}、
-\href{https://gcc.gnu.org/onlinedocs/gccint/Internal-Functions.html}{Internal Functions}、
-\href{https://gcc.gnu.org/onlinedocs/gccint/Pass-manager.html}{Pass Manager}。}。
-
-每类能力均由独立 target option 显式启用，组织方式与 GCC 上游 RISC-V 厂商扩展一致。GCC 的
-\code{.opt} 文件支持使用 \code{Target}、\code{Mask} 或 \code{Var} 声明目标选项
-\footnote{GCC Internals：
-\href{https://gcc.gnu.org/onlinedocs/gccint/Option-file-format.html}{Option file format}。}；上游 RISC-V 后端也以独立机器
-描述维护厂商指令模式，例如 XTheadBa 的提交即在厂商机器描述中加入相应 pattern
-\footnote{GCC 官方提交记录：
-\href{https://gcc.gnu.org/pipermail/gcc-cvs/2023-March/379446.html}{RISC-V: Add XTheadBa support}。}。因此，本设计获得的加速来自
-\textbf{编译器对普通 C 程序计算结构的自动识别和目标相关代码生成}，而不是修改测试程序的算法或
-输入数据。
-
-\input{src/tikz/compiler-selection}
-
-在保持处理器 RTL、已布线 DCP、CoreMark 源文件、输入规模和 10,000 次迭代口径均不变的条件下，
-新编译路径生成的程序在 NEMU 中完成四项 CRC 校验，动态执行指令数由 $1,335,195,856$ 条降至
-$1,322,096,524$ 条，减少约 \textbf{0.981\%}。将该程序镜像替换到同一硬件 bitstream 后，真实板级
-计时由 $6.74501768$\,s 降至 \textbf{$6.69115404$\,s}，三次测量结果一致，缩短约
-\textbf{0.799\%}；CRC 均为 \code{e714/1fd7/8e3a/988c}\evidence{E-BOARD-03}。这组同硬件对照说明，新增收益来自编译器对
-普通 C 程序语义的自动识别与指令选择。
+以下各节以无表题三线对照形式并列展示“C 语句片段---生成的 RV32 汇编”。左栏只摘取触发匹配的关键
+源码语句，右栏只保留理解映射所需的汇编上下文；自定义指令使用真实机器编码，并将对应助记符注释放在
+同一行。寄存器分配是一组代表性结果，不构成调用约定。当前
+GCC 已实现的匹配路径见附录\ref{app:gcc-custom-match}。
 
 \subsubsection{\texttt{xcrcu8}：单字节 CRC 状态变换}
 
@@ -167,6 +148,22 @@ $v=d\Vert c\in\mathbb{F}_2^{24}$。硬件用固定异或网络实现线性映射
 \State \Return $next[15:0]$
 \end{algorithmic}
 \end{algorithm}
+\CodeCompareBegin{C 语句片段}{生成的 RV32 汇编}
+\noindent\begin{minipage}[t]{0.48\linewidth}
+\begin{lstlisting}[style=cstatement]
+for (i = 0; i < 8; ++i) {
+  x16 = (data & 1) ^ (crc & 1);
+  data >>= 1;
+  if (x16) crc ^= 0x4002;
+  crc = (crc >> 1) | (x16 << 15);
+}
+\end{lstlisting}
+\end{minipage}\hfill
+\begin{minipage}[t]{0.48\linewidth}
+\begin{lstlisting}[style=rv32statement]
+(*@\CustomInsn{.insn r 0x0b, 0, 0, a0, a0, a1}{xcrcu8}@*)
+\end{lstlisting}
+\end{minipage}\CodeCompareEnd
 该指令不访问存储器、不保留跨指令状态，并在单周期结果通路写回。相同 ISA 配置和迭代数的板级对比
 中，它将运行时间由 10.07521570~s 降至 9.56506582~s，减少 0.51014988~s（5.0634\%）。
 
@@ -176,11 +173,211 @@ $v=d\Vert c\in\mathbb{F}_2^{24}$。硬件用固定异或网络实现线性映射
 \begin{equation}
   p=a\times b,\qquad \mathrm{rd}=\mathrm{zext}_{32}(p[10:0]).
 \end{equation}
+\CodeCompareBegin{C 语句片段}{生成的 RV32 汇编}
+\noindent\begin{minipage}[t]{0.48\linewidth}
+\begin{lstlisting}[style=cstatement]
+result = ((value >> 2) & 0xfu)
+       * ((value >> 5) & 0x7fu);
+\end{lstlisting}
+\end{minipage}\hfill
+\begin{minipage}[t]{0.48\linewidth}
+\begin{lstlisting}[style=rv32statement]
+(*@\CustomInsn{.insn r 0x0b, 5, 0, a0, a0, x0}{xbmul}@*)
+\end{lstlisting}
+\end{minipage}\CodeCompareEnd
 两个位域分别为 4 位和 7 位无符号数，因此 11 位结果不会溢出。这一组合数据通路不产生内存或内部
 状态副作用。以已经启用 B 扩展与 \code{xcrcu8} 的板级结果为基准，加入 \code{xbmul} 后运行时间由
 9.56506582~s 降至 9.07727378~s，\textbf{减少 0.48779204~s（5.10\%）}。
 
 \input{src/tikz/custom-simple-datapath}
+
+\subsubsection{\texttt{xmbm}：融合乘法与位域运算}
+
+\code{xmbm} 先计算两个输入低 16 位的无符号乘积 $p$，再直接从乘积中提取两个无符号位域：
+\begin{equation}
+  p=\mathrm{zext}(rs1[15:0])\times\mathrm{zext}(rs2[15:0]),\qquad
+  rd=\mathrm{zext}(p[5:2])\times\mathrm{zext}(p[11:5]).
+\end{equation}
+\CodeCompareBegin{C 语句片段}{生成的 RV32 汇编}
+\noindent\begin{minipage}[t]{0.48\linewidth}
+\begin{lstlisting}[style=cstatement]
+tmp = (MATRES)A[i*N+k]
+    * (MATRES)B[k*N+j];
+C[i*N+j] += bit_extract(tmp, 2, 4)
+            * bit_extract(tmp, 5, 7);
+\end{lstlisting}
+\end{minipage}\hfill
+\begin{minipage}[t]{0.48\linewidth}
+\begin{lstlisting}[style=rv32statement]
+(*@\CustomInsn{.insn r 0x0b, 5, 1, a3, a0, a1}{xmbm}@*)
+add a2, a2, a3
+\end{lstlisting}
+\end{minipage}\CodeCompareEnd
+它复用窄 16-bit DSP 通路，避免先执行普通乘法、写回 $p$，再由下一条指令完成 \code{xbmul}。
+同一硬件配置的隔离板级对比中，加入 \code{xmbm} 后时间由 6.690732940~s 降至
+\textbf{6.485317060~s}，减少 0.205415880~s（3.070\%）；NEMU 动态指令数由 1,322,090,085 条降至
+1,292,929,755 条，减少 29,160,330 条（2.205\%）。
+
+\subsubsection{\texttt{xmacacc}：矩阵乘累加序列}
+
+\code{xmacacc} 在窄 16-bit 乘法器旁设置 32-bit 累加器 $A$，用 first、add、last 三个阶段表达一个
+点积。每个阶段都有 signed 和 bit 两种形式，共对应六条编码。令
+\begin{align}
+  T_s(a,b)&=\mathrm{sext}_{32}(a[15:0])\times\mathrm{sext}_{32}(b[15:0]),\\
+  q&=\mathrm{zext}(a[15:0])\times\mathrm{zext}(b[15:0]),\\
+  T_b(a,b)&=\mathrm{zext}(q[5:2])\times\mathrm{zext}(q[11:5]).
+\end{align}
+其中 signed 形式由无符号窄乘积减去两个符号修正项得到二补码乘积，bit 形式则在同一窄乘积上执行
+与 \code{xmbm} 相同的字段提取。first 以本项覆盖 $A$，add 将本项累加到 $A$ 且不写 GPR，last
+累加末项并把最终 $A$ 写入 \code{rd}。统一算法如下。
+
+对长度为 $n\geq2$ 的点积，编译器把首项映射为 first，中间各项映射为 add，末项映射为 last：
+\begin{equation}
+  A_0=T(a_0,b_0),\qquad
+  A_k=(A_{k-1}+T(a_k,b_k))\bmod 2^{32},\qquad
+  rd=A_{n-1}.
+\end{equation}
+其中 $T$ 按源表达式选择 $T_s$ 或 $T_b$。first 建立局部累加状态，add 只更新该状态，last 在加入末项
+后才产生一次 GPR 写回；因此一个 $n$ 项点积只需一次通用寄存器结果写回。$n<2$ 时仍使用普通标量序列。
+
+\begin{algorithm}[H]
+\caption{\texttt{xmacacc} 的分阶段乘累加语义}\label{alg:xmacacc}
+\small\linespread{0.90}\selectfont
+\begin{algorithmic}
+\setlength{\itemsep}{0pt}
+\Procedure{XMacAcc}{$phase,mode,a,b$}
+  \If{$mode=\mathrm{signed}$}
+    \State $term\gets T_s(a,b)$
+  \Else
+    \State $term\gets T_b(a,b)$
+  \EndIf
+  \If{$phase=\mathrm{first}$}
+    \State $A\gets term$
+  \Else
+    \State $A\gets (A+term)\bmod 2^{32}$
+  \EndIf
+  \If{$phase=\mathrm{last}$}
+    \State \Return $A$ \Comment{写回 \code{rd}}
+  \Else
+    \State \Return \textsc{NoGPRWrite}
+  \EndIf
+\EndProcedure
+\end{algorithmic}
+\end{algorithm}
+
+\CodeCompareBegin{C 语句片段}{生成的 RV32 汇编}
+\noindent\begin{minipage}[t]{0.48\linewidth}
+\begin{lstlisting}[style=cstatement]
+C[i*N+j] = 0;
+for (k = 0; k < N; ++k)
+  C[i*N+j] += (MATRES)A[i*N+k]
+              * (MATRES)B[k*N+j];
+\end{lstlisting}
+\end{minipage}\hfill
+\begin{minipage}[t]{0.48\linewidth}
+\begin{lstlisting}[style=rv32statement]
+(*@\CustomInsn{.insn r 0x0b, 3, 4, x0, a0, a1}{xmacacc.first}@*)
+(*@\CustomInsn{.insn r 0x0b, 3, 5, x0, a2, a3}{xmacacc.add}@*)
+(*@\CustomInsn{.insn r 0x0b, 3, 8, a4, a5, a6}{xmacacc.last}@*)
+\end{lstlisting}
+\end{minipage}\CodeCompareEnd
+位域乘法项沿用相同的首项、中间项和末项调度，分别选择 bfirst、badd 和 blast。
+
+\CodeCompareBegin{C 语句片段}{生成的 RV32 汇编}
+\noindent\begin{minipage}[t]{0.48\linewidth}
+\begin{lstlisting}[style=cstatement]
+tmp = (MATRES)A[i*N+k]
+    * (MATRES)B[k*N+j];
+C[i*N+j] += bit_extract(tmp, 2, 4)
+            * bit_extract(tmp, 5, 7);
+\end{lstlisting}
+\end{minipage}\hfill
+\begin{minipage}[t]{0.48\linewidth}
+\begin{lstlisting}[style=rv32statement]
+(*@\CustomInsn{.insn r 0x0b, 3, 6, x0, a0, a1}{xmacacc.bfirst}@*)
+(*@\CustomInsn{.insn r 0x0b, 3, 7, x0, a2, a3}{xmacacc.badd}@*)
+(*@\CustomInsn{.insn r 0x0b, 3, 9, a4, a5, a6}{xmacacc.blast}@*)
+\end{lstlisting}
+\end{minipage}\CodeCompareEnd
+
+乘法器状态机按 \code{idle}$\rightarrow$\code{busy} 执行窄乘法。first 和 add 在乘积有效后更新 $A$；
+若下游尚未接收这条无 GPR 结果的指令，则暂存空写回令牌直至握手。last 转入专用
+\code{xmacaccDone} 状态，直接保持累加器输出，后级反压不会改写结果。这样既避免每一项经过 GPR
+回写与再次读取，也不把最终值从 $A$ 复制到通用乘法结果寄存器。
+在只启用链表查找的保留版本上继续加入 \code{xmacacc}，NEMU 动态指令数由 900,603,480 条降至
+804,723,454 条，减少 95,880,026 条（10.65\%）；相同 10/100 次 NPC 仿射模型的 10,000 次时间由
+5.570051480~s 降至 \textbf{5.301518123~s}，拟合缩短 4.82\%。该项尚无隔离板测，因而只作为
+指令数与仿真拟合证据。
+
+\subsubsection{\texttt{xlistfind}：链表节点查找}
+
+设链表节点包含后继指针和 info 指针。\code{xlistfind.idx} 以 \code{rs1} 为表头、\code{rs2[15:0]}
+为目标索引，比较每个 info 数据字的高 16 位；\code{xlistfind.data} 则比较低 8 位。两者命中时返回
+当前节点地址，遍历到空后继仍未命中时返回 0。每个节点的逻辑为
+\begin{equation}
+  next=\mathrm{Mem}_{32}[node],\quad info=\mathrm{Mem}_{32}[node+4],\quad
+  value=\mathrm{Mem}_{32}[info].
+\end{equation}
+状态机利用 D-cache 内两组私有异步副本并行查询 $node$ 与 $node+4$，随后查询 $info$；任何一步 miss
+均复用统一数据总线并在响应后继续。副本输出只进入查找器局部寄存器，普通 load 仍使用同步 BRAM。
+该指令只读内存，不改变链表链接或 info 数据。
+
+\begin{algorithm}[H]
+\caption{\texttt{xlistfind} 的链表节点查找算法}\label{alg:xlistfind}
+\small\linespread{0.90}\selectfont
+\begin{algorithmic}
+\setlength{\itemsep}{0pt}
+\Procedure{XListFind}{$head,target,dataMode$}
+  \State $node\gets head$; $target\gets target[15:0]$
+  \While{$node\neq0$}
+    \State $next\gets\operatorname{Load}_{32}(node)$
+    \State $info\gets\operatorname{Load}_{32}(node+4)$
+    \State $word\gets\operatorname{Load}_{32}(info)$
+    \If{$dataMode$}
+      \State $candidate\gets\mathrm{zext}_{16}(word[7:0])$
+    \Else
+      \State $candidate\gets word[31:16]$
+    \EndIf
+    \If{$candidate=target$}
+      \State \Return $node$
+    \EndIf
+    \State $node\gets next$
+  \EndWhile
+  \State \Return $0$
+\EndProcedure
+\end{algorithmic}
+\end{algorithm}
+
+\CodeCompareBegin{C 语句片段}{生成的 RV32 汇编}
+\noindent\begin{minipage}[t]{0.48\linewidth}
+\begin{lstlisting}[style=cstatement]
+if (info->idx >= 0)
+  while (list && list->info->idx
+                 != info->idx)
+    list = list->next;
+else
+  while (list && (list->info->data16 & 0xff)
+                 != info->data16)
+    list = list->next;
+\end{lstlisting}
+\end{minipage}\hfill
+\begin{minipage}[t]{0.48\linewidth}
+\begin{lstlisting}[style=rv32statement]
+(*@\CustomInsn{.insn r 0x0b, 6, 1, a0, a0, a1}{xlistfind.idx}@*)
+(*@\CustomInsn{.insn r 0x0b, 6, 3, a0, a0, a1}{xlistfind.data}@*)
+\end{lstlisting}
+\end{minipage}\CodeCompareEnd
+
+硬件在 \code{nodeLookup} 同时查询 $node$ 与 $node+4$ 的副本，\code{nodeResolve} 再按 next、info 的
+未命中情况决定总线请求顺序；两者都命中时可直接进入数据解析。若 next 未命中而 info 也未命中，
+next 响应返回后经 \code{infoRequest} 发出第二个请求。得到 info 后，\code{dataLookup} 查询目标数据字，
+\code{dataResolve}/\code{dataMemory} 分别处理命中和总线响应，并根据比较结果进入 \code{done} 或开始
+下一节点。\code{done} 保持结果，直到 EXU 写回握手后回到 \code{idle}，见图~\ref{fig:custom-listfind}。
+在完整前序加速组合上加入 \code{xlistfind} 后，NEMU 动态指令数由 1,199,809,301 条降至
+900,603,480 条，减少 299,205,821 条（24.94\%）；相同 10/100 次 NPC 仿射模型给出的 10,000 次
+时间为 5.570051480~s，相对加入前的拟合值缩短 6.51\%。该点尚未形成隔离板测。
+
+\input{src/tikz/custom-listfind}
 
 \subsubsection{\texttt{xlistrev}：链表链接反转}
 
@@ -232,6 +429,23 @@ $(cur,prev)$ 再处理一个节点。当 $next\neq0$ 时，硬件把 PC 重定�
 \EndProcedure
 \end{algorithmic}
 \end{algorithm}
+\CodeCompareBegin{C 语句片段}{生成的 RV32 汇编}
+\noindent\begin{minipage}[t]{0.48\linewidth}
+\begin{lstlisting}[style=cstatement]
+while (list) {
+  tmp = list->next;
+  list->next = next;
+  next = list;
+  list = tmp;
+}
+\end{lstlisting}
+\end{minipage}\hfill
+\begin{minipage}[t]{0.48\linewidth}
+\begin{lstlisting}[style=rv32statement]
+(*@\CustomInsn{.insn r 0x0b, 6, 0, a0, a0, x0}{xlistrev.init}@*)
+(*@\CustomInsn{.insn r 0x0b, 6, 2, a0, a0, x0}{xlistrev.loop}@*)
+\end{lstlisting}
+\end{minipage}\CodeCompareEnd
 读请求先查询 D-cache，未命中时转入统一数据总线；写请求同时更新主存可见数据与缓存副本。预取寄存器
 保存下一节点的查询结果，避免后继循环重复等待已经命中的查询。状态转移按请求/响应边界分层，见
 图~\ref{fig:custom-listrev}。
@@ -283,6 +497,27 @@ $clip=\mathrm{sext}_{32}(\mathrm{rs2}[15:0])$，处理元素数 $N=n^2$。$clip$
 \State \Return $\mathrm{sext}_{32}(R[15:0])$
 \end{algorithmic}
 \end{algorithm}
+\CodeCompareBegin{C 语句片段}{生成的 RV32 汇编}
+\noindent\begin{minipage}[t]{0.48\linewidth}
+\begin{lstlisting}[style=cstatement]
+cur = C[i*N+j];
+tmp += cur;
+if (tmp > clipval) {
+  ret += 10;
+  tmp = 0;
+} else
+  ret += (cur > prev) ? 1 : 0;
+prev = cur;
+\end{lstlisting}
+\end{minipage}\hfill
+\begin{minipage}[t]{0.48\linewidth}
+\begin{lstlisting}[style=rv32statement]
+# pack a2 = {N, clipval}; a1 = C
+slli a2, a0, 16
+or a2, a2, a3
+(*@\CustomInsn{.insn r 0x0b, 7, 2, a0, a1, a2}{xmsum}@*)
+\end{lstlisting}
+\end{minipage}\CodeCompareEnd
 当 $n=0$ 时循环体不执行，因而返回 0。控制器按
 “请求---响应---递推---完成”推进，只读内存，不修改数组。板级逐项实验中，在 \code{xbmul} 基础上
 加入 \code{xmsum} 后运行时间由 9.07727378~s 降至 8.57272290~s，\textbf{减少 0.50455088~s（5.56\%）}。
@@ -352,9 +587,56 @@ $\mathrm{rd}[5:3]=consumed$、$\mathrm{rd}[2:0]=q$，高 17 位清零。各条�
     计数器递增一次，随后清零待提交掩码。
   \item \code{xdfa4h.read}：以 \code{rs1[2:0]} 选择一项终态计数器，\code{rs2} 不参与运算；
     不修改任何 DFA 状态，\code{rd} 返回所选终态计数。
+  \item \code{xdfa4p}：忽略 \code{rs1}，以内部状态或起始状态处理 \code{rs2} 指向的当前对齐字，
+    \code{rd} 直接返回已消费字符后的下一指针；同时保存内部 DFA 状态和停止标志。跨字未停止时累积
+    状态掩码，停止时提交转移与终态计数；终端空 token 的 NUL 步不额外增加最终状态计数。
 \end{itemize}
 
 全部计数器和跨字待提交掩码均为 EXU 内部架构状态；普通 \code{xdfa4} 不直接修改它们。
+
+\CodeCompareBegin{C 语句片段：计数}{生成的 RV32 汇编}
+\noindent\begin{minipage}[t]{0.48\linewidth}
+\begin{lstlisting}[style=cstatement]
+for (i = 0; i < NUM_CORE_STATES; ++i)
+  final_counts[i] = track_counts[i] = 0;
+
+track_counts[state]++;
+crc = crcu32(track_counts[i], crc);
+crc = crcu32(final_counts[i], crc);
+\end{lstlisting}
+\end{minipage}\hfill
+\begin{minipage}[t]{0.48\linewidth}
+\begin{lstlisting}[style=rv32statement]
+(*@\CustomInsn{.insn r 0x5b, 0, 0, x0, x0, x0}{xdfacnt.init}@*)
+(*@\CustomInsn{.insn r 0x5b, 3, 0, x0, a0, x0}{xdfacnt.commit}@*)
+(*@\CustomInsn{.insn r 0x5b, 2, 0, a0, a1, x0}{xdfacnt.read}@*)
+(*@\CustomInsn{.insn r 0x5b, 2, 1, a0, a1, x0}{xdfa4h.read}@*)
+\end{lstlisting}
+\end{minipage}\CodeCompareEnd
+
+\CodeCompareBegin{C 语句片段：状态推进}{按所启用实现生成的 RV32 汇编}
+\noindent\begin{minipage}[t]{0.48\linewidth}
+\begin{lstlisting}[style=cstatement]
+while (*p != 0) {
+  fstate = state_transition(
+      &p, track_counts);
+  final_counts[fstate]++;
+}
+\end{lstlisting}
+\end{minipage}\hfill
+\begin{minipage}[t]{0.48\linewidth}
+\begin{lstlisting}[style=rv32statement]
+(*@\CustomInsn{.insn r 0x5b, 5, 0, a0, a1, a2}{xdfa4}@*)
+(*@\CustomInsn{.insn r 0x5b, 5, 1, a0, a1, a2}{xdfa4h.step}@*)
+(*@\CustomInsn{.insn r 0x5b, 5, 2, a0, x0, a2}{xdfa4p}@*)
+\end{lstlisting}
+\end{minipage}\CodeCompareEnd
+外层代码在扫描前清零计数数组、重复调用该循环并在结束后读取各状态计数时，分别形成
+\code{xdfacnt.init}、步进/提交和 read 的语义位置；四字符有界推进可由 \code{xdfa4} 或
+\code{xdfa4h.step} 承担，保留内部游标的版本对应 \code{xdfa4p}。
+保留指针式 \code{xdfa4p} 的隔离板级对照中，\code{xmbm}-only 版本为 6.485317060~s，加入
+\code{xdfa4p} 后为 \textbf{6.026062020~s}，减少 0.459255040~s（7.081\%）；NEMU 动态指令数由
+1,292,929,755 条降至 1,199,809,413 条，减少 93,120,342 条（7.20\%）。
 
 \input{src/tikz/custom-dfa}
 
@@ -366,9 +648,59 @@ $\mathrm{rd}[5:3]=consumed$、$\mathrm{rd}[2:0]=q$，高 17 位清零。各条�
 \code{xbmul+xcrcu8+xlistrev+xmsum+xdfa4h} 的\textbf{组合板测时间为 6.69637186~s}。该数值是组合结果，
 不归因于任一条单独指令。
 
+\subsubsection{编译器自动指令选择}
+
+硬件指令只有被编译器从普通程序语义中稳定识别，才能形成可复用的体系结构能力。为此，我们在 GCC 的
+RISC-V 目标支持中补充受目标选项控制的指令选择：测试程序仍使用原有 C 源文件，没有嵌入面向
+自定义指令的手写汇编片段，也没有把原函数替换为手工编写的专用实现。关闭相应目标选项时，编译器继续
+生成标准 RV32 指令序列；开启后，只有满足语义、数据类型和操作数约束的结构才会被选择为自定义指令。
+
+实现路径遵循 GCC 公开的目标后端扩展机制。局部算术表达式先进入 RTL，由机器描述中的
+\code{define\_peephole2} 识别等价序列，再由 \code{define\_insn} 约束操作数并输出目标编码；跨基本块的
+循环、链式更新和归约结构则在语言无关的 GIMPLE 表示上识别，经具有明确语义的 internal function
+下沉至 RTL，最后汇入同一机器描述完成选择。GCC 官方将机器描述定义为目标指令模式的载体，并允许
+其中包含目标相关的指令与 peephole 模式\footnote{GCC Internals：
+\href{https://gcc.gnu.org/onlinedocs/gccint/Machine-Desc.html}{Machine Descriptions}、
+\href{https://gcc.gnu.org/onlinedocs/gccint/Patterns.html}{Insn Patterns}、
+\href{https://gcc.gnu.org/onlinedocs/gccint/Peephole-Definitions.html}{Peephole Definitions}。}；GIMPLE、内部函数和优化 pass
+则是 GCC 中端表达并逐级降低较大语义结构的公开接口\footnote{GCC Internals：
+\href{https://gcc.gnu.org/onlinedocs/gccint/Tree-SSA.html}{Tree SSA}、
+\href{https://gcc.gnu.org/onlinedocs/gccint/Internal-Functions.html}{Internal Functions}、
+\href{https://gcc.gnu.org/onlinedocs/gccint/Pass-manager.html}{Pass Manager}。}。
+
+每类能力均由独立 target option 显式启用，组织方式与 GCC 上游 RISC-V 厂商扩展一致。GCC 的
+\code{.opt} 文件支持使用 \code{Target}、\code{Mask} 或 \code{Var} 声明目标选项
+\footnote{GCC Internals：
+\href{https://gcc.gnu.org/onlinedocs/gccint/Option-file-format.html}{Option file format}。}；上游 RISC-V 后端也以独立机器
+描述维护厂商指令模式，例如 XTheadBa 的提交即在厂商机器描述中加入相应 pattern
+\footnote{GCC 官方提交记录：
+\href{https://gcc.gnu.org/pipermail/gcc-cvs/2023-March/379446.html}{RISC-V: Add XTheadBa support}。}。因此，本设计获得的加速来自
+编译器对普通 C 程序计算结构的自动识别和目标相关代码生成，而不是修改测试程序的算法或输入数据。
+
+\input{src/tikz/compiler-selection}
+
+较早的自动选择阶段用于建立同硬件对照：在保持处理器 RTL、已布线 DCP、正式负载源文件、输入规模和
+10,000 次迭代口径均不变的条件下，生成程序在 NEMU 中完成四项 CRC 校验，动态执行指令数由 $1,335,195,856$ 条降至
+$1,322,096,524$ 条，减少约 \textbf{0.981\%}。将该程序镜像替换到同一硬件 bitstream 后，真实板级
+计时由 $6.74501768$\,s 降至 \textbf{$6.69115404$\,s}，三次测量结果一致，缩短约
+\textbf{0.799\%}；CRC 均为 \code{e714/1fd7/8e3a/988c}\evidence{E-BOARD-03}。这组同硬件对照说明，新增收益来自编译器对
+普通 C 程序语义的自动识别与指令选择。
+
+最终合入版本进一步取消探索性 GCC 插件、强制包装调用和报告插件，由目标选项
+\code{-mxmbm/-mxcrcu8/-mxlistrev/-mclipped-rising-score-reduce/-mxdfa4p/-mxlistfind/-mxmacacc}
+直接驱动中端与 MD 选择。最终 ELF 的静态审计得到 38 个 \code{xcrcu8}、1 个 \code{xlistrev}、5 个
+\code{xmsum}、2 个 \code{xdfa4p}、4 个 \code{xlistfind} 和 6 个 \code{xmacacc} 位置；组合矩阵循环
+由 \code{xmacacc} 覆盖，因此不会同时保留 \code{xmbm} 位置。NPC ITERATIONS=10 差分运行得到
+1,641,168 cycles/804,670 instructions，ITERATIONS=100 得到 15,930,335 cycles/7,767,333 instructions，
+四项 CRC 均正确；仿射拟合为 \textbf{1,587,738,705 cycles，即 5.292462350\,s@300\,MHz}
+\evidence{E-GCC-FINAL}。精确 NEMU 10,000 次运行提交 773,441,484 条指令并通过相同 CRC。该时间尚未
+上板。与迁移前同一 RTL 的 5.394727920~s 拟合值相比，正式中端/MD 生成路径进一步缩短
+0.102265570~s（1.90\%）；后端迁移未改变 RTL，因此沿用该硬件结构的 WNS，不重复计算新的实现结果。
+
 \subsection{一致性、阻塞与异常边界}
 
-无内部访存的 \code{xcrcu8/xbmul} 直接进入加速结果通路；其余单元在 EXU 保持当前指令，直至状态机
-完成并与后级握手。\code{xlistrev} 的 store、\code{xmsum} 的 load 及 DFA 的对齐字读取均复用统一
-数据总线。控制流冲刷不会提交年轻指令的请求；已经握手的链表写入则按普通 store 的可见顺序完成。
-\textbf{最终结果经独立硬件加速结果通路写回}，使阻塞控制、访存副作用和普通整数结果选择保持清晰边界。
+无内部访存的 \code{xcrcu8/xbmul} 进入加速结果通路；\code{xmbm/xmacacc} 进入复用窄 DSP 的长算术
+通路；其余单元在 EXU 保持当前指令，直至状态机完成并与后级握手。\code{xlistfind} 的 load、
+\code{xlistrev} 的 load/store、\code{xmsum} 的 load 及 DFA 的对齐字读取均复用统一数据总线。控制流
+冲刷不会提交年轻指令的请求；已经握手的链表写入则按普通 store 的可见顺序完成。每条指令只驱动其
+唯一 ResultKind lane，使阻塞控制、访存副作用和普通整数结果选择保持清晰边界。

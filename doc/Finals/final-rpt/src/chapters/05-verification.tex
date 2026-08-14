@@ -31,13 +31,9 @@ CPU tests、体系结构测试和完整性能负载。
 
 仿真器中的 Perf Counters Report 统计周期数、提交指令数、IPC、CPI、分支预测准确率和 RAW stall
 等指标。测试程序结束时执行 EBREAK，仿真器读取返回寄存器并判定 good trap；对赛题 COE，则先转换
-为仿真可加载的 IROM/DRAM 镜像，再运行至设备输出或停机条件。
-
-\begin{figure}[H]
-  \centering
-  \includegraphics[width=0.95\linewidth]{verify/image9.png}
-  \caption{自动化回归与实现流程界面}
-\end{figure}
+为仿真可加载的 IROM/DRAM 镜像，再运行至设备输出或停机条件。自动化工作流保留每个任务的
+命令、完整日志、提交标识和状态；正文通过证据编号和可点击的运行记录引用原始材料，不以页面截图
+代替可检索的测量数据。
 
 \subsubsection{FPGA 实现与板测}
 
@@ -52,14 +48,14 @@ SystemVerilog，刷新工程输入，完成 synthesis、implementation、bitstre
 
 基础测试同时采用单指令边界用例和小规模程序。单指令测试覆盖算术、逻辑、移位、比较、分支、跳转、
 load/store 以及 RV32M 和已实现扩展；程序级测试覆盖 add、load-store、switch、if-else、recursion
-等常见组合。测试资源包括移植到 AbstractMachine 的 riscv-tests、riscv-arch-test，以及
-am-kernels/tests/cpu-tests。
-
-\begin{figure}[H]
-  \centering
-  \includegraphics[width=0.92\linewidth]{verify/image10.png}
-  \caption{基础正确性测试自动化流程}
-\end{figure}
+等常见组合。AbstractMachine（AM）是南京大学计算机实验使用的裸机抽象环境；指令级验证采用
+NJU-ProjectN 将上游 riscv-tests 和 RISC-V Architecture Test 移植到 AM 的
+\href{https://github.com/NJU-ProjectN/riscv-tests-am}{riscv-tests-am} 与
+\href{https://github.com/NJU-ProjectN/riscv-arch-test-am}{riscv-arch-test-am}，程序级验证采用
+\href{https://github.com/NJU-ProjectN/am-kernels}{NJU-ProjectN/am-kernels} 中
+\code{tests/cpu-tests} 提供的小规模负载。上述项目与对应上游测试集均列入
+附录参考资料。每项任务在日志中保留实际执行命令、工具链版本、结果签名或 good trap；任务状态只
+表示流程是否完成，功能结论仍以日志中的程序结果为准。
 
 \subsubsection{性能与系统负载}
 
@@ -67,30 +63,25 @@ am-kernels/tests/cpu-tests。
 和总决赛正式性能负载进行回归。仿真阶段记录总周期和提交指令数，按实际目标频率换算时间；板测阶段
 以硬件计时器与 UART 原始输出为准。只有结果校验和 CRC 均正确时，时间数据才进入性能表和折线图。
 
-\begin{figure}[H]
-  \centering
-  \includegraphics[width=0.95\linewidth]{verify/image11.png}
-  \caption{性能测试自动化流程}
-\end{figure}
-
-\subsubsection{CSR、机器态与 RT-Thread}
+\subsubsection{CSR、机器态与 RT-Thread Nano}
 
 CSR 测试覆盖 \texttt{mcycle(h)}、\texttt{mstatus}、\texttt{mepc}、\texttt{mtvec}、
 \texttt{marchid}、\texttt{mvendorid} 以及 CSR 读改写、\texttt{ecall} 和 \texttt{mret}。
-RT-Thread 测试进一步组合上下文切换、异常返回、串口输入、内存分配和命令执行；仿真到达
-\texttt{msh />} 提示符后，继续运行 version、free、hello、microbench 与 echo 等命令。
+RT-Thread Nano 3.1.5 测试进一步组合上下文切换、异常返回、串口输入和命令执行；仿真到达
+\texttt{msh >} 提示符后，继续运行 \texttt{version}、\texttt{ps}、\texttt{list\_thread} 与
+\texttt{list\_semaphore}，检查版本、线程对象和信号量对象输出。
 
 \subsection{分层覆盖与专项检查}
 
 \begin{table}[H]\centering
 \caption{验证层次、主要内容与判定标准}
 \footnotesize
-\begin{tabularx}{\linewidth}{@{}p{0.18\linewidth}YY@{}}
+\begin{tabularx}{\linewidth}{@{}p{0.20\linewidth}YY@{}}
 \toprule
 \textbf{测试层次}&\textbf{主要内容}&\textbf{判定标准}\\\midrule
 基础 CPU tests&add、load-store、switch、if-else、recursion&程序 good trap，差分无不一致\\
 RV32I/M 架构测试&整数、分支、访存、乘除法及边界条件&体系结构签名通过，RAW 停顿正确\\
-CSR/机器态测试&CSR 读改写、ecall、mret、RT-Thread&状态更新正确，可进入 shell 并执行命令\\
+CSR/机器态测试&CSR 读改写、ecall、mret、RT-Thread Nano 3.1.5&状态更新正确，可进入 shell 并执行命令\\
 B 扩展测试&各已实现短操作与迭代操作&指令结果及边界行为与参考语义一致\\
 自定义指令测试&单周期、状态型、访存型和归约型单元&返回值、内部状态、访存副作用符合指令语义\\
 完整性能负载&固定镜像和正式迭代次数&全部 CRC 正确，周期与板测记录完整\\
@@ -110,115 +101,189 @@ Vivado 实现&setup/hold、DRC、unrouted nets&报告阶段和频率明确，无
 \subsubsection{load-use、控制流与缓存一致性}
 
 命中路径检查 LB/LBU/LH/LHU/LW 的地址低位与扩展结果，miss 路径检查响应捕获、回填和消费者恢复。
-BEQ/BNE 的 late-load 比较覆盖预测正确与错误，确保重定向只发生一次，较年轻指令及其访存副作用均被
-抑制。缓存专项场景包括 load fill、整字 store 分配、窄 store 失效、store 与旧 load 回填竞争、双
-bank 连续访问、同步 BRAM bank 对齐，以及自定义访存单元产生的缓存更新。
+普通 load-use 覆盖同步 BRAM 数据在 LSU 对齐后的停顿与前递；紧邻快速整数结果的分支则覆盖延后一拍
+比较、预测正确与错误，确保重定向只发生一次，较年轻指令及其访存副作用均被抑制。缓存专项场景包括
+load fill、整字 store 分配、窄 store 失效、store 与旧 load 回填竞争、双 bank 连续访问、同步 BRAM
+bank 对齐、注册化 store 写口，以及 \code{xlistfind} 私有双读副本的 hit/miss 组合。
 
 \subsection{代表性验证结果}
 
-\subsubsection{RV32I 基本指令测试}
+\subsubsection{自动化运行与证据定位}
 
-\begin{figure}[H]
-  \centering
-  \includegraphics[height=0.58\textheight,trim=0 0 669bp 0,clip]{verify/image13.png}%
-  \includegraphics[height=0.58\textheight,trim=0 0 644bp 0,clip]{verify/image14.png}%
-  \includegraphics[height=0.58\textheight,trim=0 0 654bp 0,clip]{verify/image15.png}
-  \caption{RV32I 基本指令测试结果}
-\end{figure}
-
-单指令与边界样例全部通过，程序以 good trap 结束。该组回归覆盖 RV32I 算术逻辑、移位、比较、
-跳转、分支和访存路径，是后续缓存、预测器与执行通路迭代的基础门禁。
-
-\subsubsection{src0、src1 与 src2 性能测试}
-
-\begin{figure}[H]
-  \centering
-  \includegraphics[width=0.82\linewidth,trim=0 365bp 0 0,clip]{verify/image16.png}
-  \caption{src0 仿真日志与性能统计}
-\end{figure}
-
-src0 完成 37 条功能测试并进入 halt。既有日志保留周期数与动态指令数作为回归过程记录；\textbf{IPC、
-CPI 与按目标频率换算的时间将在取得新的同口径仿真结果后统一填写。}
-
-\begin{figure}[H]
-  \centering
-  \includegraphics[width=\linewidth]{verify/image17.png}
-  \caption{src0 Vivado Simulation 波形}
-\end{figure}
-
-\begin{figure}[H]
-  \centering
-  \includegraphics[width=0.82\linewidth,trim=0 350bp 0 0,clip]{verify/image18.png}
-  \caption{src1 仿真日志与性能统计}
-\end{figure}
-
-src1 既有日志保留周期数与动态指令数作为回归过程记录；IPC、CPI 与时间等待新的同口径仿真结果。
-Vivado Simulation 中数码管写入 37000000，表明 37 条功能测试完成；代表性波形统一见上图。
-
-\begin{figure}[H]
-  \centering
-  \includegraphics[width=0.82\linewidth,trim=0 340bp 0 0,clip]{verify/image20.png}
-  \caption{src2 仿真日志与性能统计}
-\end{figure}
-
-src2 既有日志保留周期数与动态指令数作为回归过程记录；IPC、CPI 与时间等待新的同口径仿真结果。
-其 Vivado Simulation 同样完成数码管结果写入，波形判读口径与 src0 一致。
+本节可复查的无硬件加速自动化基线证据来自 GitHub Actions 的
+\href{https://github.com/HanPiM/jyd/actions/runs/31680203475}{运行记录}（run 31680203475），对应提交
+\texttt{75329078}\evidence{E-CI-01}。该运行早于最终提交 \code{8591368}，用于保留无硬件加速
+CoreMark 和其他程序的原始数据，不等价于最终加速程序回归。较早硬件加速版本的
+\href{https://github.com/HanPiM/jyd/actions/runs/31708291526/job/94474591976}{CoreMark official 任务}
+对应提交 \code{fa30e65e}\evidence{E-CI-ACC}；受赛程时间限制，该版本尚未使用最终合入版本新增的
+自定义指令集合。表~\ref{tab:actions-status} 列出关键任务及可复查的日志入口；
+已列出的性能数据均核对各程序约定的结束判据（good trap 与 CRC，或赛题程序的零值 halt）和性能计数器。
 
 \begin{table}[H]\centering
-\caption{src0、src1、src2 性能统计结果}
-\small
-\begin{tabularx}{\linewidth}{@{}lrrrrr@{}}\toprule
-\textbf{用例}&\textbf{周期数}&\textbf{指令数}&\textbf{IPC}&\textbf{CPI}&\textbf{280 MHz 时间/s}\\\midrule
-src0&1988M&1417M&\MetricPending{新仿真}&\MetricPending{新仿真}&\MetricPending{新仿真}\\
-src1&1973M&1304M&\MetricPending{新仿真}&\MetricPending{新仿真}&\MetricPending{新仿真}\\
-src2&2585M&1849M&\MetricPending{新仿真}&\MetricPending{新仿真}&\MetricPending{新仿真}\\
+\caption{两次自动化回归的关键任务状态}\label{tab:actions-status}
+\scriptsize
+\begin{tabularx}{\linewidth}{@{}p{0.27\linewidth}p{0.17\linewidth}Y@{}}\toprule
+\textbf{任务}&\textbf{取证状态}&\textbf{可复查结果}\\\midrule
+CoreMark official（无硬件加速）&完成&\href{https://github.com/HanPiM/jyd/actions/runs/31680203475/job/94383912147}{任务 94383912147}；5,000 次迭代、CRC、good trap 与完整计数器均已提取\\
+CoreMark official（较早硬件加速版本）&完成&\href{https://github.com/HanPiM/jyd/actions/runs/31708291526/job/94474591976}{任务 94474591976}；5,000 次迭代、CRC、good trap 与完整计数器均已提取；尚未使用最终新增自定义指令\\
+Dhrystone&完成&\href{https://github.com/HanPiM/jyd/actions/runs/31680203475/job/94383912209}{任务 94383912209}；500,000 次运行并 good trap\\
+withMext-v2&完成&\href{https://github.com/HanPiM/jyd/actions/runs/31680203475/job/94383912194}{任务 94383912194}；周期、指令与性能统计完整\\
+microbench test/train/ref&完成&三个数据集的独立任务均已完成\\
+src0/src1/src2&完成&\href{https://github.com/HanPiM/jyd/actions/runs/31680203475/job/94383912255}{src0}、\href{https://github.com/HanPiM/jyd/actions/runs/31680203475/job/94383912123}{src1}、\href{https://github.com/HanPiM/jyd/actions/runs/31680203475/job/94383912165}{src2} 均正常 halt，性能统计完整\\
+xibei-withMext\_clz&完成&\href{https://github.com/HanPiM/jyd/actions/runs/31680203475/job/94383912116}{任务 94383912116}；周期、指令与性能统计完整\\
 \bottomrule\end{tabularx}
 \end{table}
 
-\subsubsection{CoreMark 与 Dhrystone}
+\subsubsection{RV32I 与 src 系列测试}
 
-\PlaceholderFigure{CoreMark 新仿真结果}{待补充迭代次数、周期数、指令数、IPC、CPI、目标频率、换算时间、CoreMark 得分与 CRC。}
+RV32I 回归覆盖算术逻辑、移位、比较、跳转、分支和访存路径，单指令与边界样例以
+good trap 作为功能判定。RV32I 和 src0 的可视化测试记录见附录。
 
-CoreMark 的内部统计项暂以占位符保留：周期数 \MetricPending{新仿真}，指令数
-\MetricPending{新仿真}，IPC \MetricPending{新仿真}，CPI \MetricPending{新仿真}，运行时间
-\MetricPending{新仿真}，CoreMark 得分 \MetricPending{新仿真}。\textbf{最终结果须同时给出迭代次数、
-目标频率和四项 CRC，确保性能值与正确性证据同口径。}
+\begin{table}[H]\centering
+\caption{未使用自定义硬件加速指令的赛题程序性能统计}
+\scriptsize
+\begin{tabularx}{\linewidth}{@{}lYYYYY@{}}\toprule
+\textbf{用例}&\textbf{周期数}&\textbf{指令数}&\textbf{IPC}&\textbf{CPI}&\textbf{280 MHz 时间}\\\midrule
+src0&2,042,435,804&1,417,754,119&0.6941&1.4406&7.29441\,s\\
+src1&1,885,935,755&1,304,108,396&0.6915&1.4461&6.73548\,s\\
+src2&2,579,011,645&1,849,099,352&0.7170&1.3947&9.21076\,s\\
+withMext-v2&528,981,036&380,344,412&0.7190&1.3908&1.88922\,s\\
+xibei-withMext\_clz&2,070,577,491&1,447,436,276&0.6990&1.4305&7.39492\,s\\
+\bottomrule\end{tabularx}
+\end{table}
 
-\PlaceholderFigure{Dhrystone 新仿真结果}{待补充迭代次数、周期数、指令数、IPC、CPI、目标频率、换算时间、Dhrystones/s 与 DMIPS。}
+表中程序镜像均未使用自定义硬件加速指令，因此上述结果不受 CoreMark 是否启用加速的软件路径差异
+影响，可直接作为提交 \code{75329078} 的同口径 CI 数据。最终提交已经修改流水边界、CSR、地址相关和
+缓存通路，因此这些周期数只作为该 CI 提交的可复现基线，不改标为当前 RTL 结果。
 
-Dhrystone 的内部统计项暂以占位符保留：周期数 \MetricPending{新仿真}，指令数
-\MetricPending{新仿真}，IPC \MetricPending{新仿真}，CPI \MetricPending{新仿真}，运行时间
-\MetricPending{新仿真}，Dhrystones/s 与 DMIPS \MetricPending{新仿真}。新结果将统一注明迭代次数与
-目标频率。
+\subsubsection{CoreMark official}
 
-\subsubsection{RT-Thread 系统测试}
+本次 RTL 仿真以\textbf{未启用自定义硬件加速指令}的普通 C 源码执行 5,000 次迭代，作为通用
+RV32IM/B 执行路径的可复现对照。程序以 good trap 结束，且 list、matrix、state 和 final CRC 均与
+期望值一致。关键日志摘录如下，完整命令与输出可由任务链接复查。
+
+\begin{center}
+\fcolorbox{gray!55}{gray!3}{\parbox{0.91\linewidth}{\ttfamily\small
+Iterations       : 5000\\
+HIT GOOD TRAP at pc = 0x80002ee4\\
+cycles/instructions: 1691655758 / 1448594010\\
+IPC/CPI          : 0.8563 / 1.1678\\
+CRC list/matrix/state/final: e714 / 1fd7 / 8e3a / bd59}}
+\end{center}
+
+\begin{table}[H]\centering
+\caption{无硬件加速 CoreMark 5,000 次迭代的总体执行结果}
+\small
+\begin{tabularx}{\linewidth}{@{}lYlY@{}}\toprule
+\textbf{指标}&\textbf{结果}&\textbf{指标}&\textbf{结果}\\\midrule
+总周期&1,691,655,758&提交指令&1,448,594,010\\
+IPC&0.8563&CPI&1.1678\\
+280 MHz 周期换算时间&6.04163\,s&预测错误冲刷&22,388,429 周期\\
+CoreMark 报分&不用于正式报分&有效性&good trap 且 CRC 正确\\
+\bottomrule\end{tabularx}
+\end{table}
+
+\input{src/tikz/coremark-counters}
+
+\begin{table}[H]\centering
+\caption{无硬件加速 CoreMark 仿真的关键计数器原始值}
+\scriptsize
+\begin{tabularx}{\linewidth}{@{}p{0.29\linewidth}rY@{}}\toprule
+\textbf{计数器}&\textbf{原始计数}&\textbf{对应比例/含义}\\\midrule
+RAW 冲突检出&890,969,506&占总周期 52.6685\%\\
+RAW 实际停顿&150,118,780&占总周期 8.87407\%\\
+IDU 真实依赖停顿&127,274,411&占总周期约 7.5237\%\\
+分支/跳转与预测错误&292,399,983 / 22,388,429&总体预测准确率 92.3432\%\\
+D-cache 可缓存 load 访问&271,274,132&262,537,130 次命中，8,737,002 次未命中\\
+旧基线 late-load ADD/ADDI 单源使用&55,422,673 / 14,100,002&分别为 rs1-only / rs2-only；该机制已在最终结构移除\\
+\bottomrule\end{tabularx}
+\end{table}
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.9\linewidth]{verify/image12.png}
-  \caption{RT-Thread 启动与 shell 提示符}
+  \includegraphics[width=0.94\linewidth]{verify/official-platform-uart-no-accel.png}
+  \caption{官方平台 UART 上板输出（无硬件加速）}
+  \label{fig:official-board-uart-no-accel}
 \end{figure}
 
-\begin{figure}[H]
-  \centering
-  \includegraphics[width=\linewidth]{verify/image24.png}
-  \vspace{0.25em}
-  \includegraphics[width=\linewidth]{verify/image25.png}
-  \vspace{0.25em}
-  \includegraphics[width=\linewidth]{verify/image26.png}
-  \vspace{0.25em}
-  \includegraphics[width=\linewidth]{verify/image27.png}
-  \caption{RT-Thread 自动化测试输出节选}
-\end{figure}
+图~\ref{fig:official-board-uart-no-accel} 保留官方平台的无硬件加速板测界面：10,000 次迭代耗时
+10.706996260\,s，输出 933.968758 CoreMark/s，四项 CRC 为
+\code{e714/1fd7/8e3a/988c}。该截图用于证明官方平台、UART 与程序校验链路，不与上述 5,000 次 RTL
+仿真的周期计数混合。
 
-自动化脚本向仿真串口依次输入命令并检查输出；version、free、hello、microbench 与 echo 均得到预期
-结果。该测试同时覆盖 CSR、ecall/mret、上下文切换、堆管理、串口输入与较长程序执行。
+\paragraph{较早硬件加速版本。}
+任务 94474591976 同样执行 5,000 次迭代并以 good trap 结束，四项 CRC 与无加速 CI 一致。相对于同迭代数
+无硬件加速任务，总周期由 1,691,655,758 降至 1,003,987,696，减少 40.6506\%；提交指令由
+1,448,594,010 降至 661,063,076，减少 54.3652\%。IPC 同时下降，说明该版本虽然显著压缩了动态
+指令数，但多周期加速指令及其依赖停顿提高了每条指令的平均周期代价。
 
-\begin{figure}[H]
-  \centering
-  \includegraphics[width=0.9\linewidth]{verify/image28.png}
-  \caption{RT-Thread 本地交互测试}
-\end{figure}
+\begin{center}
+\fcolorbox{gray!55}{gray!3}{\parbox{0.91\linewidth}{\ttfamily\small
+Iterations       : 5000\\
+HIT GOOD TRAP at pc = 0x80001d14\\
+cycles/instructions: 1003987696 / 661063076\\
+IPC/CPI          : 0.6584 / 1.5187\\
+CRC list/matrix/state/final: e714 / 1fd7 / 8e3a / bd59}}
+\end{center}
+
+\begin{table}[H]\centering
+\caption*{较早硬件加速 CoreMark 5,000 次迭代的总体执行结果}
+\small
+\begin{tabularx}{\linewidth}{@{}lYlY@{}}\toprule
+\textbf{指标}&\textbf{结果}&\textbf{指标}&\textbf{结果}\\\midrule
+总周期&1,003,987,696&提交指令&661,063,076\\
+IPC&0.6584&CPI&1.5187\\
+300 MHz 周期换算时间&3.34663\,s&预测错误计数&14,530,702\\
+相对无加速周期降幅&40.6506\%&有效性&good trap 且 CRC 正确\\
+\bottomrule\end{tabularx}
+\end{table}
+
+\input{src/tikz/coremark-accelerated-counters}
+
+\begin{table}[H]\centering
+\caption*{较早硬件加速 CoreMark 仿真的关键计数器原始值}
+\scriptsize
+\begin{tabularx}{\linewidth}{@{}p{0.29\linewidth}rY@{}}\toprule
+\textbf{计数器}&\textbf{原始计数}&\textbf{对应比例/含义}\\\midrule
+RAW 冲突检出&633,759,128&占总周期 63.1242\%\\
+RAW 实际停顿&372,398,492&占总周期 37.0919\%\\
+IDU 真实依赖停顿&224,167,341&占总周期约 22.3277\%\\
+分支/跳转与预测错误&145,421,696 / 14,530,702&总体预测准确率 90.0079\%\\
+D-cache 可缓存 load 访问&180,328,216&172,438,109 次命中，7,890,107 次未命中\\
+late-load ADD/ADDI 单源使用&48,992,312 / 14,620,002&分别为 rs1-only / rs2-only\\
+\bottomrule\end{tabularx}
+\end{table}
+
+该加速 CI 对应 \code{fa30e65e}，早于最终合入提交 \code{8591368}，因此只用于说明较早加速组合的
+动态指令压缩和微架构行为，不能替代最终程序的性能结论。仿真环境中的软件计时器未累积到 CoreMark
+规定的最低 10~s，两个 5,000 次任务均不将仿真器打印的 iterations/s 作为正式 CoreMark 分数。最终有硬件加速程序
+另行完成 NPC ITERATIONS=10/100 与 NEMU ITERATIONS=10,000 回归：NPC 分别为
+1,641,168/15,930,335 cycles，仿射拟合得到 1,587,738,705 cycles，即 5.292462350\,s@300\,MHz；
+NEMU 提交 773,441,484 条指令，四项 CRC 均为 \code{e714/1fd7/8e3a/988c}\evidence{E-GCC-FINAL}。
+该结果尚未上板，也不借用无加速 Actions 表中的数据。EEMBC 的可复现运行
+要求和源文件约束见其官方实现\footnote{EEMBC CoreMark：
+\href{https://github.com/eembc/coremark}{official repository and run rules}。}。
+
+\subsubsection{Dhrystone}
+
+Dhrystone 完成 500,000 次运行并以 good trap 结束。仿真日志记录 266,016,006 周期、
+227,010,096 条指令，IPC 为 0.8534，CPI 为 1.1718。按 280~MHz 对周期数换算，运行时间为
+0.950057~s；在该频率假设下进一步换算为 526,284.13 Dhrystones/s 和 299.54 DMIPS。后两项是依据
+周期数得到的派生值，不是仿真计时库直接输出。Dhrystone 基准的定义与标准化口径见原始论文
+\footnote{R. P. Weicker, ``DHRYSTONE: A Synthetic Systems Programming Benchmark,''
+\emph{Communications of the ACM}, 27(10), 1984, pp. 1013--1030.}。
+
+\subsubsection{RT-Thread Nano 3.1.5 系统测试}
+
+Nano 内核及本地 AM 适配层按基础 \code{rv32im\_zicsr} 编译。在 NEMU 功能运行中，系统到达
+\code{msh >}，\code{version} 报告 3.1.5；\code{ps/list\_thread} 列出 \code{tidle0} 与
+\code{tshell}，\code{list\_semaphore} 列出 shell 的 \code{shrx} 信号量\evidence{E-RTTNANO}。
+该结果覆盖协作式上下文切换、shell 命令分派和串口输入输出。
+
+同一无性能负载镜像在最终 RTL 的 NPC 仿真中也到达 \code{msh >}，并经过一次
+\code{ecall/mret}；输入首个命令后，WBU 在地址 \code{0x80100ecc} 检出 D-cache 命中值
+\code{0x65760000} 与内存值 \code{0x65760001} 不一致。因而该次 RTL 运行只作为启动与首次上下文切换
+证据，不计为完整命令级通过；命令级结论限定为 NEMU 功能验证，完整控制台输出作为可检索日志保存。
 
 \subsection{总决赛新增能力的验证闭环}
 
@@ -228,19 +293,21 @@ Dhrystone 的内部统计项暂以占位符保留：周期数 \MetricPending{新
 10000 次迭代，要求 list、matrix、state 和 final 四项 CRC 全部正确，并用多次 capture 检查重复性。
 
 \begin{table}[H]\centering
-\caption{当前验证证据状态}\label{tab:verification-status}
+\caption{基线证据与最终合入版本验证状态}\label{tab:verification-status}
 \small
 \begin{tabularx}{\linewidth}{@{}p{0.24\linewidth}p{0.14\linewidth}Y@{}}
 \toprule
 \textbf{证据项}&\textbf{状态}&\textbf{说明}\\\midrule
-基础指令与 CPU tests&完成&覆盖算术、访存、分支、递归及相关边界\\
-RV32M 与多周期 RAW&完成&包含 mul/mulh/mulhu/mulhsu 定向测试和握手停顿\\
-CSR 与 RT-Thread&完成&可进入 shell 并执行代表性命令\\
-自定义指令短迭代与前缀差分&完成&语义、CRC、访存副作用及 16M 指令前缀一致\\
-正式负载多次板测&完成&当前编译路径三次相同 6.691154040\,s，四项 CRC 一致\\
-250 MHz 完整实现&完成&post-route physical optimization WNS $+0.009$ ns\\
-300 MHz 完整实现&完成&post-route physical optimization WNS $-0.580$ ns\\
-当前资源利用率图&\MetricPending{提取}&补充 LUT、FF、BRAM、DSP 和时钟资源截图\\
+提交 \code{75329078} 自动化回归&完成&无加速 CoreMark 5,000 次及 Dhrystone/src 等日志可复查\\
+提交 \code{fa30e65e} 加速自动化回归&完成&较早硬件加速 CoreMark 5,000 次、CRC 与完整计数器可复查；尚未使用最终新增自定义指令\\
+前一基线自定义指令验证&完成&语义、CRC、访存副作用及 16M 指令前缀一致\\
+前一基线正式板测&完成&编译器选择路径三次相同 6.691154040\,s，四项 CRC 一致\\
+最终 RTL 240 MHz 实现&完成&routed WNS 为 $+0.014$ ns，TNS 为 0，建立时序闭合\\
+前一基线 300 MHz 实现&完成&post-physopt WNS 为 $-0.580$ ns\\
+最终 RTL 基础/体系结构回归&完成&\code{checkformat/verilog}，以及 add、load-store、switch、if-else、recursion 差分均通过\\
+最终 GCC 自定义指令选择&完成&六组正反例检查、ELF 指令族审计和 ITERATIONS=10 NPC 差分均通过\\
+最终有加速 CoreMark&完成（仿真）&10/100 次 NPC 拟合为 5.292462350\,s；NEMU 10,000 次 good trap 与四项 CRC 正确\\
+最终实现与板测边界&实现完成，未上板&routed WNS $-0.699$\,ns；GCC 迁移未改 RTL，故未重跑 Vivado；最终时间以青色拟合值标示\\
 \bottomrule
 \end{tabularx}
 \end{table}

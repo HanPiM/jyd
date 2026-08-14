@@ -1,15 +1,15 @@
 \begin{figure}[H]\centering\resizebox{0.96\linewidth}{!}{%
 \begin{tikzpicture}[b/.style={draw,rounded corners=1.2pt,align=center,minimum width=3.0cm,minimum height=0.82cm,fill=blue!6},d/.style={draw,diamond,aspect=2,align=center,fill=orange!7},a/.style={-Stealth,thick},font=\small,node distance=0.72cm and 1.0cm]
 \node[b] (exec) {EXU 得到真实类型、方向与目标};
-\node[d,below=of exec] (late) {相邻快速值或 late-load\\参与 BEQ/BNE？};
-\node[b,below left=0.8cm and 1.3cm of late] (now) {EXU 当拍校验};
-\node[b,below right=0.8cm and 1.3cm of late] (reg) {解析信息随 token 注册\\LSU 边界完成校验};
+\node[d,below=of exec] (late) {分支紧邻快速整数生产者？};
+\node[b,below left=0.8cm and 1.3cm of late] (now) {否：EXU 当拍校验};
+\node[b,below right=0.8cm and 1.3cm of late] (reg) {是：比较结果写入 EXU/LSU 寄存器\\下一拍发出重定向};
 \node[d,below=2.4cm of late] (wrong) {真实下一 PC 与预测一致？};
 \node[b,below left=0.8cm and 1.35cm of wrong,fill=green!7] (keep) {一致：流水线继续};
-\node[b,below right=0.8cm and 1.35cm of wrong,fill=red!6] (redirect) {不一致：翻转 epoch\\写入重定向 PC 邮箱};
+\node[b,below right=0.8cm and 1.35cm of wrong,fill=red!6] (redirect) {不一致：清除年轻 EXU valid\\翻转 epoch 并写 PC 邮箱};
 \node[b,left=2.5cm of wrong,fill=purple!7] (train) {完成指令注册更新信息\\BTB 类型/目标/计数器\\RAS call/return};
 \draw[a](exec)--(late);\draw[a](late)--node[above left]{否}(now);\draw[a](late)--node[above right]{是}(reg);
 \draw[a](now)|-(wrong);\draw[a](reg)|-(wrong);\draw[a](wrong)--node[above left]{是}(keep);\draw[a](wrong)--node[above right]{否}(redirect);
 \draw[a](exec.west)-|(train.north);
 \end{tikzpicture}}
-\caption{后端控制流校验、BTB 更新与重定向流程}\end{figure}
+\caption{立即与注册化分支校验、BTB 更新及重定向流程}\end{figure}

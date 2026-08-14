@@ -9,7 +9,7 @@
 
 \node[mem,right=0.8cm of split] (m0) {bank 0\\64 项\\异步读};
 \foreach \i [remember=\i as \last (initially 0)] in {1,...,7}{
-  \node[mem,right=0.2cm of m\last] (m\i) {bank \i\\64 项\\异步读};
+  \node[mem,right=-0.01cm of m\last] (m\i) {bank \i\\64 项\\异步读};
 }
 \node[draw,dashed,rounded corners=1.2pt,fit=(m0)(m7),inner sep=5pt,
       label=above:{512 项查询阵列}] (array) {};

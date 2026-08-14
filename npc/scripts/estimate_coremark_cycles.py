@@ -112,6 +112,7 @@ def run_one(
     output_dir: Path,
     arch: str,
     iterations: int,
+    difftest: bool,
     make_args: list[str],
 ) -> dict[str, object]:
     run_dir = output_dir / f"iter{iterations}"
@@ -125,7 +126,7 @@ def run_one(
         f"ITERATIONS={iterations}",
         f"BUILD_DIR={run_dir / 'build'}",
         *make_args,
-        "VSIM_difftest=0",
+        f"VSIM_difftest={int(difftest)}",
         "VSIM_en_inst_trace=0",
         "VSIM_showdisasm=0",
         "VSIM_etrace=0",
@@ -185,6 +186,7 @@ def run_one(
     crcs = {name: value.lower() for name, value in CRC_RE.findall(text)}
     result = {
         "iterations": iterations,
+        "difftest": difftest,
         "cycles": cycles[-1],
         "instructions": instructions[-1],
         "cpi": cycles[-1] / instructions[-1],
@@ -210,7 +212,7 @@ def main() -> int:
     output_dir.mkdir(parents=True, exist_ok=False)
 
     metadata = {
-        "schema_version": 1,
+        "schema_version": 2,
         "name": args.name,
         "created_utc": stamp,
         "repo_root": str(repo_root),
@@ -226,16 +228,17 @@ def main() -> int:
         "target_iterations": args.target_iterations,
         "frequency_mhz": args.frequency_mhz,
         "reference_cycles": args.reference_cycles,
+        "run_difftest": {"low": True, "high": False},
         "make_args": args.make_args,
     }
     (output_dir / "metadata.json").write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
 
     try:
         low = run_one(
-            repo_root, bench_dir, output_dir, args.arch, args.low_iterations, args.make_args
+            repo_root, bench_dir, output_dir, args.arch, args.low_iterations, True, args.make_args
         )
         high = run_one(
-            repo_root, bench_dir, output_dir, args.arch, args.high_iterations, args.make_args
+            repo_root, bench_dir, output_dir, args.arch, args.high_iterations, False, args.make_args
         )
     except Exception as error:
         (output_dir / "FAILED.txt").write_text(f"{error}\n", encoding="utf-8")
@@ -292,8 +295,10 @@ def main() -> int:
     result_path.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
 
     summary = (
-        f"low: ITERATIONS={args.low_iterations} cycles={low['cycles']} instructions={low['instructions']}\n"
-        f"high: ITERATIONS={args.high_iterations} cycles={high['cycles']} instructions={high['instructions']}\n"
+        f"low: ITERATIONS={args.low_iterations} difftest=on "
+        f"cycles={low['cycles']} instructions={low['instructions']}\n"
+        f"high: ITERATIONS={args.high_iterations} difftest=off "
+        f"cycles={high['cycles']} instructions={high['instructions']}\n"
         f"cycles/iteration: {float(cycles_per_iteration):.6f} ({cycles_per_iteration})\n"
         f"fixed cycles: {float(fixed_cycles):.6f} ({fixed_cycles})\n"
         f"estimated ITERATIONS={args.target_iterations}: {estimated_cycles_rounded} cycles\n"

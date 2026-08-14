@@ -82,6 +82,7 @@ class EXU(
     val lateLoadLSU = Input(new LateLoadSourceInfo)
     val lateLoadWBU = Input(new LateLoadSourceInfo)
     val previousStageFwd = Input(new WrBackForwardInfo)
+    val stagedDcacheQueryIndex = Input(UInt(10.W))
 
     val dcache = new Bundle {
       val hit        = Input(Bool())
@@ -865,9 +866,9 @@ class EXU(
   // result, then the result of its previous self-iteration. The done-boundary
   // register keeps that private recurrence out of the asynchronous tag RAM.
   val dcacheQueryAddr = Mux(isListReverse, listReverseQueryAddress, reg1AddImm)
-  io.dcache.queryIndex := dcacheQueryAddr(11, 2)
+  io.dcache.queryIndex := Mux(isListReverse, listReverseQueryAddress(11, 2), io.stagedDcacheQueryIndex)
   io.dcache.queryTag   := dcacheQueryAddr(17, 11)
-  io.dcache.lateQueryIndex := reg1AddImm(11, 2)
+  io.dcache.lateQueryIndex := io.stagedDcacheQueryIndex
   io.dcache.listFindStart := io.in.valid && isListFind && !io.dcache.listFindDone
   io.dcache.listFindConsume := io.out.fire && isListFind
   io.dcache.listFindAddress := reg_v1

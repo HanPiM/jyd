@@ -458,6 +458,14 @@ class CPUCore(
   exu.io.in.bits := exuPipe.bits
   exu.io.in.valid := exuPipe.valid && exuEpochMatch
   exuPipe.ready := exu.io.in.ready || !exuEpochMatch
+  // Keep the ordinary cache index on a dedicated resettable register so it is
+  // physically independent of the high-fanout address/result payload. It is
+  // captured by the same ID/EX handshake and therefore adds no pipeline cycle.
+  val stagedDcacheQueryIndex = RegInit(0.U(10.W))
+  when(idu.io.out.fire) {
+    stagedDcacheQueryIndex := idu.io.out.bits.info.reg1AddImm(11, 2)
+  }
+  exu.io.stagedDcacheQueryIndex := stagedDcacheQueryIndex
   pipelineConnect(exu.io.out, lsu.io.in, lsu.io.out)
 
   when(lateRedirectDetected || lateRedirectNow) {

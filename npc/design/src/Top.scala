@@ -278,10 +278,8 @@ class CPUCore(
   btb.io.update.actualTaken := branchUpdateTakenReg
 
   val immediateRedirectNow = exu.io.out.valid && exu.io.immediatePredWrong
-  val lateRedirectPreKill = exu.io.out.fire && exu.io.out.bits.lateBranchRedirect
-  val lateRedirectDetected = lsu.io.in.fire && lsu.io.in.bits.lateBranchRedirect
-  val lateRedirectNow = RegNext(lateRedirectDetected, false.B)
-  val lateRedirectPipelineKill = lateRedirectPreKill || lateRedirectDetected || lateRedirectNow
+  val lateRedirectBlocked = lsu.io.in.valid && lsu.io.in.bits.lateBranchRedirect
+  val lateRedirectNow = lateRedirectBlocked && lsu.io.in.ready
   val redirectNow = immediateRedirectNow || lateRedirectNow
   dontTouch(lateRedirectNow)
   val redirectPacket      = Wire(new RedirectPacket)
@@ -456,13 +454,12 @@ class CPUCore(
   }
 
   val exuPipe = Wire(Decoupled(new DecodedInst))
-  // A registered-branch redirect is known as that instruction leaves EXU.
-  // Bubble its younger successor at this register boundary so the following
-  // late-redirect signal never has to gate EXU datapaths or RAM write enables.
-  pipelineConnect(idu.io.out, exuPipe, kill = lateRedirectPipelineKill)
+  // Resolve adjacent-result branches from their registered LSU payload. This
+  // keeps the branch comparator out of the ID/EX valid-register input cone.
+  pipelineConnect(idu.io.out, exuPipe, kill = lateRedirectBlocked)
   val exuEpochMatch = exuPipe.bits.epoch === pipelineEpoch
   exu.io.in.bits := exuPipe.bits
-  exu.io.in.valid := exuPipe.valid && exuEpochMatch
+  exu.io.in.valid := exuPipe.valid && exuEpochMatch && !lateRedirectBlocked
   exuPipe.ready := exu.io.in.ready || !exuEpochMatch
   // Keep the ordinary cache index on a dedicated resettable register so it is
   // physically independent of the high-fanout address/result payload. It is
@@ -474,7 +471,7 @@ class CPUCore(
   exu.io.stagedDcacheQueryIndex := stagedDcacheQueryIndex
   pipelineConnect(exu.io.out, lsu.io.in, lsu.io.out)
 
-  when(lateRedirectDetected || lateRedirectNow) {
+  when(lateRedirectBlocked) {
     assert(!immediateRedirectNow, "late and immediate redirects must be mutually exclusive")
     assert(!exu.io.in.valid && !exu.io.out.valid, "a late redirect must discard the younger EXU instruction")
     assert(!exu.io.memReq.valid, "a late redirect must suppress the younger EXU memory request")

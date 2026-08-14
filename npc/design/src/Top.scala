@@ -412,42 +412,48 @@ class CPUCore(
     pipelineConnect(lsuDifftest.io.out, wbuDifftest.io.in)
   }
 
-  // Explicit payload registers prevent this small, wide buffer from becoming
-  // RAMD32. Ring pointers keep decode/EXU backpressure out of payload writes;
-  // like a non-pipe Queue, a full ring cannot enqueue on its dequeue cycle.
+  // Fixed slots prevent this small, wide buffer from becoming RAMD32 with a
+  // dynamic read address on every decode path. Keep dequeue/backpressure in
+  // slot0's write enable instead of its payload data cone.
   val fetchSlot0 = Reg(new FetchedInst)
   val fetchSlot1 = Reg(new FetchedInst)
-  val fetchHead = RegInit(false.B)
-  val fetchTail = RegInit(false.B)
-  val fetchCount = RegInit(0.U(2.W))
+  val fetchValid0 = RegInit(false.B)
+  val fetchValid1 = RegInit(false.B)
   val iduPipe = Wire(Decoupled(new FetchedInst))
-  iduPipe.bits := Mux(fetchHead, fetchSlot1, fetchSlot0)
-  iduPipe.valid := fetchCount =/= 0.U
+  iduPipe.bits := fetchSlot0
+  iduPipe.valid := fetchValid0
   val iduEpochMatch = iduPipe.bits.epoch === pipelineEpoch
   idu.io.in.bits := iduPipe.bits
   idu.io.in.valid := iduPipe.valid && iduEpochMatch
   iduPipe.ready := idu.io.in.ready || !iduEpochMatch
-  ifu.io.out.ready := fetchCount =/= 2.U
+  ifu.io.out.ready := !fetchValid1
 
   val fetchEnq = ifu.io.out.fire
   val fetchDeq = iduPipe.fire
-  when(fetchEnq) {
-    when(fetchTail) {
-      fetchSlot1 := ifu.io.out.bits
-    }.otherwise {
-      fetchSlot0 := ifu.io.out.bits
-    }
-    fetchTail := ~fetchTail
+  val fetchShift = fetchDeq && fetchValid1
+  val fetchReplaceHead = fetchEnq && (!fetchValid0 || fetchDeq)
+  val fetchSlot0Write = fetchShift || fetchReplaceHead
+  val fetchSlot0Data = Mux(fetchValid1, fetchSlot1, ifu.io.out.bits)
+  when(fetchSlot0Write) {
+    fetchSlot0 := fetchSlot0Data
   }
-  when(fetchDeq) {
-    fetchHead := ~fetchHead
+  when(fetchEnq && fetchValid0 && !fetchDeq) {
+    fetchSlot1 := ifu.io.out.bits
   }
   switch(Cat(fetchEnq, fetchDeq)) {
     is("b10".U) {
-      fetchCount := fetchCount + 1.U
+      when(fetchValid0) {
+        fetchValid1 := true.B
+      }.otherwise {
+        fetchValid0 := true.B
+      }
     }
     is("b01".U) {
-      fetchCount := fetchCount - 1.U
+      when(fetchValid1) {
+        fetchValid1 := false.B
+      }.otherwise {
+        fetchValid0 := false.B
+      }
     }
   }
 

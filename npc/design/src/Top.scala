@@ -449,23 +449,54 @@ class CPUCore(
     }
   }
 
+  // Two fixed decoded slots terminate accelerator backpressure here instead
+  // of letting EXU ready participate in the fetch-slot data mux. A full queue
+  // deliberately cannot replace its tail on the cycle that EXU dequeues it.
+  val exuSlot0 = Reg(new DecodedInst)
+  val exuSlot1 = Reg(new DecodedInst)
+  val exuValid0 = RegInit(false.B)
+  val exuValid1 = RegInit(false.B)
+  val stagedDcacheQueryIndex0 = RegInit(0.U(10.W))
+  val stagedDcacheQueryIndex1 = RegInit(0.U(10.W))
   val exuPipe = Wire(Decoupled(new DecodedInst))
-  // A registered-branch redirect is known as that instruction leaves EXU.
-  // Bubble its younger successor at this register boundary so the following
-  // late-redirect signal never has to gate EXU datapaths or RAM write enables.
-  pipelineConnect(idu.io.out, exuPipe, kill = lateRedirectPipelineKill)
+  exuPipe.bits  := exuSlot0
+  exuPipe.valid := exuValid0
+  idu.io.out.ready := !exuValid1
+
+  val exuEnq = idu.io.out.fire
+  val exuDeq = exuPipe.fire
+  when(exuDeq) {
+    when(exuValid1) {
+      exuSlot0 := exuSlot1
+      stagedDcacheQueryIndex0 := stagedDcacheQueryIndex1
+      exuValid0 := true.B
+      exuValid1 := false.B
+    }.otherwise {
+      exuValid0 := false.B
+    }
+  }
+  when(exuEnq) {
+    when(!exuValid0 || (exuDeq && !exuValid1)) {
+      exuSlot0 := idu.io.out.bits
+      stagedDcacheQueryIndex0 := idu.io.out.bits.info.reg1AddImm(11, 2)
+      exuValid0 := true.B
+    }.otherwise {
+      exuSlot1 := idu.io.out.bits
+      stagedDcacheQueryIndex1 := idu.io.out.bits.info.reg1AddImm(11, 2)
+      exuValid1 := true.B
+    }
+  }
+  // A registered-branch redirect discards every younger decoded instruction.
+  when(lateRedirectPipelineKill) {
+    exuValid0 := false.B
+    exuValid1 := false.B
+  }
+
   val exuEpochMatch = exuPipe.bits.epoch === pipelineEpoch
   exu.io.in.bits := exuPipe.bits
   exu.io.in.valid := exuPipe.valid && exuEpochMatch
   exuPipe.ready := exu.io.in.ready || !exuEpochMatch
-  // Keep the ordinary cache index on a dedicated resettable register so it is
-  // physically independent of the high-fanout address/result payload. It is
-  // captured by the same ID/EX handshake and therefore adds no pipeline cycle.
-  val stagedDcacheQueryIndex = RegInit(0.U(10.W))
-  when(idu.io.out.fire) {
-    stagedDcacheQueryIndex := idu.io.out.bits.info.reg1AddImm(11, 2)
-  }
-  exu.io.stagedDcacheQueryIndex := stagedDcacheQueryIndex
+  exu.io.stagedDcacheQueryIndex := stagedDcacheQueryIndex0
   pipelineConnect(exu.io.out, lsu.io.in, lsu.io.out)
 
   when(lateRedirectDetected || lateRedirectNow) {

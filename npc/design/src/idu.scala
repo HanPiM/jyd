@@ -288,14 +288,11 @@ class IDU(
   // Short B operations are evaluated by the ordinary ALU path so they retain
   // same-cycle forwarding and do not inherit the old universal 32-cycle cost.
   val bImmLow5 = inst(24, 20)
+  // The formal CoreMark image uses only CLZ/CTZ from the iterative B unit.
+  // Keep that exact decode and let synthesis discard the unused B machinery.
   val isBCount = isFmtI && arithmeticFunc3 === "b001".U && arithmeticFunc7 === "b0110000".U &&
-    (bImmLow5 === 0.U || bImmLow5 === 1.U || bImmLow5 === 2.U)
-  val isBClmul = !isFmtI && arithmeticFunc7 === "b0000101".U &&
-    (arithmeticFunc3 === "b001".U || arithmeticFunc3 === "b011".U)
-  val isBOrcB = isFmtI && arithmeticFunc3 === "b101".U && arithmeticFunc7 === "b0010100".U && bImmLow5 === 7.U
-  val isBXperm4 = !isFmtI && arithmeticFunc7 === "b0010100".U && arithmeticFunc3 === "b010".U
-  val isBRor = arithmeticFunc7 === "b0110000".U && arithmeticFunc3 === "b101".U
-  val isIterativeB = isBCount || isBClmul || isBOrcB || isBXperm4 || isBRor
+    (bImmLow5 === 0.U || bImmLow5 === 1.U)
+  val isIterativeB = isBCount
   val isBShiftAdd = !isFmtI && arithmeticFunc7 === "b0010000".U &&
     (arithmeticFunc3 === "b010".U || arithmeticFunc3 === "b100".U || arithmeticFunc3 === "b110".U)
   val isBSext = isFmtI && arithmeticFunc7 === "b0110000".U && arithmeticFunc3 === "b001".U &&

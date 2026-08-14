@@ -19,21 +19,16 @@ class LSUInput(
 }
 
 object ExtractFwdInfoFromLSU {
-  def apply(
-    info:            DecoupledIO[LSUInput],
-    dcacheReadData:  UInt,
-    registeredAddr:  UInt,
-    registeredEnWr:  Bool,
-    registeredValid: Bool
-  )(
+  def apply(info: DecoupledIO[LSUInput], dcacheReadData: UInt)(
     implicit p: CPUParameters
   ): WrBackForwardInfo = {
     val wrBack = info.bits.exuWriteBack
     val loadData = ExtLoadData(dcacheReadData, info.bits.destAddr(1, 0), info.bits.func3t)
+    val loadDataValid = info.bits.isLoad && info.bits.cacheableLoad && info.bits.dcacheHit
     val out = Wire(new WrBackForwardInfo)
-    out.addr      := registeredAddr
-    out.enWr      := registeredEnWr
-    out.dataVaild := registeredValid
+    out.addr      := ResultLaneSelect.rd(wrBack)
+    out.enWr      := ResultLaneSelect.anyValid(wrBack) && info.valid
+    out.dataVaild := info.valid && (!info.bits.isLoad || loadDataValid)
     out.data      := Mux(info.bits.isLoad, loadData, ResultLaneSelect.nonLoadData(wrBack))
     out.kind      := wrBack.resultKind
 

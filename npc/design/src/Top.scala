@@ -471,21 +471,6 @@ class CPUCore(
   exu.io.stagedDcacheQueryIndex := stagedDcacheQueryIndex
   pipelineConnect(exu.io.out, lsu.io.in, lsu.io.out)
 
-  // Keep forwarding identity beside IDU instead of routing LSU's shared valid
-  // register through the conflict and address-generation cones.
-  val lsuForwardAddrReg = Reg(p.GPRAddr)
-  val lsuForwardEnWrReg = RegInit(false.B)
-  val lsuForwardValidReg = RegInit(false.B)
-  when(exu.io.out.ready) {
-    lsuForwardAddrReg := ResultLaneSelect.rd(exu.io.out.bits.exuWriteBack)
-    lsuForwardEnWrReg := exu.io.out.valid && ResultLaneSelect.anyValid(exu.io.out.bits.exuWriteBack)
-    lsuForwardValidReg := exu.io.out.valid &&
-      (!exu.io.out.bits.isLoad || (exu.io.out.bits.cacheableLoad && exu.io.out.bits.dcacheHit))
-  }
-  dontTouch(lsuForwardAddrReg)
-  dontTouch(lsuForwardEnWrReg)
-  dontTouch(lsuForwardValidReg)
-
   when(lateRedirectBlocked) {
     assert(!immediateRedirectNow, "late and immediate redirects must be mutually exclusive")
     assert(!exu.io.in.valid && !exu.io.out.valid, "a late redirect must discard the younger EXU instruction")
@@ -496,13 +481,7 @@ class CPUCore(
 
   idu.io.rvec <> gprs.io.read
 
-  val lsuFwdInfo = ExtractFwdInfoFromLSU(
-    lsu.io.in,
-    dcache.io.readData,
-    lsuForwardAddrReg,
-    lsuForwardEnWrReg,
-    lsuForwardValidReg
-  )
+  val lsuFwdInfo = ExtractFwdInfoFromLSU(lsu.io.in, dcache.io.readData)
   val lsuFastFwdInfo = ExtractFastFwdInfoFromLSU(lsu.io.in)
   idu.io.wrBackInfo.exu := exu.io.fwd
   idu.io.wrBackInfo.lsu := lsuFwdInfo

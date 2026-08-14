@@ -3,9 +3,8 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  *
- * Local copy of the pinned upstream RT-Thread Nano tinyprintf
- * (rt-thread/src/tinyprintf.c), extended with '-' left-justify and decimal
- * width for %s. Upstream msh's help format ("%-16s - %s") relies on it; the
+ * Local size-oriented RT-Thread formatter, extended with '-' left-justify and
+ * decimal width for %s. Upstream msh's help format ("%-16s - %s") relies on it; the
  * original formatter emitted the flag/width text literally. Numeric widths
  * are parsed but not applied, keeping the formatter small.
  */
@@ -80,7 +79,7 @@ static int _console_put_string(const char *str, int width, rt_bool_t left)
     return length;
 }
 
-int rt_kprintf(const char *fmt, ...)
+void rt_kprintf(const char *fmt, ...)
 {
     int length = 0;
     va_list args;
@@ -165,7 +164,7 @@ int rt_kprintf(const char *fmt, ...)
     }
     va_end(args);
 
-    return length;
+    (void)length;
 }
 
 #endif /* RT_USING_TINY_PRINTF */

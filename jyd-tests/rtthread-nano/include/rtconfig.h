@@ -23,6 +23,6 @@
 #define FINSH_ARG_MAX 8
 
 #define IDLE_THREAD_STACK_SIZE 1024
-#define RT_VER_NUM 0x50001
+#define RT_VER_NUM 0x30105
 
 #endif

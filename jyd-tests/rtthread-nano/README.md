@@ -1,7 +1,7 @@
 # RT-Thread Nano AM port
 
-This test runs the upstream [RT-Thread Nano](https://github.com/RT-Thread/rtthread-nano)
-kernel on the JYD Abstract Machine platform. The upstream revision is pinned in
+This test runs upstream [RT-Thread Nano 3.1.5](https://github.com/RT-Thread/rtthread-nano/tree/v3.1.5)
+on the JYD Abstract Machine platform. The v3.1.5 commit is pinned in
 `SOURCE_COMMIT`; `make` checks it out under the ignored `upstream/` directory.
 
 The AM port supplies cooperative context switching and console input/output.

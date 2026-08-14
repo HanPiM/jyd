@@ -1,0 +1,20 @@
+diff --git a/rt-thread/src/kservice.c b/rt-thread/src/kservice.c
+index a35ef7b..3003fc8 100644
+--- a/rt-thread/src/kservice.c
++++ b/rt-thread/src/kservice.c
+@@ -1153,6 +1153,7 @@ void rt_kputs(const char *str)
+ #endif
+ }
+ 
++#ifndef RT_USING_TINY_PRINTF
+ /**
+  * This function will print a formatted string on system console
+  *
+@@ -1194,6 +1195,7 @@ void rt_kprintf(const char *fmt, ...)
+ #endif
+     va_end(args);
+ }
++#endif
+ #endif
+ 
+ #ifdef RT_USING_HEAP

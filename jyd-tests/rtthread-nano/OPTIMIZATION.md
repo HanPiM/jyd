@@ -6,6 +6,9 @@ integration, compiler optimization, or linked runtime. Record exact `.text`
 measurements and validation commands so later sessions can continue from the
 current baseline.
 
+The upstream kernel is RT-Thread Nano 3.1.5, pinned to the official `v3.1.5`
+tag commit recorded in `SOURCE_COMMIT`.
+
 Only the ELF `.text` section is subject to the competition footprint limit.
 `.rodata`, `.data`, `.data.extra`, and `.bss` are not counted, although their
 addresses and generated images must still fit the JYD memory map.
@@ -279,14 +282,6 @@ timeout 10 make -C jyd-tests/rtthread-nano ARCH=riscv32-jyd run
 Success means the simulator loads a small DRAM data image without a capacity
 error and reaches `msh >`. The shell does not exit by itself, so stop it after
 observing the prompt.
-
-If changing shared AM CTE/CSR code, also run the full RT-Thread regression:
-
-```sh
-make -C rt-thread-am/bsp/abstract-machine run ARCH=riscv32-jyd
-```
-
-Reaching `msh />` is success; stop the run manually.
 
 ## Pending size work
 

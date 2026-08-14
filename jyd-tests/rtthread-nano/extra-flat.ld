@@ -6,6 +6,6 @@ SECTIONS {
     __vsymtab_start = .;
     KEEP(*(VSymTab))
     __vsymtab_end = .;
-  } > DRAM
+  }
 }
 INSERT BEFORE .data;

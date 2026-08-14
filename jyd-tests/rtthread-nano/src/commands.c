@@ -49,19 +49,16 @@ static int show_threads(void) {
   return RT_EOK;
 }
 
-static int list_thread(int argc, char **argv) {
-  (void)argc;
-  (void)argv;
+long list_thread(void) {
   return show_threads();
 }
-MSH_CMD_EXPORT(list_thread, list threads in the system.);
 
-static int ps(int argc, char **argv) {
+static int list_thread_cmd(int argc, char **argv) {
   (void)argc;
   (void)argv;
   return show_threads();
 }
-MSH_CMD_EXPORT(ps, list threads in the system.);
+MSH_CMD_EXPORT_ALIAS(list_thread_cmd, list_thread, list threads in the system.);
 
 static int version(int argc, char **argv) {
   (void)argc;

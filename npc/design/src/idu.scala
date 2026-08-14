@@ -124,8 +124,10 @@ object CacheAwareByPassMux {
     val lsuConflict = SingleByPassMux.conflict(rs, wrBacks(1).addr, wrBacks(1).enWr)
     val wbuConflict = SingleByPassMux.conflict(rs, wrBacks(2).addr, wrBacks(2).enWr)
     val adjacentFastSelect = allowAdjacentFast && exuConflict && wrBacks(0).dataVaild
-    val lsuSelect = !exuConflict && lsuConflict && wrBacks(1).dataVaild
-    val deferredLoadSelect = lsuSelect && wrBacks(1).kind === ResultKind.load
+    val lsuIsLoad = wrBacks(1).kind === ResultKind.load
+    val lsuDataReady = wrBacks(1).dataVaild && (!lsuIsLoad || allowAdjacentFast)
+    val lsuSelect = !exuConflict && lsuConflict && lsuDataReady
+    val deferredLoadSelect = lsuSelect && lsuIsLoad
     val wbuSelect = !exuConflict && !lsuConflict && wbuConflict && wrBacks(2).dataVaild
 
     val needStall = Mux(

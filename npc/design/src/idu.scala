@@ -400,10 +400,12 @@ class IDU(
   // current peripheral response out of the address-adder carry chain.
   val addressWbuConflict =
     needReg1AddImm && SingleByPassMux.conflict(res.rs1, io.wrBackInfo.wbu.addr, io.wrBackInfo.wbu.enWr)
-  // Accelerator results are uncommon address bases. Let them commit before
-  // address generation so their lane-valid network does not feed the adder.
+  // Accelerator and long-arithmetic results are uncommon address bases. Let
+  // them commit before address generation so their lane-valid networks do not
+  // feed the adder.
   val addressWbuReady =
-    addressWbuConflict && io.wrBackInfo.wbu.dataVaild && io.wrBackInfo.wbu.kind =/= ResultKind.accelerator
+    addressWbuConflict && io.wrBackInfo.wbu.dataVaild &&
+      io.wrBackInfo.wbu.kind =/= ResultKind.accelerator && io.wrBackInfo.wbu.kind =/= ResultKind.longArithmetic
   val needStallAddress =
     addressExuConflict || (addressLsuConflict && !addressLsuReady) || (addressWbuConflict && !addressWbuReady)
   val needStall = bypassMux.io.needStall || needStallAddress

@@ -42,9 +42,10 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=__doc__,
         epilog=(
-            "example: %(prog)s --name xmbm -- "
-            "COREMARK_GCC_MD=1 COREMARK_XACCEL_EXPLORE=xmbm "
-            "'EXTRA_CFLAGS=-mxcrcu8 -mxlistrev -mxdfa4h'"
+            "example: %(prog)s --name combined-gcc -- COREMARK_GCC_MD=1 "
+            "COREMARK_XEXTS=_xmbm_xcrcu8_xlistrev_xmsum_xdfa4p_xlistfind_xmacacc "
+            "'EXTRA_CFLAGS=-mxmbm -mxcrcu8 -mxlistrev "
+            "-mclipped-rising-score-reduce -mxdfa4p -mxlistfind -mxmacacc'"
         ),
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )

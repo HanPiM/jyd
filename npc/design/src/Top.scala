@@ -460,17 +460,18 @@ class CPUCore(
   // keeps the branch comparator out of the ID/EX valid-register input cone.
   exuPipe.bits  := exuPayloadReg
   exuPipe.valid := exuValidReg
-  val exuEpochMatch = exuPipe.bits.epoch === pipelineEpoch
   exu.io.in.bits := exuPipe.bits
-  exu.io.in.valid := exuPipe.valid && exuEpochMatch
-  exuPipe.ready := exu.io.in.ready || !exuEpochMatch
+  exu.io.in.valid := exuPipe.valid
+  exuPipe.ready := exu.io.in.ready
   val adjacentBranchBubble = exu.io.in.fire && exu.io.in.bits.info.adjacentFastBranch
   val exuAllowIn = !exuValidReg || exuPipe.ready
   // Hold the younger IDU instruction for one cycle after an adjacent-result
   // branch. If the registered comparison redirects on the following cycle,
-  // the epoch filter discards it without gating every EXU side effect.
+  // the redirect clears this slot. All epoch changes originate from a redirect,
+  // so clearing the valid register also keeps the epoch out of every EXU unit's
+  // combinational input-valid path.
   idu.io.out.ready := exuAllowIn && !adjacentBranchBubble && !lateRedirectBlocked
-  when(adjacentBranchBubble || lateRedirectBlocked) {
+  when(adjacentBranchBubble || lateRedirectBlocked || immediateRedirectNow) {
     exuValidReg := false.B
   }.elsewhen(exuAllowIn) {
     exuPayloadReg := idu.io.out.bits

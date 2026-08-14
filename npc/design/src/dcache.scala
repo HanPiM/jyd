@@ -8,7 +8,8 @@ class DCache extends Module {
   val io = IO(new Bundle {
     val queryIndex = Input(UInt(10.W))
     val queryTag   = Input(UInt(7.W))
-    val lateQueryIndex = Input(UInt(10.W))
+    val stageLateQueryIndex = Input(UInt(10.W))
+    val stageLateQueryEnable = Input(Bool())
     val hit       = Output(Bool())
     val readData  = Output(UInt(32.W))
     val lateReadData = Output(UInt(32.W))
@@ -93,10 +94,16 @@ class DCache extends Module {
   val readBank = RegNext(queryBank)
   io.readData := Mux(readBank, dataMem(1).io.doutb, dataMem(0).io.doutb)
 
-  val lateQueryBank = io.lateQueryIndex(9)
-  val lateQueryAddr = io.lateQueryIndex(8, 0)
-  lateDataMem.flatten.foreach { bank =>
-    bank.io.dpra := lateQueryAddr
+  // Give each byte/bank replica its own address register. A single shared
+  // register otherwise drives hundreds of distributed-RAM address pins and
+  // dominates the asynchronous late-load route.
+  val lateQueryIndexes = RegInit(VecInit(Seq.fill(8)(0.U(10.W))))
+  when(io.stageLateQueryEnable) {
+    lateQueryIndexes.foreach(_ := io.stageLateQueryIndex)
+  }
+  val lateQueryBank = lateQueryIndexes(0)(9)
+  lateDataMem.flatten.zipWithIndex.foreach { case (bank, index) =>
+    bank.io.dpra := lateQueryIndexes(index)(8, 0)
   }
   val lateReadData = lateDataMem.map { banks => Cat(banks.reverse.map(_.io.dpo)) }
   io.lateReadData := Mux(lateQueryBank, lateReadData(1), lateReadData(0))

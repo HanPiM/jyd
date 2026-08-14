@@ -300,7 +300,7 @@ class Multiplier extends Module {
 
   io.in.ready  := state === State.idle
   io.out.valid := state === State.done ||
-    (state === State.busy && resultValid && (!xmacaccReg || !xmacaccLastReg))
+    (state === State.busy && resultValid && xmacaccReg && !xmacaccLastReg)
   io.out.bits := Mux(state === State.done, resultReg, Mux(xmacaccReg, 0.U, result))
 
   switch(state) {
@@ -343,9 +343,9 @@ class Multiplier extends Module {
             resultReg := 0.U
             state := State.done
           }
-        }.elsewhen(io.out.ready) {
-          state := State.idle
         }.otherwise {
+          // Terminate the DSP/result-selection cone at the multiplier-local
+          // register instead of bypassing it into EXU's shared long lane.
           resultReg := result
           state := State.done
         }

@@ -91,7 +91,6 @@ class EXU(
       val storeEpoch = Input(Bool())
       val queryIndex = Output(UInt(10.W))
       val queryTag   = Output(UInt(7.W))
-      val lateQueryIndex = Output(UInt(10.W))
       val listFindStart = Output(Bool())
       val listFindConsume = Output(Bool())
       val listFindAddress = Output(Types.UWord)
@@ -181,7 +180,6 @@ class EXU(
   val xmsumColumn = Reg(UInt(16.W))
   val xmsumClip   = Reg(SInt(32.W))
   val xmsumTmp    = Reg(UInt(32.W))
-  val xmsumPreviousClipped = Reg(Bool())
   val xmsumPrev   = Reg(UInt(32.W))
   val xmsumRet    = Reg(UInt(16.W))
   val xmsumResponseData = Reg(UInt(32.W))
@@ -189,7 +187,9 @@ class EXU(
   val xmsumResult = Reg(Types.UWord)
   val isXmsum     = dinst.info.xmsumValid
 
-  val xmsumResponseSum = Mux(xmsumPreviousClipped, 0.U, xmsumTmp) + xmsumResponseData
+  // Store zero after a clipped sample so the following sum does not need the
+  // previous-clipped bit in front of its carry chain.
+  val xmsumResponseSum = xmsumTmp + xmsumResponseData
   val xmsumResponseClipped = xmsumResponseSum.asSInt > xmsumClip
   val xmsumResponseIncreased = !xmsumResponseClipped && xmsumResponseData.asSInt > xmsumPrev.asSInt
   val xmsumResponseNextRet = Mux(xmsumResponseClipped, xmsumRet + 10.U,
@@ -468,7 +468,6 @@ class EXU(
     xmsumColumn := 0.U
     xmsumClip  := Cat(Fill(16, reg_v2(15)), reg_v2(15, 0)).asSInt
     xmsumTmp   := 0.U
-    xmsumPreviousClipped := false.B
     xmsumPrev  := 0.U
     xmsumRet   := 0.U
     xmsumResponsePending := false.B
@@ -506,8 +505,7 @@ class EXU(
 
   when((xmsumState === XmsumState.request && xmsumResponsePending) ||
     xmsumState === XmsumState.finalizeResult) {
-    xmsumTmp := xmsumResponseSum
-    xmsumPreviousClipped := xmsumResponseClipped
+    xmsumTmp := Mux(xmsumResponseClipped, 0.U, xmsumResponseSum)
     xmsumPrev := xmsumResponseData
     xmsumRet := xmsumResponseNextRet
     xmsumResponsePending := false.B
@@ -830,12 +828,15 @@ class EXU(
   val listReverseDone = isListReverse && listReverseState === ListReverseState.done
   val xmsumDone = isXmsum && xmsumState === XmsumState.done
   val xdfaWordDone = isNumericDfaStep && xdfaWordState === NumericDfaState.done
+  val ordinaryResultValid =
+    (!isTypSys || csrPrepared) && Mux(
+      hasLateLoadOperand,
+      lateDataReady,
+      !isTypArithmetic || isNumericDfa || Mux(resultIsFast, fastInteger.io.out.valid, alu.io.out.valid)
+    )
   val exuResultValid =
     Mux(isNumericDfaStep, xdfaWordDone,
-      Mux(isListReverse, listReverseDone, Mux(isXmsum, xmsumDone,
-        (!isTypSys || csrPrepared) && (!isTypArithmetic || isNumericDfa ||
-          Mux(resultIsFast, Mux(hasLateLoadOperand, lateDataReady, fastInteger.io.out.valid), alu.io.out.valid)) &&
-          (!hasLateLoadOperand || lateDataReady))))
+      Mux(isListReverse, listReverseDone, Mux(isXmsum, xmsumDone, ordinaryResultValid)))
   // Keep the same-cycle forwarding loop independent of the multi-cycle M/D/B
   // result mux.  A multi-cycle producer still advertises its destination while it is
   // in EXU, but its data remains unavailable to IDU; a dependent consumer
@@ -868,7 +869,6 @@ class EXU(
   val dcacheQueryAddr = Mux(isListReverse, listReverseQueryAddress, reg1AddImm)
   io.dcache.queryIndex := Mux(isListReverse, listReverseQueryAddress(11, 2), io.stagedDcacheQueryIndex)
   io.dcache.queryTag   := dcacheQueryAddr(17, 11)
-  io.dcache.lateQueryIndex := io.stagedDcacheQueryIndex
   io.dcache.listFindStart := io.in.valid && isListFind && !io.dcache.listFindDone
   io.dcache.listFindConsume := io.out.fire && isListFind
   io.dcache.listFindAddress := reg_v1

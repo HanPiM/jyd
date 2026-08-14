@@ -204,33 +204,20 @@ class EXU(
   val deferredLoadRs2Groups = decodeAdjacentFastGroups(dinst.info.deferredLoadRs2, baseRegV2)
   val deferredLoadTokenActive = io.in.valid && (deferredLoadRs1Groups.orR || deferredLoadRs2Groups.orR)
   val deferredLoadAligned = io.committedStageFwd.dataVaild && io.committedStageFwd.kind === ResultKind.load
-  val loadRegV1 = selectDeferredGroups(deferredLoadRs1Groups, baseRegV1, io.committedStageFwd.data)
-  val loadRegV2 = selectDeferredGroups(deferredLoadRs2Groups, baseRegV2, io.committedStageFwd.data)
-
-  // A store may wait for the external request port after its producer has
-  // retired. Hold only that operand locally; fast ALU and branch consumers
-  // complete while the registered WBU payload is present.
-  val deferredStoreTokenActive = io.in.valid && isTypStore && deferredLoadRs2Groups.orR
-  val deferredStoreStarted = RegInit(false.B)
-  val deferredStoreData = Reg(UInt(32.W))
-  when(deferredLoadTokenActive) {
-    assert(
-      isTypBranch || isTypStore ||
-        (isTypArithmetic && dinst.info.resultKind === ResultKind.fastInt),
-      "deferred load token entered a multi-cycle consumer"
-    )
-  }
-  when(deferredLoadTokenActive && (!isTypStore || !deferredStoreStarted)) {
+  val deferredLoadStarted = RegInit(false.B)
+  val deferredLoadData = Reg(UInt(32.W))
+  when(deferredLoadTokenActive && !deferredLoadStarted) {
     assert(deferredLoadAligned, "deferred load token lost its registered WBU result")
   }
   when(!io.in.valid || io.in.fire) {
-    deferredStoreStarted := false.B
-  }.elsewhen(deferredStoreTokenActive && !deferredStoreStarted && deferredLoadAligned) {
-    deferredStoreData := io.committedStageFwd.data
-    deferredStoreStarted := true.B
+    deferredLoadStarted := false.B
+  }.elsewhen(deferredLoadTokenActive && !deferredLoadStarted && deferredLoadAligned) {
+    deferredLoadData := io.committedStageFwd.data
+    deferredLoadStarted := true.B
   }
-  val activeDeferredStoreData = Mux(deferredStoreStarted, deferredStoreData, io.committedStageFwd.data)
-  val storeLoadRegV2 = selectDeferredGroups(deferredLoadRs2Groups, baseRegV2, activeDeferredStoreData)
+  val activeDeferredLoadData = Mux(deferredLoadStarted, deferredLoadData, io.committedStageFwd.data)
+  val loadRegV1 = selectDeferredGroups(deferredLoadRs1Groups, baseRegV1, activeDeferredLoadData)
+  val loadRegV2 = selectDeferredGroups(deferredLoadRs2Groups, baseRegV2, activeDeferredLoadData)
   val fastAluRs1Groups = decodeAdjacentFastGroups(dinst.info.fastAluRs1, baseRegV1)
   val fastAluRs2Groups = decodeAdjacentFastGroups(dinst.info.fastAluRs2, baseRegV2)
   val fastBranchRs1Groups = decodeAdjacentFastGroups(dinst.info.fastBranchRs1, baseRegV1)
@@ -240,7 +227,7 @@ class EXU(
   val fastRegV2 = selectDeferredGroups(fastAluRs2Groups, loadRegV2, io.previousStageFwd.data)
   val branchRegV1 = selectDeferredGroups(fastBranchRs1Groups, loadRegV1, io.previousStageFwd.data)
   val branchRegV2 = selectDeferredGroups(fastBranchRs2Groups, loadRegV2, io.previousStageFwd.data)
-  val storeRegV2 = selectDeferredGroups(fastStoreRs2Groups, storeLoadRegV2, io.previousStageFwd.data)
+  val storeRegV2 = selectDeferredGroups(fastStoreRs2Groups, loadRegV2, io.previousStageFwd.data)
   // Preserve each adjacent-result selector as a local 2:1 boundary. Without
   // these nets Vivado can absorb the selector into every downstream ALU or
   // comparator LUT, turning the one-bit token into a high-fanout control net.
@@ -252,8 +239,8 @@ class EXU(
   dontTouch(loadRegV1)
   dontTouch(loadRegV2)
 
-  val reg_v1       = baseRegV1
-  val reg_v2       = baseRegV2
+  val reg_v1       = loadRegV1
+  val reg_v2       = loadRegV2
   val listReverseActiveCurrent = Mux(isListReverseLoop, listReverseLoopAddress, reg_v1)
 
   // A numeric-token scan consumes at most the configured data-region size, so 16-bit
@@ -503,10 +490,10 @@ class EXU(
   fast_in.func3t := func3t
   fast_in.func7t := func7t
 
-  special_in.src1   := baseRegV1
-  special_in.src2   := baseRegV2
-  special_in.mulRawSrc1 := baseRegV1
-  special_in.mulRawSrc2 := baseRegV2
+  special_in.src1   := loadRegV1
+  special_in.src2   := loadRegV2
+  special_in.mulRawSrc1 := loadRegV1
+  special_in.mulRawSrc2 := loadRegV2
   special_in.mulPrevData := 0.U
   special_in.mulPrevRs1 := false.B
   special_in.mulPrevRs2 := false.B

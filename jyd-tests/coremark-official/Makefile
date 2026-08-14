@@ -104,19 +104,14 @@ COREMARK_PLUGIN_FLAGS = -fplugin=$(COREMARK_ACCEL_PLUGIN) \
 ifeq ($(COREMARK_GCC_MD),1)
 COREMARK_PLUGIN_FLAGS =
 ifneq ($(strip $(COREMARK_XACCEL_EXPLORE)),)
-COREMARK_PLUGIN_FLAGS = -fplugin=$(COREMARK_ACCEL_PLUGIN) \
-	-fplugin-arg-xaccel_plugin-accels=$(COREMARK_XACCEL_EXPLORE) \
-	-fplugin-arg-xaccel_plugin-report=$(if $(filter 1,$(PSEUDO_FLOAT)),fp12,none) \
-	-include $(CURDIR)/accel/xaccel_wrappers.c
-else
-ifeq ($(PSEUDO_FLOAT),1)
-COREMARK_PLUGIN_FLAGS = -fplugin=$(COREMARK_ACCEL_PLUGIN) \
-	-fplugin-arg-xaccel_plugin-accels= \
-	-fplugin-arg-xaccel_plugin-report=fp12
+$(error COREMARK_XACCEL_EXPLORE is plugin-only; select GCC-generated instructions with EXTRA_CFLAGS)
 endif
+ifeq ($(PSEUDO_FLOAT),1)
+COREMARK_MD_FLAGS += -mcoremark-fp12-report
 endif
 endif
 COREMARK_BENCH_FLAGS = $(COREMARK_OPT) $(COREMARK_PLUGIN_FLAGS) \
+	$(COREMARK_MD_FLAGS) \
 	-include $(abspath $(COREMARK_FLAGS_HEADER))
 COREMARK_O3_FLAGS = -include $(CURDIR)/accel/force_o3.h
 COREMARK_CRC_FLAGS = -include $(CURDIR)/accel/xcrc_hw.h \
@@ -125,14 +120,6 @@ COREMARK_FP12_FLAGS = -include $(CURDIR)/accel/float_dump.h
 
 ifneq ($(COREMARK_GCC_MD),1)
 $(COREMARK_BENCH_OBJS): $(COREMARK_ACCEL_PLUGIN) accel/xaccel_wrappers.c
-else
-ifneq ($(strip $(COREMARK_XACCEL_EXPLORE)),)
-$(COREMARK_BENCH_OBJS): $(COREMARK_ACCEL_PLUGIN) accel/xaccel_wrappers.c
-else
-ifeq ($(PSEUDO_FLOAT),1)
-$(COREMARK_BENCH_OBJS): $(COREMARK_ACCEL_PLUGIN)
-endif
-endif
 endif
 $(COREMARK_BENCH_OBJS): $(COREMARK_FLAGS_HEADER)
 $(COREMARK_BENCH_OBJS): CFLAGS += $(COREMARK_BENCH_FLAGS)
@@ -154,7 +141,8 @@ $(COREMARK_FLAGS_HEADER): FORCE accel/gen_flags_header.py
 	@python3 accel/gen_flags_header.py --output $@ -- \
 		'$(COREMARK_OPT)' $(foreach flag,$(COREMARK_REPORT_COMMON_FLAGS),'$(flag)') \
 		$(if $(filter 1,$(COREMARK_GCC_MD)),\
-		  'GCC machine-description selection' $(foreach flag,$(filter -m%,$(EXTRA_CFLAGS)),'$(flag)'),\
+		  'GCC machine-description selection' \
+		  $(foreach flag,$(COREMARK_MD_FLAGS) $(filter -m%,$(EXTRA_CFLAGS)),'$(flag)'),\
 		  '-fplugin=$(notdir $(COREMARK_ACCEL_PLUGIN))' \
 		  '-fplugin-arg-xaccel_plugin-accels=$(COREMARK_PLUGIN_ACCELS)' \
 		  '-fplugin-arg-xaccel_plugin-report=$(if $(filter 1,$(PSEUDO_FLOAT)),fp12,none)')

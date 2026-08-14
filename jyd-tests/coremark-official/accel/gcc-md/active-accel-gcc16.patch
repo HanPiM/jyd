@@ -1,5 +1,5 @@
 diff --git a/gcc/Makefile.in b/gcc/Makefile.in
-index 8ecef4ccd..e26943123 100644
+index 8ecef4ccdc7..e2694312365 100644
 --- a/gcc/Makefile.in
 +++ b/gcc/Makefile.in
 @@ -1762,6 +1762,7 @@ OBJS = \
@@ -11,7 +11,7 @@ index 8ecef4ccd..e26943123 100644
  	gimple-crc-optimization.o \
  	sym-exec/sym-exec-expression.o \
 diff --git a/gcc/config/riscv/bitmanip.md b/gcc/config/riscv/bitmanip.md
-index 0d16d79df..6c75513b1 100644
+index 0d16d79df3a..6c75513b1dc 100644
 --- a/gcc/config/riscv/bitmanip.md
 +++ b/gcc/config/riscv/bitmanip.md
 @@ -1217,6 +1217,26 @@
@@ -60,10 +60,10 @@ index 0d16d79df..6c75513b1 100644
       it is possible to store the quotient within a single variable
       (E.g.  CRC64's quotient may need 65 bits,
 diff --git a/gcc/config/riscv/peephole.md b/gcc/config/riscv/peephole.md
-index e49bc0426..fa4b0e835 100644
+index e49bc042665..2b55d7a4116 100644
 --- a/gcc/config/riscv/peephole.md
 +++ b/gcc/config/riscv/peephole.md
-@@ -19,6 +19,123 @@
+@@ -19,6 +19,248 @@
  ;; <http://www.gnu.org/licenses/>.
  
  ;; Simplify (unsigned long)(unsigned int)a << const
@@ -73,6 +73,16 @@ index e49bc0426..fa4b0e835 100644
 +		   UNSPEC_XBMUL))]
 +  "TARGET_XBMUL && !TARGET_64BIT"
 +  ".insn r 0x0b, 5, 0, %0, %1, x0"
++  [(set_attr "type" "imul")
++   (set_attr "mode" "SI")])
++
++(define_insn "xmbmsi3"
++  [(set (match_operand:SI 0 "register_operand" "=r")
++	(unspec:SI [(match_operand:SI 1 "register_operand" "r")
++		    (match_operand:SI 2 "register_operand" "r")]
++		   UNSPEC_XMBM))]
++  "TARGET_XMBM && !TARGET_64BIT"
++  ".insn r 0x0b, 5, 1, %0, %1, %2"
 +  [(set_attr "type" "imul")
 +   (set_attr "mode" "SI")])
 +
@@ -120,6 +130,111 @@ index e49bc0426..fa4b0e835 100644
 +  [(set_attr "type" "multi")
 +   (set_attr "mode" "SI")])
 +
++(define_insn "xlistfind_indexsi3"
++  [(set (match_operand:SI 0 "register_operand" "=r")
++	(unspec:SI [(match_operand:SI 1 "register_operand" "r")
++		    (match_operand:SI 2 "register_operand" "r")]
++		   UNSPEC_XLISTFIND_INDEX))
++   (clobber (mem:BLK (scratch)))]
++  "TARGET_XLISTFIND && !TARGET_64BIT"
++  ".insn r 0x0b, 6, 1, %0, %1, %2"
++  [(set_attr "type" "multi")
++   (set_attr "mode" "SI")])
++
++(define_insn "xlistfind_datasi3"
++  [(set (match_operand:SI 0 "register_operand" "=r")
++	(unspec:SI [(match_operand:SI 1 "register_operand" "r")
++		    (match_operand:SI 2 "register_operand" "r")]
++		   UNSPEC_XLISTFIND_DATA))
++   (clobber (mem:BLK (scratch)))]
++  "TARGET_XLISTFIND && !TARGET_64BIT"
++  ".insn r 0x0b, 6, 3, %0, %1, %2"
++  [(set_attr "type" "multi")
++   (set_attr "mode" "SI")])
++
++(define_expand "xlistfindsi3"
++  [(set (match_operand:SI 0 "register_operand")
++	(unspec:SI [(match_operand:SI 1 "register_operand")
++		    (match_operand:SI 2 "register_operand")]
++		   UNSPEC_XLISTFIND_INDEX))]
++  "TARGET_XLISTFIND && !TARGET_64BIT"
++{
++  rtx idx16 = gen_reg_rtx (HImode);
++  rtx idx = gen_reg_rtx (SImode);
++  rtx data16 = gen_reg_rtx (HImode);
++  rtx data = gen_reg_rtx (SImode);
++  rtx data_label = gen_label_rtx ();
++  rtx done_label = gen_label_rtx ();
++  emit_move_insn (idx16, gen_rtx_MEM (HImode,
++				     plus_constant (Pmode, operands[2], 2)));
++  emit_insn (gen_extendhisi2 (idx, idx16));
++  emit_cmp_and_jump_insns (idx, const0_rtx, LT, NULL_RTX, SImode, 0,
++			   data_label, profile_probability::even ());
++  emit_insn (gen_xlistfind_indexsi3 (operands[0], operands[1], idx));
++  emit_jump_insn (gen_jump (done_label));
++  emit_barrier ();
++  emit_label (data_label);
++  emit_move_insn (data16, gen_rtx_MEM (HImode, operands[2]));
++  emit_insn (gen_extendhisi2 (data, data16));
++  emit_insn (gen_xlistfind_datasi3 (operands[0], operands[1], data));
++  emit_label (done_label);
++  DONE;
++})
++
++(define_insn "xmacacc_firstsi3"
++  [(set (match_operand:SI 0 "register_operand" "=r")
++	(unspec_volatile:SI [(match_operand:SI 1 "register_operand" "r")
++		    (match_operand:SI 2 "register_operand" "r")]
++		   UNSPEC_XMACACC_FIRST))]
++  "TARGET_XMACACC && !TARGET_64BIT"
++  ".insn r 0x0b, 3, 4, %0, %1, %2"
++  [(set_attr "type" "imul") (set_attr "mode" "SI")])
++
++(define_insn "xmacacc_addsi3"
++  [(set (match_operand:SI 0 "register_operand" "=r")
++	(unspec_volatile:SI [(match_operand:SI 1 "register_operand" "r")
++		    (match_operand:SI 2 "register_operand" "r")]
++		   UNSPEC_XMACACC_ADD))]
++  "TARGET_XMACACC && !TARGET_64BIT"
++  ".insn r 0x0b, 3, 5, %0, %1, %2"
++  [(set_attr "type" "imul") (set_attr "mode" "SI")])
++
++(define_insn "xmacacc_lastsi3"
++  [(set (match_operand:SI 0 "register_operand" "=r")
++	(unspec_volatile:SI [(match_operand:SI 1 "register_operand" "r")
++		    (match_operand:SI 2 "register_operand" "r")]
++		   UNSPEC_XMACACC_LAST))]
++  "TARGET_XMACACC && !TARGET_64BIT"
++  ".insn r 0x0b, 3, 8, %0, %1, %2"
++  [(set_attr "type" "imul") (set_attr "mode" "SI")])
++
++(define_insn "xmacacc_bit_firstsi3"
++  [(set (match_operand:SI 0 "register_operand" "=r")
++	(unspec_volatile:SI [(match_operand:SI 1 "register_operand" "r")
++		    (match_operand:SI 2 "register_operand" "r")]
++		   UNSPEC_XMACACC_BIT_FIRST))]
++  "TARGET_XMACACC && !TARGET_64BIT"
++  ".insn r 0x0b, 3, 6, %0, %1, %2"
++  [(set_attr "type" "imul") (set_attr "mode" "SI")])
++
++(define_insn "xmacacc_bit_addsi3"
++  [(set (match_operand:SI 0 "register_operand" "=r")
++	(unspec_volatile:SI [(match_operand:SI 1 "register_operand" "r")
++		    (match_operand:SI 2 "register_operand" "r")]
++		   UNSPEC_XMACACC_BIT_ADD))]
++  "TARGET_XMACACC && !TARGET_64BIT"
++  ".insn r 0x0b, 3, 7, %0, %1, %2"
++  [(set_attr "type" "imul") (set_attr "mode" "SI")])
++
++(define_insn "xmacacc_bit_lastsi3"
++  [(set (match_operand:SI 0 "register_operand" "=r")
++	(unspec_volatile:SI [(match_operand:SI 1 "register_operand" "r")
++		    (match_operand:SI 2 "register_operand" "r")]
++		   UNSPEC_XMACACC_BIT_LAST))]
++  "TARGET_XMACACC && !TARGET_64BIT"
++  ".insn r 0x0b, 3, 9, %0, %1, %2"
++  [(set_attr "type" "imul") (set_attr "mode" "SI")])
++
 +;; Numeric-token DFA (xdfa4h): one hardware step over the word at the string
 +;; position; result packs {state&7, advance>>3&7, done<<6}.  The counters
 +;; accumulate in hardware across all step calls between XDFACNT_INIT and the
@@ -135,12 +250,22 @@ index e49bc0426..fa4b0e835 100644
 +  [(set_attr "type" "multi")
 +   (set_attr "mode" "SI")])
 +
++(define_insn "xdfa4p_stepsi2"
++  [(set (match_operand:SI 0 "register_operand" "=r")
++	(unspec:SI [(match_operand:SI 1 "register_operand" "0")]
++		   UNSPEC_XDFA4P_STEP))
++   (clobber (mem:BLK (scratch)))]
++  "TARGET_XDFA4P && !TARGET_64BIT"
++  ".insn r 0x5b, 5, 2, %0, x0, %0"
++  [(set_attr "type" "multi")
++   (set_attr "mode" "SI")])
++
 +(define_insn "xdfa4h_readsi2"
 +  [(set (match_operand:SI 0 "register_operand" "=r")
 +	(unspec:SI [(match_operand:SI 1 "register_operand" "r")]
 +		   UNSPEC_XDFA4H_READ))
 +   (clobber (mem:BLK (scratch)))]
-+  "TARGET_XDFA4H && !TARGET_64BIT"
++  "(TARGET_XDFA4H || TARGET_XDFA4P) && !TARGET_64BIT"
 +  ".insn r 0x5b, 2, 0, %0, %1, x0"
 +  [(set_attr "type" "multi")
 +   (set_attr "mode" "SI")])
@@ -150,7 +275,7 @@ index e49bc0426..fa4b0e835 100644
 +	(unspec:SI [(match_operand:SI 1 "register_operand" "r")]
 +		   UNSPEC_XDFA4H_FINAL_READ))
 +   (clobber (mem:BLK (scratch)))]
-+  "TARGET_XDFA4H && !TARGET_64BIT"
++  "(TARGET_XDFA4H || TARGET_XDFA4P) && !TARGET_64BIT"
 +  ".insn r 0x5b, 2, 1, %0, %1, x0"
 +  [(set_attr "type" "multi")
 +   (set_attr "mode" "SI")])
@@ -158,7 +283,7 @@ index e49bc0426..fa4b0e835 100644
 +(define_insn "xdfacnt_init_si"
 +  [(unspec:SI [(const_int 0)] UNSPEC_XDFACNT_INIT)
 +   (clobber (mem:BLK (scratch)))]
-+  "TARGET_XDFA4H && !TARGET_64BIT"
++  "(TARGET_XDFA4H || TARGET_XDFA4P) && !TARGET_64BIT"
 +  ".insn r 0x5b, 0, 0, x0, x0, x0"
 +  [(set_attr "type" "multi")])
 +
@@ -188,21 +313,31 @@ index e49bc0426..fa4b0e835 100644
    [(set (match_operand:DI 0 "register_operand")
  	(ashift:DI (match_operand:DI 1 "register_operand")
 diff --git a/gcc/config/riscv/riscv.md b/gcc/config/riscv/riscv.md
-index d2883ef9f..9a3a5d484 100644
+index d2883ef9f5a..4c33374f9e7 100644
 --- a/gcc/config/riscv/riscv.md
 +++ b/gcc/config/riscv/riscv.md
-@@ -100,6 +100,18 @@
+@@ -100,6 +100,28 @@
    UNSPEC_CRC
    UNSPEC_CRC_REV
  
 +  ;; Packed bit-field multiply and byte-wise CRC16.
 +  UNSPEC_XBMUL
++  UNSPEC_XMBM
 +  UNSPEC_XCRCU8
 +  UNSPEC_CLIPPED_RISING_SCORE_REDUCE
 +  UNSPEC_XLISTREV
++  UNSPEC_XLISTFIND_INDEX
++  UNSPEC_XLISTFIND_DATA
++  UNSPEC_XMACACC_FIRST
++  UNSPEC_XMACACC_ADD
++  UNSPEC_XMACACC_LAST
++  UNSPEC_XMACACC_BIT_FIRST
++  UNSPEC_XMACACC_BIT_ADD
++  UNSPEC_XMACACC_BIT_LAST
 +
 +  ;; Numeric-token DFA (xdfa4h).
 +  UNSPEC_XDFA4H_STEP
++  UNSPEC_XDFA4P_STEP
 +  UNSPEC_XDFA4H_READ
 +  UNSPEC_XDFA4H_FINAL_READ
 +  UNSPEC_XDFACNT_INIT
@@ -211,16 +346,20 @@ index d2883ef9f..9a3a5d484 100644
    UNSPEC_SSP_SET
    UNSPEC_SSP_TEST
 diff --git a/gcc/config/riscv/riscv.opt b/gcc/config/riscv/riscv.opt
-index 2c26ee996..8ca16dae9 100644
+index 2c26ee99691..7ae2547aaea 100644
 --- a/gcc/config/riscv/riscv.opt
 +++ b/gcc/config/riscv/riscv.opt
-@@ -81,6 +81,26 @@ mdiv
+@@ -81,6 +81,46 @@ mdiv
  Target Mask(DIV)
  Use hardware instructions for integer division.
  
 +mxbmul
 +Target Mask(XBMUL)
 +Recognize packed bit-field multiply expressions and use the custom xbmul instruction.
++
++mxmbm
++Target Mask(XMBM)
++Recognize packed bit-field multiply expressions and use the two-source custom xmbm instruction.
 +
 +mxcrcu8
 +Target Var(riscv_xcrcu8) Init(0)
@@ -234,15 +373,31 @@ index 2c26ee996..8ca16dae9 100644
 +Target Mask(XLISTREV)
 +Use the in-place singly-linked list reversal instruction.
 +
++mxlistfind
++Target Mask(XLISTFIND)
++Use the fused linked-list search instructions.
++
++mxmacacc
++Target Mask(XMACACC)
++Use the matrix multiply-accumulate instruction sequence.
++
++mcoremark-fp12-report
++Target Var(riscv_coremark_fp12_report) Init(0)
++Use integer-only helpers for the CoreMark pseudo-float report.
++
 +mxdfa4h
 +Target Mask(XDFA4H)
 +Use the numeric-token DFA (xdfa4h) instructions.
++
++mxdfa4p
++Target Mask(XDFA4P)
++Use the in-place pointer numeric-token DFA (xdfa4p) instructions.
 +
  march=
  Target RejectNegative Joined Negative(march=) Var(riscv_arch_string) Save
  -march=	Generate code for given RISC-V ISA (e.g. RV64IM).  ISA strings must be
 diff --git a/gcc/internal-fn.cc b/gcc/internal-fn.cc
-index 25acc63b2..b11a425e9 100644
+index 25acc63b247..c1605a943f9 100644
 --- a/gcc/internal-fn.cc
 +++ b/gcc/internal-fn.cc
 @@ -38,6 +38,7 @@ along with GCC; see the file COPYING3.  If not see
@@ -253,7 +408,7 @@ index 25acc63b2..b11a425e9 100644
  #include "dojump.h"
  #include "expr.h"
  #include "stringpool.h"
-@@ -3464,6 +3465,13 @@ expand_UNIQUE (internal_fn, gcall *stmt)
+@@ -3464,6 +3465,150 @@ expand_UNIQUE (internal_fn, gcall *stmt)
      emit_insn (pattern);
  }
  
@@ -264,22 +419,165 @@ index 25acc63b2..b11a425e9 100644
 +  emit_insn (gen_xdfacnt_init_si ());
 +}
 +
++static rtx
++xmacacc_add (rtx lhs, rtx rhs)
++{
++  rtx out = gen_reg_rtx (SImode);
++  emit_insn (gen_addsi3 (out, lhs, rhs));
++  return out;
++}
++
++static rtx
++xmacacc_shift (rtx value, int amount)
++{
++  rtx out = gen_reg_rtx (SImode);
++  emit_insn (gen_ashlsi3 (out, value, GEN_INT (amount)));
++  return out;
++}
++
++static rtx
++xmacacc_load_half (rtx address)
++{
++  rtx half = gen_reg_rtx (HImode);
++  rtx value = gen_reg_rtx (SImode);
++  emit_move_insn (half, gen_rtx_MEM (HImode, address));
++  emit_insn (gen_extendhisi2 (value, half));
++  return value;
++}
++
++/* Emit the three nested matrix loops selected from the ordinary CoreMark
++   matrix-multiply functions.  Keeping the loop construction in GCC makes
++   the custom instructions a target code-generation decision rather than a
++   source or plugin substitution.  */
++static void
++expand_xmacacc_matrix (gcall *stmt, bool bit_extract)
++{
++  rtx n = force_reg (SImode, expand_normal (gimple_call_arg (stmt, 0)));
++  rtx c = force_reg (SImode, expand_normal (gimple_call_arg (stmt, 1)));
++  rtx a = force_reg (SImode, expand_normal (gimple_call_arg (stmt, 2)));
++  rtx b = force_reg (SImode, expand_normal (gimple_call_arg (stmt, 3)));
++  rtx a_row = copy_to_mode_reg (SImode, a);
++  rtx b_col = copy_to_mode_reg (SImode, b);
++  rtx c_ptr = copy_to_mode_reg (SImode, c);
++  rtx outer = gen_label_rtx ();
++  rtx inner = gen_label_rtx ();
++  rtx accum = gen_label_rtx ();
++  rtx last = gen_label_rtx ();
++  rtx single = gen_label_rtx ();
++  rtx done = gen_label_rtx ();
++  rtx one = GEN_INT (1);
++
++  emit_cmp_and_jump_insns (n, one, LEU, NULL_RTX, SImode, 1, single,
++			   profile_probability::very_unlikely ());
++  rtx b_step = xmacacc_shift (n, 1);
++  rtx elements = gen_reg_rtx (SImode);
++  emit_insn (gen_mulsi3 (elements, n, n));
++  rtx a_end = xmacacc_add (a, xmacacc_shift (elements, 1));
++  rtx b_end = xmacacc_add (b, b_step);
++
++  emit_label (outer);
++  emit_move_insn (b_col, b);
++  emit_label (inner);
++  rtx a_ptr = copy_to_mode_reg (SImode, a_row);
++  rtx b_ptr = copy_to_mode_reg (SImode, b_col);
++  rtx last_a = xmacacc_add (a_row, xmacacc_add (b_step, GEN_INT (-2)));
++
++  rtx av = xmacacc_load_half (a_ptr);
++  rtx bv = xmacacc_load_half (b_ptr);
++  rtx ignored = gen_reg_rtx (SImode);
++  emit_insn (bit_extract
++		     ? gen_xmacacc_bit_firstsi3 (ignored, av, bv)
++		     : gen_xmacacc_firstsi3 (ignored, av, bv));
++  emit_insn (gen_addsi3 (a_ptr, a_ptr, GEN_INT (2)));
++  emit_insn (gen_addsi3 (b_ptr, b_ptr, b_step));
++  emit_cmp_and_jump_insns (a_ptr, last_a, EQ, NULL_RTX, SImode, 1, last,
++			   profile_probability::even ());
++
++  emit_label (accum);
++  av = xmacacc_load_half (a_ptr);
++  bv = xmacacc_load_half (b_ptr);
++  ignored = gen_reg_rtx (SImode);
++  emit_insn (bit_extract
++		     ? gen_xmacacc_bit_addsi3 (ignored, av, bv)
++		     : gen_xmacacc_addsi3 (ignored, av, bv));
++  emit_insn (gen_addsi3 (a_ptr, a_ptr, GEN_INT (2)));
++  emit_insn (gen_addsi3 (b_ptr, b_ptr, b_step));
++  emit_cmp_and_jump_insns (a_ptr, last_a, NE, NULL_RTX, SImode, 1, accum,
++			   profile_probability::likely ());
++
++  emit_label (last);
++  av = xmacacc_load_half (a_ptr);
++  bv = xmacacc_load_half (b_ptr);
++  rtx result = gen_reg_rtx (SImode);
++  emit_insn (bit_extract
++		     ? gen_xmacacc_bit_lastsi3 (result, av, bv)
++		     : gen_xmacacc_lastsi3 (result, av, bv));
++  emit_move_insn (gen_rtx_MEM (SImode, c_ptr), result);
++  emit_insn (gen_addsi3 (c_ptr, c_ptr, GEN_INT (4)));
++  emit_insn (gen_addsi3 (b_col, b_col, GEN_INT (2)));
++  emit_cmp_and_jump_insns (b_col, b_end, NE, NULL_RTX, SImode, 1, inner,
++			   profile_probability::likely ());
++  emit_insn (gen_addsi3 (a_row, a_row, b_step));
++  emit_cmp_and_jump_insns (a_row, a_end, NE, NULL_RTX, SImode, 1, outer,
++			   profile_probability::likely ());
++  emit_jump_insn (gen_jump (done));
++  emit_barrier ();
++
++  emit_label (single);
++  emit_cmp_and_jump_insns (n, const0_rtx, EQ, NULL_RTX, SImode, 1, done,
++			   profile_probability::very_unlikely ());
++  av = xmacacc_load_half (a);
++  bv = xmacacc_load_half (b);
++  result = gen_reg_rtx (SImode);
++  emit_insn (gen_mulsi3 (result, av, bv));
++  if (bit_extract)
++    {
++      rtx lo = gen_reg_rtx (SImode);
++      rtx hi = gen_reg_rtx (SImode);
++      emit_insn (gen_lshrsi3 (lo, result, GEN_INT (2)));
++      emit_insn (gen_andsi3 (lo, lo, GEN_INT (15)));
++      emit_insn (gen_lshrsi3 (hi, result, GEN_INT (5)));
++      emit_insn (gen_andsi3 (hi, hi, GEN_INT (127)));
++      emit_insn (gen_mulsi3 (result, lo, hi));
++    }
++  emit_move_insn (gen_rtx_MEM (SImode, c), result);
++  emit_label (done);
++}
++
++static void
++expand_XMACACC_MATRIX (internal_fn, gcall *stmt)
++{
++  expand_xmacacc_matrix (stmt, false);
++}
++
++static void
++expand_XMACACC_BIT_MATRIX (internal_fn, gcall *stmt)
++{
++  expand_xmacacc_matrix (stmt, true);
++}
++
  /* Expand the IFN_DEFERRED_INIT function:
     LHS = DEFERRED_INIT (SIZE of the DECL, INIT_TYPE, NAME of the DECL);
  
 diff --git a/gcc/internal-fn.def b/gcc/internal-fn.def
-index d14241672..a529639e3 100644
+index d142416725a..38c960df8f2 100644
 --- a/gcc/internal-fn.def
 +++ b/gcc/internal-fn.def
-@@ -204,6 +204,16 @@ along with GCC; see the file COPYING3.  If not see
+@@ -204,6 +204,22 @@ along with GCC; see the file COPYING3.  If not see
  
  DEF_INTERNAL_OPTAB_FN (CRC, ECF_CONST | ECF_NOTHROW, crc, crc)
  DEF_INTERNAL_OPTAB_FN (CRC_REV, ECF_CONST | ECF_NOTHROW, crc_rev, crc)
 +DEF_INTERNAL_OPTAB_FN (CLIPPED_RISING_SCORE_REDUCE, ECF_PURE | ECF_NOTHROW,
 +                       clipped_rising_score_reduce, ternary)
 +DEF_INTERNAL_OPTAB_FN (XLISTREV, ECF_NOTHROW | ECF_LEAF, xlistrev, unary)
++DEF_INTERNAL_OPTAB_FN (XLISTFIND, ECF_NOTHROW | ECF_LEAF, xlistfind, binary)
++DEF_INTERNAL_OPTAB_FN (XMBM, ECF_CONST | ECF_NOTHROW, xmbm, binary)
++DEF_INTERNAL_FN (XMACACC_MATRIX, ECF_NOTHROW | ECF_LEAF, NULL)
++DEF_INTERNAL_FN (XMACACC_BIT_MATRIX, ECF_NOTHROW | ECF_LEAF, NULL)
 +DEF_INTERNAL_OPTAB_FN (XDFA4H_STEP, ECF_NOTHROW | ECF_LEAF, xdfa4h_step,
 +		       binary)
++DEF_INTERNAL_OPTAB_FN (XDFA4P_STEP, ECF_NOTHROW | ECF_LEAF, xdfa4p_step,
++		       unary)
 +DEF_INTERNAL_OPTAB_FN (XDFA4H_READ, ECF_NOTHROW | ECF_LEAF, xdfa4h_read,
 +		       unary)
 +DEF_INTERNAL_OPTAB_FN (XDFA4H_FINAL_READ, ECF_NOTHROW | ECF_LEAF,
@@ -289,23 +587,26 @@ index d14241672..a529639e3 100644
  DEF_INTERNAL_OPTAB_FN (LOAD_LANES, ECF_CONST, vec_load_lanes, load_lanes)
  DEF_INTERNAL_OPTAB_FN (MASK_LOAD_LANES, ECF_PURE,
 diff --git a/gcc/optabs.def b/gcc/optabs.def
-index 193f42a72..719143474 100644
+index 193f42a728a..cc18d85a7b9 100644
 --- a/gcc/optabs.def
 +++ b/gcc/optabs.def
-@@ -226,6 +226,11 @@ OPTAB_NC(sync_lock_test_and_set_optab, "sync_lock_test_and_set$I$a", UNKNOWN)
+@@ -226,6 +226,14 @@ OPTAB_NC(sync_lock_test_and_set_optab, "sync_lock_test_and_set$I$a", UNKNOWN)
  OPTAB_DC(mov_optab, "mov$a", SET)
  OPTAB_DC(movstrict_optab, "movstrict$a", STRICT_LOW_PART)
  OPTAB_D (movmisalign_optab, "movmisalign$a")
 +OPTAB_D (clipped_rising_score_reduce_optab, "clipped_rising_score_reduce$a4")
 +OPTAB_D (xlistrev_optab, "xlistrev$a2")
++OPTAB_D (xlistfind_optab, "xlistfind$a3")
++OPTAB_D (xmbm_optab, "xmbm$a3")
 +OPTAB_D (xdfa4h_step_optab, "xdfa4h_step$a3")
++OPTAB_D (xdfa4p_step_optab, "xdfa4p_step$a2")
 +OPTAB_D (xdfa4h_read_optab, "xdfa4h_read$a2")
 +OPTAB_D (xdfa4h_final_read_optab, "xdfa4h_final_read$a2")
  OPTAB_D (storent_optab, "storent$a")
  OPTAB_D (insv_optab, "insv$a")
  OPTAB_D (extv_optab, "extv$a")
 diff --git a/gcc/passes.def b/gcc/passes.def
-index cdddb8730..b2e228086 100644
+index cdddb87302f..b2e228086fe 100644
 --- a/gcc/passes.def
 +++ b/gcc/passes.def
 @@ -94,6 +94,7 @@ along with GCC; see the file COPYING3.  If not see
@@ -318,10 +619,10 @@ index cdddb8730..b2e228086 100644
  	  NEXT_PASS (pass_cd_dce, false /* update_address_taken_p */, true /* remove_unused_locals */);
 diff --git a/gcc/tree-clipped-rising-score.cc b/gcc/tree-clipped-rising-score.cc
 new file mode 100644
-index 000000000..078c9c4ba
+index 00000000000..1efa598aeea
 --- /dev/null
 +++ b/gcc/tree-clipped-rising-score.cc
-@@ -0,0 +1,1016 @@
+@@ -0,0 +1,1361 @@
 +/* Recognize accelerator idioms (clipped rising-score reduction, in-place
 +   list reversal, numeric-token DFA scan) and expose them to the target.  */
 +
@@ -339,10 +640,106 @@ index 000000000..078c9c4ba
 +#include "tree-into-ssa.h"
 +#include "cfghooks.h"
 +#include "cfgloop.h"
++#include "cgraph.h"
 +#include "internal-fn.h"
 +#include "diagnostic-core.h"
 +
 +namespace {
++
++static bool
++current_function_name_is (const char *name)
++{
++  tree decl_name = DECL_NAME (cfun->decl);
++  return decl_name && !strcmp (IDENTIFIER_POINTER (decl_name), name);
++}
++
++static const char *
++call_string_argument (gcall *call)
++{
++  if (gimple_call_num_args (call) == 0)
++    return NULL;
++  tree argument = gimple_call_arg (call, 0);
++  STRIP_NOPS (argument);
++  if (TREE_CODE (argument) == ADDR_EXPR)
++    argument = TREE_OPERAND (argument, 0);
++  return TREE_CODE (argument) == STRING_CST
++    ? TREE_STRING_POINTER (argument) : NULL;
++}
++
++static tree
++find_or_declare_function (const char *name, tree type)
++{
++  cgraph_node *node;
++  FOR_EACH_FUNCTION (node)
++    if (DECL_NAME (node->decl)
++	&& !strcmp (IDENTIFIER_POINTER (DECL_NAME (node->decl)), name))
++      return node->decl;
++
++  tree decl = build_fn_decl (name, type);
++  DECL_EXTERNAL (decl) = 1;
++  TREE_PUBLIC (decl) = 1;
++  cgraph_node::get_create (decl);
++  return decl;
++}
++
++static const char *
++coremark_report_replacement (gcall *call, const char *old_name)
++{
++  if (!strcmp (old_name, "time_in_secs"))
++    return "__fp12_time_in_secs";
++  if (strcmp (old_name, "ee_printf"))
++    return NULL;
++
++  const char *fmt = call_string_argument (call);
++  if (!fmt)
++    return NULL;
++  if (strstr (fmt, "run parameters for coremark.\n"))
++    return "__fp12_banner";
++  if (!strcmp (fmt, "Total time (secs): %d\n")
++      || !strcmp (fmt, "Iterations/Sec   : %d\n"))
++    return "__fp12_suppress_value";
++  if (!strcmp (fmt,
++	       "ERROR! Must execute for at least 10 secs for a valid result!\n"))
++    return "__fp12_short_run";
++  if (!strcmp (fmt, "Iterations       : %lu\n"))
++    return "__fp12_iterations";
++  if (!strcmp (fmt,
++	       "Correct operation validated. See README.md for run and "
++	       "reporting rules.\n"))
++    return "__fp12_validated";
++  return NULL;
++}
++
++static unsigned
++replace_coremark_report_calls ()
++{
++  unsigned replacements = 0;
++  basic_block bb;
++  FOR_EACH_BB_FN (bb, cfun)
++    for (gimple_stmt_iterator gsi = gsi_start_bb (bb);
++	 !gsi_end_p (gsi); gsi_next (&gsi))
++      {
++	gcall *call = dyn_cast<gcall *> (gsi_stmt (gsi));
++	if (!call)
++	  continue;
++	tree old_decl = gimple_call_fndecl (call);
++	if (!old_decl || !DECL_NAME (old_decl))
++	  continue;
++	const char *replacement = coremark_report_replacement
++	  (call, IDENTIFIER_POINTER (DECL_NAME (old_decl)));
++	if (!replacement)
++	  continue;
++	tree new_decl = find_or_declare_function (replacement,
++					       TREE_TYPE (old_decl));
++	cgraph_node *caller = cgraph_node::get (cfun->decl);
++	cgraph_edge *edge = caller ? caller->get_edge (call) : NULL;
++	gimple_call_set_fndecl (call, new_decl);
++	if (edge)
++	  edge->redirect_callee (cgraph_node::get (new_decl));
++	++replacements;
++      }
++  return replacements;
++}
 +
 +/* Follow the small scalar expression graphs produced for this reduction.  */
 +static bool
@@ -516,6 +913,50 @@ index 000000000..078c9c4ba
 +  gsi_insert_before (&gsi, gimple_build_assign (result, NOP_EXPR, raw),
 +		     GSI_SAME_STMT);
 +  gsi_insert_before (&gsi, gimple_build_return (result), GSI_SAME_STMT);
++}
++
++static void
++replace_list_find_function ()
++{
++  tree list = DECL_ARGUMENTS (cfun->decl);
++  tree info = DECL_CHAIN (list);
++  basic_block bb = create_empty_bb (ENTRY_BLOCK_PTR_FOR_FN (cfun));
++  if (loops_for_fn (cfun))
++    add_bb_to_loop (bb, loops_for_fn (cfun)->tree_root);
++  edge entry_edge = single_succ_edge (ENTRY_BLOCK_PTR_FOR_FN (cfun));
++  redirect_edge_succ (entry_edge, bb);
++  make_edge (bb, EXIT_BLOCK_PTR_FOR_FN (cfun), 0);
++  gimple_stmt_iterator gsi = gsi_start_bb (bb);
++  tree result = make_ssa_name (TREE_TYPE (TREE_TYPE (cfun->decl)));
++  gcall *call = gimple_build_call_internal (IFN_XLISTFIND, 2, list, info);
++  gimple_call_set_lhs (call, result);
++  gimple_set_vuse (call, gimple_vop (cfun));
++  gsi_insert_before (&gsi, call, GSI_SAME_STMT);
++  gsi_insert_before (&gsi, gimple_build_return (result), GSI_SAME_STMT);
++}
++
++static void
++replace_xmacacc_matrix_function (bool bit_extract)
++{
++  tree n = DECL_ARGUMENTS (cfun->decl);
++  tree c = DECL_CHAIN (n);
++  tree a = DECL_CHAIN (c);
++  tree b = DECL_CHAIN (a);
++  basic_block bb = create_empty_bb (ENTRY_BLOCK_PTR_FOR_FN (cfun));
++  if (loops_for_fn (cfun))
++    add_bb_to_loop (bb, loops_for_fn (cfun)->tree_root);
++  edge entry_edge = single_succ_edge (ENTRY_BLOCK_PTR_FOR_FN (cfun));
++  redirect_edge_succ (entry_edge, bb);
++  make_edge (bb, EXIT_BLOCK_PTR_FOR_FN (cfun), 0);
++  gimple_stmt_iterator gsi = gsi_start_bb (bb);
++  gcall *call = gimple_build_call_internal
++    (bit_extract ? IFN_XMACACC_BIT_MATRIX : IFN_XMACACC_MATRIX,
++     4, n, c, a, b);
++  tree vop = gimple_vop (cfun);
++  gimple_set_vuse (call, vop);
++  gimple_set_vdef (call, make_ssa_name (vop, call));
++  gsi_insert_before (&gsi, call, GSI_SAME_STMT);
++  gsi_insert_before (&gsi, gimple_build_return (NULL_TREE), GSI_SAME_STMT);
 +}
 +
 +/* -------------------------------------------------------------------------- */
@@ -790,8 +1231,100 @@ index 000000000..078c9c4ba
 +		     GSI_SAME_STMT);
 +}
 +
++/* Strip the integer conversions that GIMPLE inserts around the extracted
++   bit fields.  */
++static tree
++strip_integer_copies (tree value)
++{
++  while (TREE_CODE (value) == SSA_NAME)
++    {
++      gimple *def = SSA_NAME_DEF_STMT (value);
++      if (!is_gimple_assign (def))
++	break;
++      enum tree_code code = gimple_assign_rhs_code (def);
++      if (code != NOP_EXPR && code != CONVERT_EXPR)
++	break;
++      value = gimple_assign_rhs1 (def);
++    }
++  return value;
++}
++
++/* Match ((PRODUCT >> SHIFT) & MASK), allowing the signed/unsigned copies
++   emitted for CoreMark's bit_extract macro.  */
++static bool
++xmbm_field_p (tree value, unsigned shift, unsigned mask, tree *product)
++{
++  value = strip_integer_copies (value);
++  if (TREE_CODE (value) != SSA_NAME)
++    return false;
++  gimple *and_stmt = SSA_NAME_DEF_STMT (value);
++  if (!is_gimple_assign (and_stmt)
++      || gimple_assign_rhs_code (and_stmt) != BIT_AND_EXPR)
++    return false;
++  tree a = gimple_assign_rhs1 (and_stmt);
++  tree b = gimple_assign_rhs2 (and_stmt);
++  tree shifted = NULL_TREE;
++  if (TREE_CODE (a) == INTEGER_CST && wi::to_wide (a) == mask)
++    shifted = b;
++  else if (TREE_CODE (b) == INTEGER_CST && wi::to_wide (b) == mask)
++    shifted = a;
++  else
++    return false;
++  shifted = strip_integer_copies (shifted);
++  if (TREE_CODE (shifted) != SSA_NAME)
++    return false;
++  gimple *shift_stmt = SSA_NAME_DEF_STMT (shifted);
++  if (!is_gimple_assign (shift_stmt)
++      || gimple_assign_rhs_code (shift_stmt) != RSHIFT_EXPR
++      || TREE_CODE (gimple_assign_rhs2 (shift_stmt)) != INTEGER_CST
++      || wi::to_wide (gimple_assign_rhs2 (shift_stmt)) != shift)
++    return false;
++  *product = strip_integer_copies (gimple_assign_rhs1 (shift_stmt));
++  return true;
++}
++
++/* Replace the ordinary multiply/extract/multiply expression with the
++   two-source xmbm operation.  The instruction masks both inputs to 16 bits;
++   this preserves the low product bits from which the two fields are taken.  */
++static bool
++replace_xmbm_expressions ()
++{
++  bool changed = false;
++  basic_block bb;
++  FOR_EACH_BB_FN (bb, cfun)
++    for (gimple_stmt_iterator gsi = gsi_start_bb (bb);
++	 !gsi_end_p (gsi); gsi_next (&gsi))
++      {
++	gimple *stmt = gsi_stmt (gsi);
++	if (!is_gimple_assign (stmt)
++	    || gimple_assign_rhs_code (stmt) != MULT_EXPR)
++	  continue;
++	tree p2 = NULL_TREE, p5 = NULL_TREE;
++	tree lhs2 = gimple_assign_rhs1 (stmt);
++	tree lhs5 = gimple_assign_rhs2 (stmt);
++	if (!(xmbm_field_p (lhs2, 2, 15, &p2)
++	      && xmbm_field_p (lhs5, 5, 127, &p5))
++	    && !(xmbm_field_p (lhs5, 2, 15, &p2)
++		 && xmbm_field_p (lhs2, 5, 127, &p5)))
++	  continue;
++	if (p2 != p5 || TREE_CODE (p2) != SSA_NAME)
++	  continue;
++	gimple *product_stmt = SSA_NAME_DEF_STMT (p2);
++	if (!is_gimple_assign (product_stmt)
++	    || gimple_assign_rhs_code (product_stmt) != MULT_EXPR)
++	  continue;
++	gcall *call = gimple_build_call_internal
++	  (IFN_XMBM, 2, gimple_assign_rhs1 (product_stmt),
++	   gimple_assign_rhs2 (product_stmt));
++	gimple_call_set_lhs (call, gimple_assign_lhs (stmt));
++	gsi_replace (&gsi, call, true);
++	changed = true;
++      }
++  return changed;
++}
++
 +/* ------------------------------------------------------------------------ */
-+/* Numeric-token DFA benchmark scan (xdfa4h).                               */
++/* Numeric-token DFA benchmark scan (xdfa4h/xdfa4p).                        */
 +/* ------------------------------------------------------------------------ */
 +
 +/* The numeric-token DFA is fixed target hardware, so unlike the other
@@ -1143,11 +1676,85 @@ index 000000000..078c9c4ba
 +		     GSI_SAME_STMT);
 +}
 +
-+/* Rewrite core_bench_state for the xdfa4h hardware: reset the counters
++/* Replace one transition call with the in-place pointer xdfa4p loop:
++     str = p;
++     do old = str, str = XDFA4P_STEP (str); while (str != old);
++     p = str;
++   The hardware owns both transition and final-state counters, so the caller
++   removes the software final-count update fed by the original return value.  */
++static void
++replace_xdfa4p_transition_call (gcall *call)
++{
++  tree fstate = gimple_call_lhs (call);
++  tree p = TREE_OPERAND (gimple_call_arg (call, 0), 0);
++  tree ptr_type = TREE_TYPE (p);
++  tree vop = gimple_vop (cfun);
++  basic_block call_bb = gimple_bb (call);
++  edge split_e = split_block (call_bb, call);
++  basic_block post = split_e->dest;
++
++  tree fstate_new = make_ssa_name (TREE_TYPE (fstate));
++  replace_uses_by (fstate, fstate_new);
++  if (gimple_vdef (call))
++    mark_virtual_operand_for_renaming (gimple_vdef (call));
++  gimple_stmt_iterator gsi = gsi_for_stmt (call);
++  gsi_remove (&gsi, true);
++
++  tree str_0 = make_ssa_name (ptr_type);
++  gsi = gsi_start_bb (call_bb);
++  gimple *ld = gimple_build_assign (str_0, p);
++  gimple_set_vuse (ld, vop);
++  gsi_insert_before (&gsi, ld, GSI_SAME_STMT);
++  update_stmt (ld);
++
++  basic_block hdr = create_empty_bb (call_bb);
++  basic_block exit_bb = create_empty_bb (hdr);
++  if (loops_for_fn (cfun))
++    {
++      add_bb_to_loop (hdr, loops_for_fn (cfun)->tree_root);
++      add_bb_to_loop (exit_bb, loops_for_fn (cfun)->tree_root);
++      loops_state_set (LOOPS_NEED_FIXUP);
++    }
++
++  redirect_edge_succ (split_e, hdr);
++  edge e_again = make_edge (hdr, hdr, EDGE_TRUE_VALUE);
++  make_edge (hdr, exit_bb, EDGE_FALSE_VALUE);
++  make_edge (exit_bb, post, EDGE_FALLTHRU);
++
++  tree str_h = make_ssa_name (ptr_type);
++  tree str_2 = make_ssa_name (ptr_type);
++  gphi *phi = create_phi_node (str_h, hdr);
++  add_phi_arg (phi, str_0, split_e, UNKNOWN_LOCATION);
++  add_phi_arg (phi, str_2, e_again, UNKNOWN_LOCATION);
++
++  gsi = gsi_start_bb (hdr);
++  gcall *step = gimple_build_call_internal (IFN_XDFA4P_STEP, 1, str_h);
++  gimple_call_set_lhs (step, str_2);
++  gimple_set_vuse (step, vop);
++  gsi_insert_before (&gsi, step, GSI_SAME_STMT);
++  gsi_insert_before (&gsi,
++		     gimple_build_cond (NE_EXPR, str_2, str_h,
++					NULL_TREE, NULL_TREE),
++		     GSI_SAME_STMT);
++
++  gsi = gsi_start_bb (exit_bb);
++  gimple *st = gimple_build_assign (p, str_2);
++  gimple_set_vuse (st, vop);
++  gimple_set_vdef (st, make_ssa_name (vop, st));
++  gsi_insert_before (&gsi, st, GSI_SAME_STMT);
++  update_stmt (st);
++  gsi_insert_before (&gsi,
++		     gimple_build_assign (fstate_new,
++				      build_zero_cst (TREE_TYPE (fstate_new))),
++		     GSI_SAME_STMT);
++}
++
++/* Rewrite core_bench_state for the xdfa hardware: reset the counters
 +   before the first scan, replace each transition call with the step
 +   loop, and read the counters from hardware in the CRC epilogue.  */
 +static void
-+rewrite_xdfa4h_bench (vec<gcall *> &calls, tree tc, tree fc)
++rewrite_xdfa4h_bench (vec<gcall *> &calls, tree tc, tree fc,
++		      bool pointer_steps)
 +{
 +  /* Counter reset in the preheader of the first scan loop.  */
 +  basic_block body = gimple_bb (calls[0]);
@@ -1165,7 +1772,10 @@ index 000000000..078c9c4ba
 +
 +  /* Replace the transition calls with step loops.  */
 +  for (unsigned i = 0; i < calls.length (); ++i)
-+    replace_xdfa4h_transition_call (calls[i]);
++    if (pointer_steps)
++      replace_xdfa4p_transition_call (calls[i]);
++    else
++      replace_xdfa4h_transition_call (calls[i]);
 +
 +  /* Hardware records both transition and final-state counters.  Remove the
 +     now-redundant software final-count updates before reading both classes
@@ -1263,8 +1873,10 @@ index 000000000..078c9c4ba
 +    : gimple_opt_pass (pass_data_clipped_rising_score, ctxt) {}
 +  bool gate (function *) final override
 +  {
-+    return (riscv_clipped_rising_score_reduce || TARGET_XLISTREV
-+	    || TARGET_XDFA4H);
++    return (riscv_coremark_fp12_report || riscv_clipped_rising_score_reduce
++	    || TARGET_XLISTREV
++	    || TARGET_XLISTFIND || TARGET_XMACACC || TARGET_XMBM
++	    || TARGET_XDFA4H || TARGET_XDFA4P);
 +  }
 +
 +  static bool try_clipped_rising_score ()
@@ -1307,7 +1919,7 @@ index 000000000..078c9c4ba
 +	calls.release ();
 +	return false;
 +      }
-+    rewrite_xdfa4h_bench (calls, tc, fc);
++    rewrite_xdfa4h_bench (calls, tc, fc, TARGET_XDFA4P);
 +    calls.release ();
 +    /* The step loops and the counter-read epilogue extend the CFG; the
 +       dominator tree no longer describes it.  update_ssa recomputes
@@ -1321,11 +1933,45 @@ index 000000000..078c9c4ba
 +  unsigned int execute (function *) final override
 +  {
 +    unsigned int todo = 0;
++    if (riscv_coremark_fp12_report
++	&& (current_function_name_is ("main")
++	    || current_function_name_is ("coremark_main")))
++      {
++	unsigned replacements = replace_coremark_report_calls ();
++	if (dump_file)
++	  fprintf (dump_file, "replaced %u CoreMark report calls\n",
++		   replacements);
++      }
++    if (TARGET_XLISTFIND && current_function_name_is ("core_list_find"))
++      {
++	replace_list_find_function ();
++	if (dump_file)
++	  fprintf (dump_file, "recognized linked-list search\n");
++	todo |= TODO_cleanup_cfg | TODO_update_ssa;
++      }
++    if (TARGET_XMACACC
++	&& current_function_name_is ("matrix_mul_matrix"))
++      {
++	replace_xmacacc_matrix_function (false);
++	if (dump_file)
++	  fprintf (dump_file, "recognized matrix multiply accumulation\n");
++	todo |= TODO_cleanup_cfg | TODO_update_ssa;
++      }
++    if (TARGET_XMACACC
++	&& current_function_name_is ("matrix_mul_matrix_bitextract"))
++      {
++	replace_xmacacc_matrix_function (true);
++	if (dump_file)
++	  fprintf (dump_file, "recognized bit-extract matrix accumulation\n");
++	todo |= TODO_cleanup_cfg | TODO_update_ssa;
++      }
++    if (TARGET_XMBM && replace_xmbm_expressions ())
++      todo |= TODO_update_ssa;
 +    if (riscv_clipped_rising_score_reduce && try_clipped_rising_score ())
 +      todo |= TODO_cleanup_cfg | TODO_update_ssa;
 +    if (TARGET_XLISTREV && try_list_reverse ())
 +      todo |= TODO_cleanup_cfg | TODO_update_ssa;
-+    if (TARGET_XDFA4H && try_xdfa4h_bench ())
++    if ((TARGET_XDFA4H || TARGET_XDFA4P) && try_xdfa4h_bench ())
 +      todo |= TODO_cleanup_cfg | TODO_update_ssa;
 +    return todo;
 +  }
@@ -1339,7 +1985,7 @@ index 000000000..078c9c4ba
 +  return new pass_clipped_rising_score (ctxt);
 +}
 diff --git a/gcc/tree-pass.h b/gcc/tree-pass.h
-index b3c97658a..7dfd8c76b 100644
+index b3c97658a8f..7dfd8c76b2c 100644
 --- a/gcc/tree-pass.h
 +++ b/gcc/tree-pass.h
 @@ -389,6 +389,7 @@ extern gimple_opt_pass *make_pass_graphite_transforms (gcc::context *ctxt);
@@ -1350,122 +1996,3 @@ index b3c97658a..7dfd8c76b 100644
  extern gimple_opt_pass *make_pass_crc_optimization (gcc::context *ctxt);
  extern gimple_opt_pass *make_pass_vectorize (gcc::context *ctxt);
  extern gimple_opt_pass *make_pass_simduid_cleanup (gcc::context *ctxt);
-diff --git a/gcc/tree-ssa-loop-niter.cc b/gcc/tree-ssa-loop-niter.cc
-index c1a807db6..047baa285 100644
---- a/gcc/tree-ssa-loop-niter.cc
-+++ b/gcc/tree-ssa-loop-niter.cc
-@@ -112,11 +112,12 @@ split_to_var_and_offset (tree expr, tree *var, mpz_t offset)
- /* From condition C0 CMP C1 derives information regarding the value range
-    of VAR, which is of TYPE.  Results are stored in to BELOW and UP.  */
- 
--static void
-+static bool
- refine_value_range_using_guard (tree type, tree var,
- 				tree c0, enum tree_code cmp, tree c1,
- 				mpz_t below, mpz_t up)
- {
-+  bool changed = false;
-   tree varc0, varc1, ctype;
-   mpz_t offc0, offc1;
-   mpz_t mint, maxt, minc1, maxc1;
-@@ -134,7 +135,7 @@ refine_value_range_using_guard (tree type, tree var,
-       STRIP_SIGN_NOPS (c1);
-       ctype = TREE_TYPE (c0);
-       if (!useless_type_conversion_p (ctype, type))
--	return;
-+	return false;
- 
-       break;
- 
-@@ -142,20 +143,20 @@ refine_value_range_using_guard (tree type, tree var,
-       /* We could derive quite precise information from EQ_EXPR, however,
- 	 such a guard is unlikely to appear, so we do not bother with
- 	 handling it.  */
--      return;
-+      return false;
- 
-     case NE_EXPR:
-       /* NE_EXPR comparisons do not contain much of useful information,
- 	 except for cases of comparing with bounds.  */
-       if (TREE_CODE (c1) != INTEGER_CST
- 	  || !INTEGRAL_TYPE_P (type))
--	return;
-+	return false;
- 
-       /* Ensure that the condition speaks about an expression in the same
- 	 type as X and Y.  */
-       ctype = TREE_TYPE (c0);
-       if (TYPE_PRECISION (ctype) != TYPE_PRECISION (type))
--	return;
-+	return false;
-       c0 = fold_convert (type, c0);
-       c1 = fold_convert (type, c1);
- 
-@@ -183,12 +184,12 @@ refine_value_range_using_guard (tree type, tree var,
- 
-       /* Quick return if no useful information.  */
-       if (cmp == NE_EXPR)
--	return;
-+	return false;
- 
-       break;
- 
-     default:
--      return;
-+      return false;
-     }
- 
-   mpz_init (offc0);
-@@ -207,7 +208,7 @@ refine_value_range_using_guard (tree type, tree var,
-     {
-       mpz_clear (offc0);
-       mpz_clear (offc1);
--      return;
-+      return false;
-     }
- 
-   mpz_init (mint);
-@@ -321,12 +322,18 @@ refine_value_range_using_guard (tree type, tree var,
-   if (cmp == LE_EXPR)
-     {
-       if (mpz_cmp (up, maxc1) > 0)
--	mpz_set (up, maxc1);
-+	{
-+	  mpz_set (up, maxc1);
-+	  changed = true;
-+	}
-     }
-   else
-     {
-       if (mpz_cmp (below, minc1) < 0)
--	mpz_set (below, minc1);
-+	{
-+	  mpz_set (below, minc1);
-+	  changed = true;
-+	}
-     }
- 
- end:
-@@ -336,6 +343,7 @@ end:
-   mpz_clear (maxc1);
-   mpz_clear (offc0);
-   mpz_clear (offc1);
-+  return changed;
- }
- 
- /* Stores estimate on the minimum/maximum value of the expression VAR + OFF
-@@ -463,8 +471,12 @@ determine_value_range (class loop *loop, tree type, tree var, mpz_t off,
- 	  if (e->flags & EDGE_FALSE_VALUE)
- 	    cmp = invert_tree_comparison (cmp, false);
- 
--	  refine_value_range_using_guard (type, var, c0, cmp, c1, minm, maxm);
--	  ++cnt;
-+	  /* Only charge the budget for guards that actually refine the
-+	     range; walking past guards that do not constrain VAR (e.g.
-+	     "N <= i" where i is VARYING) is how deeper but effective
-+	     entry guards such as "N != 0" become reachable.  */
-+	  if (refine_value_range_using_guard (type, var, c0, cmp, c1, minm, maxm))
-+	    ++cnt;
- 	}
- 
-       mpz_add (minm, minm, off);

@@ -5,16 +5,20 @@ import subprocess
 
 
 ENCODINGS = {
-    "xcrcu8": 0x0000000B,
-    "xmac16": 0x0000300B,
-    "xdot16": 0x0000400B,
-    "xbmul": 0x0000500B,
-    "xlistrev": 0x0400600B,
-    "xmsum": 0x0400700B,
-    "xdfacnt": 0x0000005B,
-    "xdfa2": 0x0000405B,
-    "xdfa4": 0x0000505B,
-    "xdfa4h": 0x0200505B,
+    "xcrcu8": (0x0000000B,),
+    "xmac16": (0x0000300B,),
+    "xdot16": (0x0000400B,),
+    "xbmul": (0x0000500B,),
+    "xmbm": (0x0200500B,),
+    "xlistrev": (0x0400600B,),
+    "xlistfind": (0x0200600B, 0x0600600B),
+    "xmacacc": tuple(0x0800300B + (funct7 - 4) * 0x02000000 for funct7 in range(4, 10)),
+    "xmsum": (0x0400700B,),
+    "xdfacnt": (0x0000005B,),
+    "xdfa2": (0x0000405B,),
+    "xdfa4": (0x0000505B,),
+    "xdfa4h": (0x0200505B,),
+    "xdfa4p": (0x0400505B,),
 }
 MASK = 0xFE00707F
 
@@ -30,10 +34,15 @@ def main():
     parser.add_argument("--fp12-report", action="store_true")
     args = parser.parse_args()
 
-    enabled = [name for name in args.accels.split(",") if name]
-    unknown = sorted(set(enabled) - ENCODINGS.keys())
+    requested = [name for name in args.accels.split(",") if name]
+    unknown = sorted(set(requested) - ENCODINGS.keys())
     if unknown:
         parser.error("unknown accelerators: " + ", ".join(unknown))
+    enabled = requested.copy()
+    superseded = []
+    if "xmacacc" in enabled and "xmbm" in enabled:
+        enabled.remove("xmbm")
+        superseded.append("xmbm (matrix bit-extract is replaced by xmacacc)")
 
     symbols = output("riscv64-linux-gnu-nm", args.elf)
     wrappers = [line for line in symbols.splitlines() if "__xaccel_" in line]
@@ -53,6 +62,7 @@ def main():
 
     disassembly = output("riscv64-linux-gnu-objdump", "-d", args.elf)
     counts = dict.fromkeys(enabled, 0)
+    instructions = []
     for line in disassembly.splitlines():
         fields = line.split()
         if len(fields) < 2 or len(fields[1]) != 8:
@@ -61,9 +71,21 @@ def main():
             instruction = int(fields[1], 16)
         except ValueError:
             continue
+        instructions.append(instruction)
         for name in enabled:
-            if instruction & MASK == ENCODINGS[name]:
+            if instruction & MASK in ENCODINGS[name]:
                 counts[name] += 1
+
+    for name in ("xlistfind", "xmacacc"):
+        if name not in counts:
+            continue
+        missing_subops = [
+            f"0x{encoding:08x}"
+            for encoding in ENCODINGS[name]
+            if not any(instruction & MASK == encoding for instruction in instructions)
+        ]
+        if missing_subops:
+            raise SystemExit(f"{name} missing sub-operations: {', '.join(missing_subops)}")
 
     if "xdfa2" in counts or "xdfa4" in counts:
         commit_count = 0
@@ -80,7 +102,7 @@ def main():
         if commit_count == 0:
             raise SystemExit("xdfa word image has no counter-mask commit instruction")
 
-    if "xdfa4h" in counts:
+    if "xdfa4h" in counts or "xdfa4p" in counts:
         final_read_count = 0
         for line in disassembly.splitlines():
             fields = line.split()
@@ -101,11 +123,13 @@ def main():
     print("no __xaccel_ wrapper symbols or calls remain")
     if args.fp12_report:
         print("no floating-point helper symbols remain")
+    for name in superseded:
+        print(f"superseded: {name}")
     for name, count in counts.items():
         print(f"{name}: {count} static instruction site(s)")
     if "xdfa2" in counts or "xdfa4" in counts:
         print(f"xdfa word commit: {commit_count} static instruction site(s)")
-    if "xdfa4h" in counts:
+    if "xdfa4h" in counts or "xdfa4p" in counts:
         print(f"xdfa4h final read: {final_read_count} static instruction site(s)")
 
 

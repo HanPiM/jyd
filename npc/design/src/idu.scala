@@ -133,7 +133,10 @@ object CacheAwareByPassMux {
       Mux(lsuConflict, !lsuSelect, wbuConflict && !wbuSelect)
     )
 
-    val outData = Mux(lsuSelect, wrBacks(1).data, Mux(wbuSelect, wrBacks(2).data, regData))
+    // Validity and the newer EXU conflict already gate the handshake through
+    // needStall. Keep them out of the 32-bit data mux so the synchronous cache
+    // result reaches the ID/EX register through conflict selects only.
+    val outData = Mux(lsuConflict, wrBacks(1).data, Mux(wbuConflict, wrBacks(2).data, regData))
     (needStall, outData, adjacentFastSelect)
   }
 }

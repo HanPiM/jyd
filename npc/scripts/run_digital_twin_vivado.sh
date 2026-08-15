@@ -21,10 +21,12 @@ Environment:
   JOBS                  Vivado top-level jobs and max threads. Defaults to nproc.
   IP_JOBS               IP/OOC run concurrency and max threads. Defaults to 4.
 
+Artifact retention:
+  --archive-dir DIR      Archive logs, reports, DCPs, and any successful bitstream in DIR.
+
 Isolated diagnostic flow:
   --isolated-profile NAME
                          Build quick-75, default-200, or default-150 in a copied project.
-  --archive-dir DIR      Archive isolated-flow logs, reports, DCPs, and bitstream in DIR.
   --prepare-only         Stop after preparing an isolated project and configuring its clock.
   --keep-workdir         Retain the isolated Vivado project after completion.
   --project-root DIR     Use DIR as the Vivado project instead of the in-tree project.
@@ -56,6 +58,7 @@ EOF
 }
 
 mode=impl
+invocation_dir=$PWD
 skip_pack=0
 skip_vivado=0
 reset_runs=0
@@ -225,6 +228,11 @@ if [ -n "$isolated_profile" ] && [ -n "$project_root" ]; then
 fi
 if [ "$prepare_only" -eq 1 ] && [ -z "$isolated_profile" ]; then
   echo "--prepare-only requires --isolated-profile" >&2
+  exit 2
+fi
+if [ -n "$archive_dir" ] && [ -z "$isolated_profile" ] && \
+  { [ "$skip_vivado" -eq 1 ] || [ "$source_manifest_only" -eq 1 ]; }; then
+  echo "--archive-dir requires a complete in-tree Vivado run" >&2
   exit 2
 fi
 if [ "$reset_runs" -eq 1 ] && [ "$reuse_ip" -eq 1 ]; then
@@ -499,6 +507,84 @@ if [ ! -f "$vivado_project" ]; then
   echo "Vivado project file does not exist: $vivado_project" >&2
   exit 1
 fi
+
+if [ -n "$archive_dir" ]; then
+  if [ "${archive_dir#/}" = "$archive_dir" ]; then
+    archive_dir="$invocation_dir/$archive_dir"
+  fi
+  if [ -e "$archive_dir" ] && [ ! -d "$archive_dir" ]; then
+    echo "Vivado archive path exists and is not a directory: $archive_dir" >&2
+    exit 1
+  fi
+  if [ -d "$archive_dir" ] && [ -n "$(find "$archive_dir" -mindepth 1 -print -quit)" ]; then
+    echo "Vivado archive directory is not empty: $archive_dir" >&2
+    exit 1
+  fi
+  mkdir -p -- "$archive_dir"
+  archive_started_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+fi
+
+archive_in_tree_run() {
+  local status=$1
+  local run_name run_path artifact timing_report
+
+  [ -n "$archive_dir" ] || return 0
+  mkdir -p -- "$archive_dir/artifacts"
+  for run_name in synth_1 impl_1; do
+    run_path="$vivado_proj_home/digital_twin.runs/$run_name"
+    [ -d "$run_path" ] || continue
+    mkdir -p -- "$archive_dir/artifacts/$run_name"
+    while IFS= read -r -d '' artifact; do
+      cp -a -- "$artifact" "$archive_dir/artifacts/$run_name/"
+    done < <(find "$run_path" -maxdepth 1 -type f \
+      \( -name '*.dcp' -o -name '*timing*.rpt' -o -name 'runme.log' -o -name 'runme.jou' \) \
+      -print0 | sort -z)
+  done
+
+  for artifact in "$vivado_proj_home/vivado.log" "$vivado_proj_home/vivado.jou"; do
+    [ ! -f "$artifact" ] || cp -a -- "$artifact" "$archive_dir/"
+  done
+
+  if [ "$status" -eq 0 ] && [ "$mode" = write_bitstream ]; then
+    run_path="$vivado_proj_home/digital_twin.runs/impl_1"
+    cp -a -- "$run_path/top.bit" "$archive_dir/"
+    cp -a -- "$run_path/top.bit.base-checkpoint" "$archive_dir/"
+    cp -a -- "$run_path/top.bit.coe-manifest" "$archive_dir/"
+    sha256sum "$archive_dir/top.bit" >"$archive_dir/bitstream-sha256.txt"
+  fi
+
+  timing_report="$vivado_proj_home/digital_twin.runs/impl_1/top_timing_summary_postroute_physopted.rpt"
+  [ -f "$timing_report" ] || \
+    timing_report="$vivado_proj_home/digital_twin.runs/impl_1/top_timing_summary_routed.rpt"
+  if [ -f "$timing_report" ]; then
+    python3 "$repo_root/jyd-vivado-proj/scripts/extract-timing-summary.py" "$timing_report" \
+      >"$archive_dir/timing-summary.txt"
+  fi
+
+  {
+    echo "mode=$mode"
+    echo "repo_commit=$(git -C "$repo_root" rev-parse HEAD)"
+    echo "project_root=$vivado_proj_home"
+    echo "jobs=$jobs"
+    echo "ip_jobs=$ip_jobs"
+    echo "flow_profile=$flow_profile"
+    echo "vivado_status=$status"
+    echo "archive_dir=$archive_dir"
+    if [ "$mode" = write_bitstream ]; then
+      echo "coe_dir=$coe_dir"
+      echo "irom_sha256=$(sha256sum "$irom_coe" | awk '{print $1}')"
+      echo "dram_sha256=$(sha256sum "$dram_coe" | awk '{print $1}')"
+    fi
+    echo "started_utc=$archive_started_utc"
+    echo "finished_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  } >"$archive_dir/metadata.env"
+  git -C "$repo_root" status --short >"$archive_dir/git-status.txt"
+  (
+    cd "$archive_dir"
+    find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum >SHA256SUMS
+  )
+  echo "VIVADO_ARCHIVE=$archive_dir"
+}
 
 # A second flow can otherwise overlap the first flow's project-manager and
 # OOC child processes. Besides corrupting run state, that can exhaust memory
@@ -1176,13 +1262,24 @@ ip_config_hash() {
 # manifest across the entire process so such a run is always rejected.
 ip_config_hash_before=$(ip_config_hash)
 set +e
-"$vivado_bin" -mode batch -source "$tcl_file" -tclargs \
-  "$mode" "$jobs" "$ip_jobs" "$pack_dst" "$reset_runs" "$reuse_ip" \
-  "$expected_cpu_mhz" "$flow_profile" \
-  "$synth_global_retiming" "$synth_keep_equivalent_registers" \
-  "$synth_flatten_hierarchy" "$place_directive" "$route_directive" \
-  "$pre_route_phys_opt_directive" "$post_route_phys_opt_directive" "$source_manifest_only"
-vivado_status=$?
+if [ -n "$archive_dir" ]; then
+  "$vivado_bin" -mode batch -source "$tcl_file" -tclargs \
+    "$mode" "$jobs" "$ip_jobs" "$pack_dst" "$reset_runs" "$reuse_ip" \
+    "$expected_cpu_mhz" "$flow_profile" \
+    "$synth_global_retiming" "$synth_keep_equivalent_registers" \
+    "$synth_flatten_hierarchy" "$place_directive" "$route_directive" \
+    "$pre_route_phys_opt_directive" "$post_route_phys_opt_directive" "$source_manifest_only" \
+    2>&1 | tee "$archive_dir/vivado-runner.log"
+  vivado_status=${PIPESTATUS[0]}
+else
+  "$vivado_bin" -mode batch -source "$tcl_file" -tclargs \
+    "$mode" "$jobs" "$ip_jobs" "$pack_dst" "$reset_runs" "$reuse_ip" \
+    "$expected_cpu_mhz" "$flow_profile" \
+    "$synth_global_retiming" "$synth_keep_equivalent_registers" \
+    "$synth_flatten_hierarchy" "$place_directive" "$route_directive" \
+    "$pre_route_phys_opt_directive" "$post_route_phys_opt_directive" "$source_manifest_only"
+  vivado_status=$?
+fi
 set -e
 
 # Opening a project from a worktree causes Vivado to persist relocated paths
@@ -1254,11 +1351,7 @@ if [ "$ip_config_hash_before" != "$ip_config_hash_after" ]; then
 fi
 rm -rf -- "$xci_backup_dir"
 xci_backup_dir=""
-if [ "$vivado_status" -ne 0 ]; then
-  exit "$vivado_status"
-fi
-
-if [ "$mode" = write_bitstream ]; then
+if [ "$vivado_status" -eq 0 ] && [ "$mode" = write_bitstream ]; then
   impl_dir="$vivado_proj_home/digital_twin.runs/impl_1"
   raw_bit="$impl_dir/top.bit"
   checkpoint_record="$impl_dir/top.bit.base-checkpoint"
@@ -1306,4 +1399,9 @@ if [ "$mode" = write_bitstream ]; then
   } >"$manifest"
   echo "# Bitstream COE manifest: $manifest"
   cat "$manifest"
+fi
+
+archive_in_tree_run "$vivado_status"
+if [ "$vivado_status" -ne 0 ]; then
+  exit "$vivado_status"
 fi

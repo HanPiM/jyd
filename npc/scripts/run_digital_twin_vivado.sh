@@ -802,7 +802,7 @@ if {$mode eq "write_bitstream"} {
   set impl_dir [file normalize [get_property DIRECTORY $impl_run]]
   set routed_dcp [file join $impl_dir top_routed.dcp]
   set postroute_dcp [file join $impl_dir top_postroute_physopt.dcp]
-  set postroute_end [file join $impl_dir .postroute_physopt_design.end.rst]
+  set postroute_end [file join $impl_dir .post_route_phys_opt_design.end.rst]
   set postroute_enabled [get_property STEPS.POST_ROUTE_PHYS_OPT_DESIGN.IS_ENABLED $impl_run]
 
   # A failed post-route physopt can leave a stale DCP behind.  Select it only

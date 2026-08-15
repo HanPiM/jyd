@@ -181,21 +181,25 @@ class EXU(
   val dotLength = RegInit(9.U(16.W))
 
   object XmsumState extends ChiselEnum {
-    val idle, request, response, finalizeResult, done = Value
+    val idle, firstRequest, stream, done = Value
   }
-  val xmsumState  = RegInit(XmsumState.idle)
-  val xmsumAddress = Reg(Types.UWord)
-  val xmsumSize   = Reg(UInt(16.W))
-  val xmsumRow    = Reg(UInt(16.W))
-  val xmsumColumn = Reg(UInt(16.W))
-  val xmsumClip   = Reg(SInt(32.W))
-  val xmsumTmp    = Reg(UInt(32.W))
-  val xmsumPrev   = Reg(UInt(32.W))
-  val xmsumRet    = Reg(UInt(16.W))
-  val xmsumResponseData = Reg(UInt(32.W))
+  val xmsumState               = RegInit(XmsumState.idle)
+  val xmsumAddress             = Reg(Types.UWord)
+  val xmsumSize                = Reg(UInt(16.W))
+  val xmsumIssueRow            = Reg(UInt(16.W))
+  val xmsumIssueColumn         = Reg(UInt(16.W))
+  val xmsumResponseRow         = Reg(UInt(16.W))
+  val xmsumResponseColumn      = Reg(UInt(16.W))
+  val xmsumAllIssued           = RegInit(false.B)
+  val xmsumClip                = Reg(SInt(32.W))
+  val xmsumTmp                 = Reg(UInt(32.W))
+  val xmsumPrev                = Reg(UInt(32.W))
+  val xmsumRet                 = Reg(UInt(16.W))
+  val xmsumResponseData        = Reg(UInt(32.W))
   val xmsumResponsePending = RegInit(false.B)
-  val xmsumResult = Reg(Types.UWord)
-  val isXmsum     = dinst.info.xmsumValid
+  val xmsumResponseLast        = Reg(Bool())
+  val xmsumResult              = Reg(Types.UWord)
+  val isXmsum                  = dinst.info.xmsumValid
 
   // Store zero after a clipped sample so the following sum does not need the
   // previous-clipped bit in front of its carry chain.
@@ -433,51 +437,75 @@ class EXU(
     val n = reg_v2(31, 16)
     xmsumAddress := reg_v1
     xmsumSize := n
-    xmsumRow := 0.U
-    xmsumColumn := 0.U
+    xmsumIssueRow := 0.U
+    xmsumIssueColumn := 0.U
+    xmsumResponseRow := 0.U
+    xmsumResponseColumn := 0.U
+    xmsumAllIssued := false.B
     xmsumClip  := Cat(Fill(16, reg_v2(15)), reg_v2(15, 0)).asSInt
     xmsumTmp   := 0.U
     xmsumPrev  := 0.U
     xmsumRet   := 0.U
     xmsumResponsePending := false.B
+    xmsumResponseLast := false.B
     when(n === 0.U) {
       xmsumResult := 0.U
       xmsumState  := XmsumState.done
     }.otherwise {
-      xmsumState := XmsumState.request
+      xmsumState := XmsumState.firstRequest
     }
-  }.elsewhen(xmsumState === XmsumState.request && io.memReq.fire) {
-    xmsumState := XmsumState.response
-  }.elsewhen(xmsumState === XmsumState.response && io.memResp.valid) {
-    xmsumResponseData := io.memResp.bits
-    val endOfRow = xmsumColumn + 1.U === xmsumSize
-    val endOfMatrix = endOfRow && xmsumRow + 1.U === xmsumSize
-    when(endOfMatrix) {
-      xmsumState := XmsumState.finalizeResult
-    }.otherwise {
-      xmsumAddress := xmsumAddress + 4.U
-      when(endOfRow) {
-        xmsumRow := xmsumRow + 1.U
-        xmsumColumn := 0.U
-      }.otherwise {
-        xmsumColumn := xmsumColumn + 1.U
+  }.elsewhen(xmsumState === XmsumState.firstRequest && io.memReq.fire) {
+    xmsumState := XmsumState.stream
+  }.elsewhen(xmsumState === XmsumState.stream) {
+    when(xmsumResponsePending) {
+      xmsumTmp := Mux(xmsumResponseClipped, 0.U, xmsumResponseSum)
+      xmsumPrev := xmsumResponseData
+      xmsumRet := xmsumResponseNextRet
+      xmsumResponsePending := false.B
+      when(xmsumResponseLast) {
+        xmsumResult := Cat(Fill(16, xmsumResponseNextRet(15)), xmsumResponseNextRet)
+        xmsumState := XmsumState.done
       }
-      xmsumResponsePending := true.B
-      xmsumState := XmsumState.request
     }
-  }.elsewhen(xmsumState === XmsumState.finalizeResult) {
-    xmsumResult := Cat(Fill(16, xmsumResponseNextRet(15)), xmsumResponseNextRet)
-    xmsumState   := XmsumState.done
+
+    when(io.memResp.valid) {
+      val endOfResponseRow = xmsumResponseColumn + 1.U === xmsumSize
+      val endOfResponseMatrix = endOfResponseRow && xmsumResponseRow + 1.U === xmsumSize
+      xmsumResponseData := io.memResp.bits
+      xmsumResponseLast := endOfResponseMatrix
+      xmsumResponsePending := true.B
+      when(!endOfResponseMatrix) {
+        when(endOfResponseRow) {
+          xmsumResponseRow := xmsumResponseRow + 1.U
+          xmsumResponseColumn := 0.U
+        }.otherwise {
+          xmsumResponseColumn := xmsumResponseColumn + 1.U
+        }
+      }
+    }
   }.elsewhen(xmsumState === XmsumState.done && io.out.fire) {
     xmsumState := XmsumState.idle
   }
 
-  when((xmsumState === XmsumState.request && xmsumResponsePending) ||
-    xmsumState === XmsumState.finalizeResult) {
-    xmsumTmp := Mux(xmsumResponseClipped, 0.U, xmsumResponseSum)
-    xmsumPrev := xmsumResponseData
-    xmsumRet := xmsumResponseNextRet
-    xmsumResponsePending := false.B
+  val xmsumIssueActive = xmsumState === XmsumState.firstRequest || xmsumState === XmsumState.stream
+  when(xmsumIssueActive && io.memReq.fire) {
+    val endOfIssueRow = xmsumIssueColumn + 1.U === xmsumSize
+    val endOfIssueMatrix = endOfIssueRow && xmsumIssueRow + 1.U === xmsumSize
+    when(endOfIssueMatrix) {
+      xmsumAllIssued := true.B
+    }.otherwise {
+      xmsumAddress := xmsumAddress + 4.U
+      when(endOfIssueRow) {
+        xmsumIssueRow := xmsumIssueRow + 1.U
+        xmsumIssueColumn := 0.U
+      }.otherwise {
+        xmsumIssueColumn := xmsumIssueColumn + 1.U
+      }
+    }
+  }
+
+  when(xmsumState === XmsumState.stream && xmsumResponseLast && xmsumResponsePending) {
+    assert(!io.memResp.valid, "xmsum must not receive data after the final matrix element")
   }
 
   // val pcAddImm   = dinst.pc + dinst.info.imm
@@ -804,7 +832,7 @@ class EXU(
     io.dcache.dotNRequestAddress,
     io.dcache.listFindRequestAddress
   )
-  val xmsumRequest = xmsumState === XmsumState.request
+  val xmsumRequest = xmsumIssueActive && !xmsumAllIssued
   val xdfaWordFirstRequest = xdfaWordState === NumericDfaState.idle && io.in.valid && isNumericDfaStep
   val xdfaWordRequest = xdfaWordState === NumericDfaState.request || xdfaWordFirstRequest
   val normalMemReq = Wire(new MemReq)

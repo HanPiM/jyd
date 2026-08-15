@@ -10,7 +10,7 @@ cc=$1
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 coremark_dir=$(CDPATH= cd -- "$script_dir/../.." && pwd)
 jyd_dir=$(CDPATH= cd -- "$coremark_dir/../.." && pwd)
-scratch=$(mktemp -d "${JYD_DATA_ROOT:-/srv/data/jyd}/tmp/gcc-plugin-migration-check.XXXXXX")
+scratch=$(mktemp -d "${TMPDIR:-/tmp}/gcc-backend-check.XXXXXX")
 trap 'rm -rf -- "$scratch"' EXIT HUP INT TERM
 
 flags='-O3 -march=rv32im_zba_zbb_zbc_zbs_zbkb_zbkx_zicsr -mabi=ilp32 -ffreestanding -DITERATIONS=10000 -DTOTAL_DATA_SIZE=2000'
@@ -30,6 +30,16 @@ grep -Fq 'recognized linked-list search' "$scratch"/list-xlistfind.c.*.clippedsc
 test "$(grep -Fc '.insn r 0x0b, 6, 1' "$scratch/list-xlistfind.s")" -gt 0
 test "$(grep -Fc '.insn r 0x0b, 6, 3' "$scratch/list-xlistfind.s")" -gt 0
 
+# Rename the source functions and require the same semantic matches. This
+# proves selection does not depend on benchmark symbol names.
+sed 's/core_list_find/audit_list_search/g' \
+    "$coremark_dir/src/core_list_join.c" > "$scratch/list-renamed.c"
+"$cc" $flags $includes "$arch" -mxlistfind -fdump-tree-clippedscore \
+    -S "$scratch/list-renamed.c" -o "$scratch/list-renamed.s"
+grep -Fq 'recognized linked-list search' "$scratch"/list-renamed.c.*.clippedscore
+test "$(grep -Fc '.insn r 0x0b, 6, 1' "$scratch/list-renamed.s")" -gt 0
+test "$(grep -Fc '.insn r 0x0b, 6, 3' "$scratch/list-renamed.s")" -gt 0
+
 "$cc" $flags $includes "$arch" -S "$coremark_dir/src/core_matrix.c" \
     -o "$scratch/matrix-control.s"
 "$cc" $flags $includes "$arch" -mxmacacc -fdump-tree-clippedscore \
@@ -44,4 +54,15 @@ for funct7 in 4 5 6 7 8 9; do
     test "$(grep -Fc ".insn r 0x0b, 3, $funct7" "$scratch/matrix-xmacacc.s")" -gt 0
 done
 
-echo "xlistfind and xmacacc selection: PASS"
+sed -e 's/matrix_mul_matrix_bitextract/audit_matrix_bit_accumulate/g' \
+    -e 's/matrix_mul_matrix/audit_matrix_accumulate/g' \
+    "$coremark_dir/src/core_matrix.c" > "$scratch/matrix-renamed.c"
+"$cc" $flags $includes "$arch" -mxmacacc -fdump-tree-clippedscore \
+    -S "$scratch/matrix-renamed.c" -o "$scratch/matrix-renamed.s"
+grep -Fq 'recognized matrix multiply accumulation' "$scratch"/matrix-renamed.c.*.clippedscore
+grep -Fq 'recognized bit-extract matrix accumulation' "$scratch"/matrix-renamed.c.*.clippedscore
+for funct7 in 4 5 6 7 8 9; do
+    test "$(grep -Fc ".insn r 0x0b, 3, $funct7" "$scratch/matrix-renamed.s")" -gt 0
+done
+
+echo "xlistfind and xmacacc shape/name-independence: PASS"

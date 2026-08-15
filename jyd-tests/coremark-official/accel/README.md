@@ -1,10 +1,8 @@
 # CoreMark custom-instruction builds
 
-The current accelerated CoreMark image uses the patched GCC 16 compiler and
-`COREMARK_GCC_MD=1`.  GCC recognizes the ordinary benchmark sources and emits
-the selected custom instructions through internal functions and RISC-V machine
-descriptions.  The production path does not load `xaccel_plugin` and does not
-substitute calls through `xaccel_wrappers.c`.
+The current image uses the patched GCC 16 compiler. GCC recognizes ordinary C
+data-flow shapes and emits the selected custom instructions through internal
+functions and RISC-V machine descriptions.
 
 `COREMARK_XEXTS` remains the image's ISA identity and the input to the final ELF
 auditor.  GCC rejects project-local `x*` names in `-march`, so the actual target
@@ -13,25 +11,17 @@ combined build is:
 
 ```sh
 make ARCH=riscv32-jyd ITERATIONS=10000 \
-  COREMARK_GCC_MD=1 \
   COREMARK_XEXTS=_xmbm_xcrcu8_xlistrev_xmsum_xdfa4p_xlistfind_xmacacc \
   EXTRA_CFLAGS='-mxmbm -mxcrcu8 -mxlistrev -mclipped-rising-score-reduce -mxdfa4p -mxlistfind -mxmacacc' \
-  CROSS_COMPILE=/path/to/patched-toolchain/bin/riscv64-linux-gnu- \
+  CROSS_COMPILE=/path/to/patched-toolchain/bin/riscv64-unknown-linux-gnu- \
   image
 
 make ARCH=riscv32-jyd ITERATIONS=10000 \
-  COREMARK_GCC_MD=1 \
   COREMARK_XEXTS=_xmbm_xcrcu8_xlistrev_xmsum_xdfa4p_xlistfind_xmacacc \
   EXTRA_CFLAGS='-mxmbm -mxcrcu8 -mxlistrev -mclipped-rising-score-reduce -mxdfa4p -mxlistfind -mxmacacc' \
-  CROSS_COMPILE=/path/to/patched-toolchain/bin/riscv64-linux-gnu- \
+  CROSS_COMPILE=/path/to/patched-toolchain/bin/riscv64-unknown-linux-gnu- \
   audit-accel
 ```
-
-`COREMARK_GCC_MD=0` remains the Makefile default so an unmodified distribution
-compiler can still build the benchmark and so historical plugin comparisons
-remain reproducible.  Accelerated production and performance runs must pass
-`COREMARK_GCC_MD=1` explicitly.  `COREMARK_XACCEL_EXPLORE` is plugin-only and
-is rejected in GCC MD mode.
 
 Supported image identity names are `xmac16`, `xdot16`, `xbmul`, `xmbm`,
 `xcrcu8`, `xlistfind`, `xlistrev`, `xmacacc`, `xmsum`, `xdfacnt`, `xdfa2`,
@@ -40,12 +30,11 @@ selection details, checkers, and performance evidence are documented in
 `gcc-md/README.md`.
 
 `audit-accel` is mandatory for an accelerated image.  It fails if an enabled
-instruction or required sub-operation is absent, if an `__xaccel_*` wrapper
-survives the final link.  When xmacacc is enabled it replaces the full matrix
+instruction or required sub-operation is absent. When xmacacc is enabled it lowers the full matrix
 bit-extract loop, so the auditor reports the overlapping xmbm selection as
 superseded.  Reporting always follows the benchmark's normal floating-point
-path through the EEMBC formatter and AM SoftFloat; compiler passes and the
-historical plugin do not rewrite report calls or format strings.
+path through the EEMBC formatter and AM SoftFloat; compiler passes do not
+alter report calls or format strings.
 
 `make check` verifies the unmodified upstream `coremark.md5` under `src/`.
 Compiler integration, forced headers, and experimental support files remain

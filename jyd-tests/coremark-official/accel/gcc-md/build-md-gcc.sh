@@ -5,6 +5,11 @@ set -euo pipefail
 
 PREFIX=$(realpath "${1:?usage: build-md-gcc.sh <prefix-dir>}")
 PATCH_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+HOST_CROSS_PREFIX=${HOST_CROSS_PREFIX:-riscv64-linux-gnu-}
+HOST_CC=$(command -v "${HOST_CROSS_PREFIX}gcc")
+HOST_AS=$(command -v "${HOST_CROSS_PREFIX}as")
+HOST_LD=$(command -v "${HOST_CROSS_PREFIX}ld")
+HOST_SYSROOT=${HOST_SYSROOT:-$($HOST_CC -print-sysroot)}
 
 GCC_BASE=390648994968cf0bca7ab4ebdc28fb055dae02eb
 GCC_BASE_DATE=2026-08-11
@@ -29,12 +34,12 @@ git -C "$WORK/src" apply "$PATCH_DIR/active-accel-gcc16.patch"
 mkdir -p "$WORK/build"
 cd "$WORK/build"
 "$WORK/src/configure" \
-  --target=riscv64-linux-gnu \
+  --target=riscv64-unknown-linux-gnu \
   --prefix="$PREFIX" \
-  --with-sysroot=/usr/riscv64-linux-gnu \
+  --with-sysroot="$HOST_SYSROOT" \
   --with-native-system-header-dir=/include \
-  --with-as=/usr/bin/riscv64-linux-gnu-as \
-  --with-ld=/usr/bin/riscv64-linux-gnu-ld \
+  --with-as="$HOST_AS" \
+  --with-ld="$HOST_LD" \
   --enable-languages=c \
   --disable-bootstrap \
   --disable-multilib \
@@ -57,7 +62,8 @@ make install-gcc
 
 mkdir -p "$PREFIX/bin"
 for tool in ar as ld nm objcopy objdump ranlib readelf strip; do
-  ln -sf "/usr/bin/riscv64-linux-gnu-$tool" "$PREFIX/bin/riscv64-linux-gnu-$tool"
+  ln -sf "$(command -v "${HOST_CROSS_PREFIX}$tool")" \
+    "$PREFIX/bin/riscv64-unknown-linux-gnu-$tool"
 done
 
-"$PREFIX/bin/riscv64-linux-gnu-gcc" --version
+"$PREFIX/bin/riscv64-unknown-linux-gnu-gcc" --version

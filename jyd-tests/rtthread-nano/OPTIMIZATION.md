@@ -18,7 +18,7 @@ addresses and generated images must still fit the JYD memory map.
 - Target: `ARCH=riscv32-jyd`.
 - Start RT-Thread Nano and reach an interactive `msh >` prompt.
 - Provide working `ps`, `version`, `list_thread`, and `list_semaphore` commands.
-- Embed a replaceable 10,000-iteration CoreMark workload with floating-point
+- Embed a selectable 10,000-iteration CoreMark source directory with floating-point
   elapsed-time and throughput output.
 - RTT shell output uses Nano's `rt_kprintf`; CoreMark's EEMBC formatter shares
   `rt_hw_console_output`. Neither path uses klib printf.
@@ -160,8 +160,8 @@ other conversions are printed literally and their arguments are not consumed.
 - Upstream Nano's `rt_kprintf` under `RT_USING_TINY_PRINTF` only handled plain
   conversions; `%-16s` was emitted literally, so `help` printed
   `%-16s - <name>` and dropped the description.
-- The formatter is now a local copy, `src/tinyprintf.c`, replacing
-  `upstream/rt-thread/src/tinyprintf.c` in the Makefile. It parses the `-`
+- The source list now selects `src/tinyprintf.c` and omits the upstream
+  formatter. The local file parses the `-`
   flag and decimal width and pads `%s` accordingly; numeric widths are parsed
   but not applied, keeping the formatter small.
 - Clean-build cost: +216 B `.text` in both the RT-only (9,528 -> 9,744) and
@@ -173,12 +173,11 @@ other conversions are printed literally and their arguments are not consumed.
 
 - Added a synchronous `coremark` msh command with defaults of 10,000 iterations
   and 2,000 bytes of static benchmark data.
-- Removed the historical GCC plugin and integer-only report substitution from
-  the default Nano image. This avoids a host `gmp.h` build dependency and keeps
-  the system-port test on ordinary compiler output plus AM SoftFloat.
-- Separated replaceable `COREMARK_BENCH_DIR` algorithm sources from the retained
-  `COREMARK_PORT_DIR` RTT/AM adaptation. See `COREMARK.md` for the competition
-  source replacement procedure.
+- The embedded benchmark uses the same GCC backend options and AM SoftFloat
+  reporting path as the standalone image.
+- Separated selectable `COREMARK_BENCH_DIR` algorithm sources from the retained
+  `COREMARK_PORT_DIR` RTT/AM adaptation. See `COREMARK.md` for the source
+  selection procedure.
 - The five timed benchmark objects use `-O3`. Port, EEMBC formatter, float
   conversion, and SoftFloat adapter objects use `-Os`. Berkeley SoftFloat also
   uses `-Os` in a separately keyed archive.

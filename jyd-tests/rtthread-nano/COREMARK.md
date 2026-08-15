@@ -3,14 +3,13 @@
 RT-Thread Nano embeds CoreMark as the `coremark` msh command. The default uses
 10,000 iterations and 2,000 bytes of benchmark data. Run `coremark` at `msh >`;
 the synchronous command returns to the prompt after printing its report.
-The system-port validation image uses no GCC plugin or report-call rewriting.
 Its CoreMark objects import the standalone benchmark's GCC MD, standard ISA,
-and accelerator defaults from `coremark-defaults.mk`; its floating-point output
-uses the same EEMBC `cvt.c` and AM SoftFloat path.
+and accelerator defaults from `coremark-defaults.mk`; floating-point output
+uses EEMBC `cvt.c` and the AM SoftFloat library.
 
-## Replacing the competition workload
+## Selecting the benchmark source directory
 
-`COREMARK_BENCH_DIR` identifies the replaceable directory containing
+`COREMARK_BENCH_DIR` identifies the directory containing
 `core_list_join.c`, `core_main.c`, `core_matrix.c`, `core_state.c`,
 `core_util.c`, and `coremark.h`. It defaults to `../coremark-official/src`.
 
@@ -20,14 +19,14 @@ make -C jyd-tests/rtthread-nano ARCH=riscv32-jyd \
 ```
 
 `COREMARK_PORT_DIR` independently identifies the retained local support files:
-`core_portme.*`, `ee_printf.c`, `cvt.c`, and `coremark_softfloat.c`. Do not
-replace it when only seeds or benchmark algorithms change.
+`core_portme.*`, `ee_printf.c`, `cvt.c`, and `coremark_softfloat.c`. Keep this
+directory unchanged when selecting a different benchmark source directory.
 
 For a short diagnostic run:
 
 ```sh
 make -C jyd-tests/rtthread-nano ARCH=riscv32-jyd \
-  CROSS_COMPILE=/path/to/md-gcc/bin/riscv64-linux-gnu- \
+  CROSS_COMPILE=/path/to/md-gcc/bin/riscv64-unknown-linux-gnu- \
   COREMARK_ITERATIONS=1 COREMARK_DATA_SIZE=2000 run
 ```
 

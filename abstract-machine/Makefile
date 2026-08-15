@@ -157,6 +157,10 @@ CXXFLAGS += -O3
 
 endif
 
+# Optional caller-supplied flags for reproducible builds and focused checks.
+CFLAGS += $(EXTRA_CFLAGS)
+CXXFLAGS += $(EXTRA_CFLAGS)
+
 gdb-server: insert-arg
 	@echo "CFLAGS: $(CFLAGS)"
 	@cd $(JYD_HOME)/renode && ./run-gdb.sh server $(IMAGE).elf

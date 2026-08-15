@@ -1,17 +1,15 @@
 # GCC machine-description accelerator selection
 
-This directory contains the GCC 16 migration of the CoreMark custom
-accelerators.  The production `COREMARK_GCC_MD=1` build compiles the ordinary
-benchmark sources without `xaccel_plugin`, forced wrapper-call substitution, or
-plugin-only report lowering.  GCC recognizes the supported source idioms and
+This directory contains the GCC 16 implementation of the custom accelerators.
+The build compiles ordinary C sources. GCC recognizes the supported source idioms and
 emits the custom instructions through internal functions and RISC-V machine
 descriptions.
 
 Apply `active-accel-gcc16.patch` to GCC at base commit `39064899496`, then
 configure and build an RV32-capable RISC-V cross compiler in separate source,
 build, and install directories.  The validated patched source commit is
-`0a9d78c0bd4d37018ae24bf00b9410d84d56dea2`; the patch SHA-256 is
-`2746aaaad1c494fcd2e59e3565cb8afb10135e23f88a040e3a59c5cdc6335859`.
+`9fc2dbe6960b6990eb536858d879c3b20e3d1034`; the patch SHA-256 is
+`c6633c43fbc9eda8eb3eaa4b6c59d7bf5ba331eedb47a5d4116e1ad92f97e01a`.
 
 ## Selection paths
 
@@ -25,7 +23,7 @@ build, and install directories.  The validated patched source commit is
 | xlistfind | linked-list search recognizer | `-mxlistfind` | custom-0, funct3 6, funct7 1/3 |
 | xmacacc | matrix multiply recognizer and target loop expansion | `-mxmacacc` | custom-0, funct3 3, funct7 4-9 |
 
-The combined build enables both `-mxmbm` and `-mxmacacc`.  `xmacacc` replaces
+The combined build enables both `-mxmbm` and `-mxmacacc`. `xmacacc` lowers
 the entire matrix multiply and bit-extract loops, so no xmbm site remains in
 that ELF; the ELF auditor reports xmbm as superseded.  Building with `-mxmbm`
 without `-mxmacacc` still selects the two expected xmbm sites from unmodified
@@ -42,12 +40,12 @@ accelerator pass and uses the ordinary EEMBC formatter and AM SoftFloat path.
 
 ## Build and audit
 
-Build the patched compiler, then use the production plugin-free defaults:
+Build the patched compiler, then use the checked-in defaults:
 
 ```sh
 ./accel/gcc-md/build-md-gcc.sh /path/to/md-gcc
 make ARCH=riscv32-jyd \
-  CROSS_COMPILE=/path/to/md-gcc/bin/riscv64-linux-gnu- \
+  CROSS_COMPILE=/path/to/md-gcc/bin/riscv64-unknown-linux-gnu- \
   run
 ```
 
@@ -55,22 +53,16 @@ make ARCH=riscv32-jyd \
 identity, and matching `-m` flags. RT-Thread Nano imports the same file only for
 its embedded CoreMark objects.
 
-`COREMARK_XACCEL_EXPLORE` is rejected in `COREMARK_GCC_MD=1` mode because it is
-a plugin-only control.  Use the target `-m` flags to select GCC-generated
-instructions.  The old `COREMARK_GCC_MD=0` path remains available only for
-historical plugin comparisons.
-
 Audit the selected configuration's ELF with:
 
 ```sh
 make ARCH=riscv32-jyd \
-  CROSS_COMPILE=/path/to/md-gcc/bin/riscv64-linux-gnu- \
+  CROSS_COMPILE=/path/to/md-gcc/bin/riscv64-unknown-linux-gnu- \
   audit-accel
 ```
 
 The auditor requires all enabled instruction families, every xlistfind and
-xmacacc sub-operation, the xdfa final-counter read, no `__xaccel_` wrapper
-symbols or calls.  Soft-float helper symbols are expected in the normal report
+xmacacc sub-operation, and the xdfa final-counter read. Soft-float helper symbols are expected in the normal report
 path and are not accelerator-audit failures.
 
 ## Validation
@@ -109,14 +101,11 @@ program image was exercised by NEMU and NPC difftest.
 - `check-xdfa4h.sh <gcc>` preserves coverage for the older xdfa4h mode.
 - `check-xlistfind-xmacacc.sh <gcc>` checks both xlistfind sub-operations and
   all six xmacacc sub-operations.
-- `check-no-report-rewrite.sh` rejects report-call and pseudo-float rewriting
-  markers in the active GCC patch, plugin, and build rules.
+- `check-backend-integrity.sh` rejects symbol-name matching, pseudo-float
+  support, and alternate compiler-extension paths.
 
 ## History
 
-`xbmul` and `xdfa4h` remain in the patch and their checkers remain valid, but
+`xbmul` and `xdfa4h` remain in the backend and their checkers remain valid, but
 the current combined image uses xmbm and xdfa4p.  `xmac16` and `xdot16` are not
 part of the current combined build.
-
-`archived-clipped-rising-score-gcc16.patch` preserves the standalone xmsum
-experiment and remains independent of the active full patch.

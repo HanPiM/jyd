@@ -53,8 +53,8 @@ COREMARK_CFLAGS := -DITERATIONS=$(COREMARK_ITERATIONS) \
 LIBS += softfloat
 endif
 
-# src/tinyprintf.c is picked up by the wildcard below and replaces the
-# upstream $(NANO_DIR)/src/tinyprintf.c with the local formatter.
+# The source list selects the local size-bounded formatter; the upstream
+# formatter is not part of SRCS.
 NAME := rtthread-nano
 SRCS := $(wildcard $(ROOT_DIR)/src/*.c) \
         $(NANO_DIR)/src/clock.c \
@@ -74,8 +74,14 @@ SRCS := $(wildcard $(ROOT_DIR)/src/*.c) \
         $(COREMARK_SUPPORT_SRCS)
 INC_PATH += $(ROOT_DIR)/include $(NANO_DIR)/include $(NANO_DIR)/components/finsh \
             $(COREMARK_BENCH_DIR) $(COREMARK_PORT_DIR) $(COREMARK_ACCEL_DIR)
+RT_PATH_MAP_FLAGS := -ffile-prefix-map=$(JYD_HOME)=. -fdebug-prefix-map=$(JYD_HOME)=.
 CFLAGS += -DHAVE_CCONFIG_H -D__RTTHREAD__ -DCOREMARK_ENABLE=$(COREMARK_ENABLE) \
           $(COREMARK_CFLAGS) -Wno-nonnull-compare -Wno-maybe-uninitialized
+# Keep diagnostics, __FILE__ strings, and debug metadata independent of the
+# checkout location so a relocated reproduction tree emits identical COE data.
+CFLAGS += $(RT_PATH_MAP_FLAGS)
+LIB_MAKE_ARGS_am = EXTRA_CFLAGS='$(RT_PATH_MAP_FLAGS)'
+LIB_MAKE_ARGS_klib = EXTRA_CFLAGS='$(RT_PATH_MAP_FLAGS)'
 ifeq ($(ARCH),riscv32-jyd)
 LDFLAGS += -T $(ROOT_DIR)/extra.ld
 else

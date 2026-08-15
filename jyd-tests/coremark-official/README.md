@@ -14,13 +14,12 @@ There is no separate image handoff step for NEMU:
 
 ```sh
 make ARCH=riscv32-nemu ITERATIONS=1000 TOTAL_DATA_SIZE=2000 \
-  CROSS_COMPILE=/path/to/patched-gcc/bin/riscv64-linux-gnu- run
+  CROSS_COMPILE=/path/to/patched-gcc/bin/riscv64-unknown-linux-gnu- run
 ```
 
 The default uses GCC machine-description selection for the final accelerator
 set (`xmbm`, `xcrcu8`, `xlistrev`, `xmsum`, `xdfa4p`, `xlistfind`, and
-`xmacacc`). The shared defaults are in `coremark-defaults.mk`; pass
-`COREMARK_GCC_MD=0 RISCV_ZEXTS=` for a base-ISA control build.
+`xmacacc`). The shared defaults are in `coremark-defaults.mk`.
 
 The default build output is this project's `build/` directory. Each combination
 of `ITERATIONS`, `TOTAL_DATA_SIZE`, `RISCV_ZEXTS`, and `EXTRA_CFLAGS` gets a
@@ -63,8 +62,7 @@ RTL and are no longer present in the default `-march`. `Zba` and `Zbkb` remain
 because `sh2add` and `pack` are frequent; `Zbb` and `Zbs` retain the operations
 used by the measured workload.
 
-The profile was generated with NEMU's `--profile=JSON` option. The local
-machine-readable result is `/srv/data/jyd/tmp/coremark-current-xcrcu8-profile.json`.
+The profile was generated with NEMU's `--profile=JSON` option.
 
 The port sets the required `HAS_FLOAT=1`, so elapsed time and throughput use
 CoreMark's floating-point output form. The ABI remains `ilp32`; no hardware
@@ -92,7 +90,7 @@ The same sources can be embedded in RT-Thread Nano. That build uses
 `coremark_main` as an msh-command entry point, keeps the raw 50 MHz `CNT_REG`
 timing identical to this standalone port, and retains this standalone build as
 the CRC and floating-output reference. See `../rtthread-nano/COREMARK.md` for
-the replacement and validation procedure.
+the embedded-build and validation procedure.
 
 In a typical Linux system, to build and run the benchmark, type 
 

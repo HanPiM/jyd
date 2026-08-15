@@ -13,7 +13,7 @@ cc=$1
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 coremark_dir=$(CDPATH= cd -- "$script_dir/../.." && pwd)
 jyd_dir=$(CDPATH= cd -- "$coremark_dir/../.." && pwd)
-scratch=$(mktemp -d "${JYD_DATA_ROOT:-/srv/data/jyd}/tmp/xlistrev-md-check.XXXXXX")
+scratch=$(mktemp -d "${TMPDIR:-/tmp}/xlistrev-md-check.XXXXXX")
 trap 'rm -rf -- "$scratch"' EXIT HUP INT TERM
 
 cat > "$scratch/rev.c" <<'EOF'

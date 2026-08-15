@@ -26,6 +26,11 @@ void __am_timer_init(void);
 void __am_timer_uptime(AM_TIMER_UPTIME_T *uptime);
 #endif
 
+#ifdef __RTTHREAD__
+extern uint32_t LED_REG[];
+#define COREMARK_LED_REG ((volatile uint32_t *)(&LED_REG))
+#endif
+
 static uint32_t uptime_ticks(void) {
 #ifdef COREMARK_EMBEDDED_RTT
   return io_read(AM_TIMER_UPTIME).us / 1000;
@@ -43,11 +48,17 @@ static uint32_t start_time_val;
 static uint32_t stop_time_val;
 
 void start_time(void) {
+#ifdef __RTTHREAD__
+  *COREMARK_LED_REG = UINT32_MAX;
+#endif
   start_time_val = uptime_ticks();
 }
 
 void stop_time(void) {
   stop_time_val = uptime_ticks();
+#ifdef __RTTHREAD__
+  *COREMARK_LED_REG = 0;
+#endif
 }
 
 CORE_TICKS get_time(void) {

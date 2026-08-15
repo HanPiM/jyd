@@ -52,6 +52,10 @@ values. Optimizing CoreMark must not be reported as reducing the RTOS baseline.
 - EEMBC's `%f`-capable formatter outputs through `rt_hw_console_output()`, the
   same RTT console backend used by `rt_kprintf`; klib printf is not linked. It
   executes after the timed region.
+- RTT's embedded port writes `0xffffffff` to the JYD LED register immediately
+  before taking the start timestamp, then writes `0x00000000` immediately after
+  taking the stop timestamp. LED MMIO latency and result formatting are not
+  included in the reported CoreMark time.
 - `COREMARK_XEXTS`, `COREMARK_ZEXTS`, and their GCC MD flags default to the
   values used by `coremark-official`. They apply only to CoreMark benchmark
   objects; the RT-Thread kernel, FinSH, and AM port stay on `rv32im_zicsr`.

@@ -12,6 +12,10 @@ list commands. Reaching the `msh >` prompt is
 the runtime success criterion, and the simulation must then be stopped manually.
 
 The image embeds a 10,000-iteration CoreMark workload as the `coremark` command.
+At the measured benchmark boundary, the command writes all ones to the JYD LED
+register before taking the start timestamp and writes all zeros after taking the
+stop timestamp. The LEDs therefore remain lit only for the timed workload; setup
+and result formatting are outside this indication.
 See [COREMARK.md](COREMARK.md) for compiler-option boundaries and how to switch
 to the competition-provided benchmark sources.
 

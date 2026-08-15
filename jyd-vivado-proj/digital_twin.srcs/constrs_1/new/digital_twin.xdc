@@ -10,10 +10,10 @@ set_property IOSTANDARD LVCMOS33 [get_ports io_aht10_scl]
 set_property PACKAGE_PIN A21 [get_ports io_aht10_sda]
 set_property IOSTANDARD LVCMOS33 [get_ports io_aht10_sda]
 
-# EDABOX2.1 KEY1 is E15 in Bank 18. The schematic pulls it up to 3.3 V
-# through 2.2 kohm and connects it to ground when pressed (active low).
+# EDABOX2.1 KEY1 is E15 in Bank 18 and is active low. Bank 18 is powered
+# at 1.8 V in the formal digital-twin project.
 set_property PACKAGE_PIN E15 [get_ports i_key1]
-set_property IOSTANDARD LVCMOS33 [get_ports i_key1]
+set_property IOSTANDARD LVCMOS18 [get_ports i_key1]
 
 set_property PACKAGE_PIN AD12 [get_ports { i_sys_clk_p }]
 set_property IOSTANDARD DIFF_HSTL_II_18 [get_ports { i_sys_clk_p }]

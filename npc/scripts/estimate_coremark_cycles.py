@@ -118,6 +118,12 @@ def run_one(
 ) -> dict[str, object]:
     run_dir = output_dir / f"iter{iterations}"
     run_dir.mkdir(parents=True)
+    # AM prefixes BUILD_DIR with each subproject's working directory, and the
+    # command-line value is also inherited by NPC's recursive make.  Keep it
+    # relative so an absolute archive path cannot become a nested `srv/data/...`
+    # object tree inside every AM subproject.
+    build_key = hashlib.sha256(os.fsencode(output_dir)).hexdigest()[:12]
+    build_dir = Path("build") / "cycle-estimate" / build_key / f"iter{iterations}"
     command = [
         "make",
         "-C",
@@ -125,7 +131,7 @@ def run_one(
         "run",
         f"ARCH={arch}",
         f"ITERATIONS={iterations}",
-        f"BUILD_DIR={run_dir / 'build'}",
+        f"BUILD_DIR={build_dir}",
         *make_args,
         f"VSIM_difftest={int(difftest)}",
         "VSIM_en_inst_trace=0",
@@ -193,6 +199,7 @@ def run_one(
         "cpi": cycles[-1] / instructions[-1],
         "crcs": crcs,
         "image": image_record,
+        "build_dir": str(build_dir),
         "log": str(log_path),
         "command": command,
     }

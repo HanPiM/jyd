@@ -11,6 +11,8 @@ class DCache extends Module {
     val queryTag   = Input(UInt(7.W))
     val hit       = Output(Bool())
     val readData  = Output(UInt(32.W))
+    val listReverseHitCapture = Input(Bool())
+    val listReverseCapturedHit = Output(Bool())
 
     val listFindStart = Input(Bool())
     val listFindConsume = Input(Bool())
@@ -116,6 +118,8 @@ class DCache extends Module {
   val queryHit = tagEntry(0) && tagEntry(7, 1) === io.queryTag
   val queryStoreConflict = storeUpdate && storeIndex === io.queryIndex && storeTag === io.queryTag
   io.hit := queryHit && !queryStoreConflict
+  val listReverseCapturedHit = RegEnable(queryHit && !queryStoreConflict, io.listReverseHitCapture)
+  io.listReverseCapturedHit := listReverseCapturedHit
 
   dataMem.foreach { bank =>
     bank.io.clkb  := clock

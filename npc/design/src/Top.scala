@@ -339,6 +339,8 @@ class CPUCore(
   dcache.io.queryTag   := exu.io.dcache.queryTag
   exu.io.dcache.hit    := dcache.io.hit && p.enableDCache.B
   exu.io.dcache.readData := dcache.io.readData
+  dcache.io.listReverseHitCapture := exu.io.dcache.listReverseHitCapture
+  exu.io.dcache.listReverseCapturedHit := dcache.io.listReverseCapturedHit && p.enableDCache.B
   dcache.io.listFindStart := exu.io.dcache.listFindStart
   dcache.io.listFindConsume := exu.io.dcache.listFindConsume
   dcache.io.listFindAddress := exu.io.dcache.listFindAddress

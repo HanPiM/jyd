@@ -84,6 +84,8 @@ class EXU(
     val dcache = new Bundle {
       val hit        = Input(Bool())
       val readData   = Input(Types.UWord)
+      val listReverseHitCapture = Output(Bool())
+      val listReverseCapturedHit = Input(Bool())
       val storeEpoch = Input(Bool())
       val queryIndex = Output(UInt(10.W))
       val queryTag   = Output(UInt(7.W))
@@ -171,7 +173,6 @@ class EXU(
   val listReversePrefetchValid = RegInit(false.B)
   val listReversePrefetchHit = Reg(Bool())
   val listReversePrefetchData = Reg(Types.UWord)
-  val listReverseLookupHit = Reg(Bool())
   val listReverseQueryAddress = Reg(Types.UWord)
 
   val isListFind = dinst.info.listFindValid
@@ -389,12 +390,12 @@ class EXU(
       listReverseState := ListReverseState.lookup
     }
   }.elsewhen(listReverseState === ListReverseState.lookup) {
-    listReverseLookupHit := io.dcache.hit
     listReverseState := ListReverseState.lookupResolve
   }.elsewhen(listReverseState === ListReverseState.lookupResolve) {
     listReverseQueryAddress := io.dcache.readData
     listReverseNext := io.dcache.readData
-    listReverseState := Mux(listReverseLookupHit, ListReverseState.storeRequest, ListReverseState.loadRequest)
+    listReverseState := Mux(io.dcache.listReverseCapturedHit,
+      ListReverseState.storeRequest, ListReverseState.loadRequest)
   }.elsewhen(listReverseState === ListReverseState.loadRequest && io.memReq.fire) {
     listReverseState := ListReverseState.loadResponse
   }.elsewhen(listReverseState === ListReverseState.loadResponse && io.memResp.valid) {
@@ -402,21 +403,22 @@ class EXU(
     listReverseNext := io.memResp.bits
     listReverseState := ListReverseState.storeRequest
   }.elsewhen(listReverseState === ListReverseState.storeRequest && io.memReq.fire) {
-    listReversePrefetchHit := Mux(listReverseNext === listReverseCurrent, true.B, io.dcache.hit)
     listReverseState := ListReverseState.cacheUpdate
   }.elsewhen(listReverseState === ListReverseState.cacheUpdate) {
+    val resolvedPrefetchHit = listReverseNext === listReverseCurrent || io.dcache.listReverseCapturedHit
     val prefetchedData = Mux(
       listReverseNext === listReverseCurrent,
       listReversePrevious,
       io.dcache.readData
     )
+    listReversePrefetchHit := resolvedPrefetchHit
     listReversePrefetchData := prefetchedData
     when(isListReverseLoop && listReverseNext =/= 0.U) {
       listReversePrevious := listReverseCurrent
       listReverseCurrent := listReverseNext
       listReverseNext := prefetchedData
       listReverseQueryAddress := prefetchedData
-      listReverseState := Mux(listReversePrefetchHit, ListReverseState.storeRequest, ListReverseState.loadRequest)
+      listReverseState := Mux(resolvedPrefetchHit, ListReverseState.storeRequest, ListReverseState.loadRequest)
     }.otherwise {
       listReverseResult := Mux(isListReverseLoop, listReverseCurrent, listReverseNext)
       listReversePrefetchValid := !isListReverseLoop && listReverseNext =/= 0.U
@@ -790,6 +792,8 @@ class EXU(
   val dcacheQueryAddr = Mux(isListReverse, listReverseQueryAddress, reg1AddImm)
   io.dcache.queryIndex := Mux(isListReverse, listReverseQueryAddress(11, 2), io.stagedDcacheQueryIndex)
   io.dcache.queryTag   := dcacheQueryAddr(17, 11)
+  io.dcache.listReverseHitCapture :=
+    listReverseState === ListReverseState.lookup || listReverseState === ListReverseState.storeRequest
   io.dcache.listFindStart := io.in.valid && isListFind && !io.dcache.listFindDone
   io.dcache.listFindConsume := io.out.fire && isListFind
   io.dcache.listFindAddress := reg_v1

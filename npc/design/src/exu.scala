@@ -98,18 +98,18 @@ class EXU(
       val listFindRequestAddress = Input(Types.UWord)
       val listFindDone = Input(Bool())
       val listFindResult = Input(Types.UWord)
-      val dot9Start = Output(Bool())
-      val dot9Consume = Output(Bool())
-      val dot9AddressA = Output(Types.UWord)
-      val dot9AddressB = Output(Types.UWord)
-      val dot9Length = Output(UInt(16.W))
-      val dot9BitMode = Output(Bool())
-      val dot9RequestFire = Output(Bool())
-      val dot9MemResponse = Output(Valid(Types.UWord))
-      val dot9Request = Input(Bool())
-      val dot9RequestAddress = Input(Types.UWord)
-      val dot9Done = Input(Bool())
-      val dot9Result = Input(Types.UWord)
+      val dotNStart = Output(Bool())
+      val dotNConsume = Output(Bool())
+      val dotNAddressA = Output(Types.UWord)
+      val dotNAddressB = Output(Types.UWord)
+      val dotNLength = Output(UInt(16.W))
+      val dotNBitMode = Output(Bool())
+      val dotNRequestFire = Output(Bool())
+      val dotNMemResponse = Output(Valid(Types.UWord))
+      val dotNRequest = Input(Bool())
+      val dotNRequestAddress = Input(Types.UWord)
+      val dotNDone = Input(Bool())
+      val dotNResult = Input(Types.UWord)
       val storeUpdate = Output(Bool())
       val storeFull   = Output(Bool())
       val storeData   = Output(Types.UWord)
@@ -178,8 +178,8 @@ class EXU(
 
   val isListFind = dinst.info.listFindValid
   val isDotConfig = dinst.info.xdotConfigValid
-  val isDot9 = dinst.info.xdot9Valid
-  val isDcacheWalker = isListFind || isDot9
+  val isDotN = dinst.info.xdotNValid
+  val isDcacheWalker = isListFind || isDotN
   val dotLength = RegInit(9.U(16.W))
 
   object XmsumState extends ChiselEnum {
@@ -522,7 +522,7 @@ class EXU(
   alu.io.in.valid :=
     io.in.valid && isTypArithmetic && (resultIsLong || (resultIsAccelerator && simpleAccelerator))
 
-  when(io.in.valid && !isDotConfig && !isDot9 && (fastAluRs1Groups.orR || fastAluRs2Groups.orR)) {
+  when(io.in.valid && !isDotConfig && !isDotN && (fastAluRs1Groups.orR || fastAluRs2Groups.orR)) {
     assert(resultIsFast && isTypArithmetic, "fast ALU token used by a non-fast consumer")
     assert(io.previousStageFwd.dataVaild && io.previousStageFwd.kind === ResultKind.fastInt,
       "deferred result entered the fast integer cluster")
@@ -678,7 +678,7 @@ class EXU(
   val snpc = Mux(isTypSys, csrNextPCReg, dinst.info.staticNextPCOrCSRTarget)
 
   val useSingleCycleForward = isTypArithmetic && resultIsFast
-  val dcacheWalkerResult = Mux(isDot9, io.dcache.dot9Result, io.dcache.listFindResult)
+  val dcacheWalkerResult = Mux(isDotN, io.dcache.dotNResult, io.dcache.listFindResult)
   val acceleratorData = Mux(
     isNumericDfa,
     xdfaWordResult,
@@ -765,14 +765,14 @@ class EXU(
   io.dcache.listFindDataMode := func7t === 3.U
   io.dcache.listFindRequestFire := io.memReq.fire && io.dcache.listFindRequest
   io.dcache.listFindMemResponse := io.memResp
-  io.dcache.dot9Start := io.in.valid && isDot9 && !io.dcache.dot9Done
-  io.dcache.dot9Consume := io.out.fire && isDot9
-  io.dcache.dot9AddressA := reg_v1
-  io.dcache.dot9AddressB := reg_v2
-  io.dcache.dot9Length := Mux(func7t === 1.U || func7t === 2.U, 9.U, dotLength)
-  io.dcache.dot9BitMode := func7t === 2.U || func7t === 5.U
-  io.dcache.dot9RequestFire := io.memReq.fire && io.dcache.dot9Request
-  io.dcache.dot9MemResponse := io.memResp
+  io.dcache.dotNStart := io.in.valid && isDotN && !io.dcache.dotNDone
+  io.dcache.dotNConsume := io.out.fire && isDotN
+  io.dcache.dotNAddressA := reg_v1
+  io.dcache.dotNAddressB := reg_v2
+  io.dcache.dotNLength := dotLength
+  io.dcache.dotNBitMode := func7t === 5.U
+  io.dcache.dotNRequestFire := io.memReq.fire && io.dcache.dotNRequest
+  io.dcache.dotNMemResponse := io.memResp
   // Accelerator requests share the external bus but cannot update the cache's
   // normal store port. Qualify the architectural store locally so cache hit or
   // accelerator state never enters a distributed-memory write-enable cone.
@@ -794,11 +794,11 @@ class EXU(
   val listReverseLoadRequest = listReverseState === ListReverseState.loadRequest
   val listReverseRequest = listReverseLoadRequest || listReverseStoreRequest
   val listFindRequest = io.dcache.listFindRequest
-  val dot9Request = io.dcache.dot9Request
-  val dcacheWalkerRequest = listFindRequest || dot9Request
+  val dotNRequest = io.dcache.dotNRequest
+  val dcacheWalkerRequest = listFindRequest || dotNRequest
   val dcacheWalkerRequestAddress = Mux(
-    dot9Request,
-    io.dcache.dot9RequestAddress,
+    dotNRequest,
+    io.dcache.dotNRequestAddress,
     io.dcache.listFindRequestAddress
   )
   val xmsumRequest = xmsumState === XmsumState.request
@@ -831,7 +831,7 @@ class EXU(
   val normalValid = memReqFire || (
     io.in.valid && !needMemReq && exuResultValid
   )
-  val dcacheWalkerDone = Mux(isDot9, io.dcache.dot9Done, io.dcache.listFindDone)
+  val dcacheWalkerDone = Mux(isDotN, io.dcache.dotNDone, io.dcache.listFindDone)
   io.in.ready := Mux(isNumericDfaStep, xdfaWordDone && io.out.ready,
     Mux(isListReverse, listReverseDone && io.out.ready,
       Mux(isDcacheWalker, dcacheWalkerDone && io.out.ready,

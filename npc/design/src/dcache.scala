@@ -24,18 +24,18 @@ class DCache extends Module {
     val listFindDone = Output(Bool())
     val listFindResult = Output(UInt(32.W))
 
-    val dot9Start = Input(Bool())
-    val dot9Consume = Input(Bool())
-    val dot9AddressA = Input(UInt(32.W))
-    val dot9AddressB = Input(UInt(32.W))
-    val dot9Length = Input(UInt(16.W))
-    val dot9BitMode = Input(Bool())
-    val dot9RequestFire = Input(Bool())
-    val dot9MemResponse = Input(Valid(UInt(32.W)))
-    val dot9Request = Output(Bool())
-    val dot9RequestAddress = Output(UInt(32.W))
-    val dot9Done = Output(Bool())
-    val dot9Result = Output(UInt(32.W))
+    val dotNStart = Input(Bool())
+    val dotNConsume = Input(Bool())
+    val dotNAddressA = Input(UInt(32.W))
+    val dotNAddressB = Input(UInt(32.W))
+    val dotNLength = Input(UInt(16.W))
+    val dotNBitMode = Input(Bool())
+    val dotNRequestFire = Input(Bool())
+    val dotNMemResponse = Input(Valid(UInt(32.W)))
+    val dotNRequest = Output(Bool())
+    val dotNRequestAddress = Output(UInt(32.W))
+    val dotNDone = Output(Bool())
+    val dotNResult = Output(UInt(32.W))
 
     val storeUpdate = Input(Bool())
     val storeFull   = Input(Bool())
@@ -80,19 +80,19 @@ class DCache extends Module {
   val listFindRequestValid = RegInit(false.B)
   val listFindRequestAddressReg = Reg(UInt(32.W))
 
-  object Dot9State extends ChiselEnum {
+  object DotNState extends ChiselEnum {
     val idle, lookup, requestA, responseA, requestB, responseB, multiply, accumulate, done = Value
   }
-  val dot9State = RegInit(Dot9State.idle)
-  val dot9OperandA = Reg(UInt(16.W))
-  val dot9OperandB = Reg(UInt(16.W))
-  val dot9Remaining = Reg(UInt(16.W))
-  val dot9Stride = Reg(UInt(17.W))
-  val dot9Accumulator = Reg(UInt(32.W))
-  val dot9Result = Reg(UInt(32.W))
-  val dot9BitMode = Reg(Bool())
-  val dot9RequestValid = RegInit(false.B)
-  val dot9RequestUseB = RegInit(false.B)
+  val dotNState = RegInit(DotNState.idle)
+  val dotNOperandA = Reg(UInt(16.W))
+  val dotNOperandB = Reg(UInt(16.W))
+  val dotNRemaining = Reg(UInt(16.W))
+  val dotNStride = Reg(UInt(17.W))
+  val dotNAccumulator = Reg(UInt(32.W))
+  val dotNResult = Reg(UInt(32.W))
+  val dotNBitMode = Reg(Bool())
+  val dotNRequestValid = RegInit(false.B)
+  val dotNRequestUseB = RegInit(false.B)
 
   // The backing store accepts an ordinary store one cycle before the mirrored
   // cache memories apply it. Do not expose the old line as a hit in that
@@ -122,7 +122,7 @@ class DCache extends Module {
   val readBank = RegNext(queryBank)
   io.readData := Mux(readBank, dataMem(1).io.doutb, dataMem(0).io.doutb)
 
-  // List-find and dot9 are mutually exclusive, so share their registered
+  // List-find and dotN are mutually exclusive, so share their registered
   // private-query addresses. This keeps FSM decode and a 32-bit mux out of the
   // asynchronous tag/data RAM address cone.
   val listQueryAddresses = Seq(listFindQueryAddress, listFindQueryAddressB)
@@ -144,97 +144,97 @@ class DCache extends Module {
     Mux(listQueryBanks(port), bankData(1), bankData(0))
   }
 
-  val dot9Multiplier = Module(new mult_gen_mul16_fast)
-  dot9Multiplier.io.CLK := clock
-  dot9Multiplier.io.A := dot9OperandA
-  dot9Multiplier.io.B := dot9OperandB
-  val dot9Product = dot9Multiplier.io.P
-  val dot9SignedTerm = dot9Product -
-    Mux(dot9OperandA(15), Cat(dot9OperandB, 0.U(16.W)), 0.U) -
-    Mux(dot9OperandB(15), Cat(dot9OperandA, 0.U(16.W)), 0.U)
-  val dot9BitTerm = (dot9Product(5, 2) * dot9Product(11, 5)).pad(32)
-  val dot9Term = Mux(dot9BitMode, dot9BitTerm, dot9SignedTerm)
-  val dot9NextAccumulator = dot9Accumulator + dot9Term
+  val dotNMultiplier = Module(new mult_gen_mul16_fast)
+  dotNMultiplier.io.CLK := clock
+  dotNMultiplier.io.A := dotNOperandA
+  dotNMultiplier.io.B := dotNOperandB
+  val dotNProduct = dotNMultiplier.io.P
+  val dotNSignedTerm = dotNProduct -
+    Mux(dotNOperandA(15), Cat(dotNOperandB, 0.U(16.W)), 0.U) -
+    Mux(dotNOperandB(15), Cat(dotNOperandA, 0.U(16.W)), 0.U)
+  val dotNBitTerm = (dotNProduct(5, 2) * dotNProduct(11, 5)).pad(32)
+  val dotNTerm = Mux(dotNBitMode, dotNBitTerm, dotNSignedTerm)
+  val dotNNextAccumulator = dotNAccumulator + dotNTerm
 
-  when(dot9State === Dot9State.idle && io.dot9Start) {
-    assert(listFindState === ListFindState.idle, "dot9 and list-find walkers must be mutually exclusive")
-    listFindQueryAddress := io.dot9AddressA
-    listFindQueryAddressB := io.dot9AddressB
-    dot9Remaining := io.dot9Length
-    dot9Stride := Cat(io.dot9Length, 0.U(1.W))
-    dot9Accumulator := 0.U
-    dot9BitMode := io.dot9BitMode
-    dot9RequestValid := false.B
-    dot9State := Dot9State.lookup
-  }.elsewhen(dot9State === Dot9State.lookup) {
-    dot9OperandA := Mux(listFindQueryAddress(1), listReadData(0)(31, 16), listReadData(0)(15, 0))
-    dot9OperandB := Mux(listFindQueryAddressB(1), listReadData(1)(31, 16), listReadData(1)(15, 0))
+  when(dotNState === DotNState.idle && io.dotNStart) {
+    assert(listFindState === ListFindState.idle, "dotN and list-find walkers must be mutually exclusive")
+    listFindQueryAddress := io.dotNAddressA
+    listFindQueryAddressB := io.dotNAddressB
+    dotNRemaining := io.dotNLength
+    dotNStride := Cat(io.dotNLength, 0.U(1.W))
+    dotNAccumulator := 0.U
+    dotNBitMode := io.dotNBitMode
+    dotNRequestValid := false.B
+    dotNState := DotNState.lookup
+  }.elsewhen(dotNState === DotNState.lookup) {
+    dotNOperandA := Mux(listFindQueryAddress(1), listReadData(0)(31, 16), listReadData(0)(15, 0))
+    dotNOperandB := Mux(listFindQueryAddressB(1), listReadData(1)(31, 16), listReadData(1)(15, 0))
     when(!listQueryHits(0)) {
-      dot9RequestValid := true.B
-      dot9RequestUseB := false.B
-      dot9State := Dot9State.requestA
+      dotNRequestValid := true.B
+      dotNRequestUseB := false.B
+      dotNState := DotNState.requestA
     }.elsewhen(!listQueryHits(1)) {
-      dot9RequestValid := true.B
-      dot9RequestUseB := true.B
-      dot9State := Dot9State.requestB
+      dotNRequestValid := true.B
+      dotNRequestUseB := true.B
+      dotNState := DotNState.requestB
     }.otherwise {
-      dot9State := Dot9State.multiply
+      dotNState := DotNState.multiply
     }
-  }.elsewhen(dot9State === Dot9State.requestA && io.dot9RequestFire) {
-    dot9RequestValid := false.B
-    dot9State := Dot9State.responseA
-  }.elsewhen(dot9State === Dot9State.responseA && io.dot9MemResponse.valid) {
-    dot9OperandA := Mux(
+  }.elsewhen(dotNState === DotNState.requestA && io.dotNRequestFire) {
+    dotNRequestValid := false.B
+    dotNState := DotNState.responseA
+  }.elsewhen(dotNState === DotNState.responseA && io.dotNMemResponse.valid) {
+    dotNOperandA := Mux(
       listFindQueryAddress(1),
-      io.dot9MemResponse.bits(31, 16),
-      io.dot9MemResponse.bits(15, 0)
+      io.dotNMemResponse.bits(31, 16),
+      io.dotNMemResponse.bits(15, 0)
     )
     when(listQueryHits(1)) {
-      dot9State := Dot9State.multiply
+      dotNState := DotNState.multiply
     }.otherwise {
-      dot9RequestValid := true.B
-      dot9RequestUseB := true.B
-      dot9State := Dot9State.requestB
+      dotNRequestValid := true.B
+      dotNRequestUseB := true.B
+      dotNState := DotNState.requestB
     }
-  }.elsewhen(dot9State === Dot9State.requestB && io.dot9RequestFire) {
-    dot9RequestValid := false.B
-    dot9State := Dot9State.responseB
-  }.elsewhen(dot9State === Dot9State.responseB && io.dot9MemResponse.valid) {
-    dot9OperandB := Mux(
+  }.elsewhen(dotNState === DotNState.requestB && io.dotNRequestFire) {
+    dotNRequestValid := false.B
+    dotNState := DotNState.responseB
+  }.elsewhen(dotNState === DotNState.responseB && io.dotNMemResponse.valid) {
+    dotNOperandB := Mux(
       listFindQueryAddressB(1),
-      io.dot9MemResponse.bits(31, 16),
-      io.dot9MemResponse.bits(15, 0)
+      io.dotNMemResponse.bits(31, 16),
+      io.dotNMemResponse.bits(15, 0)
     )
-    dot9State := Dot9State.multiply
-  }.elsewhen(dot9State === Dot9State.multiply) {
-    dot9State := Dot9State.accumulate
-  }.elsewhen(dot9State === Dot9State.accumulate) {
-    dot9Accumulator := dot9NextAccumulator
-    when(dot9Remaining === 1.U) {
-      dot9Result := dot9NextAccumulator
-      dot9State := Dot9State.done
+    dotNState := DotNState.multiply
+  }.elsewhen(dotNState === DotNState.multiply) {
+    dotNState := DotNState.accumulate
+  }.elsewhen(dotNState === DotNState.accumulate) {
+    dotNAccumulator := dotNNextAccumulator
+    when(dotNRemaining === 1.U) {
+      dotNResult := dotNNextAccumulator
+      dotNState := DotNState.done
     }.otherwise {
       listFindQueryAddress := listFindQueryAddress + 2.U
-      listFindQueryAddressB := listFindQueryAddressB + dot9Stride
-      dot9Remaining := dot9Remaining - 1.U
-      dot9State := Dot9State.lookup
+      listFindQueryAddressB := listFindQueryAddressB + dotNStride
+      dotNRemaining := dotNRemaining - 1.U
+      dotNState := DotNState.lookup
     }
-  }.elsewhen(dot9State === Dot9State.done && io.dot9Consume) {
-    dot9RequestValid := false.B
-    dot9State := Dot9State.idle
+  }.elsewhen(dotNState === DotNState.done && io.dotNConsume) {
+    dotNRequestValid := false.B
+    dotNState := DotNState.idle
   }
 
-  io.dot9Request := dot9RequestValid
-  io.dot9RequestAddress := Mux(
-    dot9RequestUseB,
+  io.dotNRequest := dotNRequestValid
+  io.dotNRequestAddress := Mux(
+    dotNRequestUseB,
     listFindQueryAddressB,
     listFindQueryAddress
   ) & ~3.U(32.W)
-  io.dot9Done := dot9State === Dot9State.done
-  io.dot9Result := dot9Result
+  io.dotNDone := dotNState === DotNState.done
+  io.dotNResult := dotNResult
 
   when(listFindState === ListFindState.idle && io.listFindStart) {
-    assert(dot9State === Dot9State.idle, "list-find and dot9 walkers must be mutually exclusive")
+    assert(dotNState === DotNState.idle, "list-find and dotN walkers must be mutually exclusive")
     listFindRequestValid := false.B
     listFindCurrent := io.listFindAddress
     listFindQueryAddress := io.listFindAddress

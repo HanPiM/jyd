@@ -56,11 +56,9 @@
 #define MATCH_XACCEL_XMACACC_LAST 0x1000300b
 #define MATCH_XACCEL_XMACACC_BIT_LAST 0x1200300b
 #define MATCH_XACCEL_XDOT16 0x0000400b
-#define MATCH_XACCEL_XDOT9 0x0200400b
-#define MATCH_XACCEL_XDOT9_BIT 0x0400400b
-#define MATCH_XACCEL_XDOT_CONFIG 0x0600400b
-#define MATCH_XACCEL_XDOT 0x0800400b
-#define MATCH_XACCEL_XDOT_BIT 0x0a00400b
+#define MATCH_XACCEL_XDOTN_CONFIG 0x0600400b
+#define MATCH_XACCEL_XDOTN 0x0800400b
+#define MATCH_XACCEL_XDOTN_BIT 0x0a00400b
 #define MATCH_XACCEL_XBMUL  0x0000500b
 #define MATCH_XACCEL_XMBM   0x0200500b
 #define MATCH_XACCEL_XLISTREV_INIT 0x0000600b
@@ -77,11 +75,9 @@
 #define MASK_XACCEL_XMACACC_LAST MASK_XACCEL_XACCEL
 #define MASK_XACCEL_XMACACC_BIT_LAST MASK_XACCEL_XACCEL
 #define MASK_XACCEL_XDOT16 MASK_XACCEL_XACCEL
-#define MASK_XACCEL_XDOT9 MASK_XACCEL_XACCEL
-#define MASK_XACCEL_XDOT9_BIT MASK_XACCEL_XACCEL
-#define MASK_XACCEL_XDOT_CONFIG MASK_XACCEL_XACCEL
-#define MASK_XACCEL_XDOT MASK_XACCEL_XACCEL
-#define MASK_XACCEL_XDOT_BIT MASK_XACCEL_XACCEL
+#define MASK_XACCEL_XDOTN_CONFIG MASK_XACCEL_XACCEL
+#define MASK_XACCEL_XDOTN MASK_XACCEL_XACCEL
+#define MASK_XACCEL_XDOTN_BIT MASK_XACCEL_XACCEL
 #define MASK_XACCEL_XBMUL  MASK_XACCEL_XACCEL
 #define MASK_XACCEL_XMBM   MASK_XACCEL_XACCEL
 #define MASK_XACCEL_XLISTREV_INIT MASK_XACCEL_XACCEL
@@ -113,7 +109,7 @@ static word_t matrix_accumulator;
 #define MASK_XACCEL_XDFA4H_STEP MASK_XACCEL_XDFACNT
 #define MASK_XACCEL_XDFA4H_STEP_PTR MASK_XACCEL_XDFACNT
 
-enum { XA_MAC16, XA_DOT16, XA_DOT9, XA_BMUL, XA_LISTREV, XA_LISTFIND, XA_MSUM };
+enum { XA_MAC16, XA_DOT16, XA_DOTN, XA_BMUL, XA_LISTREV, XA_LISTFIND, XA_MSUM };
 
 static uint32_t numeric_dfa_transition_counts[8];
 static uint32_t numeric_dfa_final_counts[8];
@@ -430,19 +426,17 @@ static int decode_exec(Decode *s) {
     riscv_profile_record_xaccel(XA_DOT16, 2, 4);
     matched = true;
   }
-  static unsigned xdot_length = 9;
-  if (IS_INST(XACCEL_XDOT_CONFIG)) {
-    xdot_length = R(rs1) & 0xffffu;
+  static unsigned xdotn_length;
+  if (IS_INST(XACCEL_XDOTN_CONFIG)) {
+    xdotn_length = R(rs1) & 0xffffu;
     matched = true;
   }
-  if (IS_INST(XACCEL_XDOT9) || IS_INST(XACCEL_XDOT9_BIT) ||
-      IS_INST(XACCEL_XDOT) || IS_INST(XACCEL_XDOT_BIT)) {
+  if (IS_INST(XACCEL_XDOTN) || IS_INST(XACCEL_XDOTN_BIT)) {
     vaddr_t address_a = R(rs1);
     vaddr_t address_b = R(rs2);
     word_t sum = 0;
-    bool legacy = IS_INST(XACCEL_XDOT9) || IS_INST(XACCEL_XDOT9_BIT);
-    unsigned length = legacy ? 9 : xdot_length;
-    bool bit_extract = IS_INST(XACCEL_XDOT9_BIT) || IS_INST(XACCEL_XDOT_BIT);
+    unsigned length = xdotn_length;
+    bool bit_extract = IS_INST(XACCEL_XDOTN_BIT);
     for (unsigned k = 0; k < length; k++) {
       word_t a = vaddr_read(address_a + 2 * k, 2) & 0xffffu;
       word_t b = vaddr_read(address_b + 2 * length * k, 2) & 0xffffu;
@@ -453,7 +447,7 @@ static int decode_exec(Decode *s) {
       sum += term;
     }
     R(rd) = sum;
-    riscv_profile_record_xaccel(XA_DOT9, length, 3 * length);
+    riscv_profile_record_xaccel(XA_DOTN, length, 3 * length);
     matched = true;
   }
   if (IS_INST(XACCEL_XBMUL)) {

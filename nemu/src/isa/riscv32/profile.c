@@ -1104,7 +1104,7 @@ void riscv_profile_finish(void) {
           "\n  \"crc_ops\":[");
   arr(f, crcops, CRC_NR);
   fprintf(f,
-          "],\n  \"xaccel_ops_order\":[\"xmac16\",\"xdot16\",\"xdot9\","
+          "],\n  \"xaccel_ops_order\":[\"xmac16\",\"xdot16\",\"xdotn\","
           "\"xbmul\",\"xlistrev\",\"xlistfind\",\"xmsum\"],\n  \"xaccel_ops\":[");
   arr(f, xaccel_ops, 7);
   fprintf(f, "],\n  \"xaccel_units\":[");

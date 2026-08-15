@@ -157,6 +157,25 @@ from a clean copy moved to a different path with no project-specific environment
 variables. Byte-compare the four generated CoreMark/RT-Thread text/data COE files
 against `reference/`, then remove generated `out/` contents from the delivered copy.
 
+## Finals Submission Documentation and Code Audit
+
+Before changing the finals technical report, CoreMark build chain, accelerator
+toolchain/RTL, RT-Thread Nano integration, or reviewer reproduction materials,
+read and follow `doc/FINALS-AUDIT-GUIDELINES.md`. It is the canonical audit
+contract for evidence provenance, board-versus-fit labeling, hardware-centered
+report wording, state-machine presentation, compiler disclosure boundaries,
+name-independent code generation, official CoreMark output/SoftFloat handling,
+shared CoreMark defaults, RT-Thread Nano device boundaries, and pre-submission
+checks.
+
+The report may abstract compiler internals and combine adjacent hardware stages
+in one state-machine figure, but abstraction must remain truthful. Do not claim
+hardware recognition or compiler granularity that the implementation does not
+have, do not rely on source code escaping review, and do not weaken the code and
+reproduction audits merely to make the prose less specific. When implementation,
+evidence, and older prose disagree, use current code and traceable raw evidence as
+the source of truth and update the report accordingly.
+
 ## Optimization Experiment Documentation
 
 Optimization experiment documentation has a single canonical home: branch `opt-notes`, checked out at

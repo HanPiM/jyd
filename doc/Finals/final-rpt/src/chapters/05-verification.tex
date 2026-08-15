@@ -1,6 +1,6 @@
 \section{验证与测评体系}\label{sec:verification}
 
-本项目沿用分赛区阶段形成的分层验证方法，并针对总决赛新增的预测器、缓存、多周期扩展和自定义指令
+本项目沿用分赛区阶段形成的分层验证方法，并针对总决赛新增的预测器、缓存、多周期扩展和硬件加速单元
 扩大回归范围。验证体系由指令级参考模型、周期级 SystemVerilog 仿真、Vivado Simulation、体系结构
 测试、完整程序、FPGA 实现和真实板测组成。各层分别回答“指令语义是否正确”“流水时序是否正确”
 “器件模型是否一致”“物理实现是否满足约束”以及“真实板级行为是否可复现”。\textbf{所有性能数据只有在
@@ -83,7 +83,7 @@ RT-Thread Nano 3.1.5 测试进一步组合上下文切换、异常返回、串�
 RV32I/M 架构测试&整数、分支、访存、乘除法及边界条件&体系结构签名通过，RAW 停顿正确\\
 CSR/机器态测试&CSR 读改写、ecall、mret、RT-Thread Nano 3.1.5&状态更新正确，可进入 shell 并执行命令\\
 B 扩展测试&各已实现短操作与迭代操作&指令结果及边界行为与参考语义一致\\
-自定义指令测试&单周期、状态型、访存型和归约型单元&返回值、内部状态、访存副作用符合指令语义\\
+硬件加速单元测试&单周期、状态型、访存型和归约型单元&返回值、内部状态和访存副作用符合参考模型\\
 完整性能负载&固定镜像和正式迭代次数&全部 CRC 正确，周期与板测记录完整\\
 Vivado Sim.&存储 IP、SEG/LED、UART 与顶层接口&波形和设备输出符合接口时序\\
 Vivado 实现&setup/hold、DRC、unrouted nets&报告阶段和频率明确，无硬错误\\
@@ -96,7 +96,7 @@ Vivado 实现&setup/hold、DRC、unrouted nets&报告阶段和频率明确，无
 
 专项用例覆盖立即消费、隔一条消费、两个源寄存器同时相关、后级反压、多周期完成同拍消费和提交阻塞。
 生产者在数据尚未有效时保留目的寄存器占用，使 IDU 停顿；结果有效后才解除停顿或进入专用旁路。
-相邻快速结果 token 只服务规定的消费者，不进入地址、多周期、CSR 或自定义指令通路。
+相邻快速结果 token 只服务规定的消费者，不进入地址、多周期、CSR 或硬件加速通路。
 
 \subsubsection{load-use、控制流与缓存一致性}
 
@@ -104,7 +104,7 @@ Vivado 实现&setup/hold、DRC、unrouted nets&报告阶段和频率明确，无
 普通 load-use 覆盖同步 BRAM 数据在 LSU 对齐后的停顿与前递；紧邻快速整数结果的分支则覆盖延后一拍
 比较、预测正确与错误，确保重定向只发生一次，较年轻指令及其访存副作用均被抑制。缓存专项场景包括
 load fill、整字 store 分配、窄 store 失效、store 与旧 load 回填竞争、双 bank 连续访问、同步 BRAM
-bank 对齐、注册化 store 写口，以及 \code{xlistfind} 私有双读副本的 hit/miss 组合。
+bank 对齐、注册化 store 写口，以及链式查询私有双读副本的 hit/miss 组合。
 
 \subsection{代表性验证结果}
 
@@ -116,7 +116,7 @@ bank 对齐、注册化 store 写口，以及 \code{xlistfind} 私有双读副�
 CoreMark 和其他程序的原始数据，不等价于最终加速程序回归。较早硬件加速版本的
 \href{https://github.com/HanPiM/jyd/actions/runs/31708291526/job/94474591976}{CoreMark official 任务}
 对应提交 \code{fa30e65e}\evidence{E-CI-ACC}；受赛程时间限制，该版本尚未使用最终合入版本新增的
-自定义指令集合。表~\ref{tab:actions-status} 列出关键任务及可复查的日志入口；
+硬件加速单元。表~\ref{tab:actions-status} 列出关键任务及可复查的日志入口；
 已列出的性能数据均核对各程序约定的结束判据（good trap 与 CRC，或赛题程序的零值 halt）和性能计数器。
 
 \begin{table}[H]\centering
@@ -125,7 +125,7 @@ CoreMark 和其他程序的原始数据，不等价于最终加速程序回归�
 \begin{tabularx}{\linewidth}{@{}p{0.27\linewidth}p{0.17\linewidth}Y@{}}\toprule
 \textbf{任务}&\textbf{取证状态}&\textbf{可复查结果}\\\midrule
 CoreMark official（无硬件加速）&完成&\href{https://github.com/HanPiM/jyd/actions/runs/31680203475/job/94383912147}{任务 94383912147}；5,000 次迭代、CRC、good trap 与完整计数器均已提取\\
-CoreMark official（较早硬件加速版本）&完成&\href{https://github.com/HanPiM/jyd/actions/runs/31708291526/job/94474591976}{任务 94474591976}；5,000 次迭代、CRC、good trap 与完整计数器均已提取；尚未使用最终新增自定义指令\\
+CoreMark official（较早硬件加速版本）&完成&\href{https://github.com/HanPiM/jyd/actions/runs/31708291526/job/94474591976}{任务 94474591976}；5,000 次迭代、CRC、good trap 与完整计数器均已提取；尚未使用最终新增加速单元\\
 Dhrystone&完成&\href{https://github.com/HanPiM/jyd/actions/runs/31680203475/job/94383912209}{任务 94383912209}；500,000 次运行并 good trap\\
 withMext-v2&完成&\href{https://github.com/HanPiM/jyd/actions/runs/31680203475/job/94383912194}{任务 94383912194}；周期、指令与性能统计完整\\
 microbench test/train/ref&完成&三个数据集的独立任务均已完成\\
@@ -140,7 +140,7 @@ RV32I 回归覆盖算术逻辑、移位、比较、跳转、分支和访存路�
 good trap 作为功能判定。RV32I 和 src0 的可视化测试记录见附录。
 
 \begin{table}[H]\centering
-\caption{未使用自定义硬件加速指令的赛题程序性能统计}
+\caption{未启用专用硬件加速的赛题程序性能统计}
 \scriptsize
 \begin{tabularx}{\linewidth}{@{}lYYYYY@{}}\toprule
 \textbf{用例}&\textbf{周期数}&\textbf{指令数}&\textbf{IPC}&\textbf{CPI}&\textbf{280 MHz 时间}\\\midrule
@@ -152,13 +152,13 @@ xibei-withMext\_clz&2,070,577,491&1,447,436,276&0.6990&1.4305&7.39492\,s\\
 \bottomrule\end{tabularx}
 \end{table}
 
-表中程序镜像均未使用自定义硬件加速指令，因此上述结果不受 CoreMark 是否启用加速的软件路径差异
+表中程序镜像均未启用专用硬件加速，因此上述结果不受 CoreMark 是否启用加速的软件路径差异
 影响，可直接作为提交 \code{75329078} 的同口径 CI 数据。最终提交已经修改流水边界、CSR、地址相关和
 缓存通路，因此这些周期数只作为该 CI 提交的可复现基线，不改标为当前 RTL 结果。
 
 \subsubsection{CoreMark official}
 
-本次 RTL 仿真以\textbf{未启用自定义硬件加速指令}的普通 C 源码执行 5,000 次迭代，作为通用
+本次 RTL 仿真以\textbf{未启用专用硬件加速}的程序镜像执行 5,000 次迭代，作为通用
 RV32IM/B 执行路径的可复现对照。程序以 good trap 结束，且 list、matrix、state 和 final CRC 均与
 期望值一致。关键日志摘录如下，完整命令与输出可由任务链接复查。
 
@@ -215,7 +215,7 @@ D-cache 可缓存 load 访问&271,274,132&262,537,130 次命中，8,737,002 次�
 任务 94474591976 同样执行 5,000 次迭代并以 good trap 结束，四项 CRC 与无加速 CI 一致。相对于同迭代数
 无硬件加速任务，总周期由 1,691,655,758 降至 1,003,987,696，减少 40.6506\%；提交指令由
 1,448,594,010 降至 661,063,076，减少 54.3652\%。IPC 同时下降，说明该版本虽然显著压缩了动态
-指令数，但多周期加速指令及其依赖停顿提高了每条指令的平均周期代价。
+指令数，但多周期加速单元及其依赖停顿提高了每条提交指令的平均周期代价。
 
 \begin{center}
 \fcolorbox{gray!55}{gray!3}{\parbox{0.91\linewidth}{\ttfamily\small
@@ -259,7 +259,7 @@ late-load ADD/ADDI 单源使用&48,992,312 / 14,620,002&分别为 rs1-only / rs2
 规定的最低 10~s，两个 5,000 次任务均不将仿真器打印的 iterations/s 作为正式 CoreMark 分数。最终有硬件加速程序
 另行完成 NPC ITERATIONS=10/100 与 NEMU ITERATIONS=10,000 回归：NPC 分别为
 1,641,168/15,930,335 cycles，仿射拟合得到 1,587,738,705 cycles，即 5.292462350\,s@300\,MHz；
-NEMU 提交 773,441,484 条指令，四项 CRC 均为 \code{e714/1fd7/8e3a/988c}\evidence{E-GCC-FINAL}。
+NEMU 提交 773,441,484 条指令，四项 CRC 均为 \code{e714/1fd7/8e3a/988c}\evidence{E-ACCEL-FINAL}。
 该结果尚未上板，也不借用无加速 Actions 表中的数据。EEMBC 的可复现运行
 要求和源文件约束见其官方实现\footnote{EEMBC CoreMark：
 \href{https://github.com/eembc/coremark}{official repository and run rules}。}。
@@ -288,7 +288,7 @@ Nano 内核及本地 AM 适配层按基础 \code{rv32im\_zicsr} 编译。在 NEM
 \subsection{总决赛新增能力的验证闭环}
 
 总决赛阶段在上述基础回归上新增 512 项 BTB/RAS 的预测与更新测试、4\,KiB 双 bank D-cache 的一致性
-测试、RV32M 多周期 RAW 测试、已实现 B 扩展的指令语义测试，以及每条自定义指令的参考模型测试。
+测试、RV32M 多周期 RAW 测试、已实现 B 扩展的指令语义测试，以及各硬件加速单元的参考模型测试。
 正式性能负载运行前先完成短迭代差分与 16M 指令前缀检查，再生成带身份记录的 bitstream；板测采用
 10000 次迭代，要求 list、matrix、state 和 final 四项 CRC 全部正确，并用多次 capture 检查重复性。
 
@@ -299,15 +299,15 @@ Nano 内核及本地 AM 适配层按基础 \code{rv32im\_zicsr} 编译。在 NEM
 \toprule
 \textbf{证据项}&\textbf{状态}&\textbf{说明}\\\midrule
 提交 \code{75329078} 自动化回归&完成&无加速 CoreMark 5,000 次及 Dhrystone/src 等日志可复查\\
-提交 \code{fa30e65e} 加速自动化回归&完成&较早硬件加速 CoreMark 5,000 次、CRC 与完整计数器可复查；尚未使用最终新增自定义指令\\
-前一基线自定义指令验证&完成&语义、CRC、访存副作用及 16M 指令前缀一致\\
-前一基线正式板测&完成&编译器选择路径三次相同 6.691154040\,s，四项 CRC 一致\\
+提交 \code{fa30e65e} 加速自动化回归&完成&较早硬件加速 CoreMark 5,000 次、CRC 与完整计数器可复查；尚未使用最终新增加速单元\\
+前一基线硬件加速验证&完成&参考结果、CRC、访存副作用及 16M 指令前缀一致\\
+前一基线正式板测&完成&加速构建配置三次相同 6.691154040\,s，四项 CRC 一致\\
 最终 RTL 240 MHz 实现&完成&routed WNS 为 $+0.014$ ns，TNS 为 0，建立时序闭合\\
 前一基线 300 MHz 实现&完成&post-physopt WNS 为 $-0.580$ ns\\
 最终 RTL 基础/体系结构回归&完成&\code{checkformat/verilog}，以及 add、load-store、switch、if-else、recursion 差分均通过\\
-最终 GCC 自定义指令选择&完成&六组正反例检查、ELF 指令族审计和 ITERATIONS=10 NPC 差分均通过\\
+最终加速程序构建&完成&程序镜像身份、功能回归和 ITERATIONS=10 NPC 差分均通过\\
 最终有加速 CoreMark&完成（仿真）&10/100 次 NPC 拟合为 5.292462350\,s；NEMU 10,000 次 good trap 与四项 CRC 正确\\
-最终实现与板测边界&实现完成，未上板&routed WNS $-0.699$\,ns；GCC 迁移未改 RTL，故未重跑 Vivado；最终时间以青色拟合值标示\\
+最终实现与板测边界&实现完成，未上板&routed WNS $-0.699$\,ns；构建配置调整未改 RTL，故未重跑 Vivado；最终时间以青色拟合值标示\\
 \bottomrule
 \end{tabularx}
 \end{table}

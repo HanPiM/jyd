@@ -63,98 +63,14 @@ $+0.013$\,ns。
 
 \input{src/tikz/regional-performance-full}
 
-\subsection{GCC 自定义指令匹配摘要}\label{app:gcc-custom-match}
+\subsection{硬件加速构建配置摘要}\label{app:accel-build}
 
-本节概括普通 C 源码到自定义指令的自动选择路径。局部算术结构在 GIMPLE 或 RTL
-数据依赖上匹配；包含循环、访存或跨基本块状态的结构先由 GIMPLE pass 验证，再转换为 internal
-function（IFN），经 optab 或目标展开器下沉到机器描述（MD）。各路径受独立 target option 控制，
-选项关闭时保留标准 RV32 指令。正式构建不加载探索性插件，也不以包装函数强制替换源码。
+项目借助 GCC 目标选项和相关接口，按处理器提供的硬件能力配置程序镜像。启用与关闭版本采用相同输入、
+迭代规模和结果判定；该配置不改变处理器 RTL。
 
-\begin{table}[H]\centering\scriptsize
-\caption{当前已实现的 GCC 自动匹配路径}\label{tab:gcc-custom-implemented}
-\setlength{\tabcolsep}{3pt}
-\begin{tabular}{@{}p{0.15\linewidth}p{0.15\linewidth}p{0.42\linewidth}p{0.20\linewidth}@{}}
-\toprule
-\textbf{指令}&\textbf{匹配层}&\textbf{主要约束}&\textbf{下沉路径}\\\midrule
-\code{xcrcu8}&GIMPLE CRC 与 MD&
-八次反向 CRC 更新、8-bit 数据、16-bit 状态及固定多项式&
-\TopStack{\code{CRC\_REV} IFN/optab\\$\rightarrow$ \code{bitmanip.md}}\\
-\code{xbmul}&RTL peephole2&
-同一源值分别右移 2/5 位、与 15/127 掩码后相乘，且被消除的临时量均已死亡&
-\TopStack{\code{packed\_field\_mul}\\\code{define\_insn}}\\
-\code{xmbm}&GIMPLE pass&
-同一 16-bit 乘积分别右移 2/5 位、与 15/127 掩码后再相乘；两条字段链必须追溯到同一乘积&
-\code{IFN\_XMBM} $\rightarrow$ optab/MD\\
-\code{xmsum}&GIMPLE pass&
-参数类型、$n^2$ 遍历、带裁剪累计、相邻元素比较及归约返回值同时满足&
-\TopStack{\code{IFN\_CLIPPED\_}\\\code{RISING\_SCORE\_REDUCE}\\$\rightarrow$ optab/MD}\\
-\code{xlistrev}&GIMPLE pass&
-恰有一个规范的链表遍历与 next 指针反向写回循环，并保留空链表返回路径&
-\code{IFN\_XLISTREV} $\rightarrow$ 两条指令的 MD pattern\\
-\TopStack{\code{xlistfind.idx}\\\code{xlistfind.data}}&GIMPLE pass&
-两参数链表查找的返回类型、遍历结构和索引/数据两种比较分支一致&
-\code{IFN\_XLISTFIND} $\rightarrow$ 两条 MD pattern\\
-\TopStack{\code{xmacacc.*}\\六个阶段编码}&GIMPLE + 目标展开&
-矩阵维度、三数组数据流与两类矩阵点积循环结构一致；目标展开器为每个点积产生 first/add/last，$n<2$ 回到标量序列&
-\TopStack{\code{IFN\_XMACACC\_*}\\\code{\_MATRIX}\\$\rightarrow$ target expand/MD}\\
-\TopStack{DFA 计数/步进族\\\code{xdfa4p}}&GIMPLE pass&
-字符扫描、位置指针、计数数组更新与 CRC 读取的数据流一致&
-\TopStack{\code{IFN\_XDFACNT\_}\\\code{INIT}, \code{IFN\_XDFA4H\_*}\\\code{XDFA4P\_STEP} $\rightarrow$ MD}\\
-\bottomrule
-\end{tabular}
-\end{table}
-
-\code{xbmul} 的关键点不是源码文本匹配，而是 RTL 数据依赖和临时量活跃性。删减后的 MD 结构示意为：
-{\small
-\begin{verbatim}
-(define_peephole2
-  [shift-by-2; shift-by-5; and-15; and-127; multiply]
-  "TARGET_XBMUL && eliminated_temporaries_are_dead"
-  [(set rd (unspec:SI [src] UNSPEC_XBMUL))])
-\end{verbatim}
-}
-只要移位量、掩码、源操作数或中间值用途不同，模式就不成立。跨基本块指令则先证明整个语义结构；
-其 GIMPLE pass 的核心流程可概括为：
-{\small
-\begin{verbatim}
-if (clipped_rising_score_p(n, base, clip))
-  replace_with_internal_call(
-      IFN_CLIPPED_RISING_SCORE_REDUCE, n, base, clip);
-\end{verbatim}
-}
-其中判定函数同时检查循环边界、加载地址、递推关系和返回值。链表反转采用同类方法验证重链接循环。
-关闭对应 \code{-m} 选项或任一结构条件不满足时，均保留原软件控制流。
-
-\code{xmbm} 的 GIMPLE 匹配先沿两个字段表达式回溯到共同乘积，再以二输入 IFN 替换末端乘法。关键
-逻辑可简化为：
-{\small
-\begin{verbatim}
-if (field_p(lhs, 2, 15, &p2)
-    && field_p(rhs, 5, 127, &p5) && p2 == p5)
-  replace_with_ifn(IFN_XMBM, product_arg0, product_arg1);
-\end{verbatim}
-}
-
-\code{xmacacc} 不只把单条乘法换成目标指令。GIMPLE pass 先把经过校验的矩阵循环变为带 $n,C,A,B$
-四个参数的 IFN；RISC-V 目标展开器随后构造三层地址循环，并对每个点积生成：
-{\small
-\begin{verbatim}
-emit xmacacc.first  (A[0],   B[0]);
-emit xmacacc.add    (A[k],   B[k]);   // 0 < k < n-1
-result = xmacacc.last(A[n-1], B[n-1]);
-store result to C;
-\end{verbatim}
-}
-位域矩阵入口选择 bfirst/badd/blast；$n=0$ 不写结果，$n=1$ 使用标量乘法与字段提取。这样点积的局部
-累加状态留在执行单元，只有 last 产生一次 GPR 结果。\code{xlistfind} 则把已验证的查找函数降为
-\code{IFN\_XLISTFIND(list,info)}，MD 展开先检查目标索引符号，再选择 idx 或 data 编码。
-
-编译器实现通过六组正、反例检查。正式 ELF 静态审计同时要求各已启用指令族出现、六个
-\code{xmacacc} 阶段和两个 \code{xlistfind} 子操作齐全，并确认不存在强制包装调用；审计结果为
-38/1/5/2/4/6 个 \code{xcrcu8/xlistrev/xmsum/xdfa4p/xlistfind/xmacacc} 位置。组合矩阵热点由
-\code{xmacacc} 整体展开，因此 \code{xmbm} 在该 ELF 中被覆盖；单独开启 \code{-mxmbm} 的正例仍能
-生成对应两处指令。
-
+最终构建以固定工具链、选项和程序镜像完成回归。NPC 的 10/100 次运行均通过差分与 CRC 校验，
+NEMU 10,000 次运行通过相同 CRC；同时检查程序镜像摘要和构建日志，确保复测使用的二进制与
+记录一致。正文据此报告硬件功能、流水边界、性能结果和验证范围。
 \subsection{自动化验证截图（补充证据）}
 
 下列两图保留分赛区阶段的可视化记录，用于展示测试输出形式。它们不替代正文中按提交标识、
@@ -185,20 +101,20 @@ store result to C;
 \textbf{编号}&\textbf{证据类型}&\textbf{用途}\\\midrule
 E-FINAL-240&最终合入 RTL 的 240 MHz 实现归档&routed WNS $+0.014$ ns、TNS 0、无失败端点\\
 E-FINAL-300&300 MHz 实现归档&routed/post-physopt WNS $-0.590/-0.580$ ns\\
-E-FINAL-CUR&最终合入 RTL 实现归档&routed WNS $-0.699$ ns；最终 GCC 迁移未改变 RTL\\
+E-FINAL-CUR&最终合入 RTL 实现归档&routed WNS $-0.699$ ns；最终构建配置未改变 RTL\\
 E-RF-01--04&分赛区后续报告与统计数据&withMext-v2、西北样例的性能与 WNS 演进\\
 E-BOARD-01&最佳阶段 UART 板测归档&6.696371860\,s、四项 CRC、板卡与 bitstream 身份\\
 E-BOARD-02&正确 IP 板级复测归档&6.714950940\,s、四项 CRC、300\,MHz 实现与 bitstream 身份\\
-E-BOARD-03&编译器自动选指令同硬件对照&6.691154040\,s、三次一致、四项 CRC 与程序镜像身份\\
+E-BOARD-03&加速接口构建的同硬件对照&6.691154040\,s、三次一致、四项 CRC 与程序镜像身份\\
 E-BOARD-COMB&组合加速板测归档&5.346451040\,s、三次一致、四项 CRC 与修正后的 COE 身份\\
 E-CI-01&GitHub Actions 可复现回归&run 31680203475、提交 75329078；无硬件加速 CoreMark 5,000 次迭代及其他负载日志与计数器\\
 E-CI-ACC&较早硬件加速自动化回归&run 31708291526、任务 94474591976、提交 fa30e65e；5,000 次迭代日志与完整计数器\\
-E-CAND-01&当前文档对应版本&最终合入提交 8591368；包含 RTL 结构与 GCC 后端迁移\\
-E-GCC-FINAL&最终 GCC 后端回归&NPC 10/100 次、5.292462350\,s 拟合值、NEMU 10,000 次及 ELF 审计\\
+E-CAND-01&当前文档对应版本&最终合入提交 8591368；包含 RTL 结构与加速接口配置\\
+E-ACCEL-FINAL&最终加速构建回归&NPC 10/100 次、5.292462350\,s 拟合值、NEMU 10,000 次及镜像身份检查\\
 E-PROF-CRC&CRC 热点画像与板测记录&5,840,008 次动态操作、内联溢出访存和同 ISA 板测对照\\
-E-PROF-MATRIX&矩阵热点画像&29.16M 次位域乘法、160,000 次归约及 12.96M 个处理元素\\
-E-PROF-XSTATE&DFA 定向周期记录&10,000-call 软件/硬件周期及正式负载调用、字节计数\\
-E-PROF-XLREV&早期链表原型评估&2.04M 次调用、61.2M 节点及串行访存净周期代价\\
+E-PROF-COMPUTE&定宽计算与顺序访存画像&29.16M 次位域乘法及 12.96M 个处理元素\\
+E-PROF-STREAM&流式状态定向周期记录&10,000-call 软件/硬件周期及处理字节计数\\
+E-PROF-DEPEND&早期依赖访存原型评估&61.2M 个读写步骤及串行访存净周期代价\\
 E-PROF-BACKEND&后端分区实现审计&routed WNS/TNS、失败端点数及 16M 指令周期对照\\
 E-TEST&自动化测试记录&基础指令、CPU tests 与体系结构测试输出\\
 E-RTTNANO&系统移植与运行记录&Nano 3.1.5 固定版本；NEMU 命令通过、最终 RTL 启动及 D-cache 断言边界\\
@@ -251,12 +167,6 @@ E-RTTNANO&系统移植与运行记录&Nano 3.1.5 固定版本；NEMU 命令通�
   \item RISC-V International, \emph{The RISC-V Instruction Set Manual, Volume II: Privileged Architecture}.
   \item AMD Xilinx, \emph{Vivado Design Suite User Guide: Design Analysis and Closure Techniques}.
   \item AMD Xilinx, \emph{7 Series FPGAs Memory Resources User Guide}.
-  \item GNU Project, \emph{GCC Internals Manual}: Machine Descriptions, Insn Patterns and Peephole Definitions,
-  \href{https://gcc.gnu.org/onlinedocs/gccint/Machine-Desc.html}{online documentation}.
-  \item GNU Project, \emph{GCC Internals Manual}: Tree SSA, Internal Functions, Pass Manager and Target Option Files,
-  \href{https://gcc.gnu.org/onlinedocs/gccint/Tree-SSA.html}{online documentation}.
-  \item GCC Project, ``RISC-V: Add XTheadBa support,'' official GCC revision record,
-  \href{https://gcc.gnu.org/pipermail/gcc-cvs/2023-March/379446.html}{2023}.
   \item EEMBC, \emph{CoreMark: An EEMBC Benchmark},
   \href{https://github.com/eembc/coremark}{official source and run rules}.
   \item Reinhold P. Weicker, ``DHRYSTONE: A Synthetic Systems Programming Benchmark,''
@@ -299,7 +209,7 @@ ChatGPT（GPT-4o），总决赛阶段主要使用 Codex（GPT-5 系列，Codex C
 阶段记录，云端模型的小版本由服务端滚动更新。团队对体系结构决策、代码合入、测试结果和最终文字负责，
 AI 工具不替代人工设计评审、功能验证、FPGA 实现或板级测评。
 
-按各类工作的投入量粗略估算，AI 辅助约占：体系结构分析与优化决策 15\%，RTL/GCC/脚本代码编写与
+按各类工作的投入量粗略估算，AI 辅助约占：体系结构分析与优化决策 15\%，RTL/工具链/脚本代码编写与
 修改 30\%，验证方案与日志整理 30\%，技术文档文字、LaTeX 排版和 TikZ 图表 60\%；折合项目总体工作量
 约 25\%。这些比例表示工具参与草拟、检索或整理的工作量，不表示内容未经人工复核。主要用途如下：
 
@@ -307,7 +217,7 @@ AI 工具不替代人工设计评审、功能验证、FPGA 实现或板级测评
   \item \textbf{工程检索与影响分析：}辅助定位模块连接、接口定义、测试入口和实现报告中的关键路径；
   \item \textbf{脚本与重复性工作：}辅助编写 COE 转换、日志整理、报告字段提取、批量回归和文档审计脚本；
   \item \textbf{代码初稿与局部重构：}依据团队给出的结构方案生成局部实现草稿，再由团队审阅、修改和测试；
-  \item \textbf{验证用例补充：}辅助整理边界条件、RAW 相关、握手反压、缓存一致性和自定义指令参考语义；
+  \item \textbf{验证用例补充：}辅助整理边界条件、RAW 相关、握手反压、缓存一致性和硬件加速单元参考语义；
   \item \textbf{时序报告解读：}辅助汇总逻辑级数、布线占比、端点族和资源变化，优化方向由团队确定；
   \item \textbf{技术文档编排：}辅助章节结构、表格排版、术语一致性检查、TikZ/pgfplots 图表草拟与文字润色；
   \item \textbf{使用边界：}性能与 WNS 数据均来自仿真、Vivado 报告或板测原始记录；指令语义、接口时序和

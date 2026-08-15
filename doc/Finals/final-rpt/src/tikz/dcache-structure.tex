@@ -12,18 +12,18 @@
   {普通 load 命中\\LSU 对齐、扩展并前递};
 
 \node[m,fill=orange!8,text width=4.05cm] (listaddr) at (0,-0.5)
-  {\code{xlistfind} 私有查询\\并行地址 node 与 node+4};
+  {依赖访存私有查询\\并行读取相关字段};
 \node[m,fill=orange!8,text width=4.15cm] (replica) at (5.4,-0.5)
   {两组 tag/data 异步副本\\每 bank 四块 512$\times$8 数据 RAM};
 \node[m,fill=cyan!8,text width=4.0cm] (walker) at (10.9,-0.5)
-  {查找器局部寄存器与状态机\\next/info/data 分阶段解析};
+  {局部寄存器与状态机\\相关字段分阶段解析};
 \node[m,fill=cyan!8,text width=3.65cm] (listbus) at (16.0,-0.5)
   {副本 miss\\复用统一数据总线};
 
 \node[m,fill=purple!7,text width=5.35cm] (write) at (3.1,-3.5)
   {注册化统一写口：整字分配 / 窄写失效\\miss 回填 / 硬件加速更新};
 \node[m,fill=purple!3,text width=5.1cm] (broadcast) at (10.2,-3.5)
-  {同一地址、数据与字节掩码\\更新普通阵列与链表查询副本};
+  {同一地址、数据与字节掩码\\更新普通阵列与依赖查询副本};
 
 \draw[a] (addr.east) -- (tags.west);
 \draw[a] (tags)--node[above]{hit}(main);
@@ -36,4 +36,4 @@
 \draw[wa] (write.west) -- ++(-3.1,0) -- ++(0,7.7) -| (tags.north);
 \draw[wa] (broadcast.east) -- ++(5.6,0) -- ++(0,8.1) -| (main.north);
 \end{tikzpicture}}
-\caption{总容量 4 KiB 的双 bank D-cache：同步普通加载与链表查找镜像副本}\end{figure}
+\caption{总容量 4 KiB 的双 bank D-cache：同步普通加载与依赖访存查询副本}\end{figure}

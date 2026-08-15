@@ -14,7 +14,7 @@
 \node[b,fill=green!7] (lsu) at (-7.2,-0.6) {数据、地址与 bank 对齐\\LSU 扩展并前递};
 \draw[a] (-7.2,3.8)--(normal); \draw[a] (normal)--(lsu);
 
-\node[b,fill=cyan!8,text width=4.55cm] (list) at (-2.0,1.9) {\code{xlistfind}\\私有双端口副本读 next/info};
+\node[b,fill=cyan!8,text width=4.55cm] (list) at (-2.0,1.9) {依赖访存查询\\私有双端口副本读相关字段};
 \node[b,fill=cyan!8,text width=4.55cm] (listresolve) at (-2.0,-0.6) {局部寄存后查 data\\副本 miss 转统一数据总线};
 \draw[a] (-2.0,3.8)--(list); \draw[a] (list)--(listresolve);
 
@@ -25,9 +25,9 @@
 \node[b,fill=gray!10] (miss) at (8.4,1.9) {普通 load miss：访问下级存储};
 \node[b,fill=gray!10] (response) at (8.4,-0.6) {响应先完成本次 load};
 \node[d] (epoch) at (8.4,-3.15) {store epoch 仍一致？};
-\node[b,fill=gray!10,text width=4.15cm] (fill) at (5.7,-5.85) {是：回填主 BRAM、tag\\及链表查询副本};
+\node[b,fill=gray!10,text width=4.15cm] (fill) at (5.7,-5.85) {是：回填主 BRAM、tag\\及依赖查询副本};
 \node[b,fill=gray!10,text width=4.15cm] (drop) at (11.1,-5.85) {否：仅交付响应\\取消旧 miss 回填};
 \draw[a] (8.4,3.8)--(miss); \draw[a] (miss)--(response); \draw[a] (response)--(epoch);
 \draw[a] (epoch)--node[above left]{是}(fill); \draw[a] (epoch)--node[above right]{否}(drop);
 \end{tikzpicture}}
-\caption{D-cache 在普通命中、链表查询、store 与 miss 情况下的处理流程}\end{figure}
+\caption{D-cache 在普通命中、依赖访存查询、store 与 miss 情况下的处理流程}\end{figure}

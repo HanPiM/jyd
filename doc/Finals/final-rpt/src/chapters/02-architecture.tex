@@ -80,22 +80,22 @@ out&输出&DecodedInst Decoupled&valid/ready&输出操作数、预计算结果�
 \input{src/tikz/dependency-flow}
 
 相邻快速整数结果采用受限的专用旁路标记，只开放给普通整数运算、条件比较和 store-data 等短路径
-消费者；地址形成、多周期运算、自定义加速和 CSR 等通路采用注册化前递或保守停顿。地址生成单独
+消费者；地址形成、多周期运算、专用硬件加速和 CSR 等通路采用注册化前递或保守停顿。地址生成单独
 使用 GPR 原始读值、LSU 已注册快速结果或 WBU 已注册普通结果；同步 D-cache 数据、长算术和加速结果
 不进入地址加法器，遇到相应生产者时停顿。CSR 指令作为 EXU 内部两阶段事务顺序执行，后续指令由
 EXU 占用自然反压。
 
 \subsection{EXU 分区执行与多周期控制}
 
-EXU 完成普通算术逻辑、分支裁决、访存请求构造、CSR 读改写、M/B 扩展运算和硬件加速指令。
+EXU 完成普通算术逻辑、分支裁决、访存请求构造、CSR 读改写、M/B 扩展运算和专用硬件加速。
 为了避免所有结果进入同一个宽而深的多路选择器，译码阶段为每条寄存器生产者确定唯一
 \code{ResultKind}，后端按结果类别保持独立的数据 lane：
 
 \begin{itemize}
 \item \code{fastInt}：普通单周期整数 ALU 结果，可进入受限的相邻快速旁路；
 \item \code{direct}：LUI、AUIPC、JAL/JALR 链接地址和 CSR 旧值等预先确定的结果；
-\item \code{longArithmetic}：乘除法、B 扩展结果，以及复用窄乘法器的 \code{xmbm/xmacacc}；
-\item \code{accelerator}：CRC、位提取乘法、链表查询/反转及其他硬件状态机结果；
+\item \code{longArithmetic}：乘除法、B 扩展结果，以及复用窄乘法器的矩阵乘累加结果；
+\item \code{accelerator}：CRC、位提取乘法、依赖访存及其他硬件状态机结果；
 \item \code{load}：由 D-cache 或数据存储响应产生的加载结果。
 \end{itemize}
 
@@ -103,8 +103,8 @@ EXU 完成普通算术逻辑、分支裁决、访存请求构造、CSR 读改写
 in&输入&DecodedInst Decoupled&valid/ready&接收译码结果、操作数、预测方向与 ResultKind\\
 previousStageFwd&输入&FastForwardInfo&局部组合选择&只供被允许的相邻快速消费者使用\\
 \seqsplit{stagedDcacheQueryIndex}&输入&10 bit&随 ID/EX 握手注册&把普通缓存 index 与宽地址/result payload 隔离\\
-dcache&双向&D-cache 查询/更新组&查询与更新&进行普通同步查询、链表专用查询并处理 store 更新\\
-memReq/Resp&双向&Decoupled/Valid&请求/响应&承载普通访存和访存型自定义指令\\
+dcache&双向&D-cache 查询/更新组&查询与更新&进行普通同步查询、依赖访存专用查询并处理 store 更新\\
+memReq/Resp&双向&Decoupled/Valid&请求/响应&承载普通访存和访存型加速单元\\
 fwd&输出&ForwardInfo&生产者状态&公布 rd；结果未完成时保持 dataValid=0\\
 out&输出&LSUInput Decoupled&valid/ready&输出分区结果、访存属性、CSR 事务和控制流元信息\\
 branch/BTB update&输出&控制流更新组&随完成采样&给出真实类型、方向、目标、call 和 return 属性\\
@@ -137,7 +137,7 @@ fwd&输出&ForwardInfo&生产者状态&提供 LSU 级普通结果或缓存命中
 out&输出&WBUInput Decoupled&valid/ready&向 WBU 交付统一提交信息\\
 \end{archsignalstable}
 
-WBU 是体系结构状态的顺序提交点。普通算术、自定义指令和控制流指令按选定 lane 写回 GPR；load
+WBU 是体系结构状态的顺序提交点。普通算术、硬件加速结果和控制流操作按选定 lane 写回 GPR；load
 根据 func3 与地址低位抽取字节、半字或整字并完成符号/零扩展；CSR 写事务在本级有效提交。符合条件
 的 load miss 在响应到达后回填 D-cache，而 store 世代变化会取消可能覆盖更新数据的旧回填。
 
@@ -279,12 +279,12 @@ bank 选择也延迟一拍后在 LSU 对齐。命中数据随后进入 LSU 旁�
 统一完成。
 
 普通 load 只使用上述同步 BRAM 通路，不再维护面向通用 load-use 的异步数据镜像。另为
-\code{xlistfind} 设置两组私有异步查询镜像：每组包含独立 tag 副本以及每 bank 四块
-$512\times8$ 数据 LUTRAM，可并行读取节点的 \code{next} 与 \code{info} 两个字。其输出只终止在
-链表查找状态机的局部寄存器，不进入普通 D-cache hit、LSU load 或地址旁路组合锥。
+依赖访存单元设置两组私有异步查询镜像：每组包含独立 tag 副本以及每 bank 四块
+$512\times8$ 数据 LUTRAM，可并行读取两个相关数据字。其输出只终止在
+局部状态机寄存器，不进入普通 D-cache hit、LSU load 或地址旁路组合锥。
 
-链表查找器先并行查询 $node$ 与 $node+4$；若命中，取得后继指针与 info 指针，再查询 info 指向的
-数据字。索引模式比较数据高 16 位，数据模式比较低 8 位；匹配时返回当前节点，链尾未匹配则返回 0。
+依赖访存单元利用两组副本并行取得相关字段；缓存命中时直接推进内部状态，未命中时退回统一数据总线。
+完成条件由状态机统一判断，最终只向流水线提交一次查询结果。
 这些阵列只是主缓存内容的物理镜像，不增加新的地址范围，因此缓存容量仍按 4 KiB 统计。任一私有查询
 未命中时，通过 EXU 复用统一数据总线请求该字，响应后继续状态机，而不是把副本提升为
 独立缓存层。
@@ -295,7 +295,7 @@ $512\times8$ 数据 LUTRAM，可并行读取节点的 \code{next} 与 \code{info
 写入侧遵循\textbf{“较新的 store 优先”}原则。普通 store 在 D-cache 边界先注册，再驱动各存储副本的
 写使能，避免 EXU valid/decode 直接扇出到分布式 RAM。全字 store 可以直接分配有效缓存行；窄 store
 按字节写入数据，但为避免 tag 读—改—写长路径而保守失效该行。load miss 回填和加速单元更新通过
-统一写端广播至主 BRAM、普通 tag 与链表专用副本。全局 store epoch 标记 load 发出后是否发生过
+统一写端广播至主 BRAM、普通 tag 与依赖访存专用副本。全局 store epoch 标记 load 发出后是否发生过
 store，避免旧 load 响应覆盖已被后续 store 修改或失效的行。
 
 \subsection{SoC、内存接口与 UART}

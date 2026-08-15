@@ -2,8 +2,6 @@
 \usepackage[margin=2.35cm]{geometry}
 \usepackage{graphicx,booktabs,longtable,tabularx,array,calc}
 \usepackage{amsmath,amssymb,enumitem,caption,fancyhdr,float,dirtree}
-\usepackage{algorithm,algpseudocode}
-\usepackage{listings}
 \usepackage[hidelinks]{hyperref}
 \usepackage{xcolor,tikz,pgfplots}
 \usepackage{seqsplit}
@@ -19,8 +17,6 @@
 \graphicspath{{src/assets/}{assets/}}
 \captionsetup{font=small,labelfont=bf,position=bottom}
 \captionsetup[table]{position=top,skip=6pt}
-\floatname{algorithm}{算法}
-\captionsetup[algorithm]{font=small,labelfont=bf,position=top,skip=4pt}
 \pagestyle{fancy}
 \fancyhf{}
 \fancyfoot[C]{\thepage}
@@ -31,55 +27,6 @@
 \newcommand{\TopStack}[1]{\begin{tabular}[t]{@{}l@{}}#1\end{tabular}}
 \newcommand{\evidence}[1]{\textsuperscript{\textcolor{blue!60!black}{[#1]}}}
 \newcommand{\MetricPending}[1]{\textcolor{orange!75!black}{\textbf{[\,待补：#1\,]}}}
-\definecolor{codekeyword}{RGB}{28,79,145}
-\definecolor{codecomment}{RGB}{42,111,73}
-\definecolor{coderegister}{RGB}{135,47,47}
-\lstdefinelanguage{RV32Asm}{
-  alsoletter={.},
-  morekeywords={.insn,add,addi,and,andi,beq,bne,j,lbu,lhu,lw,mul,or,slli,srli,sw,xor},
-  morekeywords=[2]{zero,ra,sp,t0,t1,t2,t3,t4,t5,t6,a0,a1,a2,a3,a4,a5,a6,a7},
-  morecomment=[l]{\#}
-}
-\lstdefinestyle{cstatement}{
-  language=C,
-  basicstyle=\ttfamily\scriptsize,
-  keywordstyle=\color{codekeyword}\bfseries,
-  commentstyle=\color{codecomment}\itshape,
-  stringstyle=\color{violet!70!black},
-  frame=none,
-  columns=fullflexible,
-  keepspaces=true,
-  showstringspaces=false,
-  breaklines=true,
-  aboveskip=3pt,
-  belowskip=2pt
-}
-\lstdefinestyle{rv32statement}{
-  language=RV32Asm,
-  basicstyle=\ttfamily\scriptsize,
-  keywordstyle=\color{codekeyword}\bfseries,
-  keywordstyle=[2]\color{coderegister},
-  commentstyle=\color{codecomment}\itshape,
-  frame=none,
-  columns=fullflexible,
-  keepspaces=true,
-  showstringspaces=false,
-  breaklines=true,
-  escapeinside={(*@}{@*)},
-  aboveskip=3pt,
-  belowskip=2pt
-}
-\newcommand{\CustomInsn}[2]{%
-  {\strut\ttfamily\fontsize{6.4}{7.2}\selectfont #1\ \textcolor{codecomment}{\itshape\# #2}}}
-\newcommand{\CodeCompareBegin}[2]{%
-  \par\noindent\begin{minipage}{\linewidth}
-  \hrule height 0.8pt\relax\vspace{2pt}
-  \noindent\begin{minipage}[t]{0.48\linewidth}{\small\bfseries #1}\end{minipage}\hfill
-  \begin{minipage}[t]{0.48\linewidth}{\small\bfseries #2}\end{minipage}
-  \par\vspace{2pt}\hrule height 0.4pt\relax\vspace{1pt}}
-\newcommand{\CodeCompareEnd}{%
-  \par\vspace{1pt}\hrule height 0.8pt\relax
-  \end{minipage}\par\smallskip}
 \newcommand{\coverfield}[2]{%
   {\zihao{4}\noindent\makebox[6em][l]{\heiti#1：}%
    \underline{\makebox[\dimexpr\textwidth-6em\relax][l]{\strut\heiti #2}}\par}}

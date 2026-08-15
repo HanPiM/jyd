@@ -10,16 +10,16 @@ E-FINAL-300P,post_route_physopt_wns,-0.580,ns,final-design,300,implementation wo
 E-FINAL-CUR,routed_wns,-0.699,ns,final-merged-rtl,300,combined accelerated image,attempt 57/52 independent routed implementation archive
 E-BOARD-01,board_runtime,6.696371860,s,best-board-validated-stage,300,CoreMark formal iterations 10000,UART capture archive
 E-BOARD-02,board_runtime,6.714950940,s,corrected-IP board anchor,300,CoreMark formal iterations 10000,UART capture archive
-E-BOARD-03,board_runtime,6.691154040,s,gcc-automatic-selection,300,CoreMark ordinary C source iterations 10000,gcc-md-finals-20260813 UART archive
+E-BOARD-03,board_runtime,6.691154040,s,accelerated-image-board,300,CoreMark same source and input iterations 10000,program-image UART capture archive
 E-BOARD-COMB,board_runtime,5.346451040,s,combined-accelerator-board,300,CoreMark accelerated iterations 10000,attempt 27 corrected COE three UART captures
 E-CI-01,automated_verification_run,31680203475,run_id,rtl-verification,,CoreMark no-hardware-acceleration 5000 iterations/Dhrystone/src/microbench,GitHub Actions commit 75329078
 E-CI-ACC,automated_verification_run,31708291526,run_id,pre-final-accelerated-ci,,CoreMark earlier hardware-accelerated version 5000 iterations and full counters,GitHub Actions job 94474591976 commit fa30e65e
-E-CAND-01,current_documented_candidate,8591368,git_commit,final-integrated,,RTL architecture/GCC backend/CoreMark acceleration paths,final merged commit
-E-GCC-FINAL,affine_runtime,5.292462350,s,gcc-backend-final-unboarded,300,CoreMark accelerated iterations 10000,10/100 NPC estimate plus exact NEMU regression
-E-PROF-CRC,crcu8_dynamic_ops,5840008,operations,completed-optimization,300,CoreMark iterations 10000,optimization record f1218e5 and NEMU profile
-E-PROF-MATRIX,xmsum_elements,12960000,elements,completed-optimization,300,CoreMark iterations 10000,custom accelerator profile and board record
-E-PROF-XSTATE,xstate_directed_cycles,691555,cycles,completed-optimization,,xstate directed 10000 calls,optimization record 68a3c7e
-E-PROF-XLREV,xlrev_profiled_nodes,61200000,nodes,redesign-input,300,CoreMark iterations 10000,custom accelerator evaluation record
+E-CAND-01,current_documented_candidate,8591368,git_commit,final-integrated,,RTL architecture and hardware acceleration integration,final merged commit
+E-ACCEL-FINAL,affine_runtime,5.292462350,s,final-accelerated-unboarded,300,CoreMark accelerated iterations 10000,10/100 NPC estimate plus exact NEMU regression
+E-PROF-CRC,fixed_width_dynamic_ops,5840008,operations,completed-optimization,300,CoreMark iterations 10000,optimization record f1218e5 and NEMU profile
+E-PROF-COMPUTE,sequential_access_elements,12960000,elements,completed-optimization,300,CoreMark iterations 10000,hardware profile and board record
+E-PROF-STREAM,stream_state_directed_cycles,691555,cycles,completed-optimization,,stream-state directed 10000 calls,optimization record 68a3c7e
+E-PROF-DEPEND,dependent_access_profiled_steps,61200000,steps,redesign-input,300,CoreMark iterations 10000,dependent-access accelerator evaluation record
 E-PROF-BACKEND,routed_failing_endpoints,3472,endpoints,completed-structural-optimization,300,formal CoreMark image,backend partition implementation record 8e51be6
 E-RTTNANO,system_port_version,3.1.5,release,rt-thread-nano-am-port,,RT-Thread Nano shell and cooperative scheduling,official v3.1.5 tag commit 9177e3e2
 E-RTTNANO,nemu_shell_validation,pass,result,rt-thread-nano-am-port,,version/ps/list_thread/list_semaphore,local NEMU run 2026-08-15 using verified existing dependency

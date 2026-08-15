@@ -1,15 +1,15 @@
 \begin{figure}[H]\centering
 \resizebox{\linewidth}{!}{%
 \begin{tikzpicture}[n/.style={draw,rounded corners=1.2pt,minimum height=0.72cm,minimum width=1.8cm,align=center,fill=blue!6},d/.style={draw,diamond,aspect=2.0,align=center,fill=orange!8},a/.style={-Stealth,thick},font=\scriptsize,node distance=0.62cm and 0.68cm]
-\node[n] (idle) {装入\\$(cur,prev)$};
-\node[d,right=of idle] (null) {$cur=0$?};
-\node[n,right=of null] (lookup) {查询 D-cache\\读取 $next$};
+\node[n] (idle) {装入\\请求参数};
+\node[d,right=of idle] (null) {可直接完成?};
+\node[n,right=of null] (lookup) {查询 D-cache\\读取关联字段};
 \node[d,right=of lookup] (hit) {命中?};
 \node[n,right=of hit] (loadq) {发出 load};
-\node[n,below=0.82cm of loadq] (loadr) {等待响应\\锁存 $next$};
-\node[n,below=0.82cm of hit] (store) {发出 store\\$[cur]\leftarrow prev$};
-\node[d,below=0.82cm of lookup] (more) {$next\ne0$?};
-\node[n,below=0.82cm of null] (done) {返回新表头\\完成写回};
+\node[n,below=0.82cm of loadq] (loadr) {等待响应\\锁存数据};
+\node[n,below=0.82cm of hit] (store) {发出 store\\提交局部更新};
+\node[d,below=0.82cm of lookup] (more) {继续处理?};
+\node[n,below=0.82cm of null] (done) {整理结果\\完成写回};
 \draw[a](idle)--(null);
 \draw[a](null)--node[above]{否}(lookup);
 \draw[a](null)--node[right]{是}(done);
@@ -20,5 +20,5 @@
 \draw[a](more)--node[above]{否}(done);
 \draw[a](more)--node[right]{是：更新状态}(lookup);
 \end{tikzpicture}}
-\caption{\texttt{xlistrev} 单步数据副作用与循环控制}\label{fig:custom-listrev}
+\caption{依赖访存更新单元的多拍控制}\label{fig:custom-listrev}
 \end{figure}

@@ -1,14 +1,14 @@
 \begin{figure}[H]\centering
 \resizebox{\linewidth}{!}{%
 \begin{tikzpicture}[n/.style={draw,rounded corners=1.2pt,minimum height=0.78cm,minimum width=2.25cm,align=center,fill=green!7},a/.style={-Stealth,thick},font=\small,node distance=0.7cm]
-\node[n] (cfg) {锁存 $base,n,clip$\\清零行列计数};
-\node[n,right=of cfg] (req) {地址递增器\\发起 32 位读};
-\node[n,right=of req] (resp) {响应寄存\\得到 $C_i$};
-\node[n,right=of resp] (calc) {$T_i$、裁剪判断\\趋势计分};
-\node[n,right=of calc] (next) {更新 $S_i,P_i,R_i$\\行列计数};
-\node[n,right=of next] (done) {符号扩展\\写回 $R$};
+\node[n] (cfg) {锁存请求参数\\初始化局部状态};
+\node[n,right=of cfg] (req) {地址生成\\发起 32 位读};
+\node[n,right=of req] (resp) {响应寄存\\取得输入数据};
+\node[n,right=of resp] (calc) {局部变换\\边界处理};
+\node[n,right=of calc] (next) {更新局部状态\\推进计数};
+\node[n,right=of next] (done) {整理结果\\完成写回};
 \foreach \x/\y in {cfg/req,req/resp,resp/calc,calc/next,next/done}{\draw[a](\x)--(\y);}
-\draw[a](next.south)--++(0,-0.45)-|node[pos=0.25,below]{尚有元素}(req.south);
+\draw[a](next.south)--++(0,-0.45)-|node[pos=0.25,below]{继续处理}(req.south);
 \end{tikzpicture}}
-\caption{\texttt{xmsum} 的顺序访存与递推归约流程}
+\caption{访存型归约单元的多拍执行阶段}
 \end{figure}

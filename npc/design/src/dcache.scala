@@ -87,6 +87,8 @@ class DCache extends Module {
   val dotNOperandA = Reg(UInt(16.W))
   val dotNOperandB = Reg(UInt(16.W))
   val dotNBufferedBValid = Reg(Bool())
+  val dotNMultiplierOperandA = Reg(UInt(16.W))
+  val dotNMultiplierOperandB = Reg(UInt(16.W))
   val dotNProductOperandA = Reg(UInt(16.W))
   val dotNProductOperandB = Reg(UInt(16.W))
   val dotNRemaining = Reg(UInt(16.W))
@@ -153,14 +155,21 @@ class DCache extends Module {
   val dotNLaunchValid = dotNStreamLaunch || dotNStoredLaunch
   val dotNLaunchOperandA = Mux(dotNState === DotNState.stream, dotNStreamOperandA, dotNOperandA)
   val dotNLaunchOperandB = Mux(dotNState === DotNState.stream, dotNStreamOperandB, dotNOperandB)
+  val dotNLaunchLast = dotNLaunchValid && dotNRemaining === 1.U
+
+  dotNMultiplierOperandA := dotNLaunchOperandA
+  dotNMultiplierOperandB := dotNLaunchOperandB
+  val dotNMultiplierInputValid = RegNext(dotNLaunchValid, false.B)
+  val dotNMultiplierInputLast = RegNext(dotNLaunchLast, false.B)
 
   val dotNMultiplier = Module(new mult_gen_mul16_fast)
   dotNMultiplier.io.CLK := clock
-  dotNMultiplier.io.A := dotNLaunchOperandA
-  dotNMultiplier.io.B := dotNLaunchOperandB
-  dotNProductOperandA := dotNLaunchOperandA
-  dotNProductOperandB := dotNLaunchOperandB
-  val dotNProductValid = RegNext(dotNLaunchValid, false.B)
+  dotNMultiplier.io.A := dotNMultiplierOperandA
+  dotNMultiplier.io.B := dotNMultiplierOperandB
+  dotNProductOperandA := dotNMultiplierOperandA
+  dotNProductOperandB := dotNMultiplierOperandB
+  val dotNProductValid = RegNext(dotNMultiplierInputValid, false.B)
+  val dotNProductLast = RegNext(dotNMultiplierInputLast, false.B)
   val dotNProduct = dotNMultiplier.io.P
   val dotNSignedTerm = dotNProduct -
     Mux(dotNProductOperandA(15), Cat(dotNProductOperandB, 0.U(16.W)), 0.U) -
@@ -235,7 +244,7 @@ class DCache extends Module {
       listFindQueryAddressB := listFindQueryAddressB + dotNStride
       dotNState := DotNState.stream
     }
-  }.elsewhen(dotNState === DotNState.drain && dotNProductValid) {
+  }.elsewhen(dotNState === DotNState.drain && dotNProductValid && dotNProductLast) {
     dotNState := DotNState.done
   }.elsewhen(dotNState === DotNState.done && io.dotNConsume) {
     dotNRequestValid := false.B

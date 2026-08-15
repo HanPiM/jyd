@@ -39,7 +39,7 @@ RT-Thread Nano 3.1.5、预编译工具链和参考产物中发生变化的部分
 ```sh
 sudo apt update
 sudo apt install -y build-essential git python3 gawk bison flex texinfo \
-  libgmp-dev libmpfr-dev libmpc-dev zlib1g-dev libisl-dev \
+  pkg-config libgmp-dev libmpfr-dev libmpc-dev zlib1g-dev libisl-dev \
   gcc-riscv64-linux-gnu binutils-riscv64-linux-gnu
 ```
 
@@ -58,11 +58,12 @@ mkdir -p "$PWD/out"
 ```
 
 脚本固定 GCC 基线提交
-`390648994968cf0bca7ab4ebdc28fb055dae02eb`，应用仓库内的
-`active-accel-gcc16.patch`，仅构建 C 编译器。补丁 SHA-256 应为：
+`ff20c357b3f62d4ffa76a74ce21fc49b640d61e6`，以严格 index 检查应用
+仓库内的 `active-accel-gcc16.patch`，仅构建 C 编译器。补丁包含原先
+只存在于本机提交的循环边界分析前置修复。补丁 SHA-256 应为：
 
 ```text
-c6633c43fbc9eda8eb3eaa4b6c59d7bf5ba331eedb47a5d4116e1ad92f97e01a
+b3b72a207c63383b6c66fbfe0d90b2b99d3ee40117722e6368b7d04c7879d775
 ```
 
 检查版本和后端完整性：

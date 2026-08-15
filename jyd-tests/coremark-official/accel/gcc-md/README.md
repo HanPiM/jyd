@@ -5,10 +5,13 @@ The build compiles ordinary C sources. GCC recognizes the supported source idiom
 emits the custom instructions through internal functions and RISC-V machine
 descriptions.
 
-Apply `active-accel-gcc16.patch` to GCC at base commit `39064899496`, then
-configure and build an RV32-capable RISC-V cross compiler in separate source,
-build, and install directories.  The patch SHA-256 is
-`c28dfc84f6cc52271ed1946ec1bced4234e5a2cb54d7444af21d957ff765308f`.
+Check out public GCC base commit `ff20c357b3f`, then apply
+`active-accel-gcc16.patch` with `git apply --index --unidiff-zero`. Configure
+and build an RV32-capable RISC-V cross compiler in separate source, build, and
+install directories. The patch SHA-256 is
+`b3b72a207c63383b6c66fbfe0d90b2b99d3ee40117722e6368b7d04c7879d775`.
+The patch includes the loop-bound analysis prerequisite that was previously a
+local-only commit on top of that public base.
 
 ## Selection paths
 
@@ -106,7 +109,9 @@ read. The generated program image was exercised by NEMU and NPC difftest.
   all six xmacacc sub-operations, all three xdotn sub-operations, the invalid-N
   fallback, and renamed-source name independence.
 - `check-backend-integrity.sh` rejects symbol-name matching, pseudo-float
-  support, and alternate compiler-extension paths.
+  support, and alternate compiler-extension paths. It also proves that the
+  patch itself materializes the accelerator pass source; the GCC build invokes
+  its clean-tree mode before compiling.
 
 ## History
 

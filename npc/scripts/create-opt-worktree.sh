@@ -5,7 +5,7 @@
 # Automates the manual setup steps used for JYD timing/performance candidates:
 #   * git worktree add under $JYD_DATA_ROOT/worktrees/
 #   * link local ignored/untracked dependencies (am-kernels sources, npc/deps,
-#     coremark build outputs, rt-thread-am)
+#     AM SoftFloat sources, coremark build outputs, rt-thread-am)
 #   * make ../riscv-arch-test-am-jyd resolve from the worktree's parent
 #   * install a proven prebuilt NEMU dependency tree
 #   * seed matching Vivado IP output products and completed OOC runs
@@ -30,7 +30,7 @@ create-opt-worktree.sh - create and prepare an isolated optimization worktree.
 Automates the setup steps used for JYD optimization candidates:
   * git worktree add under $JYD_DATA_ROOT/worktrees/
   * link local ignored/untracked dependencies (am-kernels, npc/deps,
-    coremark build outputs, rt-thread-am)
+    AM SoftFloat sources, coremark build outputs, rt-thread-am)
   * make ../riscv-arch-test-am-jyd resolve from the worktree's parent
   * install a proven prebuilt NEMU dependency tree
   * seed matching Vivado IP output products and completed OOC runs
@@ -170,6 +170,26 @@ else
   echo "   skipped (source missing): $SRC/am-kernels"
 fi
 link_dep "$SRC/npc/deps" "$WT_DIR/npc/deps"
+
+# Abstract Machine fetches a pinned Berkeley SoftFloat checkout into this
+# ignored directory. Reuse a source checkout only when it is at the exact
+# commit required by the candidate, so an offline first build never mutates a
+# shared checkout or silently uses a mismatched revision.
+AM_SOFTFLOAT_MAKEFILE="$WT_DIR/abstract-machine/softfloat/Makefile"
+AM_SOFTFLOAT_REPO="$SRC/abstract-machine/softfloat/repo"
+if [[ -f "$AM_SOFTFLOAT_MAKEFILE" && -d "$AM_SOFTFLOAT_REPO/.git" ]]; then
+  AM_SOFTFLOAT_COMMIT="$(awk '$1 == "REPO_COMMIT" && $2 == ":=" {print $3; exit}' "$AM_SOFTFLOAT_MAKEFILE")"
+  AM_SOFTFLOAT_HEAD="$(git -C "$AM_SOFTFLOAT_REPO" rev-parse HEAD)"
+  if [[ -n "$AM_SOFTFLOAT_COMMIT" && "$AM_SOFTFLOAT_HEAD" == "$AM_SOFTFLOAT_COMMIT" && \
+        -f "$AM_SOFTFLOAT_REPO/.am-commit-$AM_SOFTFLOAT_COMMIT" ]]; then
+    link_dep "$AM_SOFTFLOAT_REPO" "$WT_DIR/abstract-machine/softfloat/repo"
+  else
+    echo "   skipped AM SoftFloat source: expected $AM_SOFTFLOAT_COMMIT, found $AM_SOFTFLOAT_HEAD"
+  fi
+else
+  echo "   skipped AM SoftFloat source: pinned source checkout missing"
+fi
+
 link_dep "$SRC/jyd-tests/coremark-official/build" \
   "$WT_DIR/jyd-tests/coremark-official/build"
 link_dep "$SRC/rt-thread-am" "$WT_DIR/rt-thread-am"

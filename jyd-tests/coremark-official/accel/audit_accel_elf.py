@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 import argparse
-import re
 import subprocess
 
 
@@ -31,7 +30,6 @@ def main():
     parser = argparse.ArgumentParser(description="Audit inlined custom accelerator instructions")
     parser.add_argument("--elf", required=True)
     parser.add_argument("--accels", default="")
-    parser.add_argument("--fp12-report", action="store_true")
     args = parser.parse_args()
 
     requested = [name for name in args.accels.split(",") if name]
@@ -48,17 +46,6 @@ def main():
     wrappers = [line for line in symbols.splitlines() if "__xaccel_" in line]
     if wrappers:
         raise SystemExit("wrapper symbols survived final link:\n" + "\n".join(wrappers))
-    if args.fp12_report:
-        float_helpers = [
-            line
-            for line in symbols.splitlines()
-            if re.search(r"(?:softfloat|__[a-z]+(?:df|sf|tf)3)\b", line, re.IGNORECASE)
-        ]
-        if float_helpers:
-            raise SystemExit(
-                "floating-point helper symbols survived fp12 reporting:\n"
-                + "\n".join(float_helpers)
-            )
 
     disassembly = output("riscv64-linux-gnu-objdump", "-d", args.elf)
     counts = dict.fromkeys(enabled, 0)
@@ -121,8 +108,6 @@ def main():
     if missing:
         raise SystemExit("enabled instructions absent from final ELF: " + ", ".join(missing))
     print("no __xaccel_ wrapper symbols or calls remain")
-    if args.fp12_report:
-        print("no floating-point helper symbols remain")
     for name in superseded:
         print(f"superseded: {name}")
     for name, count in counts.items():

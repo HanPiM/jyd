@@ -3,6 +3,10 @@
 RT-Thread Nano embeds CoreMark as the `coremark` msh command. The default uses
 10,000 iterations and 2,000 bytes of benchmark data. Run `coremark` at `msh >`;
 the synchronous command returns to the prompt after printing its report.
+The system-port validation image uses no GCC plugin or report-call rewriting.
+Its CoreMark objects import the standalone benchmark's GCC MD, standard ISA,
+and accelerator defaults from `coremark-defaults.mk`; its floating-point output
+uses the same EEMBC `cvt.c` and AM SoftFloat path.
 
 ## Replacing the competition workload
 
@@ -23,6 +27,7 @@ For a short diagnostic run:
 
 ```sh
 make -C jyd-tests/rtthread-nano ARCH=riscv32-jyd \
+  CROSS_COMPILE=/path/to/md-gcc/bin/riscv64-linux-gnu- \
   COREMARK_ITERATIONS=1 COREMARK_DATA_SIZE=2000 run
 ```
 
@@ -48,6 +53,11 @@ values. Optimizing CoreMark must not be reported as reducing the RTOS baseline.
 - EEMBC's `%f`-capable formatter outputs through `rt_hw_console_output()`, the
   same RTT console backend used by `rt_kprintf`; klib printf is not linked. It
   executes after the timed region.
+- `COREMARK_XEXTS`, `COREMARK_ZEXTS`, and their GCC MD flags default to the
+  values used by `coremark-official`. They apply only to CoreMark benchmark
+  objects; the RT-Thread kernel, FinSH, and AM port stay on `rv32im_zicsr`.
+- The default CoreMark build requires the patched GCC described under
+  `../coremark-official/accel/gcc-md/`.
 - `RT_ALIGN_SIZE` is 16 because RV32 GCC requires 16-byte stack alignment.
   Four-byte alignment corrupted variadic `double` arguments while leaving
   integer output and CRCs apparently correct.

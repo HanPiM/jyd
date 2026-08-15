@@ -13,7 +13,7 @@ jyd_dir=$(CDPATH= cd -- "$coremark_dir/../.." && pwd)
 scratch=$(mktemp -d "${JYD_DATA_ROOT:-/srv/data/jyd}/tmp/xmbm-xdfa4p-md-check.XXXXXX")
 trap 'rm -rf -- "$scratch"' EXIT HUP INT TERM
 
-common_flags='-O3 -march=rv32im_zba_zbb_zbc_zbs_zbkb_zbkx_zicsr -mabi=ilp32 -ffreestanding -DITERATIONS=10000 -DTOTAL_DATA_SIZE=2000 -DCOREMARK_PSEUDO_FLOAT=1'
+common_flags='-O3 -march=rv32im_zba_zbb_zbc_zbs_zbkb_zbkx_zicsr -mabi=ilp32 -ffreestanding -DITERATIONS=10000 -DTOTAL_DATA_SIZE=2000'
 includes="-I$coremark_dir/src -I$jyd_dir/abstract-machine/am/include -I$jyd_dir/abstract-machine/klib/include"
 
 "$cc" $common_flags $includes '-DARCH_H="arch/riscv.h"' \

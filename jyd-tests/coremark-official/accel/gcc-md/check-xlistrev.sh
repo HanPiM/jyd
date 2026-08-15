@@ -42,7 +42,7 @@ if grep -Fq '.insn r 0x0b, 6' "$scratch/walk.s"; then
     exit 1
 fi
 
-core_flags='-O3 -march=rv32im_zicsr -mabi=ilp32 -ffreestanding -DITERATIONS=10000 -DTOTAL_DATA_SIZE=2000 -DCOREMARK_PSEUDO_FLOAT=1'
+core_flags='-O3 -march=rv32im_zicsr -mabi=ilp32 -ffreestanding -DITERATIONS=10000 -DTOTAL_DATA_SIZE=2000'
 core_includes="-I$coremark_dir/src -I$jyd_dir/abstract-machine/am/include -I$jyd_dir/abstract-machine/klib/include"
 "$cc" $core_flags $core_includes '-DARCH_H="arch/riscv.h"' \
     -mxlistrev -S "$coremark_dir/src/core_list_join.c" -o "$scratch/clj.s"

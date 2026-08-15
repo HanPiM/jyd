@@ -16,10 +16,7 @@
 #endif
 #define MEM_METHOD MEM_STATIC
 
-#ifndef COREMARK_PSEUDO_FLOAT
-#define COREMARK_PSEUDO_FLOAT 1
-#endif
-#define HAS_FLOAT (!COREMARK_PSEUDO_FLOAT)
+#define HAS_FLOAT 1
 #define HAS_TIME_H 0
 #define USE_CLOCK 0
 #define HAS_STDIO 0
@@ -88,12 +85,5 @@ void portable_fini(core_portable *p);
 #endif
 
 int ee_printf(const char *fmt, ...);
-#if COREMARK_PSEUDO_FLOAT
-void ee_print_ratio(const char *prefix,
-                    ee_u32 numerator,
-                    ee_u32 denominator,
-                    ee_u32 numerator_scale,
-                    int newline);
-#endif
 
 #endif

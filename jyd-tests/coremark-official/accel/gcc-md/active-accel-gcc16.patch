@@ -346,10 +346,10 @@ index d2883ef9f5a..4c33374f9e7 100644
    UNSPEC_SSP_SET
    UNSPEC_SSP_TEST
 diff --git a/gcc/config/riscv/riscv.opt b/gcc/config/riscv/riscv.opt
-index 2c26ee99691..7ae2547aaea 100644
+index 2c26ee99691..08871c1b074 100644
 --- a/gcc/config/riscv/riscv.opt
 +++ b/gcc/config/riscv/riscv.opt
-@@ -81,6 +81,46 @@ mdiv
+@@ -81,6 +81,42 @@ mdiv
  Target Mask(DIV)
  Use hardware instructions for integer division.
  
@@ -380,10 +380,6 @@ index 2c26ee99691..7ae2547aaea 100644
 +mxmacacc
 +Target Mask(XMACACC)
 +Use the matrix multiply-accumulate instruction sequence.
-+
-+mcoremark-fp12-report
-+Target Var(riscv_coremark_fp12_report) Init(0)
-+Use integer-only helpers for the CoreMark pseudo-float report.
 +
 +mxdfa4h
 +Target Mask(XDFA4H)
@@ -619,10 +615,10 @@ index cdddb87302f..b2e228086fe 100644
  	  NEXT_PASS (pass_cd_dce, false /* update_address_taken_p */, true /* remove_unused_locals */);
 diff --git a/gcc/tree-clipped-rising-score.cc b/gcc/tree-clipped-rising-score.cc
 new file mode 100644
-index 00000000000..1efa598aeea
+index 00000000000..674e45b9e34
 --- /dev/null
 +++ b/gcc/tree-clipped-rising-score.cc
-@@ -0,0 +1,1361 @@
+@@ -0,0 +1,1263 @@
 +/* Recognize accelerator idioms (clipped rising-score reduction, in-place
 +   list reversal, numeric-token DFA scan) and expose them to the target.  */
 +
@@ -651,94 +647,6 @@ index 00000000000..1efa598aeea
 +{
 +  tree decl_name = DECL_NAME (cfun->decl);
 +  return decl_name && !strcmp (IDENTIFIER_POINTER (decl_name), name);
-+}
-+
-+static const char *
-+call_string_argument (gcall *call)
-+{
-+  if (gimple_call_num_args (call) == 0)
-+    return NULL;
-+  tree argument = gimple_call_arg (call, 0);
-+  STRIP_NOPS (argument);
-+  if (TREE_CODE (argument) == ADDR_EXPR)
-+    argument = TREE_OPERAND (argument, 0);
-+  return TREE_CODE (argument) == STRING_CST
-+    ? TREE_STRING_POINTER (argument) : NULL;
-+}
-+
-+static tree
-+find_or_declare_function (const char *name, tree type)
-+{
-+  cgraph_node *node;
-+  FOR_EACH_FUNCTION (node)
-+    if (DECL_NAME (node->decl)
-+	&& !strcmp (IDENTIFIER_POINTER (DECL_NAME (node->decl)), name))
-+      return node->decl;
-+
-+  tree decl = build_fn_decl (name, type);
-+  DECL_EXTERNAL (decl) = 1;
-+  TREE_PUBLIC (decl) = 1;
-+  cgraph_node::get_create (decl);
-+  return decl;
-+}
-+
-+static const char *
-+coremark_report_replacement (gcall *call, const char *old_name)
-+{
-+  if (!strcmp (old_name, "time_in_secs"))
-+    return "__fp12_time_in_secs";
-+  if (strcmp (old_name, "ee_printf"))
-+    return NULL;
-+
-+  const char *fmt = call_string_argument (call);
-+  if (!fmt)
-+    return NULL;
-+  if (strstr (fmt, "run parameters for coremark.\n"))
-+    return "__fp12_banner";
-+  if (!strcmp (fmt, "Total time (secs): %d\n")
-+      || !strcmp (fmt, "Iterations/Sec   : %d\n"))
-+    return "__fp12_suppress_value";
-+  if (!strcmp (fmt,
-+	       "ERROR! Must execute for at least 10 secs for a valid result!\n"))
-+    return "__fp12_short_run";
-+  if (!strcmp (fmt, "Iterations       : %lu\n"))
-+    return "__fp12_iterations";
-+  if (!strcmp (fmt,
-+	       "Correct operation validated. See README.md for run and "
-+	       "reporting rules.\n"))
-+    return "__fp12_validated";
-+  return NULL;
-+}
-+
-+static unsigned
-+replace_coremark_report_calls ()
-+{
-+  unsigned replacements = 0;
-+  basic_block bb;
-+  FOR_EACH_BB_FN (bb, cfun)
-+    for (gimple_stmt_iterator gsi = gsi_start_bb (bb);
-+	 !gsi_end_p (gsi); gsi_next (&gsi))
-+      {
-+	gcall *call = dyn_cast<gcall *> (gsi_stmt (gsi));
-+	if (!call)
-+	  continue;
-+	tree old_decl = gimple_call_fndecl (call);
-+	if (!old_decl || !DECL_NAME (old_decl))
-+	  continue;
-+	const char *replacement = coremark_report_replacement
-+	  (call, IDENTIFIER_POINTER (DECL_NAME (old_decl)));
-+	if (!replacement)
-+	  continue;
-+	tree new_decl = find_or_declare_function (replacement,
-+					       TREE_TYPE (old_decl));
-+	cgraph_node *caller = cgraph_node::get (cfun->decl);
-+	cgraph_edge *edge = caller ? caller->get_edge (call) : NULL;
-+	gimple_call_set_fndecl (call, new_decl);
-+	if (edge)
-+	  edge->redirect_callee (cgraph_node::get (new_decl));
-+	++replacements;
-+      }
-+  return replacements;
 +}
 +
 +/* Follow the small scalar expression graphs produced for this reduction.  */
@@ -1873,8 +1781,7 @@ index 00000000000..1efa598aeea
 +    : gimple_opt_pass (pass_data_clipped_rising_score, ctxt) {}
 +  bool gate (function *) final override
 +  {
-+    return (riscv_coremark_fp12_report || riscv_clipped_rising_score_reduce
-+	    || TARGET_XLISTREV
++    return (riscv_clipped_rising_score_reduce || TARGET_XLISTREV
 +	    || TARGET_XLISTFIND || TARGET_XMACACC || TARGET_XMBM
 +	    || TARGET_XDFA4H || TARGET_XDFA4P);
 +  }
@@ -1933,15 +1840,6 @@ index 00000000000..1efa598aeea
 +  unsigned int execute (function *) final override
 +  {
 +    unsigned int todo = 0;
-+    if (riscv_coremark_fp12_report
-+	&& (current_function_name_is ("main")
-+	    || current_function_name_is ("coremark_main")))
-+      {
-+	unsigned replacements = replace_coremark_report_calls ();
-+	if (dump_file)
-+	  fprintf (dump_file, "replaced %u CoreMark report calls\n",
-+		   replacements);
-+      }
 +    if (TARGET_XLISTFIND && current_function_name_is ("core_list_find"))
 +      {
 +	replace_list_find_function ();

@@ -41,17 +41,11 @@ selection details, checkers, and performance evidence are documented in
 
 `audit-accel` is mandatory for an accelerated image.  It fails if an enabled
 instruction or required sub-operation is absent, if an `__xaccel_*` wrapper
-survives the final link, or if the pseudo-float report image contains floating-
-point helper symbols.  When xmacacc is enabled it replaces the full matrix
+survives the final link.  When xmacacc is enabled it replaces the full matrix
 bit-extract loop, so the auditor reports the overlapping xmbm selection as
-superseded.
-
-With the default `PSEUDO_FLOAT=1`, GCC adds
-`-mcoremark-fp12-report` and redirects CoreMark's reporting calls to the
-integer-only helpers in `float_dump.c`.  It prints elapsed seconds,
-iterations/second, and the final score with 12 fractional digits without
-linking double-precision or SoftFloat helpers.  Use `PSEUDO_FLOAT=0` only for
-an intentional comparison with CoreMark's original floating-point reporting.
+superseded.  Reporting always follows the benchmark's normal floating-point
+path through the EEMBC formatter and AM SoftFloat; compiler passes and the
+historical plugin do not rewrite report calls or format strings.
 
 `make check` verifies the unmodified upstream `coremark.md5` under `src/`.
 Compiler integration, forced headers, and experimental support files remain

@@ -13,7 +13,7 @@ jyd_dir=$(CDPATH= cd -- "$coremark_dir/../.." && pwd)
 scratch=$(mktemp -d "${JYD_DATA_ROOT:-/srv/data/jyd}/tmp/gcc-plugin-migration-check.XXXXXX")
 trap 'rm -rf -- "$scratch"' EXIT HUP INT TERM
 
-flags='-O3 -march=rv32im_zba_zbb_zbc_zbs_zbkb_zbkx_zicsr -mabi=ilp32 -ffreestanding -DITERATIONS=10000 -DTOTAL_DATA_SIZE=2000 -DCOREMARK_PSEUDO_FLOAT=1'
+flags='-O3 -march=rv32im_zba_zbb_zbc_zbs_zbkb_zbkx_zicsr -mabi=ilp32 -ffreestanding -DITERATIONS=10000 -DTOTAL_DATA_SIZE=2000'
 includes="-I$coremark_dir/src -I$jyd_dir/abstract-machine/am/include -I$jyd_dir/abstract-machine/klib/include"
 arch='-DARCH_H="arch/riscv.h"'
 
@@ -44,12 +44,4 @@ for funct7 in 4 5 6 7 8 9; do
     test "$(grep -Fc ".insn r 0x0b, 3, $funct7" "$scratch/matrix-xmacacc.s")" -gt 0
 done
 
-"$cc" $flags $includes "$arch" -mcoremark-fp12-report \
-    -include "$coremark_dir/accel/float_dump.h" -fdump-tree-clippedscore \
-    -S "$coremark_dir/src/core_main.c" -o "$scratch/main-report.s"
-grep -Fq 'replaced 15 CoreMark report calls' "$scratch"/main-report.c.*.clippedscore
-for helper in banner iterations short_run suppress_value time_in_secs validated; do
-    grep -Fq "__fp12_$helper" "$scratch/main-report.s"
-done
-
-echo "xlistfind, xmacacc, and plugin-free report lowering: PASS"
+echo "xlistfind and xmacacc selection: PASS"

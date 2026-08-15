@@ -1,3 +1,6 @@
+ROOT_DIR := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
+JYD_HOME := $(abspath $(ROOT_DIR)/../..)
+
 ARCH ?= riscv32-jyd
 ifneq ($(filter gdb-server,$(MAKECMDGOALS)),)
 NANO_OPT ?= -O0
@@ -8,37 +11,29 @@ endif
 COREMARK_PORT_DIR ?= $(abspath $(ROOT_DIR)/../coremark-official/src)
 COREMARK_BENCH_DIR ?= $(COREMARK_PORT_DIR)
 COREMARK_ACCEL_DIR ?= $(abspath $(COREMARK_PORT_DIR)/../accel)
+COREMARK_DEFAULTS ?= $(abspath $(COREMARK_PORT_DIR)/../coremark-defaults.mk)
+include $(COREMARK_DEFAULTS)
 COREMARK_ITERATIONS ?= 10000
 COREMARK_DATA_SIZE ?= 2000
 COREMARK_OPT ?= -Os
 COREMARK_SUPPORT_OPT ?= -Os
 COREMARK_ENABLE ?= 1
-COREMARK_PSEUDO_FLOAT ?= 1
-# B-extension subset used ONLY for the embedded CoreMark benchmark sources
-# (same set as the official CoreMark image). The RT-Thread kernel and the AM
-# port stay on the base ISA.
-COREMARK_ZEXTS ?= _zba_zbb_zbc_zbs_zbkb_zbkx
-# Source-transparent custom-instruction set, same as the official CoreMark
-# image: the GCC plugin redirects selected calls to the JYD accelerator
-# instructions (xbmul/xcrcu8/xlistrev/xmsum/xdfa4h).
-COREMARK_XEXTS ?= _xbmul_xcrcu8_xlistrev_xmsum_xdfa4h
+# These settings come from coremark-official and apply only to the embedded
+# benchmark objects. The RT-Thread kernel and AM port remain rv32im_zicsr.
+COREMARK_ZEXTS ?= $(COREMARK_DEFAULT_RISCV_ZEXTS)
+COREMARK_GCC_MD ?= $(COREMARK_DEFAULT_GCC_MD)
+COREMARK_XEXTS ?= $(if $(filter 1,$(COREMARK_GCC_MD)),$(COREMARK_DEFAULT_XEXTS),)
+COREMARK_MD_FLAGS ?= $(if $(filter 1,$(COREMARK_GCC_MD)),$(call coremark_md_flags,$(COREMARK_XEXTS)),)
 
 empty :=
 space := $(empty) $(empty)
 comma := ,
-escape_spaces = $(subst $(space),\ ,$(1))
-COREMARK_SUPPORTED_XEXTS := xbmul xcrcu8 xdot16 xlistrev xmac16 xmsum xdfacnt xdfa2 xdfa4 xdfa4h
+COREMARK_SUPPORTED_XEXTS := $(COREMARK_GCC_MD_SUPPORTED_XEXTS)
 COREMARK_XEXT_WORDS := $(filter x%,$(subst _, ,$(strip $(COREMARK_XEXTS))))
 COREMARK_UNKNOWN_XEXTS := $(filter-out $(COREMARK_SUPPORTED_XEXTS),$(COREMARK_XEXT_WORDS))
 ifneq ($(strip $(COREMARK_UNKNOWN_XEXTS)),)
 $(error Unsupported COREMARK_XEXTS: $(COREMARK_UNKNOWN_XEXTS))
 endif
-COREMARK_ACCEL_WORDS := $(filter-out xcrcu8,$(COREMARK_XEXT_WORDS))
-COREMARK_ACCELS := $(subst $(space),$(comma),$(strip $(COREMARK_ACCEL_WORDS)))
-COREMARK_PLUGIN_ACCELS := $(if $(COREMARK_ACCELS),$(COREMARK_ACCELS),none)
-
-ROOT_DIR := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
-JYD_HOME := $(abspath $(ROOT_DIR)/../..)
 NANO_REPO := https://github.com/RT-Thread/rtthread-nano.git
 NANO_COMMIT := $(shell tr -d '[:space:]' < $(ROOT_DIR)/SOURCE_COMMIT)
 NANO_CHECKOUT := $(ROOT_DIR)/upstream
@@ -48,14 +43,14 @@ ifeq ($(COREMARK_ENABLE),1)
 COREMARK_BENCH_SRCS := $(addprefix $(COREMARK_BENCH_DIR)/, \
         core_list_join.c core_main.c core_matrix.c core_state.c core_util.c)
 COREMARK_SUPPORT_SRCS := $(addprefix $(COREMARK_PORT_DIR)/, \
-        core_portme.c ee_printf.c)
+        core_portme.c ee_printf.c cvt.c coremark_softfloat.c)
 COREMARK_CRC_CALLER_SRCS := $(filter-out $(COREMARK_BENCH_DIR)/core_util.c,$(COREMARK_BENCH_SRCS))
 COREMARK_O3_SRCS := $(addprefix $(COREMARK_BENCH_DIR)/, \
         core_list_join.c core_matrix.c core_state.c core_util.c)
 COREMARK_CFLAGS := -DITERATIONS=$(COREMARK_ITERATIONS) \
                    -DTOTAL_DATA_SIZE=$(COREMARK_DATA_SIZE) \
-                   -DCOREMARK_PSEUDO_FLOAT=$(COREMARK_PSEUDO_FLOAT) \
                    -D__COREMARK_XEXTS=\"$(COREMARK_XEXTS)\"
+LIBS += softfloat
 endif
 
 # src/tinyprintf.c is picked up by the wildcard below and replaces the
@@ -77,10 +72,6 @@ SRCS := $(wildcard $(ROOT_DIR)/src/*.c) \
         $(NANO_DIR)/components/finsh/shell.c \
         $(COREMARK_BENCH_SRCS) \
         $(COREMARK_SUPPORT_SRCS)
-ifeq ($(COREMARK_ENABLE),1)
-SRCS += $(COREMARK_ACCEL_DIR)/float_dump.c
-endif
-
 INC_PATH += $(ROOT_DIR)/include $(NANO_DIR)/include $(NANO_DIR)/components/finsh \
             $(COREMARK_BENCH_DIR) $(COREMARK_PORT_DIR) $(COREMARK_ACCEL_DIR)
 CFLAGS += -DHAVE_CCONFIG_H -D__RTTHREAD__ -DCOREMARK_ENABLE=$(COREMARK_ENABLE) \
@@ -109,60 +100,29 @@ COREMARK_CRC_CALLER_OBJS := $(addprefix $(DST_DIR)/,$(addsuffix .o,$(basename $(
 COREMARK_O3_OBJS := $(addprefix $(DST_DIR)/,$(addsuffix .o,$(basename $(COREMARK_O3_SRCS))))
 # Only the CoreMark benchmark translation units get the B extensions; the
 # last -march on the command line wins, so this overrides the base ISA above.
-$(COREMARK_BENCH_OBJS): CFLAGS += -march=rv32im_zicsr$(COREMARK_ZEXTS)
+$(COREMARK_BENCH_OBJS): CFLAGS += -march=rv32im$(COREMARK_ZEXTS)_zicsr
 $(COREMARK_BENCH_OBJS): CFLAGS += $(COREMARK_OPT)
 $(COREMARK_SUPPORT_OBJS): CFLAGS += $(COREMARK_SUPPORT_OPT)
-$(COREMARK_SUPPORT_OBJS): CFLAGS += -march=rv32im_zicsr$(COREMARK_ZEXTS)
+$(COREMARK_SUPPORT_OBJS): CFLAGS += -march=rv32im$(COREMARK_ZEXTS)_zicsr
 
-# The embedded CoreMark is built exactly like the official accelerated image:
-# raw 50 MHz CNT_REG timing, COREMARK_TICKS_PER_SEC=50000000, no
-# COREMARK_EMBEDDED_RTT. The only integration change is renaming CoreMark's
-# main() to coremark_main() so it does not collide with RT-Thread's entry
-# main(); the code is unchanged.
-COREMARK_ACCEL_PLUGIN := $(DST_DIR)/tools/xaccel_plugin.so
-HOST_CXX ?= g++
-# Some distro cross GCC packages (e.g. Ubuntu gcc-13-riscv64-linux-gnu) do not
-# ship the plugin headers.  Fall back to the host compiler's plugin dir, which
-# is ABI-compatible as long as both compilers share the same base version.
-GCC_PLUGIN_DIR := $(shell $(CC) -print-file-name=plugin)
-ifeq ($(wildcard $(GCC_PLUGIN_DIR)/include/gcc-plugin.h),)
-GCC_PLUGIN_DIR := $(shell $(HOST_CXX) -print-file-name=plugin)
-endif
-# Only needed when the plugin headers' <gmp.h> does not resolve through the
-# default include search path; set it on the make command line in that case.
-GCC_PLUGIN_GMP_INCLUDE ?=
-$(COREMARK_ACCEL_PLUGIN): $(COREMARK_ACCEL_DIR)/xaccel_plugin.cc
-	@mkdir -p $(dir $@)
-	$(HOST_CXX) -std=gnu++17 -fPIC -shared -fno-rtti -fno-exceptions \
-		-I$(GCC_PLUGIN_DIR)/include \
-		$(if $(GCC_PLUGIN_GMP_INCLUDE),-I$(GCC_PLUGIN_GMP_INCLUDE),) \
-		-o $@ $<
-
+# The embedded CoreMark uses the same raw 50 MHz counter as the standalone
+# image and renames main() to avoid colliding with the RT-Thread entry point.
 COREMARK_COMMON_FLAGS := $(strip $(CFLAGS))
 COREMARK_REPORT_COMMON_FLAGS := $(filter -O% -mabi=% -flto \
 	-fno-builtin -ffreestanding -fdata-sections -ffunction-sections, \
-	$(COREMARK_COMMON_FLAGS)) -march=rv32im_zicsr$(COREMARK_ZEXTS)
+	$(COREMARK_COMMON_FLAGS)) -march=rv32im$(COREMARK_ZEXTS)_zicsr
 COREMARK_FLAGS_HEADER := $(DST_DIR)/coremark-compiler-flags.h
-COREMARK_PLUGIN_FLAGS = -fplugin=$(COREMARK_ACCEL_PLUGIN) \
-	-fplugin-arg-xaccel_plugin-accels=$(COREMARK_PLUGIN_ACCELS) \
-	-fplugin-arg-xaccel_plugin-report=$(if $(filter 1,$(COREMARK_PSEUDO_FLOAT)),fp12,none) \
-	-include $(COREMARK_ACCEL_DIR)/xaccel_wrappers.c
-COREMARK_BENCH_FLAGS = $(COREMARK_OPT) $(COREMARK_PLUGIN_FLAGS) \
+COREMARK_BENCH_FLAGS = $(COREMARK_OPT) $(COREMARK_MD_FLAGS) \
 	-include $(abspath $(COREMARK_FLAGS_HEADER))
 COREMARK_O3_FLAGS = -include $(COREMARK_ACCEL_DIR)/force_o3.h
 COREMARK_CRC_FLAGS = -include $(COREMARK_ACCEL_DIR)/xcrc_hw.h \
 	-D__COREMARK_XCRCU8=1
-COREMARK_FP12_FLAGS = -include $(COREMARK_ACCEL_DIR)/float_dump.h
 
-$(COREMARK_BENCH_OBJS): $(COREMARK_ACCEL_PLUGIN) $(COREMARK_ACCEL_DIR)/xaccel_wrappers.c
 $(COREMARK_BENCH_OBJS): $(COREMARK_FLAGS_HEADER)
 $(COREMARK_BENCH_OBJS): CFLAGS += $(COREMARK_BENCH_FLAGS)
 $(COREMARK_O3_OBJS): CFLAGS += $(COREMARK_O3_FLAGS)
+ifneq ($(filter xcrcu8,$(COREMARK_XEXT_WORDS)),)
 $(COREMARK_CRC_CALLER_OBJS): CFLAGS += $(COREMARK_CRC_FLAGS)
-ifeq ($(COREMARK_PSEUDO_FLOAT),1)
-$(DST_DIR)/$(COREMARK_BENCH_DIR)/core_main.o: CFLAGS += $(COREMARK_FP12_FLAGS)
-$(DST_DIR)/$(COREMARK_ACCEL_DIR)/float_dump.o: $(COREMARK_FLAGS_HEADER)
-$(DST_DIR)/$(COREMARK_ACCEL_DIR)/float_dump.o: CFLAGS += -include $(abspath $(COREMARK_FLAGS_HEADER))
 endif
 $(DST_DIR)/$(COREMARK_BENCH_DIR)/core_main.o: CFLAGS += -Dmain=coremark_main
 
@@ -170,9 +130,8 @@ $(COREMARK_FLAGS_HEADER): FORCE $(COREMARK_ACCEL_DIR)/gen_flags_header.py
 	@mkdir -p $(dir $@)
 	@python3 $(COREMARK_ACCEL_DIR)/gen_flags_header.py --output $@ -- \
 		'$(COREMARK_OPT)' $(foreach flag,$(COREMARK_REPORT_COMMON_FLAGS),'$(flag)') \
-		'-fplugin=$(notdir $(COREMARK_ACCEL_PLUGIN))' \
-		'-fplugin-arg-xaccel_plugin-accels=$(COREMARK_PLUGIN_ACCELS)' \
-		'-fplugin-arg-xaccel_plugin-report=$(if $(filter 1,$(COREMARK_PSEUDO_FLOAT)),fp12,none)'
+		'GCC machine-description selection' $(foreach flag,$(COREMARK_MD_FLAGS),'$(flag)') \
+		'software floating-point reporting'
 
 .PHONY: FORCE
 FORCE:

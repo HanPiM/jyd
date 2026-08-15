@@ -84,7 +84,21 @@ jobs:
           MAKEFLAGS: ${{ needs.setup.outputs.MAKEFLAGS }}
 
       - name: Install dependency
-        run: sudo apt install -y g++-13 gcc-13-plugin-dev libgmp-dev
+        run: >-
+          sudo apt install -y binutils-riscv64-linux-gnu libc6-dev-riscv64-cross
+          libgmp-dev libmpfr-dev libmpc-dev flex bison gawk texinfo zlib1g-dev
+
+      - name: Cache patched GCC toolchain
+        id: md-gcc-cache
+        uses: actions/cache@v5
+        with:
+          path: md-gcc
+          key: ${{ runner.os }}-md-gcc-${{ hashFiles('jyd-tests/coremark-official/accel/gcc-md/active-accel-gcc16.patch') }}-v3
+
+      - name: Build patched GCC
+        if: steps.md-gcc-cache.outputs.cache-hit != 'true'
+        run: |
+          ./jyd-tests/coremark-official/accel/gcc-md/build-md-gcc.sh "$GITHUB_WORKSPACE/md-gcc"
 
       - name: Build NPC sim
         run: |
@@ -94,7 +108,9 @@ jobs:
       # exercising the full benchmark; the default 10000 remains for formal runs.
       - name: coremark-official
         run: |
-          make ARCH=riscv32-jyd -C jyd-tests/coremark-official HOST_CXX=g++-13 ITERATIONS=5000 run VSIM_print_fullperf=1
+          make ARCH=riscv32-jyd -C jyd-tests/coremark-official \
+            CROSS_COMPILE=$GITHUB_WORKSPACE/md-gcc/bin/riscv64-linux-gnu- \
+            ITERATIONS=5000 run VSIM_print_fullperf=1
   dhrystone:
     needs: setup
     runs-on: ubuntu-24.04

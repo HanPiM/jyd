@@ -15,11 +15,23 @@ The image embeds a 10,000-iteration CoreMark workload as the `coremark` command.
 See [COREMARK.md](COREMARK.md) for compiler-option boundaries and how to switch
 to the competition-provided benchmark sources.
 
+The Nano build does not build a GCC plugin, so the RT-Thread build itself needs
+no `gcc-plugin-dev` or GMP headers. Building the patched GCC toolchain from
+source separately requires its normal GMP/MPFR/MPC development dependencies.
+Embedded CoreMark objects use the same GCC MD defaults as `coremark-official`;
+RT-Thread itself remains compiled for plain `rv32im_zicsr`. CoreMark's report
+uses the EEMBC formatter with the AM SoftFloat library.
+
 From the repository root:
 
 ```sh
-make -C jyd-tests/rtthread-nano ARCH=riscv32-jyd run
+make -C jyd-tests/rtthread-nano ARCH=riscv32-jyd \
+  CROSS_COMPILE=/path/to/md-gcc/bin/riscv64-linux-gnu- run
 ```
+
+For a base-ISA system-port check with the ordinary toolchain, pass
+`COREMARK_GCC_MD=0 COREMARK_XEXTS=`. This changes only the embedded benchmark;
+the RT-Thread objects use the same base-ISA flags in both builds.
 
 The shell uses RT-Thread's size-optimized `rt_kprintf`; CoreMark retains its
 `%f`-capable EEMBC formatter but shares the same RTT console backend. Klib

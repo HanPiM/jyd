@@ -24,13 +24,16 @@ separately compared byte-for-byte with that exact upstream revision.
 ## EEMBC formatter files adapted for AM
 
 - `src/ee_printf.c`: EEMBC `barebones/ee_printf.c`; its character output hook
-  is connected to AM `putch()`.
+  is connected to AM `putch()`. The local reduction retains only the formats
+  used by CoreMark, including `%f`, and keeps EEMBC's `fcvt` conversion path.
 - `src/cvt.c`: EEMBC `barebones/cvt.c`; its `modf` dependency is redirected to
   the AM SoftFloat adapter.
 
 These are open-source EEMBC support files, not benchmark algorithms. Avoid
 adding formatter features locally; replace the formatter with an established
 open-source implementation if future CoreMark output needs unsupported forms.
+The benchmark always uses this floating-point reporting path; there is no
+integer-only report substitution mode.
 
 ## AM port files
 

@@ -13,8 +13,14 @@ reuses the AM startup, device, timer, linker, and `putch()` implementation.
 There is no separate image handoff step for NEMU:
 
 ```sh
-make ARCH=riscv32-nemu ITERATIONS=1000 TOTAL_DATA_SIZE=2000 RISCV_ZEXTS= run
+make ARCH=riscv32-nemu ITERATIONS=1000 TOTAL_DATA_SIZE=2000 \
+  CROSS_COMPILE=/path/to/patched-gcc/bin/riscv64-linux-gnu- run
 ```
+
+The default uses GCC machine-description selection for the final accelerator
+set (`xmbm`, `xcrcu8`, `xlistrev`, `xmsum`, `xdfa4p`, `xlistfind`, and
+`xmacacc`). The shared defaults are in `coremark-defaults.mk`; pass
+`COREMARK_GCC_MD=0 RISCV_ZEXTS=` for a base-ISA control build.
 
 The default build output is this project's `build/` directory. Each combination
 of `ITERATIONS`, `TOTAL_DATA_SIZE`, `RISCV_ZEXTS`, and `EXTRA_CFLAGS` gets a
@@ -24,7 +30,7 @@ for example:
 
 ```sh
 make ARCH=riscv32-nemu ITERATIONS=10000 TOTAL_DATA_SIZE=2000 \
-  RISCV_ZEXTS=_zba_zbb_zbc_zbs EXTRA_CFLAGS='-O3 -fomit-frame-pointer' run
+  RISCV_ZEXTS=_zba_zbb_zbkb_zbs EXTRA_CFLAGS='-O3 -fomit-frame-pointer' run
 ```
 
 For `ARCH=riscv32-jyd`, the standalone port reads the raw 32-bit counter at
@@ -35,6 +41,30 @@ AM timer path.
 
 `make clean` removes only the currently selected configuration. NEMU must be
 built with Device enabled to see the serial CoreMark report.
+
+## Current B-extension profile
+
+The current formal CoreMark image uses `CRCU8` together with the CoreMark
+accelerators `xbmul`, `xmsum`, and `xstate`. A low-overhead NEMU profile of the
+10,000-iteration image completed successfully with final CRC `0x988c` and
+reported `1,498,664,091` retired instructions. B-extension instructions made up
+`29,942,665` instructions, or about `2.0%` of the total:
+
+| Extension | Dynamic instructions | Main instructions |
+| --- | ---: | --- |
+| `Zba` | 11,820,112 | `sh1add` 440,016; `sh2add` 11,380,095; `sh3add` 1 |
+| `Zbb` | 3,540,009 | `sext.h` 3,540,001; `clz` 8 |
+| `Zbs` | 2,341,210 | `bext` |
+| `Zbkb` | 12,241,334 | `pack` |
+
+The custom `crcu8` instruction executed `5,840,008` times. The former `Zbc`
+CRC path (`clmul`/`clmulh`) and unused `Zbkx` path were removed from the final
+RTL and are no longer present in the default `-march`. `Zba` and `Zbkb` remain
+because `sh2add` and `pack` are frequent; `Zbb` and `Zbs` retain the operations
+used by the measured workload.
+
+The profile was generated with NEMU's `--profile=JSON` option. The local
+machine-readable result is `/srv/data/jyd/tmp/coremark-current-xcrcu8-profile.json`.
 
 The port sets the required `HAS_FLOAT=1`, so elapsed time and throughput use
 CoreMark's floating-point output form. The ABI remains `ilp32`; no hardware

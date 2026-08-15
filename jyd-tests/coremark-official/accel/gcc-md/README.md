@@ -10,8 +10,8 @@ descriptions.
 Apply `active-accel-gcc16.patch` to GCC at base commit `39064899496`, then
 configure and build an RV32-capable RISC-V cross compiler in separate source,
 build, and install directories.  The validated patched source commit is
-`39288b580cddc506c323e6ac6d42ff563f1db674`; the patch SHA-256 is
-`f4d29c49ec66dbd6d73bd3113f086760bdad18bab156f663cf958956bfc19a5b`.
+`0a9d78c0bd4d37018ae24bf00b9410d84d56dea2`; the patch SHA-256 is
+`2746aaaad1c494fcd2e59e3565cb8afb10135e23f88a040e3a59c5cdc6335859`.
 
 ## Selection paths
 
@@ -31,52 +31,47 @@ that ELF; the ELF auditor reports xmbm as superseded.  Building with `-mxmbm`
 without `-mxmacacc` still selects the two expected xmbm sites from unmodified
 `core_matrix.c`.
 
-`-mcoremark-fp12-report` is not an ISA extension.  It replaces the remaining
-15 pseudo-float reporting calls with the existing integer-only report helpers,
-which removes the final production dependency on the GCC plugin.  The CoreMark
-Makefile adds this flag automatically when `COREMARK_GCC_MD=1` and
-`PSEUDO_FLOAT=1`.
-
 The xcrcu8 integration uses GCC's generic
 `__builtin_rev_crc16_data8(crc, data, 0x8005)` interface in `xcrc_hw.h`.  The
 RISC-V CRC optab selects xcrcu8 for this width and polynomial; the benchmark
 header contains no custom inline assembly.
 
 The xmsum and xlistrev recognizers are shape based.  The numeric DFA path also
-verifies the expected scan and counter structure.  The current xlistfind,
-xmacacc, and report recognizers additionally use the known CoreMark function
-names as safety gates while checking their expected bodies and call shapes.
+verifies the expected scan and counter structure.  Reporting is outside the
+accelerator pass and uses the ordinary EEMBC formatter and AM SoftFloat path.
 
 ## Build and audit
 
-Use the patched compiler with the production plugin-free mode:
+Build the patched compiler, then use the production plugin-free defaults:
 
 ```sh
+./accel/gcc-md/build-md-gcc.sh /path/to/md-gcc
 make ARCH=riscv32-jyd \
-  CROSS_COMPILE=/path/to/toolchain/bin/riscv64-linux-gnu- \
-  COREMARK_GCC_MD=1 \
-  COREMARK_XEXTS=_xmbm_xcrcu8_xlistrev_xmsum_xdfa4p_xlistfind_xmacacc \
-  EXTRA_CFLAGS='-mxmbm -mxcrcu8 -mxlistrev -mclipped-rising-score-reduce -mxdfa4p -mxlistfind -mxmacacc' \
+  CROSS_COMPILE=/path/to/md-gcc/bin/riscv64-linux-gnu- \
   run
 ```
+
+`coremark-defaults.mk` supplies the final standard-extension set, accelerator
+identity, and matching `-m` flags. RT-Thread Nano imports the same file only for
+its embedded CoreMark objects.
 
 `COREMARK_XACCEL_EXPLORE` is rejected in `COREMARK_GCC_MD=1` mode because it is
 a plugin-only control.  Use the target `-m` flags to select GCC-generated
 instructions.  The old `COREMARK_GCC_MD=0` path remains available only for
 historical plugin comparisons.
 
-Audit a resulting ELF with:
+Audit the selected configuration's ELF with:
 
 ```sh
-python3 accel/audit_accel_elf.py \
-  --accels xmbm,xcrcu8,xlistrev,xmsum,xdfa4p,xlistfind,xmacacc \
-  --fp12-report \
-  --elf build/coremark-official-riscv32-jyd.elf
+make ARCH=riscv32-jyd \
+  CROSS_COMPILE=/path/to/md-gcc/bin/riscv64-linux-gnu- \
+  audit-accel
 ```
 
 The auditor requires all enabled instruction families, every xlistfind and
 xmacacc sub-operation, the xdfa final-counter read, no `__xaccel_` wrapper
-symbols or calls, and no floating-point helper symbols.
+symbols or calls.  Soft-float helper symbols are expected in the normal report
+path and are not accelerator-audit failures.
 
 ## Validation
 
@@ -112,8 +107,10 @@ program image was exercised by NEMU and NPC difftest.
 - `check-xlistrev.sh <gcc>` checks list-reversal positive and negative
   selection.
 - `check-xdfa4h.sh <gcc>` preserves coverage for the older xdfa4h mode.
-- `check-xlistfind-xmacacc-report.sh <gcc>` checks both xlistfind sub-operations,
-  all six xmacacc sub-operations, and plugin-free pseudo-float report lowering.
+- `check-xlistfind-xmacacc.sh <gcc>` checks both xlistfind sub-operations and
+  all six xmacacc sub-operations.
+- `check-no-report-rewrite.sh` rejects report-call and pseudo-float rewriting
+  markers in the active GCC patch, plugin, and build rules.
 
 ## History
 

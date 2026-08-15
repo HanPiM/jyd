@@ -23,7 +23,7 @@ if grep -Fq '.insn r 0x0b, 5, 0' "$scratch/control.s"; then
 fi
 grep -Fq '.insn r 0x0b, 5, 0' "$scratch/xbmul.s"
 
-core_flags='-O3 -march=rv32im_zbc_zicsr -mabi=ilp32 -ffreestanding -DITERATIONS=10000 -DTOTAL_DATA_SIZE=2000 -DCOREMARK_PSEUDO_FLOAT=1'
+core_flags='-O3 -march=rv32im_zbc_zicsr -mabi=ilp32 -ffreestanding -DITERATIONS=10000 -DTOTAL_DATA_SIZE=2000'
 core_includes="-I$coremark_dir/src -I$jyd_dir/abstract-machine/am/include -I$jyd_dir/abstract-machine/klib/include"
 "$cc" $core_flags $core_includes '-DARCH_H="arch/riscv.h"' -S "$coremark_dir/src/core_matrix.c" -o "$scratch/core-control.s"
 "$cc" $core_flags $core_includes '-DARCH_H="arch/riscv.h"' -mxbmul -S "$coremark_dir/src/core_matrix.c" -o "$scratch/core-xbmul.s"

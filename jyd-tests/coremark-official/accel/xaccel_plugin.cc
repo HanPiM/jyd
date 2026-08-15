@@ -18,7 +18,6 @@
 int plugin_is_GPL_compatible;
 
 static std::string enabled;
-static bool fp12_report;
 static unsigned replacements;
 
 static const char *function_optimization(const char *name) {
@@ -53,55 +52,6 @@ static tree find_replacement(const char *name) {
       return decl;
   }
   return NULL_TREE;
-}
-
-static tree declare_replacement(const char *name, tree old_decl) {
-  tree decl = build_fn_decl(name, TREE_TYPE(old_decl));
-  DECL_EXTERNAL(decl) = 1;
-  TREE_PUBLIC(decl) = 1;
-  cgraph_node::get_create(decl);
-  return decl;
-}
-
-static const char *call_string_argument(gcall *call) {
-  if (gimple_call_num_args(call) == 0) return nullptr;
-  tree argument = gimple_call_arg(call, 0);
-  STRIP_NOPS(argument);
-  if (TREE_CODE(argument) == ADDR_EXPR) argument = TREE_OPERAND(argument, 0);
-  return TREE_CODE(argument) == STRING_CST ? TREE_STRING_POINTER(argument)
-                                           : nullptr;
-}
-
-static bool is_report_function(function *fun) {
-  if (!fp12_report || !DECL_NAME(fun->decl)) return false;
-  const char *name = IDENTIFIER_POINTER(DECL_NAME(fun->decl));
-  return !std::strcmp(name, "main") || !std::strcmp(name, "coremark_main");
-}
-
-static const char *report_replacement(function *fun, gcall *call,
-                                      const char *old_name) {
-  if (!is_report_function(fun)) return nullptr;
-  if (!std::strcmp(old_name, "time_in_secs"))
-    return "__fp12_time_in_secs";
-  if (std::strcmp(old_name, "ee_printf")) return nullptr;
-
-  const char *fmt = call_string_argument(call);
-  if (!fmt) return nullptr;
-  if (std::strstr(fmt, "run parameters for coremark.\n"))
-    return "__fp12_banner";
-  if (!std::strcmp(fmt, "Total time (secs): %d\n") ||
-      !std::strcmp(fmt, "Iterations/Sec   : %d\n"))
-    return "__fp12_suppress_value";
-  if (!std::strcmp(
-          fmt, "ERROR! Must execute for at least 10 secs for a valid result!\n"))
-    return "__fp12_short_run";
-  if (!std::strcmp(fmt, "Iterations       : %lu\n"))
-    return "__fp12_iterations";
-  if (!std::strcmp(fmt,
-                   "Correct operation validated. See README.md for run and "
-                   "reporting rules.\n"))
-    return "__fp12_validated";
-  return nullptr;
 }
 
 static bool has(const char *name) {
@@ -147,12 +97,9 @@ class accel_pass : public gimple_opt_pass {
         tree old_decl = gimple_call_fndecl(call);
         if (!old_decl || !DECL_NAME(old_decl)) continue;
         const char *old_name = IDENTIFIER_POINTER(DECL_NAME(old_decl));
-        const char *new_name = report_replacement(fun, call, old_name);
-        if (!new_name) new_name = replacement_for(old_name);
+        const char *new_name = replacement_for(old_name);
         if (!new_name) continue;
         tree new_decl = find_replacement(new_name);
-        if (!new_decl && !std::strncmp(new_name, "__fp12_", 7))
-          new_decl = declare_replacement(new_name, old_decl);
         if (!new_decl) {
           std::fprintf(stderr, "xaccel-plugin: missing inline wrapper %s\n", new_name);
           continue;
@@ -182,12 +129,9 @@ int plugin_init(plugin_name_args *info, plugin_gcc_version *version) {
   // is identical.  Only the base version string needs to match.
   if (!version || strcmp(version->basever, gcc_version.basever)) return 1;
   enabled = ",";
-  fp12_report = false;
   for (int i = 0; i < info->argc; i++)
     if (!std::strcmp(info->argv[i].key, "accels") && info->argv[i].value)
       enabled += std::string(info->argv[i].value) + ",";
-    else if (!std::strcmp(info->argv[i].key, "report") && info->argv[i].value)
-      fp12_report = !std::strcmp(info->argv[i].value, "fp12");
 
   register_pass_info pass_info;
   pass_info.pass = new accel_pass(g);

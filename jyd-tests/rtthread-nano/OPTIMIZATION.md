@@ -173,6 +173,9 @@ other conversions are printed literally and their arguments are not consumed.
 
 - Added a synchronous `coremark` msh command with defaults of 10,000 iterations
   and 2,000 bytes of static benchmark data.
+- Removed the historical GCC plugin and integer-only report substitution from
+  the default Nano image. This avoids a host `gmp.h` build dependency and keeps
+  the system-port test on ordinary compiler output plus AM SoftFloat.
 - Separated replaceable `COREMARK_BENCH_DIR` algorithm sources from the retained
   `COREMARK_PORT_DIR` RTT/AM adaptation. See `COREMARK.md` for the competition
   source replacement procedure.

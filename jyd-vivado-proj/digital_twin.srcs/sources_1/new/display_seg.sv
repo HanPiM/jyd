@@ -28,7 +28,8 @@ module display_seg (
     output logic [6:0]    seg2   ,
     output logic [6:0]    seg3   ,
     output logic [6:0]    seg4   ,
-    output logic [7:0]    ans
+    output logic [7:0]    ans    ,
+    output logic          scan_half
 );
     logic  [4:0]   count;
     logic  [3:0]   digit1, digit2, digit3, digit4; 
@@ -59,6 +60,8 @@ module display_seg (
         end
 
     endcase
+
+    assign scan_half = count[4];
     
     seg7 SEG1(.din(digit1),.dout(seg1));
     seg7 SEG2(.din(digit2),.dout(seg2));

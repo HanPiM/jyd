@@ -25,6 +25,9 @@ module top(
     input  wire i_sys_clk_n         ,
     input  wire i_uart_rx           ,
     output wire o_uart_tx           ,
+    input  wire i_key1              ,
+    inout  wire io_aht10_scl        ,
+    inout  wire io_aht10_sda        ,
 
     output wire [31:0] virtual_led  ,
     output wire [39:0] virtual_seg
@@ -39,6 +42,13 @@ module top(
     wire [7:0] uart_rx_data;
     wire uart_rx_empty;
     wire uart_rx_pop;
+    wire aht10_scl_drive_low;
+    wire aht10_sda_drive_low;
+
+    // The external AHT10 board provides pull-ups. These pins only drive low
+    // or release the bus; they never actively drive an I2C high level.
+    assign io_aht10_scl = aht10_scl_drive_low ? 1'b0 : 1'bz;
+    assign io_aht10_sda = aht10_sda_drive_low ? 1'b0 : 1'bz;
 
     mypll pll_inst(
         .clk_in1_p(i_sys_clk_p),
@@ -72,6 +82,11 @@ module top(
         .uartRxData(uart_rx_data),
         .uartRxEmpty(uart_rx_empty),
         .uartRxPop(uart_rx_pop),
+        .key1(i_key1),
+        .aht10SclIn(io_aht10_scl),
+        .aht10SdaIn(io_aht10_sda),
+        .aht10SclDriveLow(aht10_scl_drive_low),
+        .aht10SdaDriveLow(aht10_sda_drive_low),
         .virtual_led(virtual_led),
         .virtual_seg(virtual_seg)
     );

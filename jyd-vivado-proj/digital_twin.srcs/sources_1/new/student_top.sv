@@ -35,23 +35,81 @@ module student_top#(
     input  [7:0]                                uartRxData    ,
     input                                       uartRxEmpty   ,
     output                                      uartRxPop     ,
+    input                                       key1          ,
+    input                                       aht10SclIn    ,
+    input                                       aht10SdaIn    ,
+    output                                      aht10SclDriveLow,
+    output                                      aht10SdaDriveLow,
 
     output [P_LED_CNT - 1:0]                    virtual_led   ,
     output [P_SEG_CNT - 1:0]                    virtual_seg   
 );
     logic [31:0] seg_wdata;
+    logic [31:0] display_wdata;
     logic [39:0] seg_output;
+    logic display_scan_half;
+    logic aht10_display_mode;
+    logic key1_press_pulse;
+    logic signed [15:0] aht10_temperature_x10;
+    logic [15:0] aht10_humidity_x10;
+    logic aht10_data_valid;
+    logic [15:0] aht10_display_binary;
+    logic [15:0] aht10_display_bcd;
+
+    always_ff @(posedge w_clk_50Mhz or posedge w_clk_rst) begin
+        if (w_clk_rst)
+            aht10_display_mode <= 1'b0;
+        else if (key1_press_pulse)
+            aht10_display_mode <= ~aht10_display_mode;
+    end
+
+    jyd_key_debounce #(
+        .CLK_HZ(50_000_000),
+        .DEBOUNCE_MS(20)
+    ) key1_debounce (
+        .clk(w_clk_50Mhz),
+        .rst_n(~w_clk_rst),
+        .key_n(key1),
+        .press_pulse(key1_press_pulse)
+    );
+
+    always_comb begin
+        if (aht10_display_mode)
+            aht10_display_binary = aht10_humidity_x10;
+        else if (aht10_temperature_x10 < 0)
+            aht10_display_binary = -aht10_temperature_x10;
+        else
+            aht10_display_binary = aht10_temperature_x10;
+    end
+
+    jyd_bin16_to_bcd aht10_bcd_formatter (
+        .binary(aht10_display_binary),
+        .bcd(aht10_display_bcd)
+    );
+
+    // Preserve the SEG MMIO register and existing driver. Once the first
+    // autonomous sample arrives, select the local 50 MHz AHT10 display path.
+    always_comb begin
+        if (aht10_data_valid)
+            display_wdata = {16'b0, aht10_display_bcd};
+        else
+            display_wdata = seg_wdata;
+    end
+
     display_seg seg_driver (
         .clk    (w_clk_50Mhz),
         .rst    (w_clk_rst),
-        .s      (seg_wdata),
+        .s      (display_wdata),
         .seg1   (seg_output[6:0]),
         .seg2   (seg_output[16:10]),
         .seg3   (seg_output[26:20]),
         .seg4   (seg_output[36:30]),
-        .ans    ({seg_output[39:38], seg_output[29:28], seg_output[19:18], seg_output[9:8]})
+        .ans    ({seg_output[39:38], seg_output[29:28], seg_output[19:18], seg_output[9:8]}),
+        .scan_half(display_scan_half)
     ); 
-       assign seg_output[7]  = 0;
+    // The packed BCD value is x10. Illuminate the decimal point between the
+    // tens and tenths digits in the first dual-digit display package.
+    assign seg_output[7]  = aht10_data_valid && !display_scan_half;
     assign seg_output[17] = 0;
     assign seg_output[27] = 0;
     assign seg_output[37] = 0;
@@ -76,7 +134,14 @@ module student_top#(
         .uartTxFull(uartTxFull),
         .uartRxData(uartRxData),
         .uartRxEmpty(uartRxEmpty),
-        .uartRxPop(uartRxPop)
+        .uartRxPop(uartRxPop),
+        .aht10SclIn(aht10SclIn),
+        .aht10SdaIn(aht10SdaIn),
+        .aht10SclDriveLow(aht10SclDriveLow),
+        .aht10SdaDriveLow(aht10SdaDriveLow),
+        .aht10TemperatureLocalX10(aht10_temperature_x10),
+        .aht10HumidityLocalX10(aht10_humidity_x10),
+        .aht10DataValidLocal(aht10_data_valid)
     );
 //    // IROM
 //    logic [31:0] pc;
@@ -127,6 +192,69 @@ module student_top#(
 //        .virtual_led_output (virtual_led)
 //    );
 
+endmodule
+
+module jyd_key_debounce #(
+    parameter integer CLK_HZ = 50_000_000,
+    parameter integer DEBOUNCE_MS = 20
+) (
+    input  wire clk,
+    input  wire rst_n,
+    input  wire key_n,
+    output reg  press_pulse
+);
+    localparam integer STABLE_CYCLES = (CLK_HZ / 1000) * DEBOUNCE_MS;
+
+    (* ASYNC_REG = "TRUE" *) reg key_sync1;
+    (* ASYNC_REG = "TRUE" *) reg key_sync2;
+    reg key_state_n;
+    reg [31:0] stable_count;
+
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            key_sync1   <= 1'b1;
+            key_sync2   <= 1'b1;
+            key_state_n <= 1'b1;
+            stable_count <= 0;
+            press_pulse <= 1'b0;
+        end else begin
+            key_sync1 <= key_n;
+            key_sync2 <= key_sync1;
+            press_pulse <= 1'b0;
+
+            if (key_sync2 == key_state_n) begin
+                stable_count <= 0;
+            end else if (stable_count == STABLE_CYCLES - 1) begin
+                stable_count <= 0;
+                key_state_n <= key_sync2;
+                if (!key_sync2)
+                    press_pulse <= 1'b1;
+            end else begin
+                stable_count <= stable_count + 1'b1;
+            end
+        end
+    end
+endmodule
+
+module jyd_bin16_to_bcd (
+    input  wire [15:0] binary,
+    output reg  [15:0] bcd
+);
+    integer i;
+    reg [31:0] work;
+
+    always @* begin
+        work = 0;
+        work[15:0] = binary;
+        for (i = 0; i < 16; i = i + 1) begin
+            if (work[19:16] >= 5) work[19:16] = work[19:16] + 3;
+            if (work[23:20] >= 5) work[23:20] = work[23:20] + 3;
+            if (work[27:24] >= 5) work[27:24] = work[27:24] + 3;
+            if (work[31:28] >= 5) work[31:28] = work[31:28] + 3;
+            work = work << 1;
+        end
+        bcd = work[31:16];
+    end
 endmodule
 
 module rst_sync (

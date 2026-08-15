@@ -63,7 +63,7 @@ diff --git a/gcc/config/riscv/peephole.md b/gcc/config/riscv/peephole.md
 index e49bc042665..7f2c65787fe 100644
 --- a/gcc/config/riscv/peephole.md
 +++ b/gcc/config/riscv/peephole.md
-@@ -19,6 +19,268 @@
+@@ -19,6 +19,295 @@
  ;; <http://www.gnu.org/licenses/>.
  
  ;; Simplify (unsigned long)(unsigned int)a << const
@@ -255,6 +255,33 @@ index e49bc042665..7f2c65787fe 100644
 +  ".insn r 0x0b, 4, 2, %0, %1, %2"
 +  [(set_attr "type" "multi") (set_attr "mode" "SI")])
 +
++(define_insn "xdot_configsi1"
++  [(unspec_volatile [(match_operand:SI 0 "register_operand" "r")]
++                    UNSPEC_XDOT_CONFIG)]
++  "TARGET_XDOT9 && !TARGET_64BIT"
++  ".insn r 0x0b, 4, 3, zero, %0, zero"
++  [(set_attr "type" "multi") (set_attr "mode" "SI")])
++
++(define_insn "xdotsi3"
++  [(set (match_operand:SI 0 "register_operand" "=r")
++	(unspec_volatile:SI [(match_operand:SI 1 "register_operand" "r")
++		    (match_operand:SI 2 "register_operand" "r")]
++		   UNSPEC_XDOT))
++   (clobber (mem:BLK (scratch)))]
++  "TARGET_XDOT9 && !TARGET_64BIT"
++  ".insn r 0x0b, 4, 4, %0, %1, %2"
++  [(set_attr "type" "multi") (set_attr "mode" "SI")])
++
++(define_insn "xdot_bitsi3"
++  [(set (match_operand:SI 0 "register_operand" "=r")
++	(unspec_volatile:SI [(match_operand:SI 1 "register_operand" "r")
++		    (match_operand:SI 2 "register_operand" "r")]
++		   UNSPEC_XDOT_BIT))
++   (clobber (mem:BLK (scratch)))]
++  "TARGET_XDOT9 && !TARGET_64BIT"
++  ".insn r 0x0b, 4, 5, %0, %1, %2"
++  [(set_attr "type" "multi") (set_attr "mode" "SI")])
++
 +;; Numeric-token DFA (xdfa4h): one hardware step over the word at the string
 +;; position; result packs {state&7, advance>>3&7, done<<6}.  The counters
 +;; accumulate in hardware across all step calls between XDFACNT_INIT and the
@@ -336,7 +363,7 @@ diff --git a/gcc/config/riscv/riscv.md b/gcc/config/riscv/riscv.md
 index d2883ef9f5a..4c33374f9e7 100644
 --- a/gcc/config/riscv/riscv.md
 +++ b/gcc/config/riscv/riscv.md
-@@ -100,6 +100,30 @@
+@@ -100,6 +100,33 @@
    UNSPEC_CRC
    UNSPEC_CRC_REV
  
@@ -356,6 +383,9 @@ index d2883ef9f5a..4c33374f9e7 100644
 +  UNSPEC_XMACACC_BIT_LAST
 +  UNSPEC_XDOT9
 +  UNSPEC_XDOT9_BIT
++  UNSPEC_XDOT_CONFIG
++  UNSPEC_XDOT
++  UNSPEC_XDOT_BIT
 +
 +  ;; Numeric-token DFA (xdfa4h).
 +  UNSPEC_XDFA4H_STEP
@@ -405,7 +435,7 @@ index 2c26ee99691..08871c1b074 100644
 +
 +mxdot9
 +Target Mask(XDOT9)
-+Use the nine-term strided matrix dot-product instructions.
++Use runtime-sized strided matrix dot-product instructions.
 +
 +mxdfa4h
 +Target Mask(XDFA4H)
@@ -430,7 +460,7 @@ index 25acc63b247..73f690bb982 100644
  #include "dojump.h"
  #include "expr.h"
  #include "stringpool.h"
-@@ -3464,6 +3465,181 @@ expand_UNIQUE (internal_fn, gcall *stmt)
+@@ -3464,6 +3465,189 @@ expand_UNIQUE (internal_fn, gcall *stmt)
      emit_insn (pattern);
  }
  
@@ -487,32 +517,40 @@ index 25acc63b247..73f690bb982 100644
 +  rtx done = gen_label_rtx ();
 +  rtx one = GEN_INT (1);
 +
-+  /* CoreMark uses N == 9.  Keep the existing shape-based generic expansion
-+     for every other dimension, but collapse each nine-term inner product to
-+     one memory-walking instruction when the dedicated target option is on.  */
++  /* Configure the runtime dimension once, then collapse every inner product
++     to one memory-walking instruction.  Keep the generic expansion for zero
++     or dimensions that do not fit the walker's 16-bit counter.  */
 +  if (TARGET_XDOT9)
 +    {
 +      rtx generic = gen_label_rtx ();
 +      rtx dot_outer = gen_label_rtx ();
 +      rtx dot_inner = gen_label_rtx ();
-+      rtx dot_a_end = xmacacc_add (a, GEN_INT (162));
-+      rtx dot_b_end = xmacacc_add (b, GEN_INT (18));
++      rtx dot_step = xmacacc_shift (n, 1);
++      rtx dot_elements = gen_reg_rtx (SImode);
++      emit_insn (gen_mulsi3 (dot_elements, n, n));
++      rtx dot_a_end = xmacacc_add (a, xmacacc_shift (dot_elements, 1));
++      rtx dot_b_end = xmacacc_add (b, dot_step);
 +
-+      emit_cmp_and_jump_insns (n, GEN_INT (9), NE, NULL_RTX, SImode, 1,
++      emit_cmp_and_jump_insns (n, const0_rtx, EQ, NULL_RTX, SImode, 1,
++			       generic, profile_probability::very_unlikely ());
++      emit_cmp_and_jump_insns (n, GEN_INT (65535), GTU, NULL_RTX, SImode, 1,
 +			       generic, profile_probability::very_unlikely ());
 +      emit_label (dot_outer);
 +      emit_move_insn (b_col, b);
++      /* Besides refreshing the state for each row, the configuration op
++         separates the loop's b_col move from the blocking dot consumer.  */
++      emit_insn (gen_xdot_configsi1 (n));
 +      emit_label (dot_inner);
 +      rtx dot_result = gen_reg_rtx (SImode);
 +      emit_insn (bit_extract
-+			 ? gen_xdot9_bitsi3 (dot_result, a_row, b_col)
-+			 : gen_xdot9si3 (dot_result, a_row, b_col));
++			 ? gen_xdot_bitsi3 (dot_result, a_row, b_col)
++			 : gen_xdotsi3 (dot_result, a_row, b_col));
 +      emit_move_insn (gen_rtx_MEM (SImode, c_ptr), dot_result);
 +      emit_insn (gen_addsi3 (c_ptr, c_ptr, GEN_INT (4)));
 +      emit_insn (gen_addsi3 (b_col, b_col, GEN_INT (2)));
 +      emit_cmp_and_jump_insns (b_col, dot_b_end, NE, NULL_RTX, SImode, 1,
 +			       dot_inner, profile_probability::likely ());
-+      emit_insn (gen_addsi3 (a_row, a_row, GEN_INT (18)));
++      emit_insn (gen_addsi3 (a_row, a_row, dot_step));
 +      emit_cmp_and_jump_insns (a_row, dot_a_end, NE, NULL_RTX, SImode, 1,
 +			       dot_outer, profile_probability::likely ());
 +      emit_jump_insn (gen_jump (done));

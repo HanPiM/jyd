@@ -28,6 +28,7 @@ class DCache extends Module {
     val dot9Consume = Input(Bool())
     val dot9AddressA = Input(UInt(32.W))
     val dot9AddressB = Input(UInt(32.W))
+    val dot9Length = Input(UInt(16.W))
     val dot9BitMode = Input(Bool())
     val dot9RequestFire = Input(Bool())
     val dot9MemResponse = Input(Valid(UInt(32.W)))
@@ -85,7 +86,8 @@ class DCache extends Module {
   val dot9State = RegInit(Dot9State.idle)
   val dot9OperandA = Reg(UInt(16.W))
   val dot9OperandB = Reg(UInt(16.W))
-  val dot9Index = RegInit(0.U(4.W))
+  val dot9Remaining = Reg(UInt(16.W))
+  val dot9Stride = Reg(UInt(17.W))
   val dot9Accumulator = Reg(UInt(32.W))
   val dot9Result = Reg(UInt(32.W))
   val dot9BitMode = Reg(Bool())
@@ -158,7 +160,8 @@ class DCache extends Module {
     assert(listFindState === ListFindState.idle, "dot9 and list-find walkers must be mutually exclusive")
     listFindQueryAddress := io.dot9AddressA
     listFindQueryAddressB := io.dot9AddressB
-    dot9Index := 0.U
+    dot9Remaining := io.dot9Length
+    dot9Stride := Cat(io.dot9Length, 0.U(1.W))
     dot9Accumulator := 0.U
     dot9BitMode := io.dot9BitMode
     dot9RequestValid := false.B
@@ -207,13 +210,13 @@ class DCache extends Module {
     dot9State := Dot9State.accumulate
   }.elsewhen(dot9State === Dot9State.accumulate) {
     dot9Accumulator := dot9NextAccumulator
-    when(dot9Index === 8.U) {
+    when(dot9Remaining === 1.U) {
       dot9Result := dot9NextAccumulator
       dot9State := Dot9State.done
     }.otherwise {
       listFindQueryAddress := listFindQueryAddress + 2.U
-      listFindQueryAddressB := listFindQueryAddressB + 18.U
-      dot9Index := dot9Index + 1.U
+      listFindQueryAddressB := listFindQueryAddressB + dot9Stride
+      dot9Remaining := dot9Remaining - 1.U
       dot9State := Dot9State.lookup
     }
   }.elsewhen(dot9State === Dot9State.done && io.dot9Consume) {

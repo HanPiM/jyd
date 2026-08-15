@@ -44,7 +44,7 @@ test "$(grep -Fc '.insn r 0x0b, 6, 3' "$scratch/list-renamed.s")" -gt 0
     -o "$scratch/matrix-control.s"
 "$cc" $flags $includes "$arch" -mxmacacc -mxdot9 -fdump-tree-clippedscore \
     -S "$coremark_dir/src/core_matrix.c" -o "$scratch/matrix-xdot9.s"
-if grep -Eq '\.insn r 0x0b, (3, (4|5|6|7|8|9)|4, (1|2))' "$scratch/matrix-control.s"; then
+if grep -Eq '\.insn r 0x0b, (3, (4|5|6|7|8|9)|4, (3|4|5))' "$scratch/matrix-control.s"; then
     echo "matrix control unexpectedly contains xmacacc/xdot9" >&2
     exit 1
 fi
@@ -53,8 +53,9 @@ grep -Fq 'recognized bit-extract matrix accumulation' "$scratch"/matrix-xdot9.c.
 for funct7 in 4 5 6 7 8 9; do
     test "$(grep -Fc ".insn r 0x0b, 3, $funct7" "$scratch/matrix-xdot9.s")" -gt 0
 done
-test "$(grep -Fc '.insn r 0x0b, 4, 1' "$scratch/matrix-xdot9.s")" -gt 0
-test "$(grep -Fc '.insn r 0x0b, 4, 2' "$scratch/matrix-xdot9.s")" -gt 0
+for funct7 in 3 4 5; do
+    test "$(grep -Fc ".insn r 0x0b, 4, $funct7" "$scratch/matrix-xdot9.s")" -gt 0
+done
 
 sed -e 's/matrix_mul_matrix_bitextract/audit_matrix_bit_accumulate/g' \
     -e 's/matrix_mul_matrix/audit_matrix_accumulate/g' \
@@ -66,7 +67,8 @@ grep -Fq 'recognized bit-extract matrix accumulation' "$scratch"/matrix-renamed.
 for funct7 in 4 5 6 7 8 9; do
     test "$(grep -Fc ".insn r 0x0b, 3, $funct7" "$scratch/matrix-renamed.s")" -gt 0
 done
-test "$(grep -Fc '.insn r 0x0b, 4, 1' "$scratch/matrix-renamed.s")" -gt 0
-test "$(grep -Fc '.insn r 0x0b, 4, 2' "$scratch/matrix-renamed.s")" -gt 0
+for funct7 in 3 4 5; do
+    test "$(grep -Fc ".insn r 0x0b, 4, $funct7" "$scratch/matrix-renamed.s")" -gt 0
+done
 
 echo "xlistfind and xmacacc/xdot9 shape/name-independence: PASS"

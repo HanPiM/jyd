@@ -354,6 +354,7 @@ class CPUCore(
   dcache.io.dot9Consume := exu.io.dcache.dot9Consume
   dcache.io.dot9AddressA := exu.io.dcache.dot9AddressA
   dcache.io.dot9AddressB := exu.io.dcache.dot9AddressB
+  dcache.io.dot9Length := exu.io.dcache.dot9Length
   dcache.io.dot9BitMode := exu.io.dcache.dot9BitMode
   dcache.io.dot9RequestFire := exu.io.dcache.dot9RequestFire
   dcache.io.dot9MemResponse := exu.io.dcache.dot9MemResponse

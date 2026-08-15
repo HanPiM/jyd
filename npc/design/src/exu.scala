@@ -102,6 +102,7 @@ class EXU(
       val dot9Consume = Output(Bool())
       val dot9AddressA = Output(Types.UWord)
       val dot9AddressB = Output(Types.UWord)
+      val dot9Length = Output(UInt(16.W))
       val dot9BitMode = Output(Bool())
       val dot9RequestFire = Output(Bool())
       val dot9MemResponse = Output(Valid(Types.UWord))
@@ -176,8 +177,10 @@ class EXU(
   val listReverseQueryAddress = Reg(Types.UWord)
 
   val isListFind = dinst.info.listFindValid
+  val isDotConfig = dinst.info.xdotConfigValid
   val isDot9 = dinst.info.xdot9Valid
   val isDcacheWalker = isListFind || isDot9
+  val dotLength = RegInit(9.U(16.W))
 
   object XmsumState extends ChiselEnum {
     val idle, request, response, finalizeResult, done = Value
@@ -234,6 +237,12 @@ class EXU(
   val reg_v1       = baseRegV1
   val reg_v2       = baseRegV2
   val listReverseActiveCurrent = Mux(isListReverseLoop, listReverseLoopAddress, reg_v1)
+
+  // The configuration instruction retires before the following walker can
+  // enter EXU.  Keep N local to EXU and snapshot it into DCache on dot start.
+  when(io.in.valid && io.out.ready && isDotConfig) {
+    dotLength := reg_v1(15, 0)
+  }
 
   // A numeric-token scan consumes at most the configured data-region size, so 16-bit
   // counters retain the full architectural result while avoiding sixteen
@@ -513,7 +522,7 @@ class EXU(
   alu.io.in.valid :=
     io.in.valid && isTypArithmetic && (resultIsLong || (resultIsAccelerator && simpleAccelerator))
 
-  when(io.in.valid && (fastAluRs1Groups.orR || fastAluRs2Groups.orR)) {
+  when(io.in.valid && !isDotConfig && !isDot9 && (fastAluRs1Groups.orR || fastAluRs2Groups.orR)) {
     assert(resultIsFast && isTypArithmetic, "fast ALU token used by a non-fast consumer")
     assert(io.previousStageFwd.dataVaild && io.previousStageFwd.kind === ResultKind.fastInt,
       "deferred result entered the fast integer cluster")
@@ -722,7 +731,7 @@ class EXU(
   val xdfaWordDone = isNumericDfaStep && xdfaWordState === NumericDfaState.done
   val ordinaryResultValid =
     (!isTypSys || csrPrepared) &&
-      (!isTypArithmetic || isNumericDfa || Mux(resultIsFast, fastInteger.io.out.valid, alu.io.out.valid))
+      (!isTypArithmetic || isNumericDfa || isDotConfig || Mux(resultIsFast, fastInteger.io.out.valid, alu.io.out.valid))
   val exuResultValid =
     Mux(isNumericDfaStep, xdfaWordDone,
       Mux(isListReverse, listReverseDone, Mux(isXmsum, xmsumDone, ordinaryResultValid)))
@@ -760,7 +769,8 @@ class EXU(
   io.dcache.dot9Consume := io.out.fire && isDot9
   io.dcache.dot9AddressA := reg_v1
   io.dcache.dot9AddressB := reg_v2
-  io.dcache.dot9BitMode := func7t === 2.U
+  io.dcache.dot9Length := Mux(func7t === 1.U || func7t === 2.U, 9.U, dotLength)
+  io.dcache.dot9BitMode := func7t === 2.U || func7t === 5.U
   io.dcache.dot9RequestFire := io.memReq.fire && io.dcache.dot9Request
   io.dcache.dot9MemResponse := io.memResp
   // Accelerator requests share the external bus but cannot update the cache's

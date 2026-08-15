@@ -2,6 +2,7 @@ AM_SRCS := riscv/jyd/start.S \
            riscv/jyd/trm.c \
            riscv/jyd/ioe.c \
            riscv/jyd/timer.c \
+           riscv/jyd/aht10.c \
            riscv/npc/cte.c \
            riscv/npc/trap.S 
            # riscv/npc/input.c \

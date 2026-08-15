@@ -16,6 +16,7 @@ object AddrSpace {
   val SEG = ("h80200020".U, "h80200024".U)
 
   val CNT = ("h80200050".U, "h80200054".U)
+  val AHT10 = ("h80200060".U, "h80200070".U)
 
   object SelfExtSpace {
     val UART = ("h802000a0".U, "h802000af".U)
@@ -468,7 +469,8 @@ class JYDPeripheralBridge(
   hasLED:  Boolean = true,
   hasSEG:  Boolean = true,
   hasCNT:  Boolean = true,
-  hasUART: Boolean = true)
+  hasUART: Boolean = true,
+  hasAHT10: Boolean = true)
     extends Module {
   val io = IO(new Bundle {
     val cpu       = SimpleBusIO.Slave
@@ -477,12 +479,13 @@ class JYDPeripheralBridge(
     val seg       = SimpleBusIO.Master
     val cnt       = SimpleBusIO.Master
     val uart      = SimpleBusIO.Master
+    val aht10     = SimpleBusIO.Master
     val cntEnable = Output(Bool())
   })
 
   io.cpu.dontCareResp()
   io.cpu.req_ready := false.B
-  Seq(io.dram, io.led, io.seg, io.cnt, io.uart).foreach(_.dontCareReq())
+  Seq(io.dram, io.led, io.seg, io.cnt, io.uart, io.aht10).foreach(_.dontCareReq())
 
   val respSelPipe0   = RegInit(0.U(3.W))
   val respSelPipe1   = RegInit(0.U(3.W))
@@ -497,7 +500,8 @@ class JYDPeripheralBridge(
     Option.when(hasLED)((1.U(3.W), io.led, AddrSpace.inRng(io.cpu.addr, AddrSpace.LED))),
     Option.when(hasSEG)((2.U(3.W), io.seg, AddrSpace.inRng(io.cpu.addr, AddrSpace.SEG))),
     Option.when(hasCNT)((3.U(3.W), io.cnt, AddrSpace.inRng(io.cpu.addr, AddrSpace.CNT))),
-    Option.when(hasUART)((4.U(3.W), io.uart, AddrSpace.inRng(io.cpu.addr, AddrSpace.SelfExtSpace.UART)))
+    Option.when(hasUART)((4.U(3.W), io.uart, AddrSpace.inRng(io.cpu.addr, AddrSpace.SelfExtSpace.UART))),
+    Option.when(hasAHT10)((5.U(3.W), io.aht10, AddrSpace.inRng(io.cpu.addr, AddrSpace.AHT10)))
   ).flatten
 
   val targetSel = MuxCase(
@@ -571,6 +575,7 @@ class JYDSoC(val resetPC: UInt = "h80000000".U,
   val seg   = Module(new SimpleBusOneWordRWDevice(Some("jyd_update_seg")))
   val cnt   = Module(new SimpleBusTimer)
   val uart  = Module(new SimpleBusUART)
+  val aht10 = Module(new SimpleBusAHT10Sim)
   val perip = Module(new JYDPeripheralBridge)
 
   cpu.io.io.irom <> irom.io
@@ -581,6 +586,7 @@ class JYDSoC(val resetPC: UInt = "h80000000".U,
   perip.io.seg <> seg.io.bus
   perip.io.cnt <> cnt.io
   perip.io.uart <> uart.io
+  perip.io.aht10 <> aht10.io
 }
 
 class JYDFPGATop(val resetPC: UInt = "h80000000".U) extends Module with HasJYDCPUAndResetPC {
@@ -593,6 +599,13 @@ class JYDFPGATop(val resetPC: UInt = "h80000000".U) extends Module with HasJYDCP
   val uartRxData  = IO(Input(UInt(8.W)))
   val uartRxEmpty = IO(Input(Bool()))
   val uartRxPop   = IO(Output(Bool()))
+  val aht10SclIn       = IO(Input(Bool()))
+  val aht10SdaIn       = IO(Input(Bool()))
+  val aht10SclDriveLow = IO(Output(Bool()))
+  val aht10SdaDriveLow = IO(Output(Bool()))
+  val aht10TemperatureLocalX10 = IO(Output(SInt(16.W)))
+  val aht10HumidityLocalX10 = IO(Output(UInt(16.W)))
+  val aht10DataValidLocal = IO(Output(Bool()))
 
   val irom     = Module(new SimpleBusFPGAROM(JYDSoCConfig.iromSizeInByte, JYDSoCConfig.iromBaseAddr))
   val dram     = Module(new SimpleBusFPGAMem(JYDSoCConfig.dramSizeInByte, JYDSoCConfig.dramBaseAddr))
@@ -600,6 +613,7 @@ class JYDFPGATop(val resetPC: UInt = "h80000000".U) extends Module with HasJYDCP
   val segReg = Module(new SimpleBusOneWordRWDevice())
   val cnt      = Module(new SimpleBusFPGACounter)
   val uartAdapter = Module(new SimpleBusFPGAUART)
+  val aht10       = Module(new SimpleBusFPGAAHT10)
   val perip       = Module(new JYDPeripheralBridge)
 
   cpu.io.io.irom <> irom.io
@@ -610,6 +624,7 @@ class JYDFPGATop(val resetPC: UInt = "h80000000".U) extends Module with HasJYDCP
   perip.io.seg <> segReg.io.bus
   perip.io.cnt <> cnt.io.bus
   perip.io.uart <> uartAdapter.io.bus
+  perip.io.aht10 <> aht10.io.bus
   uartTxPush  := uartAdapter.io.txPush
   uartTxData  := uartAdapter.io.txData
   uartAdapter.io.txFull  := uartTxFull
@@ -620,6 +635,16 @@ class JYDFPGATop(val resetPC: UInt = "h80000000".U) extends Module with HasJYDCP
   cnt.io.clk_50Mhz := clk_50Mhz
   cnt.io.rst       := reset.asBool
   cnt.io.cntEnable := perip.io.cntEnable
+
+  aht10.io.clk_50Mhz := clk_50Mhz
+  aht10.io.rst        := reset.asBool
+  aht10.io.sclIn      := aht10SclIn
+  aht10.io.sdaIn      := aht10SdaIn
+  aht10SclDriveLow    := aht10.io.sclDriveLow
+  aht10SdaDriveLow    := aht10.io.sdaDriveLow
+  aht10TemperatureLocalX10 := aht10.io.localTemperatureX10
+  aht10HumidityLocalX10    := aht10.io.localHumidityX10
+  aht10DataValidLocal      := aht10.io.localDataValid
 
   led := ledReg.io.value
   seg := segReg.io.value

@@ -778,8 +778,9 @@ class EXU(
   // accelerator state never enters a distributed-memory write-enable cone.
   val normalStoreRequest = isTypStore && io.in.valid && io.out.ready
   val cacheableStoreFire = io.memReq.fire && normalStoreRequest && reg1AddImm(21, 20) === "b01".U
-  val listReverseStepCacheStore = isListReverseStep && listReverseState === ListReverseState.done &&
-    listReverseStepStoreCommitted
+  // Only the list-reversal FSM can set storeCommitted.  Do not carry the
+  // instruction decode bit into every mirrored DCache write enable.
+  val listReverseStepCacheStore = listReverseState === ListReverseState.done && listReverseStepStoreCommitted
   // Keep the asynchronous tag lookup out of this cross-module control and
   // every data-memory write enable.
   io.dcache.storeUpdate := cacheableStoreFire

@@ -119,11 +119,14 @@ echo "== creating worktree: $WT_DIR (branch $BRANCH, commit $COMMIT_FULL)"
 git -C "$SRC" worktree add -b "$BRANCH" "$WT_DIR" "$COMMIT_FULL"
 
 cleanup() {
-  echo "error: setup failed, removing incomplete worktree $WT_DIR" >&2
-  git -C "$SRC" worktree remove --force "$WT_DIR" 2>/dev/null || true
-  git -C "$SRC" branch -D "$BRANCH" 2>/dev/null || true
+  local status="$1"
+  if [[ "$status" -ne 0 ]]; then
+    echo "error: setup failed, removing incomplete worktree $WT_DIR" >&2
+    git -C "$SRC" worktree remove --force "$WT_DIR" 2>/dev/null || true
+    git -C "$SRC" branch -D "$BRANCH" 2>/dev/null || true
+  fi
 }
-trap cleanup ERR
+trap 'cleanup $?' EXIT
 
 # --- link local dependencies (symlink, never copy) --------------------------
 link_dep() { # link_dep <src> <dst>
@@ -340,7 +343,15 @@ find "$WT_DIR/nemu/include/generated" "$WT_DIR/nemu/include/config" \
   -type f -exec touch {} +
 touch "$WT_DIR/nemu/tools/softfloat/repo/build/Linux-x86_64-GCC/softfloat.a" \
   "$WT_DIR/sdb/build/libsdb.a"
-find "$WT_DIR/nemu/build" -type f -exec touch {} +
+# Touch copied objects before the linked executables.  A single unordered find
+# can otherwise make an object a few nanoseconds newer than its executable and
+# make the verification below request a spurious relink.
+find "$WT_DIR/nemu/build" -type f \
+  ! -name riscv32-nemu-interpreter \
+  ! -name riscv32-nemu-interpreter-so \
+  -exec touch {} +
+touch "$WT_DIR/nemu/build/riscv32-nemu-interpreter" \
+  "$WT_DIR/nemu/build/riscv32-nemu-interpreter-so"
 
 if ! make -s -q -C "$WT_DIR/nemu" \
   "$WT_DIR/nemu/build/riscv32-nemu-interpreter"; then
@@ -361,7 +372,7 @@ echo "   interpreter-so sha256: $(sha256sum "$WT_DIR/nemu/build/riscv32-nemu-int
 
 # --- formal COE pair ---------------------------------------------------------
 if [[ -z "$COE_DIR" ]]; then
-  COE_DIR="$SRC/jyd-tests/coremark-official/build/iter10000-data2000-z_zba_zbb_zbc_zbs_zbkb_zbkx-x_xbmul_xcrcu8_xlistrev_xmsum_xdfa4h-cdefault-lto0-pf1"
+  COE_DIR="$SRC/jyd-tests/coremark-official/build/iter10000-data2000-z_zba_zbb_zbc_zbs_zbkb_zbkx-x_xbmul_xcrcu8_xlrev2_xmsum_xdfa4h-cdefault-lto0-pf1"
 fi
 case "/$COE_DIR/" in
   */iter10000-*) ;;

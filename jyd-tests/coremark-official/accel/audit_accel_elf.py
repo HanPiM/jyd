@@ -7,6 +7,7 @@ ENCODINGS = {
     "xcrcu8": (0x0000000B,),
     "xmac16": (0x0000300B,),
     "xdot16": (0x0000400B,),
+    "xdot9": (0x0200400B, 0x0400400B),
     "xbmul": (0x0000500B,),
     "xmbm": (0x0200500B,),
     "xlistrev": (0x0400600B,),
@@ -59,7 +60,7 @@ def main():
             if instruction & MASK in ENCODINGS[name]:
                 counts[name] += 1
 
-    for name in ("xlistfind", "xmacacc"):
+    for name in ("xlistfind", "xmacacc", "xdot9"):
         if name not in counts:
             continue
         missing_subops = [

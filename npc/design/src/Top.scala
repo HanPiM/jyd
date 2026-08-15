@@ -350,6 +350,17 @@ class CPUCore(
   exu.io.dcache.listFindRequestAddress := dcache.io.listFindRequestAddress
   exu.io.dcache.listFindDone := dcache.io.listFindDone
   exu.io.dcache.listFindResult := dcache.io.listFindResult
+  dcache.io.dot9Start := exu.io.dcache.dot9Start
+  dcache.io.dot9Consume := exu.io.dcache.dot9Consume
+  dcache.io.dot9AddressA := exu.io.dcache.dot9AddressA
+  dcache.io.dot9AddressB := exu.io.dcache.dot9AddressB
+  dcache.io.dot9BitMode := exu.io.dcache.dot9BitMode
+  dcache.io.dot9RequestFire := exu.io.dcache.dot9RequestFire
+  dcache.io.dot9MemResponse := exu.io.dcache.dot9MemResponse
+  exu.io.dcache.dot9Request := dcache.io.dot9Request
+  exu.io.dcache.dot9RequestAddress := dcache.io.dot9RequestAddress
+  exu.io.dcache.dot9Done := dcache.io.dot9Done
+  exu.io.dcache.dot9Result := dcache.io.dot9Result
   val dcacheStorePortMutation = exu.io.dcache.storeUpdate && p.enableDCache.B
   val dcacheStoreMutation = dcacheStorePortMutation || (exu.io.dcache.fullUpdate && p.enableDCache.B)
   val dcacheStoreEpoch    = RegInit(false.B)

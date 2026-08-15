@@ -56,6 +56,8 @@
 #define MATCH_XACCEL_XMACACC_LAST 0x1000300b
 #define MATCH_XACCEL_XMACACC_BIT_LAST 0x1200300b
 #define MATCH_XACCEL_XDOT16 0x0000400b
+#define MATCH_XACCEL_XDOT9 0x0200400b
+#define MATCH_XACCEL_XDOT9_BIT 0x0400400b
 #define MATCH_XACCEL_XBMUL  0x0000500b
 #define MATCH_XACCEL_XMBM   0x0200500b
 #define MATCH_XACCEL_XLISTREV_INIT 0x0000600b
@@ -72,6 +74,8 @@
 #define MASK_XACCEL_XMACACC_LAST MASK_XACCEL_XACCEL
 #define MASK_XACCEL_XMACACC_BIT_LAST MASK_XACCEL_XACCEL
 #define MASK_XACCEL_XDOT16 MASK_XACCEL_XACCEL
+#define MASK_XACCEL_XDOT9 MASK_XACCEL_XACCEL
+#define MASK_XACCEL_XDOT9_BIT MASK_XACCEL_XACCEL
 #define MASK_XACCEL_XBMUL  MASK_XACCEL_XACCEL
 #define MASK_XACCEL_XMBM   MASK_XACCEL_XACCEL
 #define MASK_XACCEL_XLISTREV_INIT MASK_XACCEL_XACCEL
@@ -103,7 +107,7 @@ static word_t matrix_accumulator;
 #define MASK_XACCEL_XDFA4H_STEP MASK_XACCEL_XDFACNT
 #define MASK_XACCEL_XDFA4H_STEP_PTR MASK_XACCEL_XDFACNT
 
-enum { XA_MAC16, XA_DOT16, XA_BMUL, XA_LISTREV, XA_LISTFIND, XA_MSUM };
+enum { XA_MAC16, XA_DOT16, XA_DOT9, XA_BMUL, XA_LISTREV, XA_LISTFIND, XA_MSUM };
 
 static uint32_t numeric_dfa_transition_counts[8];
 static uint32_t numeric_dfa_final_counts[8];
@@ -418,6 +422,24 @@ static int decode_exec(Decode *s) {
     int32_t hi = (int16_t)(R(rs1) >> 16) * (int16_t)(R(rs2) >> 16);
     R(rd) = (word_t)(lo + hi);
     riscv_profile_record_xaccel(XA_DOT16, 2, 4);
+    matched = true;
+  }
+  if (IS_INST(XACCEL_XDOT9) || IS_INST(XACCEL_XDOT9_BIT)) {
+    vaddr_t address_a = R(rs1);
+    vaddr_t address_b = R(rs2);
+    word_t sum = 0;
+    bool bit_extract = IS_INST(XACCEL_XDOT9_BIT);
+    for (unsigned k = 0; k < 9; k++) {
+      word_t a = vaddr_read(address_a + 2 * k, 2) & 0xffffu;
+      word_t b = vaddr_read(address_b + 18 * k, 2) & 0xffffu;
+      word_t product = a * b;
+      word_t term = bit_extract
+                        ? ((product >> 2) & 0xfu) * ((product >> 5) & 0x7fu)
+                        : (word_t)(sx16(a) * sx16(b));
+      sum += term;
+    }
+    R(rd) = sum;
+    riscv_profile_record_xaccel(XA_DOT9, 9, 27);
     matched = true;
   }
   if (IS_INST(XACCEL_XBMUL)) {

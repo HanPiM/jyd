@@ -316,6 +316,8 @@ class IDU(
   val isFusedBitExtractMulCustom = inst(31, 25) === 1.U && arithmeticFunc3 === 5.U && inst(6, 0) === "b0001011".U
   val isMatrixAccumulateCustom = inst(6, 0) === "b0001011".U && arithmeticFunc3 === 3.U &&
     inst(31, 25) >= 4.U && inst(31, 25) <= 9.U
+  val isDot9Custom = inst(6, 0) === "b0001011".U && arithmeticFunc3 === 4.U &&
+    (inst(31, 25) === 1.U || inst(31, 25) === 2.U)
   val isListReverseCustom = isListReverseEncoding
   val isMatrixReduceCustom = inst(31, 25) === 2.U && arithmeticFunc3 === 7.U && inst(6, 0) === "b0001011".U
   val isNumericDfaCustom = inst(6, 0) === "b1011011".U &&
@@ -328,6 +330,7 @@ class IDU(
   res.xbmulValid := isBitExtractMulCustom
   res.xmbmValid := isFusedBitExtractMulCustom
   res.xmacaccValid := isMatrixAccumulateCustom
+  res.xdot9Valid := isDot9Custom
   when(isMatrixAccumulateCustom && inst(31, 25) =/= 8.U && inst(31, 25) =/= 9.U) {
     res.rdWrEn := false.B
   }
@@ -358,7 +361,7 @@ class IDU(
     (isMExtArithmetic || isIterativeB || isShortB || isFusedBitExtractMulCustom || isMatrixAccumulateCustom)
   val isAccelerator =
     isCrcU8Custom || isBitExtractMulCustom || isListReverseCustom || isListFindEncoding ||
-      isMatrixReduceCustom || isNumericDfaCustom
+      isMatrixReduceCustom || isNumericDfaCustom || isDot9Custom
 
   bypassMux.io.allowAdjacentFastRs1 := isFastIntegerArithmetic || isTypBranch
   bypassMux.io.allowAdjacentFastRs2 := isFastIntegerArithmetic || isTypBranch || isTypStore

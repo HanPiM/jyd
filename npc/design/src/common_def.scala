@@ -221,6 +221,10 @@ class DecodedInstInfo(implicit p : CPUParameters) extends InstMetaInfo with HasR
   // Stateful matrix dot-product accumulation over the narrow multiplier lane.
   val xmacaccValid = Bool()
 
+  // Blocking nine-element matrix dot-product walker. The two custom encodings
+  // select signed multiply-accumulate or CoreMark's bit-extract term.
+  val xdot9Valid = Bool()
+
   // In-place list reversal uses an init operation followed by a hardware loop.
   val listReverseValid = Bool()
   val listReverseStep = Bool()

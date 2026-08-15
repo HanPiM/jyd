@@ -98,6 +98,17 @@ class EXU(
       val listFindRequestAddress = Input(Types.UWord)
       val listFindDone = Input(Bool())
       val listFindResult = Input(Types.UWord)
+      val dot9Start = Output(Bool())
+      val dot9Consume = Output(Bool())
+      val dot9AddressA = Output(Types.UWord)
+      val dot9AddressB = Output(Types.UWord)
+      val dot9BitMode = Output(Bool())
+      val dot9RequestFire = Output(Bool())
+      val dot9MemResponse = Output(Valid(Types.UWord))
+      val dot9Request = Input(Bool())
+      val dot9RequestAddress = Input(Types.UWord)
+      val dot9Done = Input(Bool())
+      val dot9Result = Input(Types.UWord)
       val storeUpdate = Output(Bool())
       val storeFull   = Output(Bool())
       val storeData   = Output(Types.UWord)
@@ -165,6 +176,7 @@ class EXU(
   val listReverseQueryAddress = Reg(Types.UWord)
 
   val isListFind = dinst.info.listFindValid
+  val isDot9 = dinst.info.xdot9Valid
 
   object XmsumState extends ChiselEnum {
     val idle, request, response, finalizeResult, done = Value
@@ -660,7 +672,8 @@ class EXU(
     isNumericDfa,
     xdfaWordResult,
     Mux(isListReverse, listReverseResult,
-      Mux(isListFind, io.dcache.listFindResult, Mux(isXmsum, xmsumResult, simpleAcceleratorOut)))
+      Mux(isListFind, io.dcache.listFindResult,
+        Mux(isDot9, io.dcache.dot9Result, Mux(isXmsum, xmsumResult, simpleAcceleratorOut))))
   )
 
   writeBackInfo.resultKind := dinst.info.resultKind
@@ -742,6 +755,13 @@ class EXU(
   io.dcache.listFindDataMode := func7t === 3.U
   io.dcache.listFindRequestFire := io.memReq.fire && isListFind
   io.dcache.listFindMemResponse := io.memResp
+  io.dcache.dot9Start := io.in.valid && isDot9 && !io.dcache.dot9Done
+  io.dcache.dot9Consume := io.out.fire && isDot9
+  io.dcache.dot9AddressA := reg_v1
+  io.dcache.dot9AddressB := reg_v2
+  io.dcache.dot9BitMode := func7t === 2.U
+  io.dcache.dot9RequestFire := io.memReq.fire && isDot9
+  io.dcache.dot9MemResponse := io.memResp
   // Accelerator requests share the external bus but cannot update the cache's
   // normal store port. Qualify the architectural store locally so cache hit or
   // accelerator state never enters a distributed-memory write-enable cone.
@@ -763,6 +783,7 @@ class EXU(
   val listReverseLoadRequest = listReverseState === ListReverseState.loadRequest
   val listReverseRequest = listReverseLoadRequest || listReverseStoreRequest
   val listFindRequest = io.dcache.listFindRequest
+  val dot9Request = io.dcache.dot9Request
   val xmsumRequest = xmsumState === XmsumState.request
   val xdfaWordFirstRequest = xdfaWordState === NumericDfaState.idle && io.in.valid && isNumericDfaStep
   val xdfaWordRequest = xdfaWordState === NumericDfaState.request || xdfaWordFirstRequest
@@ -774,15 +795,17 @@ class EXU(
   normalMemReq.addr  := Mux(isNumericDfaStep,
     Mux(xdfaWordFirstRequest, reg_v2, xdfaWordAddress) & ~3.U(32.W),
     Mux(isListReverse, listReverseCurrent,
-      Mux(isListFind, io.dcache.listFindRequestAddress, Mux(isXmsum, xmsumAddress, reg1AddImm))))
-  normalMemReq.size  := Mux(isNumericDfaStep || isListReverse || isListFind || isXmsum, 2.U, func3t(1, 0))
+      Mux(isListFind, io.dcache.listFindRequestAddress,
+        Mux(isDot9, io.dcache.dot9RequestAddress, Mux(isXmsum, xmsumAddress, reg1AddImm)))))
+  normalMemReq.size  := Mux(isNumericDfaStep || isListReverse || isListFind || isDot9 || isXmsum,
+    2.U, func3t(1, 0))
   normalMemReq.wen   := Mux(isNumericDfaStep, false.B,
-    Mux(isListReverse, listReverseStoreRequest, !isXmsum && isTypStore))
+    Mux(isListReverse, listReverseStoreRequest, !isDot9 && !isXmsum && isTypStore))
   normalMemReq.wdata := Mux(listReverseStoreRequest, listReversePrevious,
-    Mux(isXmsum || isListFind || (isListReverse && !listReverseStoreRequest), 0.U, memWData))
+    Mux(isXmsum || isDot9 || isListFind || (isListReverse && !listReverseStoreRequest), 0.U, memWData))
   normalMemReq.wmask := Mux(listReverseStoreRequest, "b1111".U,
-    Mux(isXmsum || isListFind || (isListReverse && !listReverseStoreRequest), 0.U, memWMask))
-  io.memReq.valid := xdfaWordRequest || listReverseRequest || listFindRequest || xmsumRequest ||
+    Mux(isXmsum || isDot9 || isListFind || (isListReverse && !listReverseStoreRequest), 0.U, memWMask))
+  io.memReq.valid := xdfaWordRequest || listReverseRequest || listFindRequest || dot9Request || xmsumRequest ||
     (needMemReq && io.in.valid && io.out.ready)
   io.memReq.bits := normalMemReq
 
@@ -793,12 +816,14 @@ class EXU(
     io.in.valid && !needMemReq && exuResultValid
   )
   io.in.ready := Mux(isNumericDfaStep, xdfaWordDone && io.out.ready,
-    Mux(isListReverse, listReverseDone && io.out.ready,
+      Mux(isListReverse, listReverseDone && io.out.ready,
       Mux(isListFind, io.dcache.listFindDone && io.out.ready,
-        Mux(isXmsum, xmsumDone && io.out.ready, normalReady))))
+        Mux(isDot9, io.dcache.dot9Done && io.out.ready,
+          Mux(isXmsum, xmsumDone && io.out.ready, normalReady)))))
   io.out.valid := Mux(isNumericDfaStep, xdfaWordDone,
     Mux(isListReverse, listReverseDone,
-      Mux(isListFind, io.dcache.listFindDone, Mux(isXmsum, xmsumDone, normalValid))))
+      Mux(isListFind, io.dcache.listFindDone,
+        Mux(isDot9, io.dcache.dot9Done, Mux(isXmsum, xmsumDone, normalValid)))))
 
   writeBackInfo.iid := dinst.iid
 

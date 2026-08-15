@@ -120,6 +120,43 @@ rewritten.
 
 For emulator/runtime changes, rebuild the affected module and run the local workload you changed. A NEMU-only source change should incrementally rebuild NEMU while reusing the copied generated instruction files, SoftFloat library, sdb archive, and other unchanged dependencies. Rebuild or refetch one of those dependencies only when its own source, configuration, or generated input changed. NEMU fetches a fixed Berkeley SoftFloat revision through `nemu/tools/softfloat`; keep that revision pinned and build it with the RISC-V specialization when a SoftFloat change truly requires rebuilding it. Changes under `nemu/tools/gen-inst/repo` belong to the separate gen-inst repository and must be committed and pushed there. CI validates `npc/**`, `patch/**`, and `.github/**`, so changes there should be kept green.
 
+## Finals Reviewer Reproduction Export
+
+When the user asks to "export the reviewer reproduction version" (导出评委复核版本),
+refresh the existing `~/jyd/finals-coe-repro/` directory in place. This phrase does
+not mean creating another worktree, archive directory, or differently named package
+unless the user explicitly requests one. Ordinary repository changes do not
+automatically authorize modifying the external reproduction directory.
+
+Use the current checked-out submission branch as the source of truth. An export must
+sync the following material when it has changed:
+
+- `abstract-machine/`, retaining the pinned Berkeley SoftFloat source and its official
+  build-rule directory while excluding generated objects, caches, and images;
+- `jyd-tests/coremark-official/` and `jyd-tests/rtthread-nano/`, including the pinned
+  RT-Thread Nano 3.1.5 source needed for an offline build;
+- `jyd-tests/BUILD-GCC-AND-COE.md`, the package README, and `build-coe.sh` when the
+  documented workflow changes;
+- the audited prebuilt GCC/binutils/runtime bundle when the compiler patch or toolchain
+  changes; and
+- freshly generated reference CoreMark and RT-Thread Nano COE/ELF artifacts whenever
+  their inputs change.
+
+The exported package must remain relocatable. Scripts and copied sources must not
+depend on `/home/hanpi`, `/srv/data/jyd`, the repository checkout path, or another
+fixed installation directory; resolve paths from the package or script location.
+Leave `out/` empty in the delivered directory, keep verified outputs under
+`reference/`, and regenerate the applicable `SHA256SUMS` files. Remove copied build
+artifacts and host-path-shaped directories such as `build/`, `home/`, and `srv/` from
+the source snapshot. The upstream `abstract-machine/softfloat/repo/build/` directory
+is a source build-rule directory and must be retained.
+
+An export is complete only after toolchain and reference checksums pass, the GCC
+backend integrity and name-independence audits pass, and `./build-coe.sh all` succeeds
+from a clean copy moved to a different path with no project-specific environment
+variables. Byte-compare the four generated CoreMark/RT-Thread text/data COE files
+against `reference/`, then remove generated `out/` contents from the delivered copy.
+
 ## Optimization Experiment Documentation
 
 Optimization experiment documentation has a single canonical home: branch `opt-notes`, checked out at

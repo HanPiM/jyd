@@ -2,6 +2,15 @@
 
 这是"一生一芯"的工程项目
 
+## Finals reviewer reproduction package
+
+The portable reviewer package is maintained at `~/jyd/finals-coe-repro/`.
+When an export of the reviewer reproduction version is requested, that existing
+directory is refreshed in place from the current submission branch. The package
+includes a prebuilt audited GCC toolchain, offline build inputs, reference COE files,
+and a path-independent `build-coe.sh`; see `jyd-tests/BUILD-GCC-AND-COE.md` for the
+quick and full reconstruction procedures.
+
 ## Vivado FPGA CI
 
 The Vivado digital twin project lives in `jyd-vivado-proj/`, so each workbench

@@ -491,20 +491,16 @@ static int decode_exec(Decode *s) {
   }
   if (IS_INST(XACCEL_XLISTREV_LOOP)) {
     vaddr_t current = R(rs1);
-    if (current == 0) {
-      R(rd) = list_reverse_previous;
-    } else {
+    uint64_t nodes = 0;
+    while (current != 0) {
       vaddr_t next = vaddr_read(current, 4);
       vaddr_write(current, 4, list_reverse_previous);
       list_reverse_previous = current;
-      if (next != 0) {
-        R(rd) = next;
-        s->dnpc = s->pc;
-      } else {
-        R(rd) = current;
-      }
+      current = next;
+      nodes++;
     }
-    riscv_profile_record_xaccel(XA_LISTREV, 1, 4);
+    R(rd) = list_reverse_previous;
+    riscv_profile_record_xaccel(XA_LISTREV, nodes, 2 * nodes);
     matched = true;
   }
   if (IS_INST(XACCEL_XMSUM)) {

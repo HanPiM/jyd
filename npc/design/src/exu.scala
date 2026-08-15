@@ -156,7 +156,7 @@ class EXU(
   val isNumericDfa = dinst.info.numericDfaValid
 
   object ListReverseState extends ChiselEnum {
-    val idle, lookup, lookupResolve, loadRequest, loadResponse, storeRequest, done = Value
+    val idle, lookup, lookupResolve, loadRequest, loadResponse, storeRequest, cacheUpdate, done = Value
   }
   val listReverseState = RegInit(ListReverseState.idle)
   val listReverseCurrent = Reg(Types.UWord)
@@ -165,11 +165,9 @@ class EXU(
   val listReverseNext = Reg(Types.UWord)
   val listReverseResult = Reg(Types.UWord)
   val listReverseLoopAddress = RegInit(0.U(32.W))
-  val listReverseStepStoreCommitted = RegInit(false.B)
   val isListReverse = dinst.info.listReverseValid
   val isListReverseStep = dinst.info.listReverseStep
   val isListReverseLoop = dinst.info.listReverseLoop
-  val listReverseLoopTaken = RegInit(false.B)
   val listReversePrefetchValid = RegInit(false.B)
   val listReversePrefetchHit = Reg(Bool())
   val listReversePrefetchData = Reg(Types.UWord)
@@ -369,7 +367,6 @@ class EXU(
     val usePrefetch = isListReverseLoop && listReversePrefetchValid
     listReverseNext := listReversePrefetchData
     listReversePrefetchValid := false.B
-    listReverseStepStoreCommitted := false.B
     listReverseCurrent := listReverseActiveCurrent
     listReverseQueryAddress := Mux(isListReverseLoop, listReversePrefetchData, listReverseActiveCurrent)
     listReversePrevious := Mux(isListReverseLoop, listReverseChainPrevious, reg_v2)
@@ -378,7 +375,6 @@ class EXU(
     }
     when(listReverseActiveCurrent === 0.U) {
       listReverseResult := Mux(isListReverseLoop, listReverseChainPrevious, 0.U)
-      listReverseLoopTaken := false.B
       listReverseState := ListReverseState.done
     }.elsewhen(isListReverseLoop) {
       listReverseState := Mux(usePrefetch && listReversePrefetchHit,
@@ -402,19 +398,27 @@ class EXU(
     listReverseNext := io.memResp.bits
     listReverseState := ListReverseState.storeRequest
   }.elsewhen(listReverseState === ListReverseState.storeRequest && io.memReq.fire) {
-    listReverseStepStoreCommitted := true.B
     listReversePrefetchHit := Mux(listReverseNext === listReverseCurrent, true.B, io.dcache.hit)
-    val loopTaken = isListReverseLoop && listReverseNext =/= 0.U
-    listReverseResult := Mux(isListReverseLoop && !loopTaken, listReverseCurrent, listReverseNext)
-    listReverseLoopTaken := loopTaken
-    listReverseState := ListReverseState.done
-  }.elsewhen(listReverseState === ListReverseState.done && io.out.fire) {
-    listReversePrefetchValid := listReverseNext =/= 0.U
-    listReversePrefetchData := Mux(
+    listReverseState := ListReverseState.cacheUpdate
+  }.elsewhen(listReverseState === ListReverseState.cacheUpdate) {
+    val prefetchedData = Mux(
       listReverseNext === listReverseCurrent,
       listReversePrevious,
       io.dcache.readData
     )
+    listReversePrefetchData := prefetchedData
+    when(isListReverseLoop && listReverseNext =/= 0.U) {
+      listReversePrevious := listReverseCurrent
+      listReverseCurrent := listReverseNext
+      listReverseNext := prefetchedData
+      listReverseQueryAddress := prefetchedData
+      listReverseState := Mux(listReversePrefetchHit, ListReverseState.storeRequest, ListReverseState.loadRequest)
+    }.otherwise {
+      listReverseResult := Mux(isListReverseLoop, listReverseCurrent, listReverseNext)
+      listReversePrefetchValid := !isListReverseLoop && listReverseNext =/= 0.U
+      listReverseState := ListReverseState.done
+    }
+  }.elsewhen(listReverseState === ListReverseState.done && io.out.fire) {
     listReverseState := ListReverseState.idle
   }
 
@@ -752,9 +756,9 @@ class EXU(
   // The list-reversal operand is held in the IDU/EXU payload for the instruction's
   // entire residence in EXU.  Its decoder disables the previous-EXU direct
   // bypass, so this registered value cannot create a forwarding-to-tag path.
-  // The loop always consumes the preceding list-reversal result: first the init
-  // result, then the result of its previous self-iteration. The done-boundary
-  // register keeps that private recurrence out of the asynchronous tag RAM.
+  // The loop consumes the init result and then walks the remaining runtime
+  // chain internally. The done-boundary register keeps that private handoff out
+  // of the asynchronous tag RAM.
   val dcacheQueryAddr = Mux(isListReverse, listReverseQueryAddress, reg1AddImm)
   io.dcache.queryIndex := Mux(isListReverse, listReverseQueryAddress(11, 2), io.stagedDcacheQueryIndex)
   io.dcache.queryTag   := dcacheQueryAddr(17, 11)
@@ -778,8 +782,7 @@ class EXU(
   // accelerator state never enters a distributed-memory write-enable cone.
   val normalStoreRequest = isTypStore && io.in.valid && io.out.ready
   val cacheableStoreFire = io.memReq.fire && normalStoreRequest && reg1AddImm(21, 20) === "b01".U
-  val listReverseStepCacheStore = isListReverseStep && listReverseState === ListReverseState.done &&
-    listReverseStepStoreCommitted
+  val listReverseStepCacheStore = isListReverseStep && listReverseState === ListReverseState.cacheUpdate
   // Keep the asynchronous tag lookup out of this cross-module control and
   // every data-memory write enable.
   io.dcache.storeUpdate := cacheableStoreFire
@@ -844,9 +847,7 @@ class EXU(
 
   // --- Next PC ---
   val isJmpCsr = is_ecall || is_mret
-  val listReverseLoopBranch = isListReverseLoop && listReverseDone
   val normalNxtPC = Wire(Types.UWord)
-  val nxtPC       = Wire(Types.UWord)
 
   normalNxtPC := TrimmedPC.expand(
     Mux(
@@ -859,36 +860,28 @@ class EXU(
       )
     )
   )
-  nxtPC       := Mux(listReverseLoopBranch && listReverseLoopTaken, dinst.pc, normalNxtPC)
-  io.nxtPC    := nxtPC
+  io.nxtPC    := normalNxtPC
   io.pc       := dinst.pc
 
-  io.branchTarget := Mux(isTypBranch || isTypJAL || isTypJALR || listReverseLoopBranch,
-    controlFlowTarget, snpc)
+  io.branchTarget := Mux(isTypBranch || isTypJAL || isTypJALR, controlFlowTarget, snpc)
   // Reuse the existing unconditional-entry bit for direct JAL and the exact
   // return encoding that IDU can validate without an address-add dependency.
   io.isJAL       := isTypJAL || dinst.code === "h00008067".U
-  io.isBranch    := isTypBranch || listReverseLoopBranch
+  io.isBranch    := isTypBranch
   io.isReturn    := isTypJALR && dinst.code === "h00008067".U
   io.isCall      := (isTypJAL || isTypJALR) && dinst.info.rd =/= 0.U
-  io.branchTaken := Mux(listReverseLoopBranch, listReverseLoopTaken, takeBranch)
-  io.btbUpdateEn := isTypBranch || isTypJAL || isTypJALR || listReverseLoopBranch
+  io.branchTaken := takeBranch
+  io.btbUpdateEn := isTypBranch || isTypJAL || isTypJALR
   val adjacentFastBranchResolve = dinst.info.adjacentFastBranch
   val registeredBranchResolve = adjacentFastBranchResolve
   val registeredBranchRedirect = adjacentFastBranchResolve && (takeBranch ^ dinst.predTake)
   lsuInfo.lateBranchRedirect := exuResultValid && registeredBranchRedirect
-  io.predWrong := exuResultValid && Mux(
-    listReverseLoopBranch,
-    listReverseLoopTaken ^ dinst.predTake,
-    (isFmtB && (takeBranch ^ dinst.predTake)) || io.in.bits.info.notBranchPredWrong
-  )
+  io.predWrong := exuResultValid &&
+    ((isFmtB && (takeBranch ^ dinst.predTake)) || io.in.bits.info.notBranchPredWrong)
   dontTouch(io.predWrong)
-  io.immediatePredWrong := exuResultValid && Mux(
-    listReverseLoopBranch,
-    listReverseLoopTaken ^ dinst.predTake,
-    (isFmtB && !registeredBranchResolve && (immediateTakeBranch ^ dinst.predTake)) ||
-      io.in.bits.info.notBranchPredWrong
-  )
+  io.immediatePredWrong := exuResultValid &&
+    ((isFmtB && !registeredBranchResolve && (immediateTakeBranch ^ dinst.predTake)) ||
+      io.in.bits.info.notBranchPredWrong)
 
   StageLogger(
     clock,

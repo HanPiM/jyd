@@ -267,8 +267,8 @@ class IDU(
   val isListReverseLoopEncoding =
     inst(31, 25) === 2.U && inst(14, 12) === 6.U && inst(6, 0) === "b0001011".U
   val bypassMux = Module(new ByPassMux())
-  // The loop operation advances from EXU's private list-reversal state after its
-  // init instruction.  Its encoded rs1 only names the eventual destination;
+  // The loop operation walks from EXU's private list-reversal state after its
+  // init instruction. Its encoded rs1 only names the eventual destination;
   // treating it as a source creates a false loop-carried RAW dependency.
   val needReg1AddImm = isTypLoad || isTypStore || isTypJALR
   bypassMux.io.rs1        := Mux(isListReverseLoopEncoding || needReg1AddImm, 0.U, res.rs1)
@@ -279,8 +279,8 @@ class IDU(
   val arithmeticFunc3 = inst(14, 12)
   val arithmeticFunc7 = inst(31, 25)
   val isMExtArithmetic = inst(6, 0) === "b0110011".U && arithmeticFunc7 === "b0000001".U
-  // xlistrev consists of an init step (funct7=0) followed by the fused loop
-  // step (funct7=2). No legacy whole-list or software-loop encoding is accepted.
+  // xlistrev consists of an init step (funct7=0) followed by a whole-remainder
+  // loop (funct7=2). No legacy whole-list or software-loop encoding is accepted.
   val isListReverseEncoding = inst(6, 0) === "b0001011".U && arithmeticFunc3 === 6.U &&
     (inst(31, 25) === 0.U || inst(31, 25) === 2.U)
   val isListFindEncoding = inst(6, 0) === "b0001011".U && arithmeticFunc3 === 6.U &&

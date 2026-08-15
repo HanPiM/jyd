@@ -81,18 +81,20 @@ class DCache extends Module {
   val listFindRequestAddressReg = Reg(UInt(32.W))
 
   object DotNState extends ChiselEnum {
-    val idle, lookup, requestA, responseA, requestB, responseB, multiply, accumulate, done = Value
+    val idle, stream, requestA, responseA, requestB, responseB, launchStored, drain, done = Value
   }
   val dotNState = RegInit(DotNState.idle)
   val dotNOperandA = Reg(UInt(16.W))
   val dotNOperandB = Reg(UInt(16.W))
+  val dotNBufferedBValid = Reg(Bool())
+  val dotNProductOperandA = Reg(UInt(16.W))
+  val dotNProductOperandB = Reg(UInt(16.W))
   val dotNRemaining = Reg(UInt(16.W))
   val dotNStride = Reg(UInt(17.W))
   val dotNAccumulator = Reg(UInt(32.W))
-  val dotNResult = Reg(UInt(32.W))
   val dotNBitMode = Reg(Bool())
   val dotNRequestValid = RegInit(false.B)
-  val dotNRequestUseB = RegInit(false.B)
+  val dotNRequestAddressReg = Reg(UInt(32.W))
 
   // The backing store accepts an ordinary store one cycle before the mirrored
   // cache memories apply it. Do not expose the old line as a hit in that
@@ -144,14 +146,25 @@ class DCache extends Module {
     Mux(listQueryBanks(port), bankData(1), bankData(0))
   }
 
+  val dotNStreamOperandA = Mux(listFindQueryAddress(1), listReadData(0)(31, 16), listReadData(0)(15, 0))
+  val dotNStreamOperandB = Mux(listFindQueryAddressB(1), listReadData(1)(31, 16), listReadData(1)(15, 0))
+  val dotNStreamLaunch = dotNState === DotNState.stream && listQueryHits(0) && listQueryHits(1)
+  val dotNStoredLaunch = dotNState === DotNState.launchStored
+  val dotNLaunchValid = dotNStreamLaunch || dotNStoredLaunch
+  val dotNLaunchOperandA = Mux(dotNState === DotNState.stream, dotNStreamOperandA, dotNOperandA)
+  val dotNLaunchOperandB = Mux(dotNState === DotNState.stream, dotNStreamOperandB, dotNOperandB)
+
   val dotNMultiplier = Module(new mult_gen_mul16_fast)
   dotNMultiplier.io.CLK := clock
-  dotNMultiplier.io.A := dotNOperandA
-  dotNMultiplier.io.B := dotNOperandB
+  dotNMultiplier.io.A := dotNLaunchOperandA
+  dotNMultiplier.io.B := dotNLaunchOperandB
+  dotNProductOperandA := dotNLaunchOperandA
+  dotNProductOperandB := dotNLaunchOperandB
+  val dotNProductValid = RegNext(dotNLaunchValid, false.B)
   val dotNProduct = dotNMultiplier.io.P
   val dotNSignedTerm = dotNProduct -
-    Mux(dotNOperandA(15), Cat(dotNOperandB, 0.U(16.W)), 0.U) -
-    Mux(dotNOperandB(15), Cat(dotNOperandA, 0.U(16.W)), 0.U)
+    Mux(dotNProductOperandA(15), Cat(dotNProductOperandB, 0.U(16.W)), 0.U) -
+    Mux(dotNProductOperandB(15), Cat(dotNProductOperandA, 0.U(16.W)), 0.U)
   val dotNBitTerm = (dotNProduct(5, 2) * dotNProduct(11, 5)).pad(32)
   val dotNTerm = Mux(dotNBitMode, dotNBitTerm, dotNSignedTerm)
   val dotNNextAccumulator = dotNAccumulator + dotNTerm
@@ -165,20 +178,27 @@ class DCache extends Module {
     dotNAccumulator := 0.U
     dotNBitMode := io.dotNBitMode
     dotNRequestValid := false.B
-    dotNState := DotNState.lookup
-  }.elsewhen(dotNState === DotNState.lookup) {
-    dotNOperandA := Mux(listFindQueryAddress(1), listReadData(0)(31, 16), listReadData(0)(15, 0))
-    dotNOperandB := Mux(listFindQueryAddressB(1), listReadData(1)(31, 16), listReadData(1)(15, 0))
-    when(!listQueryHits(0)) {
+    dotNState := Mux(io.dotNLength === 0.U, DotNState.done, DotNState.stream)
+  }.elsewhen(dotNState === DotNState.stream) {
+    dotNOperandA := dotNStreamOperandA
+    dotNOperandB := dotNStreamOperandB
+    when(dotNStreamLaunch) {
+      dotNRemaining := dotNRemaining - 1.U
+      when(dotNRemaining === 1.U) {
+        dotNState := DotNState.drain
+      }.otherwise {
+        listFindQueryAddress := listFindQueryAddress + 2.U
+        listFindQueryAddressB := listFindQueryAddressB + dotNStride
+      }
+    }.elsewhen(!listQueryHits(0)) {
+      dotNBufferedBValid := listQueryHits(1)
       dotNRequestValid := true.B
-      dotNRequestUseB := false.B
+      dotNRequestAddressReg := listFindQueryAddress & ~3.U(32.W)
       dotNState := DotNState.requestA
-    }.elsewhen(!listQueryHits(1)) {
-      dotNRequestValid := true.B
-      dotNRequestUseB := true.B
-      dotNState := DotNState.requestB
     }.otherwise {
-      dotNState := DotNState.multiply
+      dotNRequestValid := true.B
+      dotNRequestAddressReg := listFindQueryAddressB & ~3.U(32.W)
+      dotNState := DotNState.requestB
     }
   }.elsewhen(dotNState === DotNState.requestA && io.dotNRequestFire) {
     dotNRequestValid := false.B
@@ -189,11 +209,11 @@ class DCache extends Module {
       io.dotNMemResponse.bits(31, 16),
       io.dotNMemResponse.bits(15, 0)
     )
-    when(listQueryHits(1)) {
-      dotNState := DotNState.multiply
+    when(dotNBufferedBValid) {
+      dotNState := DotNState.launchStored
     }.otherwise {
       dotNRequestValid := true.B
-      dotNRequestUseB := true.B
+      dotNRequestAddressReg := listFindQueryAddressB & ~3.U(32.W)
       dotNState := DotNState.requestB
     }
   }.elsewhen(dotNState === DotNState.requestB && io.dotNRequestFire) {
@@ -205,33 +225,31 @@ class DCache extends Module {
       io.dotNMemResponse.bits(31, 16),
       io.dotNMemResponse.bits(15, 0)
     )
-    dotNState := DotNState.multiply
-  }.elsewhen(dotNState === DotNState.multiply) {
-    dotNState := DotNState.accumulate
-  }.elsewhen(dotNState === DotNState.accumulate) {
-    dotNAccumulator := dotNNextAccumulator
+    dotNState := DotNState.launchStored
+  }.elsewhen(dotNState === DotNState.launchStored) {
+    dotNRemaining := dotNRemaining - 1.U
     when(dotNRemaining === 1.U) {
-      dotNResult := dotNNextAccumulator
-      dotNState := DotNState.done
+      dotNState := DotNState.drain
     }.otherwise {
       listFindQueryAddress := listFindQueryAddress + 2.U
       listFindQueryAddressB := listFindQueryAddressB + dotNStride
-      dotNRemaining := dotNRemaining - 1.U
-      dotNState := DotNState.lookup
+      dotNState := DotNState.stream
     }
+  }.elsewhen(dotNState === DotNState.drain && dotNProductValid) {
+    dotNState := DotNState.done
   }.elsewhen(dotNState === DotNState.done && io.dotNConsume) {
     dotNRequestValid := false.B
     dotNState := DotNState.idle
   }
 
+  when(dotNProductValid) {
+    dotNAccumulator := dotNNextAccumulator
+  }
+
   io.dotNRequest := dotNRequestValid
-  io.dotNRequestAddress := Mux(
-    dotNRequestUseB,
-    listFindQueryAddressB,
-    listFindQueryAddress
-  ) & ~3.U(32.W)
+  io.dotNRequestAddress := dotNRequestAddressReg
   io.dotNDone := dotNState === DotNState.done
-  io.dotNResult := dotNResult
+  io.dotNResult := dotNAccumulator
 
   when(listFindState === ListFindState.idle && io.listFindStart) {
     assert(dotNState === DotNState.idle, "list-find and dotN walkers must be mutually exclusive")

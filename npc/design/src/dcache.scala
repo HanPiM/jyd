@@ -302,6 +302,12 @@ class DCache extends Module {
   }.elsewhen(listFindState === ListFindState.dataResolve) {
     when(listFindDataHit) {
       val value = Mux(listFindDataMode, Cat(0.U(8.W), listFindWord(7, 0)), listFindWord(31, 16))
+      // Speculatively stage the next node before resolving the match.  These
+      // registers are irrelevant in done, so the value comparison no longer
+      // selects their timing-sensitive D inputs.
+      listFindCurrent := listFindNext
+      listFindQueryAddress := listFindNext
+      listFindQueryAddressB := listFindNext + 4.U
       when(value === listFindTarget) {
         listFindResult := listFindCurrent
         listFindState := ListFindState.done
@@ -309,9 +315,6 @@ class DCache extends Module {
         listFindResult := 0.U
         listFindState := ListFindState.done
       }.otherwise {
-        listFindCurrent := listFindNext
-        listFindQueryAddress := listFindNext
-        listFindQueryAddressB := listFindNext + 4.U
         listFindState := ListFindState.nodeLookup
       }
     }.elsewhen(io.listFindRequestFire) {
@@ -320,6 +323,9 @@ class DCache extends Module {
   }.elsewhen(listFindState === ListFindState.dataMemory && io.listFindMemResponse.valid) {
     val value = Mux(listFindDataMode, Cat(0.U(8.W), io.listFindMemResponse.bits(7, 0)),
       io.listFindMemResponse.bits(31, 16))
+    listFindCurrent := listFindNext
+    listFindQueryAddress := listFindNext
+    listFindQueryAddressB := listFindNext + 4.U
     when(value === listFindTarget) {
       listFindResult := listFindCurrent
       listFindState := ListFindState.done
@@ -327,9 +333,6 @@ class DCache extends Module {
       listFindResult := 0.U
       listFindState := ListFindState.done
     }.otherwise {
-      listFindCurrent := listFindNext
-      listFindQueryAddress := listFindNext
-      listFindQueryAddressB := listFindNext + 4.U
       listFindState := ListFindState.nodeLookup
     }
   }.elsewhen(listFindState === ListFindState.done && io.listFindConsume) {

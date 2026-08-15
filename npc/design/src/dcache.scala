@@ -66,6 +66,13 @@ class DCache extends Module {
   val listFindRequestValid = RegInit(false.B)
   val listFindRequestAddressReg = Reg(UInt(32.W))
 
+  // The backing store accepts an ordinary store one cycle before the mirrored
+  // cache memories apply it. Do not expose the old line as a hit in that
+  // intervening cycle.
+  val storeUpdate = RegNext(io.storeUpdate, false.B)
+  val storeIndex  = RegEnable(io.queryIndex, io.storeUpdate)
+  val storeTag    = RegEnable(io.queryTag, io.storeUpdate)
+
   val queryBank  = io.queryIndex(9)
   val queryAddr  = io.queryIndex(8, 0)
   val tagEntries = tagMem.map(_.io.dpo)
@@ -73,7 +80,8 @@ class DCache extends Module {
 
   tagMem.foreach(_.io.dpra := queryAddr)
   val queryHit = tagEntry(0) && tagEntry(7, 1) === io.queryTag
-  io.hit := queryHit
+  val queryStoreConflict = storeUpdate && storeIndex === io.queryIndex && storeTag === io.queryTag
+  io.hit := queryHit && !queryStoreConflict
 
   dataMem.foreach { bank =>
     bank.io.clkb  := clock
@@ -94,8 +102,10 @@ class DCache extends Module {
     portBanks.foreach(_.io.dpra := listQueryAddrs(port))
     Mux(listQueryBanks(port), portBanks(1).io.dpo, portBanks(0).io.dpo)
   }
-  val listQueryHits = listTagEntries.zip(listQueryTags).map { case (entry, tag) =>
-    entry(0) && entry(7, 1) === tag
+  val listQueryHits = listTagEntries.zip(listQueryTags).zip(listQueryAddrs).zip(listQueryBanks).map {
+    case (((entry, tag), addr), bank) =>
+      val storeConflict = storeUpdate && storeIndex === Cat(bank, addr) && storeTag === tag
+      entry(0) && entry(7, 1) === tag && !storeConflict
   }
   val listReadData = listDataMem.zipWithIndex.map { case (portBanks, port) =>
     portBanks.flatten.foreach(_.io.dpra := listQueryAddrs(port))
@@ -219,10 +229,7 @@ class DCache extends Module {
   // has already committed its request, while this local copy updates the cache
   // one cycle later. This prevents EXU valid/decode from directly driving every
   // mirrored distributed-memory write enable.
-  val storeUpdate = RegNext(io.storeUpdate, false.B)
   val storeFull   = RegEnable(io.storeFull, io.storeUpdate)
-  val storeIndex  = RegEnable(io.queryIndex, io.storeUpdate)
-  val storeTag    = RegEnable(io.queryTag, io.storeUpdate)
   val storeData   = RegEnable(io.storeData, io.storeUpdate)
   val storeMask   = RegEnable(io.storeMask, io.storeUpdate)
   when(storeUpdate) {

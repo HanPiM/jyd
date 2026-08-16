@@ -520,7 +520,9 @@ class CPUCore(
   val adjacentBranchBubble = exu.io.in.fire && exu.io.in.bits.info.adjacentFastBranch
   val exuAllowIn = !exuValidReg || exuPipe.ready
   val exuSlotClear = adjacentBranchBubble || lateRedirectBlocked || immediateRedirectNow
-  val exuPayloadLoad = exuAllowIn && !exuSlotClear
+  // Payload contents are don't-care while the slot is invalid. Capturing them
+  // speculatively keeps redirect resolution out of every wide payload enable.
+  val exuPayloadLoad = exuAllowIn
   // The ID/EX payload is physically wide. Explicit local LUT buffers keep its
   // common load control from becoming a single global high-fanout route.
   val exuPayloadLoads = Seq.fill(10) {

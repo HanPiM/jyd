@@ -1,9 +1,10 @@
 #pragma once
 #include "sim.hpp"
-void sdb_init(uint32_t init_pc, size_t img_size, const char* img_file_path, sim_setting setting);
+bool sdb_init(uint32_t init_pc, size_t img_size, const char* img_file_path, sim_setting setting);
 // bool sbg_is_hitbadtrap();
 void sdb_set_halt(int a0);
 void sdb_dump_recent_info();
+bool sdb_difftest_active();
 
 void sdb_skip_difftest_ref();
 

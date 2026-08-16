@@ -447,7 +447,9 @@ class CPUCore(
   when(fetchSlot0Write) {
     fetchSlot0 := fetchSlot0Data
   }
-  when(fetchEnq && fetchValid0 && !fetchDeq) {
+  // A simultaneous dequeue leaves slot1 invalid, so its duplicate payload write is unobservable.
+  // This keeps decode backpressure out of the wide slot1 write-enable cone.
+  when(fetchEnq && fetchValid0) {
     fetchSlot1 := ifu.io.out.bits
   }
   switch(Cat(fetchEnq, fetchDeq)) {

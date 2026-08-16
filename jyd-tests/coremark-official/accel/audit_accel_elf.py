@@ -26,6 +26,7 @@ ENCODINGS = {
 MASK = 0xFE00707F
 MASKS = {"xdup8lo": 0xFFF0707F}
 EXACT_COUNTS = {
+    "xdup8lo": 2,
     "xpaddh2": 2,
     "xdfascan": 2,
 }

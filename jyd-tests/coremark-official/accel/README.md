@@ -11,28 +11,25 @@ combined build is:
 
 ```sh
 make ARCH=riscv32-jyd ITERATIONS=10000 \
-  COREMARK_XEXTS=_xmbm_xcrcu8_xdup8lo_xlistrev_xmsum_xdfa4p_xlistfind_xmacacc_xdotn \
-  EXTRA_CFLAGS='-mxmbm -mxcrcu8 -mxdup8lo -mxlistrev -mclipped-rising-score-reduce -mxdfa4p -mxlistfind -mxmacacc -mxdotn' \
   CROSS_COMPILE=/path/to/patched-toolchain/bin/riscv64-unknown-linux-gnu- \
   image
 
 make ARCH=riscv32-jyd ITERATIONS=10000 \
-  COREMARK_XEXTS=_xmbm_xcrcu8_xdup8lo_xlistrev_xmsum_xdfa4p_xlistfind_xmacacc_xdotn \
-  EXTRA_CFLAGS='-mxmbm -mxcrcu8 -mxdup8lo -mxlistrev -mclipped-rising-score-reduce -mxdfa4p -mxlistfind -mxmacacc -mxdotn' \
   CROSS_COMPILE=/path/to/patched-toolchain/bin/riscv64-unknown-linux-gnu- \
   audit-accel
 ```
 
-Supported image identity names are `xmac16`, `xdot16`, `xdotn`, `xbmul`, `xmbm`,
-`xcrcu8`, `xdup8lo`, `xlistfind`, `xlistrev`, `xmacacc`, `xmsum`, `xdfacnt`, `xdfa2`,
-`xdfa4`, `xdfa4h`, and `xdfa4p`.  The active GCC patch, compiler source SHA,
-selection details, checkers, and performance evidence are documented in
-`gcc-md/README.md`.
+The shared defaults select `xmbm`, `xcrcu8`, `xdup8lo`, `xlistrev`, `xmsum`,
+`xdfascan`, `xlistfind`, `xmacacc`, `xdotn`, and `xpaddh2`. Supported image
+identity names also retain the legacy `xmac16`, `xdot16`, `xbmul`, `xdfacnt`,
+`xdfa2`, `xdfa4`, `xdfa4h`, and `xdfa4p` modes. The active GCC patch, compiler
+source SHA, selection details, checkers, and performance evidence are
+documented in `gcc-md/README.md`.
 
-`audit-accel` is mandatory for an accelerated image.  It fails if an enabled
-instruction or required sub-operation is absent. When xmacacc is enabled it lowers the full matrix
-bit-extract loop, so the auditor reports the overlapping xmbm selection as
-superseded.  Reporting always follows the benchmark's normal floating-point
+`audit-accel` is mandatory for an accelerated image. It fails if an enabled
+instruction or required sub-operation is absent. When xmacacc is enabled it
+lowers the full matrix bit-extract loop, so the auditor reports the overlapping
+xmbm selection as superseded. Reporting always follows the benchmark's normal floating-point
 path through the EEMBC formatter and AM SoftFloat; compiler passes do not
 alter report calls or format strings.
 

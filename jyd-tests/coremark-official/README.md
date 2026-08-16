@@ -18,8 +18,9 @@ make ARCH=riscv32-nemu ITERATIONS=1000 TOTAL_DATA_SIZE=2000 \
 ```
 
 The default uses GCC machine-description selection for the final accelerator
-set (`xmbm`, `xcrcu8`, `xdup8lo`, `xlistrev`, `xmsum`, `xdfa4p`, `xlistfind`,
-`xmacacc`, and `xdotn`). The shared defaults are in `coremark-defaults.mk`.
+set (`xmbm`, `xcrcu8`, `xdup8lo`, `xlistrev`, `xmsum`, `xdfascan`,
+`xlistfind`, `xmacacc`, `xdotn`, and `xpaddh2`). The shared defaults are in
+`coremark-defaults.mk`.
 
 The default build output is this project's `build/` directory. Each combination
 of `ITERATIONS`, `TOTAL_DATA_SIZE`, `RISCV_ZEXTS`, and `EXTRA_CFLAGS` gets a
@@ -41,9 +42,9 @@ AM timer path.
 `make clean` removes only the currently selected configuration. NEMU must be
 built with Device enabled to see the serial CoreMark report.
 
-## Current B-extension profile
+## Historical B-extension profile
 
-The current formal CoreMark image uses `CRCU8` together with the CoreMark
+The following earlier formal CoreMark image used `CRCU8` with the CoreMark
 accelerators `xbmul`, `xmsum`, and `xstate`. A low-overhead NEMU profile of the
 10,000-iteration image completed successfully with final CRC `0x988c` and
 reported `1,498,664,091` retired instructions. B-extension instructions made up
@@ -76,12 +77,11 @@ result also prints the effective optimization,
 
 Optimization follows the intended split: the five core benchmark translation
 units (`core_list_join.c`, `core_main.c`, `core_matrix.c`, `core_state.c`,
-`core_util.c`) are compiled with `COREMARK_OPT` (default `-O3`), while setup,
-porting, formatting, and SoftFloat support files stay at `-Os` for IROM size.
-Set `COREMARK_OPT=-Os` to build the entire image at `-Os`; that matches the
-historical `11.374198420 s` board baseline, which was built before the `-O3`
-rule existed (the comment claimed the rule, but the Makefile did not implement
-it until 2026-08-06).
+`core_util.c`) receive `COREMARK_OPT` (default `-Os`). The four hot algorithm
+units other than `core_main.c` also include `force_o3.h`, while setup, porting,
+formatting, and SoftFloat support files remain at `-Os` for IROM size. Passing
+`COREMARK_OPT=-O3` applies `-O3` to all five benchmark units for comparison
+experiments; it is not the formal-image default.
 
 See `SOURCES.md` before editing: it lists the byte-identical official benchmark
 files separately from EEMBC formatter adaptations and AM port files.

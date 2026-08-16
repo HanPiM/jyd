@@ -9,7 +9,7 @@ Check out public GCC base commit `ff20c357b3f`, then apply
 `active-accel-gcc16.patch` with `git apply --index --unidiff-zero`. Configure
 and build an RV32-capable RISC-V cross compiler in separate source, build, and
 install directories. The patch SHA-256 is
-`05c3db37685d83f28f3575b0e175ddffcb6b01c95faa9858d87e43a85d0db20c`.
+`accc713e001e15a736172596863629c15ccc94bbd127b46f1593b3fbfa49b8c1`.
 The patch includes the loop-bound analysis prerequisite that was previously a
 local-only commit on top of that public base.
 
@@ -19,13 +19,15 @@ local-only commit on top of that public base.
 |---|---|---|---|
 | xmbm | matrix bit-extraction expression | `-mxmbm` | custom-0, funct3 5, funct7 1 |
 | xcrcu8 | GCC reversed-CRC builtin/optab | `-mxcrcu8` | custom-0, funct3 0, funct7 0 |
-| xdup8lo | exact byte-copy bit-field idiom | `-mxdup8lo` | custom-0, funct3 1, funct7 1, rs2 x0 |
+| xdup8lo | low-byte duplication expression | `-mxdup8lo` | custom-0, funct3 1, funct7 1, rs2 0 |
 | xmsum | clipped rising-score loop recognizer | `-mclipped-rising-score-reduce` | custom-0, funct3 7, funct7 2 |
 | xlistrev | in-place list-reversal recognizer | `-mxlistrev` | custom-0, funct3 6, funct7 0/2 |
 | xdfa4p | numeric-token state-scan recognizer | `-mxdfa4p` | custom-2, funct3 5, funct7 2 |
+| xdfascan | NUL-terminated numeric-token scan recognizer | `-mxdfascan` | custom-2, funct3 5, funct7 3 |
 | xlistfind | linked-list search recognizer | `-mxlistfind` | custom-0, funct3 6, funct7 1/3 |
 | xmacacc | matrix multiply recognizer and target loop expansion | `-mxmacacc` | custom-0, funct3 3, funct7 4-9 |
 | xdotn | runtime-N matrix dot walker selected by the matrix recognizer | `-mxdotn` | custom-0, funct3 4, funct7 3/4/5 |
+| xpaddh2 | aligned 16-bit matrix-add loop recognizer | `-mxpaddh2` | custom-0, funct3 1, funct7 2 |
 
 The combined build enables `-mxmbm`, `-mxmacacc`, and `-mxdotn`. GCC emits a
 runtime-dimension configuration operation followed by one xdotn instruction
@@ -48,6 +50,11 @@ checks temporary-register lifetime and aliasing, and remains disabled without
 The xmsum and xlistrev recognizers are shape based.  The numeric DFA path also
 verifies the expected scan and counter structure.  Reporting is outside the
 accelerator pass and uses the ordinary EEMBC formatter and AM SoftFloat path.
+`xdfascan` consumes a runtime pointer until the first reachable NUL and has no
+fixed string length, seed, iteration count, source symbol, or filename
+condition. The xdup8lo and xpaddh2 selectors likewise use data/control-flow
+shape and retain scalar fallbacks when their complete semantics cannot be
+proved.
 
 ## Build and audit
 
@@ -83,34 +90,32 @@ The frozen compiler passed:
 
 - GCC `all-gcc` and `install-gcc` with 16 jobs.
 - Every checker listed below.
-- `make -C npc checkformat` and `make -C npc verilog`.
-- `riscv32-jyd` add and directed xdup8lo tests with active difftest. The
-  directed test covers same-register and distinct-register forms, fixed corner
-  cases, and 4,096 deterministic 32-bit inputs.
-- Isolated NPC ITERATIONS=10/100 measurements for both the enabled and control
-  images, with CRCs `e714/1fd7/8e3a/fcaf` and `e714/1fd7/8e3a/988c`.
-- The control affine ITERATIONS=10000 estimate is 1,306,730,398 cycles, or
-  `4.355767993s` at 300 MHz. Enabling xdup8lo reduces that estimate to
-  1,294,217,749 cycles, or `4.314059163s`: a measured reduction of 12,512,649
-  cycles (`41.708830ms`). The retained results are
-  `/srv/data/jyd/archive/coremark-cycle-estimate-xdup8lo-552b525-control-20260816T164220Z/`
-  and
-  `/srv/data/jyd/archive/coremark-cycle-estimate-xdup8lo-552b525-enabled-20260816T164057Z/`.
-- The exact committed candidate completed 300 MHz post-route physical
-  optimization with WNS `-0.694ns`, TNS `-1097.469ns`, and WHS `+0.085ns`.
-  The selected DCP, timing report, provenance, and verified checksums are in
-  `/srv/data/jyd/archive/vivado-xdup8lo-552b525-300mhz-20260817/`. This is
-  implementation evidence only; the candidate has not yet been board tested.
-- The final compiler executable SHA-256 is
-  `fb203c1c269608dde38601f12df122be56407b6c5f95245744588187144aacca`.
-  Its final ITERATIONS=10000 text image SHA-256 is
-  `448172ee5c866932d9268a49cbfce83205b0e8cb41638ea7fec838755d5a83f8`.
+- Clean-tree patch application, backend-integrity, no-plugin, and
+  name-independence audits.
+- `make -C npc checkformat`, `make -C npc verilog`, the xdfascan directed
+  comparison, and the `riscv32-jyd` add and load-store tests.
+- NPC ITERATIONS=10 with difftest: 1,252,377 cycles, 334,735 retired
+  instructions, CRCs `e714/1fd7/8e3a/fcaf`, and GOOD TRAP.
+- NPC ITERATIONS=100 without difftest: 11,859,471 cycles, 2,901,530 retired
+  instructions, CRCs `e714/1fd7/8e3a/988c`, and GOOD TRAP.
+- The affine 10/100 estimate for ITERATIONS=10000 at 300 MHz:
+  1,178,639,811 cycles and 285,248,980 instructions, or `3.928799370s`.
+  This is an unboarded fitted result, not a complete 10,000-iteration NPC run
+  or a reportable 10-second CoreMark score.
+- The exact candidate's selected 300 MHz post-route result is WNS
+  `-0.718ns`, TNS `-1231.531ns`, and WHS `+0.063ns`. It passes the experiment's
+  strict `WNS > -0.8ns` acceptance boundary by `0.082ns`; Vivado still reports
+  setup timing violations, so this is not zero-slack timing closure.
+- Exact NEMU ITERATIONS=10000 through the owning AM `make run` target:
+  CRCs `e714/1fd7/8e3a/988c`, GOOD TRAP, and 285,163,978 guest instructions.
+  Its host-timer duration is below CoreMark's 10-second reporting minimum, so
+  it is retained as semantic and instruction-count evidence only.
 
-The final ELF has 38 static xcrcu8 sites, two xdup8lo sites, one xlistrev site,
-five xmsum sites, two xdfa4p step sites, four xlistfind sites, six xmacacc sites,
-four xdotn sites (two configuration, one signed, and one bit-extract), and one
-xdfa final-counter read. The generated program image was exercised by NPC
-difftest; the protected CoreMark source MD5 check also passes.
+The final ELF has 38 static xcrcu8 sites, one xlistrev site, five xmsum sites,
+two xdup8lo sites, two xdfascan sites, four xlistfind sites, six xmacacc sites,
+four xdotn sites (two configuration, one signed, and one bit-extract), two
+xpaddh2 sites, and one xdfa final-counter read. The generated program image was
+exercised by NEMU and NPC difftest.
 
 ## Checkers
 
@@ -125,6 +130,12 @@ difftest; the protected CoreMark source MD5 check also passes.
 - `check-xlistrev.sh <gcc>` checks list-reversal positive and negative
   selection.
 - `check-xdfa4h.sh <gcc>` preserves coverage for the older xdfa4h mode.
+- `check-xdup8lo.sh <gcc>` checks the exact expression, renamed-source
+  selection, disable fallback, and nearby non-equivalent expressions.
+- `check-xpaddh2.sh <gcc>` checks the aligned canonical loop, control-flow and
+  conversion guards, renamed-source selection, and disable fallback.
+- `check-xdfascan.sh <gcc>` checks the full runtime NUL scan and rejects
+  delimiter, final-count, and mixed-callee near matches.
 - `check-xlistfind-xmacacc.sh <gcc>` checks both xlistfind sub-operations and
   all six xmacacc sub-operations, all three xdotn sub-operations, the invalid-N
   fallback, and renamed-source name independence.
@@ -135,6 +146,6 @@ difftest; the protected CoreMark source MD5 check also passes.
 
 ## History
 
-`xbmul` and `xdfa4h` remain in the backend and their checkers remain valid, but
-the current combined image uses xmbm and xdfa4p.  `xmac16` and `xdot16` are not
-part of the current combined build.
+`xbmul`, `xdfa4h`, and `xdfa4p` remain in the backend and their checkers remain
+valid, but the current combined image uses xmbm and xdfascan. `xmac16` and
+`xdot16` are not part of the current combined build.

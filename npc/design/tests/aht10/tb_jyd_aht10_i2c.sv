@@ -57,6 +57,8 @@ module tb_jyd_aht10_i2c;
         reply[0] = 8'h08; reply[1] = 8'h80; reply[2] = 8'h00;
         reply[3] = 8'h06; reply[4] = 8'h66; reply[5] = 8'h66;
 
+        wait (rst_n === 1'b1);
+        wait (scl === 1'b1 && sda === 1'b1);
         @(negedge sda);
         if (!scl) begin $display("FAIL START write"); $finish; end
         receive_byte(got_addr); acknowledge();

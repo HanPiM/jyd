@@ -93,8 +93,14 @@ The frozen compiler passed:
   `4.355767993s` at 300 MHz. Enabling xdup8lo reduces that estimate to
   1,294,217,749 cycles, or `4.314059163s`: a measured reduction of 12,512,649
   cycles (`41.708830ms`). The retained results are
-  `/srv/data/jyd/archive/coremark-xdup8lo-ca08cc2-control-20260817T0024Z/`
-  and `/srv/data/jyd/archive/coremark-xdup8lo-ca08cc2-enabled-20260817T0021Z/`.
+  `/srv/data/jyd/archive/coremark-cycle-estimate-xdup8lo-552b525-control-20260816T164220Z/`
+  and
+  `/srv/data/jyd/archive/coremark-cycle-estimate-xdup8lo-552b525-enabled-20260816T164057Z/`.
+- The exact committed candidate completed 300 MHz post-route physical
+  optimization with WNS `-0.694ns`, TNS `-1097.469ns`, and WHS `+0.085ns`.
+  The selected DCP, timing report, provenance, and verified checksums are in
+  `/srv/data/jyd/archive/vivado-xdup8lo-552b525-300mhz-20260817/`. This is
+  implementation evidence only; the candidate has not yet been board tested.
 - The final compiler executable SHA-256 is
   `fb203c1c269608dde38601f12df122be56407b6c5f95245744588187144aacca`.
   Its final ITERATIONS=10000 text image SHA-256 is

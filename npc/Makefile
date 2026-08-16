@@ -36,6 +36,7 @@ TOP_NAME = TestSoC
 endif
 
 SIM_BIN = $(SIM_BIN_DIR)/$(TOP_NAME)-$(ARCH_PLATFORM)$(VSIM_OPT)
+SIM_BUILD_ID = $(BUILD_DIR)/.sim-build-id-$(ARCH_PLATFORM)-$(VSIM_OPT)
 default: $(SIM_BIN)
 
 CHISEL2V_EMIT_ROOT = $(BUILD_DIR)/gened/verilog
@@ -133,7 +134,15 @@ ifneq ($(MOLD_EXISTS),)
   LDFLAGS += -fuse-ld=mold
 endif
 
-$(SIM_BIN): $(SIM_DEP_LIBS_BUILD_DONE) $(CHISEL2V_DONE) $(SIM_VSRCS) $(SIM_CSRCS) $(ARCHIVES) $(SIM_HEADERS) $(VERILATOR_CONTROL_FILE)
+.PHONY: FORCE_SIM_BUILD_ID
+FORCE_SIM_BUILD_ID:
+
+$(SIM_BUILD_ID): FORCE_SIM_BUILD_ID
+	@current='commit=$(COMMIT_HASH) arch=$(ARCH) top=$(TOP_NAME) opt=$(VSIM_OPT) vpi=$(ENABLE_VPI)'; \
+	 previous="$$(cat "$@" 2>/dev/null || true)"; \
+	 if [ "$$previous" != "$$current" ]; then printf '%s\n' "$$current" > "$@"; fi
+
+$(SIM_BIN): $(SIM_BUILD_ID) $(SIM_DEP_LIBS_BUILD_DONE) $(CHISEL2V_DONE) $(SIM_VSRCS) $(SIM_CSRCS) $(ARCHIVES) $(SIM_HEADERS) $(VERILATOR_CONTROL_FILE)
 ifndef IN_LOCK
 	@+flock $(SIM_BIN).lock $(MAKE) $@ IN_LOCK=1
 else

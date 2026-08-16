@@ -9,7 +9,8 @@ from pathlib import Path
 POSTROUTE_REPORT_NAME = "top_timing_summary_postroute_physopted.rpt"
 ROUTED_REPORT_NAME = "top_timing_summary_routed.rpt"
 REPORT_NAMES = (POSTROUTE_REPORT_NAME, ROUTED_REPORT_NAME)
-DEFAULT_REPORT_PATH = Path("digital_twin.runs") / "impl_1" / POSTROUTE_REPORT_NAME
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+DEFAULT_REPORT_PATH = PROJECT_ROOT / "digital_twin.runs" / "impl_1" / POSTROUTE_REPORT_NAME
 TITLE_MARKER = "| Design Timing Summary"
 
 

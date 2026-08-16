@@ -45,6 +45,7 @@ usage_statistics_webtalk.html
 # Project-local generated files
 archive_project_summary.txt
 dfx_runtime.txt
+.digital_twin_vivado_flow.lock
 digital_twin.ip_user_files/
 digital_twin.srcs/sources_1/imports/pack-fpga/
 digital_twin.srcs/sources_1/imports/cur_coe/

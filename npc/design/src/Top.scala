@@ -339,6 +339,8 @@ class CPUCore(
   dcache.io.queryTag   := exu.io.dcache.queryTag
   exu.io.dcache.hit    := dcache.io.hit && p.enableDCache.B
   exu.io.dcache.readData := dcache.io.readData
+  dcache.io.listReverseHitCapture := exu.io.dcache.listReverseHitCapture
+  exu.io.dcache.listReverseCapturedHit := dcache.io.listReverseCapturedHit && p.enableDCache.B
   dcache.io.listFindStart := exu.io.dcache.listFindStart
   dcache.io.listFindConsume := exu.io.dcache.listFindConsume
   dcache.io.listFindAddress := exu.io.dcache.listFindAddress
@@ -350,6 +352,18 @@ class CPUCore(
   exu.io.dcache.listFindRequestAddress := dcache.io.listFindRequestAddress
   exu.io.dcache.listFindDone := dcache.io.listFindDone
   exu.io.dcache.listFindResult := dcache.io.listFindResult
+  dcache.io.dotNStart := exu.io.dcache.dotNStart
+  dcache.io.dotNConsume := exu.io.dcache.dotNConsume
+  dcache.io.dotNAddressA := exu.io.dcache.dotNAddressA
+  dcache.io.dotNAddressB := exu.io.dcache.dotNAddressB
+  dcache.io.dotNLength := exu.io.dcache.dotNLength
+  dcache.io.dotNBitMode := exu.io.dcache.dotNBitMode
+  dcache.io.dotNRequestFire := exu.io.dcache.dotNRequestFire
+  dcache.io.dotNMemResponse := exu.io.dcache.dotNMemResponse
+  exu.io.dcache.dotNRequest := dcache.io.dotNRequest
+  exu.io.dcache.dotNRequestAddress := dcache.io.dotNRequestAddress
+  exu.io.dcache.dotNDone := dcache.io.dotNDone
+  exu.io.dcache.dotNResult := dcache.io.dotNResult
   val dcacheStorePortMutation = exu.io.dcache.storeUpdate && p.enableDCache.B
   val dcacheStoreMutation = dcacheStorePortMutation || (exu.io.dcache.fullUpdate && p.enableDCache.B)
   val dcacheStoreEpoch    = RegInit(false.B)

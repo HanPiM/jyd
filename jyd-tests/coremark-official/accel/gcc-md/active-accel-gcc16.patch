@@ -1,5 +1,5 @@
 diff --git a/gcc/Makefile.in b/gcc/Makefile.in
-index 8ecef4ccdc7..e2694312365 100644
+index 8ecef4ccdc7f222658a5e9cef1a3b0362bcfc788..e26943123656804c96608eb99f8ba74a1bf8a04e 100644
 --- a/gcc/Makefile.in
 +++ b/gcc/Makefile.in
 @@ -1762,6 +1762,7 @@ OBJS = \
@@ -11,7 +11,7 @@ index 8ecef4ccdc7..e2694312365 100644
  	gimple-crc-optimization.o \
  	sym-exec/sym-exec-expression.o \
 diff --git a/gcc/config/riscv/bitmanip.md b/gcc/config/riscv/bitmanip.md
-index 0d16d79df3a..6c75513b1dc 100644
+index 0d16d79df3ae4cbe6f01556ee32dc6aed6552685..6c75513b1dc80f609abf91044389cf0010294554 100644
 --- a/gcc/config/riscv/bitmanip.md
 +++ b/gcc/config/riscv/bitmanip.md
 @@ -1217,6 +1217,26 @@
@@ -60,10 +60,10 @@ index 0d16d79df3a..6c75513b1dc 100644
       it is possible to store the quotient within a single variable
       (E.g.  CRC64's quotient may need 65 bits,
 diff --git a/gcc/config/riscv/peephole.md b/gcc/config/riscv/peephole.md
-index e49bc042665..7f2c65787fe 100644
+index e49bc0426653fd29e564335d3d9e891291e68c5e..af6dc675447b19e542251825525dace6c54f4b33 100644
 --- a/gcc/config/riscv/peephole.md
 +++ b/gcc/config/riscv/peephole.md
-@@ -19,6 +19,248 @@
+@@ -19,6 +19,275 @@
  ;; <http://www.gnu.org/licenses/>.
  
  ;; Simplify (unsigned long)(unsigned int)a << const
@@ -235,6 +235,33 @@ index e49bc042665..7f2c65787fe 100644
 +  ".insn r 0x0b, 3, 9, %0, %1, %2"
 +  [(set_attr "type" "imul") (set_attr "mode" "SI")])
 +
++(define_insn "xdotn_configsi1"
++  [(unspec_volatile [(match_operand:SI 0 "register_operand" "r")]
++                    UNSPEC_XDOTN_CONFIG)]
++  "TARGET_XDOTN && !TARGET_64BIT"
++  ".insn r 0x0b, 4, 3, zero, %0, zero"
++  [(set_attr "type" "multi") (set_attr "mode" "SI")])
++
++(define_insn "xdotnsi3"
++  [(set (match_operand:SI 0 "register_operand" "=r")
++	(unspec_volatile:SI [(match_operand:SI 1 "register_operand" "r")
++		    (match_operand:SI 2 "register_operand" "r")]
++		   UNSPEC_XDOTN))
++   (clobber (mem:BLK (scratch)))]
++  "TARGET_XDOTN && !TARGET_64BIT"
++  ".insn r 0x0b, 4, 4, %0, %1, %2"
++  [(set_attr "type" "multi") (set_attr "mode" "SI")])
++
++(define_insn "xdotn_bitsi3"
++  [(set (match_operand:SI 0 "register_operand" "=r")
++	(unspec_volatile:SI [(match_operand:SI 1 "register_operand" "r")
++		    (match_operand:SI 2 "register_operand" "r")]
++		   UNSPEC_XDOTN_BIT))
++   (clobber (mem:BLK (scratch)))]
++  "TARGET_XDOTN && !TARGET_64BIT"
++  ".insn r 0x0b, 4, 5, %0, %1, %2"
++  [(set_attr "type" "multi") (set_attr "mode" "SI")])
++
 +;; Numeric-token DFA (xdfa4h): one hardware step over the word at the string
 +;; position; result packs {state&7, advance>>3&7, done<<6}.  The counters
 +;; accumulate in hardware across all step calls between XDFACNT_INIT and the
@@ -313,10 +340,10 @@ index e49bc042665..7f2c65787fe 100644
    [(set (match_operand:DI 0 "register_operand")
  	(ashift:DI (match_operand:DI 1 "register_operand")
 diff --git a/gcc/config/riscv/riscv.md b/gcc/config/riscv/riscv.md
-index d2883ef9f5a..4c33374f9e7 100644
+index d2883ef9f5af7c368f11f945298699da6759e2ec..cb461425f192966eb5eaa7913bdd4e49a404de83 100644
 --- a/gcc/config/riscv/riscv.md
 +++ b/gcc/config/riscv/riscv.md
-@@ -100,6 +100,28 @@
+@@ -100,6 +100,31 @@
    UNSPEC_CRC
    UNSPEC_CRC_REV
  
@@ -334,6 +361,9 @@ index d2883ef9f5a..4c33374f9e7 100644
 +  UNSPEC_XMACACC_BIT_FIRST
 +  UNSPEC_XMACACC_BIT_ADD
 +  UNSPEC_XMACACC_BIT_LAST
++  UNSPEC_XDOTN_CONFIG
++  UNSPEC_XDOTN
++  UNSPEC_XDOTN_BIT
 +
 +  ;; Numeric-token DFA (xdfa4h).
 +  UNSPEC_XDFA4H_STEP
@@ -346,10 +376,10 @@ index d2883ef9f5a..4c33374f9e7 100644
    UNSPEC_SSP_SET
    UNSPEC_SSP_TEST
 diff --git a/gcc/config/riscv/riscv.opt b/gcc/config/riscv/riscv.opt
-index 2c26ee99691..08871c1b074 100644
+index 2c26ee99691315d1374d6e5d4ddebf30f259eb1f..4fd6522cb412db3791db44e1288ebb7503693890 100644
 --- a/gcc/config/riscv/riscv.opt
 +++ b/gcc/config/riscv/riscv.opt
-@@ -81,6 +81,42 @@ mdiv
+@@ -81,6 +81,46 @@ mdiv
  Target Mask(DIV)
  Use hardware instructions for integer division.
  
@@ -381,6 +411,10 @@ index 2c26ee99691..08871c1b074 100644
 +Target Mask(XMACACC)
 +Use the matrix multiply-accumulate instruction sequence.
 +
++mxdotn
++Target Mask(XDOTN)
++Use runtime-sized strided matrix dot-product instructions.
++
 +mxdfa4h
 +Target Mask(XDFA4H)
 +Use the numeric-token DFA (xdfa4h) instructions.
@@ -393,7 +427,7 @@ index 2c26ee99691..08871c1b074 100644
  Target RejectNegative Joined Negative(march=) Var(riscv_arch_string) Save
  -march=	Generate code for given RISC-V ISA (e.g. RV64IM).  ISA strings must be
 diff --git a/gcc/internal-fn.cc b/gcc/internal-fn.cc
-index 25acc63b247..73f690bb982 100644
+index 25acc63b247b531179aa6d16873cabe23aadce52..7073cfcacd49d0759f6ac40042cc69939d6c01f6 100644
 --- a/gcc/internal-fn.cc
 +++ b/gcc/internal-fn.cc
 @@ -38,6 +38,7 @@ along with GCC; see the file COPYING3.  If not see
@@ -404,7 +438,7 @@ index 25acc63b247..73f690bb982 100644
  #include "dojump.h"
  #include "expr.h"
  #include "stringpool.h"
-@@ -3464,6 +3465,148 @@ expand_UNIQUE (internal_fn, gcall *stmt)
+@@ -3464,6 +3465,189 @@ expand_UNIQUE (internal_fn, gcall *stmt)
      emit_insn (pattern);
  }
  
@@ -460,6 +494,47 @@ index 25acc63b247..73f690bb982 100644
 +  rtx single = gen_label_rtx ();
 +  rtx done = gen_label_rtx ();
 +  rtx one = GEN_INT (1);
++
++  /* Configure the runtime dimension once, then collapse every inner product
++     to one memory-walking instruction.  Keep the generic expansion for zero
++     or dimensions that do not fit the walker's 16-bit counter.  */
++  if (TARGET_XDOTN)
++    {
++      rtx generic = gen_label_rtx ();
++      rtx dot_outer = gen_label_rtx ();
++      rtx dot_inner = gen_label_rtx ();
++      rtx dot_step = xmacacc_shift (n, 1);
++      rtx dot_elements = gen_reg_rtx (SImode);
++      emit_insn (gen_mulsi3 (dot_elements, n, n));
++      rtx dot_a_end = xmacacc_add (a, xmacacc_shift (dot_elements, 1));
++      rtx dot_b_end = xmacacc_add (b, dot_step);
++
++      emit_cmp_and_jump_insns (n, const0_rtx, EQ, NULL_RTX, SImode, 1,
++			       generic, profile_probability::very_unlikely ());
++      emit_cmp_and_jump_insns (n, GEN_INT (65535), GTU, NULL_RTX, SImode, 1,
++			       generic, profile_probability::very_unlikely ());
++      emit_label (dot_outer);
++      emit_move_insn (b_col, b);
++      /* Besides refreshing the state for each row, the configuration op
++	 separates the loop's b_col move from the blocking dot consumer.  */
++      emit_insn (gen_xdotn_configsi1 (n));
++      emit_label (dot_inner);
++      rtx dot_result = gen_reg_rtx (SImode);
++      emit_insn (bit_extract
++			 ? gen_xdotn_bitsi3 (dot_result, a_row, b_col)
++			 : gen_xdotnsi3 (dot_result, a_row, b_col));
++      emit_move_insn (gen_rtx_MEM (SImode, c_ptr), dot_result);
++      emit_insn (gen_addsi3 (c_ptr, c_ptr, GEN_INT (4)));
++      emit_insn (gen_addsi3 (b_col, b_col, GEN_INT (2)));
++      emit_cmp_and_jump_insns (b_col, dot_b_end, NE, NULL_RTX, SImode, 1,
++			       dot_inner, profile_probability::likely ());
++      emit_insn (gen_addsi3 (a_row, a_row, dot_step));
++      emit_cmp_and_jump_insns (a_row, dot_a_end, NE, NULL_RTX, SImode, 1,
++			       dot_outer, profile_probability::likely ());
++      emit_jump_insn (gen_jump (done));
++      emit_barrier ();
++      emit_label (generic);
++    }
 +
 +  emit_cmp_and_jump_insns (n, one, LEU, NULL_RTX, SImode, 1, single,
 +			   profile_probability::very_unlikely ());
@@ -554,7 +629,7 @@ index 25acc63b247..73f690bb982 100644
     LHS = DEFERRED_INIT (SIZE of the DECL, INIT_TYPE, NAME of the DECL);
  
 diff --git a/gcc/internal-fn.def b/gcc/internal-fn.def
-index d142416725a..38c960df8f2 100644
+index d142416725a2950c5f943338ad97701a031c795c..38c960df8f27780d394518fa41390779e5f5a5b9 100644
 --- a/gcc/internal-fn.def
 +++ b/gcc/internal-fn.def
 @@ -204,6 +204,22 @@ along with GCC; see the file COPYING3.  If not see
@@ -581,7 +656,7 @@ index d142416725a..38c960df8f2 100644
  DEF_INTERNAL_OPTAB_FN (LOAD_LANES, ECF_CONST, vec_load_lanes, load_lanes)
  DEF_INTERNAL_OPTAB_FN (MASK_LOAD_LANES, ECF_PURE,
 diff --git a/gcc/optabs.def b/gcc/optabs.def
-index 193f42a728a..cc18d85a7b9 100644
+index 193f42a728a2d414f078bce785f760cca00087ca..cc18d85a7b9f069bc94e66a0c98a5c689513f6c1 100644
 --- a/gcc/optabs.def
 +++ b/gcc/optabs.def
 @@ -226,6 +226,14 @@ OPTAB_NC(sync_lock_test_and_set_optab, "sync_lock_test_and_set$I$a", UNKNOWN)
@@ -600,7 +675,7 @@ index 193f42a728a..cc18d85a7b9 100644
  OPTAB_D (insv_optab, "insv$a")
  OPTAB_D (extv_optab, "extv$a")
 diff --git a/gcc/passes.def b/gcc/passes.def
-index cdddb87302f..b2e228086fe 100644
+index cdddb87302f647b4709b246b84cb5766230c6a97..b2e228086fe56796b0cdb1a85511c6ceaa2392e9 100644
 --- a/gcc/passes.def
 +++ b/gcc/passes.def
 @@ -94,6 +94,7 @@ along with GCC; see the file COPYING3.  If not see
@@ -613,7 +688,7 @@ index cdddb87302f..b2e228086fe 100644
  	  NEXT_PASS (pass_cd_dce, false /* update_address_taken_p */, true /* remove_unused_locals */);
 diff --git a/gcc/tree-clipped-rising-score.cc b/gcc/tree-clipped-rising-score.cc
 new file mode 100644
-index 00000000000..1dfe1b5c453
+index 0000000000000000000000000000000000000000..1dfe1b5c453867ff2059d3823e616167d1dba7c1
 --- /dev/null
 +++ b/gcc/tree-clipped-rising-score.cc
 @@ -0,0 +1,1401 @@
@@ -2019,7 +2094,7 @@ index 00000000000..1dfe1b5c453
 +  return new pass_clipped_rising_score (ctxt);
 +}
 diff --git a/gcc/tree-pass.h b/gcc/tree-pass.h
-index b3c97658a8f..7dfd8c76b2c 100644
+index b3c97658a8fefff0dfd153b0ff3cd68e8bfb281d..7dfd8c76b2c2443ad7a71d3973b806d1dc2c1835 100644
 --- a/gcc/tree-pass.h
 +++ b/gcc/tree-pass.h
 @@ -389,6 +389,7 @@ extern gimple_opt_pass *make_pass_graphite_transforms (gcc::context *ctxt);
@@ -2030,3 +2105,56 @@ index b3c97658a8f..7dfd8c76b2c 100644
  extern gimple_opt_pass *make_pass_crc_optimization (gcc::context *ctxt);
  extern gimple_opt_pass *make_pass_vectorize (gcc::context *ctxt);
  extern gimple_opt_pass *make_pass_simduid_cleanup (gcc::context *ctxt);
+diff --git a/gcc/tree-ssa-loop-niter.cc b/gcc/tree-ssa-loop-niter.cc
+index c1a807db6cbaa1fb0acd3f8d275644241dac6f3c..047baa2858eacf8bc8d914e2121e69b6aac6baae 100644
+--- a/gcc/tree-ssa-loop-niter.cc
++++ b/gcc/tree-ssa-loop-niter.cc
+@@ -115 +115 @@ split_to_var_and_offset (tree expr, tree *var, mpz_t offset)
+-static void
++static bool
+@@ -119,0 +120 @@ refine_value_range_using_guard (tree type, tree var,
++  bool changed = false;
+@@ -137 +138 @@ refine_value_range_using_guard (tree type, tree var,
+-	return;
++	return false;
+@@ -145 +146 @@ refine_value_range_using_guard (tree type, tree var,
+-      return;
++      return false;
+@@ -152 +153 @@ refine_value_range_using_guard (tree type, tree var,
+-	return;
++	return false;
+@@ -158 +159 @@ refine_value_range_using_guard (tree type, tree var,
+-	return;
++	return false;
+@@ -186 +187 @@ refine_value_range_using_guard (tree type, tree var,
+-	return;
++	return false;
+@@ -191 +192 @@ refine_value_range_using_guard (tree type, tree var,
+-      return;
++      return false;
+@@ -210 +211 @@ refine_value_range_using_guard (tree type, tree var,
+-      return;
++      return false;
+@@ -324 +325,4 @@ refine_value_range_using_guard (tree type, tree var,
+-	mpz_set (up, maxc1);
++	{
++	  mpz_set (up, maxc1);
++	  changed = true;
++	}
+@@ -329 +333,4 @@ refine_value_range_using_guard (tree type, tree var,
+-	mpz_set (below, minc1);
++	{
++	  mpz_set (below, minc1);
++	  changed = true;
++	}
+@@ -338,0 +346 @@ end:
++  return changed;
+@@ -466,2 +474,6 @@ determine_value_range (class loop *loop, tree type, tree var, mpz_t off,
+-	  refine_value_range_using_guard (type, var, c0, cmp, c1, minm, maxm);
+-	  ++cnt;
++	  /* Only charge the budget for guards that actually refine the
++	     range; walking past guards that do not constrain VAR (e.g.
++	     "N <= i" where i is VARYING) is how deeper but effective
++	     entry guards such as "N != 0" become reachable.  */
++	  if (refine_value_range_using_guard (type, var, c0, cmp, c1, minm, maxm))
++	    ++cnt;

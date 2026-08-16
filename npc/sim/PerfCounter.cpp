@@ -1,4 +1,5 @@
 #include "PerfCounter.hpp"
+#include "sdbWrap.hpp"
 #include "sim.hpp"
 #include "spdlog/fmt/bundled/format.h"
 #include "spdlog/spdlog.h"
@@ -355,6 +356,8 @@ void dumpPerfCountersStatistics(std::ostream &os, bool printFullPerf) {
   const bool partial_run = instruction_limit != 0 && inst_count == instruction_limit && !sim_halted();
   os << "run completion:\n";
   os << "  partial run: " << (partial_run ? "yes" : "no") << "\n";
+  os << "  difftest requested: " << (sim_get_config()->setting.difftest ? "yes" : "no") << "\n";
+  os << "  difftest active: " << (sdb_difftest_active() ? "yes" : "no") << "\n";
   if (instruction_limit != 0) {
     os << "  instruction limit: " << instruction_limit << "\n";
   }
@@ -521,6 +524,8 @@ void dumpPerfCounterTo(std::ostream &os) {
   const auto instruction_limit = sim_get_config()->setting.max_instructions;
   j["run"] = {
       {"partial", instruction_limit != 0 && sim_get_inst_count() == instruction_limit && !sim_halted()},
+      {"difftest_requested", sim_get_config()->setting.difftest},
+      {"difftest_active", sdb_difftest_active()},
       {"instruction_limit", instruction_limit},
       {"instruction_count", sim_get_inst_count()},
       {"custom_retired_instruction_count", sim_get_custom_inst_count()},

@@ -26,6 +26,8 @@ void cyc_callback() {
 std::shared_ptr<sdb::debuger> dbg;
 sdb::difftest_trace_handler_ptr diff_handler;
 
+bool sdb_difftest_active() { return diff_handler != nullptr; }
+
 void sdb_skip_difftest_ref() {
   if (diff_handler)
     diff_handler->skip_ref();
@@ -83,17 +85,20 @@ std::array<std::string_view, 32> reg_names = {
 //     printf("%s: %08x\n", reg_names[i].data(), gpr_snap[i]);
 //   }
 // }
-void sdb_init(word_t init_pc, size_t img_size, const char *img_file,
+bool sdb_init(word_t init_pc, size_t img_size, const char *img_file,
               sim_setting setting) {
+  diff_handler.reset();
   dbg = std::make_shared<sdb::debuger>(
       init_pc, init_pc, img_size, sdbwrap::cpu_exec, sdbwrap::loadmem,
       sdbwrap::shot_regsnap,
       std::vector<std::string_view>(reg_names.begin(), reg_names.end()),
       sdbwrap::inst_fetcher);
 
-  dbg->enable_inst_trace = setting.en_inst_trace;
+  // Difftest is a retirement handler, not a display option. It needs the
+  // instruction-stepping path even when textual instruction trace is off.
+  dbg->enable_inst_trace = setting.en_inst_trace || setting.difftest;
 
-  if (setting.en_inst_trace) {
+  if (dbg->enable_inst_trace) {
     if (setting.showdisasm) {
       size_t inst_show_limit = setting.always_showdisasm ? SIZE_MAX : 16;
       dbg->add_trace(sdb::make_disasm_trace_handler(sdb::default_inst_disasm,
@@ -124,10 +129,9 @@ void sdb_init(word_t init_pc, size_t img_size, const char *img_file,
         diff_handler = sdb::make_difftest_trace_handler(
             "../nemu/build/riscv32-nemu-interpreter-so", 0);
       } catch (std::exception &e) {
-        spdlog::warn("Failed to create difftest trace handler: {}, difftest "
-                     "will be disabled",
-                     e.what());
-        return;
+        spdlog::error("Failed to create requested difftest trace handler: {}",
+                      e.what());
+        return false;
       }
       dbg->add_trace(diff_handler);
 
@@ -138,9 +142,11 @@ void sdb_init(word_t init_pc, size_t img_size, const char *img_file,
                      r.name, r.host_base, r.size);
         diff_handler->memcpy_to_ref({(uint8_t *)r.data, r.size}, r.host_base);
       }
+      spdlog::info("Difftest is active");
     }
 
   }
+  return true;
 }
 
 int sdb_mainloop() {
@@ -150,7 +156,9 @@ int sdb_mainloop() {
   cfg.raise_halt_cb = sdb_set_halt;
   spdlog::trace("setting raise_halt_cb to sdb_set_halt");
 
-  sdb_init(cfg.init_pc, cfg.img_size, cfg.img_file_path, cfg.setting);
+  if (!sdb_init(cfg.init_pc, cfg.img_size, cfg.img_file_path, cfg.setting)) {
+    return 2;
+  }
   spdlog::info("sdb entering {} mode",
                cfg.is_batch_mode() ? "batch" : "interactive");
 

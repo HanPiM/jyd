@@ -64,7 +64,14 @@ If you modify RISC-V M-extension/Zmmul multiply behavior in `npc` (for example A
 
 For multi-cycle EXU units, also keep an eye on RAW forwarding/stall behavior: the producer should advertise the destination register while its data is not yet valid so IDU stalls dependent consumers, then mark the data valid once the EXU result can be forwarded.
 
-If you modify CSR-related code, you must also run the `rt-thread` (`rtt`) test because it is needed to cover CSR paths. For `rt-thread`, use `make -C rt-thread-am/bsp/abstract-machine run ARCH=<target>`; because it does not exit on its own, treat reaching the `msh />` prompt as success and stop the run manually. `Exception ETRACE` lines during that run are expected tracing output for `ecall`/`mret`, not failures.
+If you modify CSR-related code, you must also run the pinned RT-Thread Nano test
+because it is needed to cover CSR paths. Use
+`make -C jyd-tests/rtthread-nano ARCH=riscv32-jyd COREMARK_ENABLE=0 run`;
+because it does not exit on its own, treat reaching the `msh >` prompt as
+success and stop the run manually. `Exception ETRACE` lines during that run are
+expected tracing output for `ecall`/`mret`, not failures. Do not use the legacy
+full `rt-thread-am` image for this regression; its current configuration does
+not fit the JYD IROM/DRAM capacity.
 
 If you modify `JYDDevices` or other JYD-specific code, you must run tests with `ARCH=riscv32-jyd` so the JYD-only paths are covered.
 
@@ -156,6 +163,25 @@ backend integrity and name-independence audits pass, and `./build-coe.sh all` su
 from a clean copy moved to a different path with no project-specific environment
 variables. Byte-compare the four generated CoreMark/RT-Thread text/data COE files
 against `reference/`, then remove generated `out/` contents from the delivered copy.
+
+## Finals Submission Documentation and Code Audit
+
+Before changing the finals technical report, CoreMark build chain, accelerator
+toolchain/RTL, RT-Thread Nano integration, or reviewer reproduction materials,
+read and follow `doc/FINALS-AUDIT-GUIDELINES.md`. It is the canonical audit
+contract for evidence provenance, board-versus-fit labeling, hardware-centered
+report wording, state-machine presentation, compiler disclosure boundaries,
+name-independent code generation, official CoreMark output/SoftFloat handling,
+shared CoreMark defaults, RT-Thread Nano device boundaries, and pre-submission
+checks.
+
+The report may abstract compiler internals and combine adjacent hardware stages
+in one state-machine figure, but abstraction must remain truthful. Do not claim
+hardware recognition or compiler granularity that the implementation does not
+have, do not rely on source code escaping review, and do not weaken the code and
+reproduction audits merely to make the prose less specific. When implementation,
+evidence, and older prose disagree, use current code and traceable raw evidence as
+the source of truth and update the report accordingly.
 
 ## Optimization Experiment Documentation
 

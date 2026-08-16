@@ -21,10 +21,12 @@ Environment:
   JOBS                  Vivado top-level jobs and max threads. Defaults to nproc.
   IP_JOBS               IP/OOC run concurrency and max threads. Defaults to 4.
 
+Artifact retention:
+  --archive-dir DIR      Archive logs, reports, DCPs, and any successful bitstream in DIR.
+
 Isolated diagnostic flow:
   --isolated-profile NAME
                          Build quick-75, default-200, or default-150 in a copied project.
-  --archive-dir DIR      Archive isolated-flow logs, reports, DCPs, and bitstream in DIR.
   --prepare-only         Stop after preparing an isolated project and configuring its clock.
   --keep-workdir         Retain the isolated Vivado project after completion.
   --project-root DIR     Use DIR as the Vivado project instead of the in-tree project.
@@ -56,6 +58,7 @@ EOF
 }
 
 mode=impl
+invocation_dir=$PWD
 skip_pack=0
 skip_vivado=0
 reset_runs=0
@@ -79,6 +82,24 @@ place_directive="${VIVADO_PLACE_DIRECTIVE:-}"
 route_directive="${VIVADO_ROUTE_DIRECTIVE:-}"
 pre_route_phys_opt_directive="${VIVADO_PRE_ROUTE_PHYS_OPT_DIRECTIVE:-}"
 post_route_phys_opt_directive="${VIVADO_POST_ROUTE_PHYS_OPT_DIRECTIVE:-AggressiveExplore}"
+archive_started_utc=""
+archive_flow_started=0
+archive_snapshot_ready=0
+flow_stage=argument-validation
+vivado_status=not-run
+runner_log_status=not-run
+products_complete=0
+tcl_file=""
+xpr_backup=""
+xci_backup_dir=""
+mul16_xci_backup=""
+stale_pack_placeholder_list=""
+selection_record=""
+replace_workdir=""
+coe_snapshot_dir=""
+source_irom_coe=""
+source_dram_coe=""
+declare -A archive_pre_signature=()
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
@@ -227,6 +248,11 @@ if [ "$prepare_only" -eq 1 ] && [ -z "$isolated_profile" ]; then
   echo "--prepare-only requires --isolated-profile" >&2
   exit 2
 fi
+if [ -n "$archive_dir" ] && [ -z "$isolated_profile" ] && \
+  { [ "$skip_vivado" -eq 1 ] || [ "$source_manifest_only" -eq 1 ]; }; then
+  echo "--archive-dir requires a complete in-tree Vivado run" >&2
+  exit 2
+fi
 if [ "$reset_runs" -eq 1 ] && [ "$reuse_ip" -eq 1 ]; then
   echo "--reset-runs and --reuse-ip are mutually exclusive" >&2
   exit 2
@@ -291,6 +317,12 @@ repo_root=$(CDPATH= cd -- "$npc_dir/.." && pwd)
 pack_src="$npc_dir/build/pack-fpga"
 vivado_bin="${VIVADO:-vivado}"
 
+path_is_within() {
+  local child=$1
+  local parent=$2
+  [[ "$child" == "$parent" || "$child" == "$parent/"* ]]
+}
+
 if [ -z "$coe_dir" ]; then
   coe_dir="$repo_root/cur_coe"
 fi
@@ -299,6 +331,8 @@ if [ "$mode" = write_bitstream ]; then
     echo "write_bitstream reuses an implemented checkpoint; run impl separately before using --reset-runs or --reuse-ip" >&2
     exit 2
   fi
+fi
+if [ "$mode" = write_bitstream ] || [ -n "$isolated_profile" ]; then
   if [ "${coe_dir#/}" = "$coe_dir" ]; then
     coe_dir="$PWD/$coe_dir"
   fi
@@ -322,16 +356,139 @@ if [ -n "$isolated_profile" ]; then
     default-200) isolated_cpu_mhz=200; isolated_flow_profile=default ;;
     default-150) isolated_cpu_mhz=150; isolated_flow_profile=default ;;
   esac
+  jyd_data_root="${JYD_DATA_ROOT:-/srv/data/jyd}"
+  isolated_stamp=$(date -u +%Y%m%dT%H%M%SZ)
+  source_project="$repo_root/jyd-vivado-proj"
+  if [ -z "$archive_dir" ]; then
+    isolated_archive_parent="$jyd_data_root/archive/digital-twin-vivado-$isolated_stamp"
+    mkdir -p -- "$isolated_archive_parent"
+    archive_dir=$(mktemp -d "$isolated_archive_parent/${isolated_profile}.XXXXXX")
+  elif [ "${archive_dir#/}" = "$archive_dir" ]; then
+    archive_dir="$invocation_dir/$archive_dir"
+  fi
+  archive_dir=$(realpath -m -- "$archive_dir")
+  source_project_canonical=$(realpath -m -- "$source_project")
+  if path_is_within "$archive_dir" "$source_project_canonical" || \
+    path_is_within "$source_project_canonical" "$archive_dir"; then
+    echo "Isolated Vivado archive must not overlap the source project:" >&2
+    echo "  archive: $archive_dir" >&2
+    echo "  source:  $source_project_canonical" >&2
+    exit 1
+  fi
+  if [ -e "$archive_dir" ] && [ ! -d "$archive_dir" ]; then
+    echo "Vivado archive path exists and is not a directory: $archive_dir" >&2
+    exit 1
+  fi
+  mkdir -p -- "$archive_dir"
+  exec 8<"$archive_dir"
+  if ! flock -n 8; then
+    echo "Another isolated Vivado flow is already writing archive: $archive_dir" >&2
+    exit 1
+  fi
+  if [ -n "$(find "$archive_dir" -mindepth 1 -print -quit)" ]; then
+    echo "Vivado archive directory is not empty: $archive_dir" >&2
+    exit 1
+  fi
+  isolated_workdir=$(mktemp -d "$jyd_data_root/tmp/digital-twin-vivado.${isolated_profile}.XXXXXX")
+  isolated_project="$isolated_workdir/jyd-vivado-proj"
+  isolated_workdir_canonical=$(realpath -m -- "$isolated_workdir")
+  if path_is_within "$archive_dir" "$isolated_workdir_canonical" || \
+    path_is_within "$isolated_workdir_canonical" "$archive_dir"; then
+    echo "Isolated Vivado archive must not overlap its work tree:" >&2
+    echo "  archive: $archive_dir" >&2
+    echo "  work:    $isolated_workdir_canonical" >&2
+    rmdir -- "$isolated_workdir"
+    exit 1
+  fi
+
+  isolated_started_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  isolated_stage=preparing
+  configure_status=not-run
+  configure_log_status=not-run
+  impl_status=not-run
+  impl_log_status=not-run
+  bitstream_status=not-run
+  bitstream_log_status=not-run
+  finish_isolated_flow() {
+    local primary_status=$?
+    local final_status=$primary_status
+    local archive_status=0
+
+    trap - EXIT
+    set +e
+    {
+      echo "profile=$isolated_profile"
+      echo "cpu_mhz=$isolated_cpu_mhz"
+      echo "flow_profile=$isolated_flow_profile"
+      echo "requested_mode=$mode"
+      echo "repo_commit=$(git -C "$repo_root" rev-parse HEAD)"
+      echo "original_coe_dir=$coe_dir"
+      echo "irom_sha256=${actual_irom_sha:-not-snapshotted}"
+      echo "dram_sha256=${actual_dram_sha:-not-snapshotted}"
+      echo "workdir=$isolated_workdir"
+      echo "stage=$isolated_stage"
+      echo "configure_status=$configure_status"
+      echo "configure_log_status=$configure_log_status"
+      echo "impl_status=$impl_status"
+      echo "impl_log_status=$impl_log_status"
+      echo "bitstream_status=$bitstream_status"
+      echo "bitstream_log_status=$bitstream_log_status"
+      echo "flow_status=$primary_status"
+      echo "archive_dir=$archive_dir"
+      echo "started_utc=$isolated_started_utc"
+      echo "finished_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    } >"$archive_dir/metadata.env" || archive_status=1
+    git -C "$repo_root" status --short >"$archive_dir/git-status.txt" || archive_status=1
+    (
+      cd "$archive_dir" || exit 1
+      find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum >SHA256SUMS
+    ) || archive_status=1
+    if [ "$primary_status" -eq 0 ] && [ "$keep_workdir" -ne 1 ]; then
+      rm -rf -- "$isolated_workdir" || archive_status=1
+    fi
+    echo "ISOLATED_PROFILE=$isolated_profile"
+    echo "ISOLATED_ARCHIVE=$archive_dir"
+    if [ "$keep_workdir" -eq 1 ] || [ "$primary_status" -ne 0 ] || [ "$archive_status" -ne 0 ]; then
+      echo "ISOLATED_WORKDIR=$isolated_workdir"
+    fi
+    if [ "$final_status" -eq 0 ] && [ "$archive_status" -ne 0 ]; then
+      final_status=1
+    fi
+    exit "$final_status"
+  }
+  trap finish_isolated_flow EXIT
+
   workload_manifest="$coe_dir/coremark-workload.env"
   [ -f "$workload_manifest" ] || {
     echo "Formal COE manifest does not exist: $workload_manifest" >&2
     exit 1
   }
-  manifest_iterations=$(sed -n 's/^COREMARK_ITERATIONS=//p' "$workload_manifest")
-  manifest_irom_sha=$(sed -n 's/^COREMARK_IROM_SHA256=//p' "$workload_manifest")
-  manifest_dram_sha=$(sed -n 's/^COREMARK_DRAM_SHA256=//p' "$workload_manifest")
-  actual_irom_sha=$(sha256sum "$irom_coe" | awk '{print $1}')
-  actual_dram_sha=$(sha256sum "$dram_coe" | awk '{print $1}')
+  isolated_coe_dir="$isolated_workdir/coe-input"
+  mkdir -p -- "$isolated_coe_dir"
+  source_irom_sha_before=$(sha256sum "$irom_coe" | awk '{print $1}')
+  source_dram_sha_before=$(sha256sum "$dram_coe" | awk '{print $1}')
+  source_manifest_sha_before=$(sha256sum "$workload_manifest" | awk '{print $1}')
+  cp -- "$irom_coe" "$isolated_coe_dir/irom.coe"
+  cp -- "$dram_coe" "$isolated_coe_dir/dram.coe"
+  cp -- "$workload_manifest" "$isolated_coe_dir/coremark-workload.env"
+  source_irom_sha_after=$(sha256sum "$irom_coe" | awk '{print $1}')
+  source_dram_sha_after=$(sha256sum "$dram_coe" | awk '{print $1}')
+  source_manifest_sha_after=$(sha256sum "$workload_manifest" | awk '{print $1}')
+  actual_irom_sha=$(sha256sum "$isolated_coe_dir/irom.coe" | awk '{print $1}')
+  actual_dram_sha=$(sha256sum "$isolated_coe_dir/dram.coe" | awk '{print $1}')
+  snapshot_manifest_sha=$(sha256sum "$isolated_coe_dir/coremark-workload.env" | awk '{print $1}')
+  if [ "$source_irom_sha_before" != "$source_irom_sha_after" ] || \
+    [ "$source_irom_sha_before" != "$actual_irom_sha" ] || \
+    [ "$source_dram_sha_before" != "$source_dram_sha_after" ] || \
+    [ "$source_dram_sha_before" != "$actual_dram_sha" ] || \
+    [ "$source_manifest_sha_before" != "$source_manifest_sha_after" ] || \
+    [ "$source_manifest_sha_before" != "$snapshot_manifest_sha" ]; then
+    echo "Formal COE inputs changed while creating the isolated immutable snapshot" >&2
+    exit 1
+  fi
+  manifest_iterations=$(sed -n 's/^COREMARK_ITERATIONS=//p' "$isolated_coe_dir/coremark-workload.env")
+  manifest_irom_sha=$(sed -n 's/^COREMARK_IROM_SHA256=//p' "$isolated_coe_dir/coremark-workload.env")
+  manifest_dram_sha=$(sed -n 's/^COREMARK_DRAM_SHA256=//p' "$isolated_coe_dir/coremark-workload.env")
   [ "$manifest_iterations" = 10000 ] || {
     echo "Isolated bitstream input must use COREMARK_ITERATIONS=10000, got: ${manifest_iterations:-missing}" >&2
     exit 1
@@ -344,19 +501,12 @@ if [ -n "$isolated_profile" ]; then
     echo "dram.coe does not match formal workload manifest" >&2
     exit 1
   }
+  mkdir -p -- "$archive_dir/inputs/coe"
+  cp -a -- "$isolated_coe_dir/irom.coe" "$isolated_coe_dir/dram.coe" \
+    "$isolated_coe_dir/coremark-workload.env" "$archive_dir/inputs/coe/"
 
-  jyd_data_root="${JYD_DATA_ROOT:-/srv/data/jyd}"
-  isolated_stamp=$(date -u +%Y%m%dT%H%M%SZ)
-  isolated_workdir=$(mktemp -d "$jyd_data_root/tmp/digital-twin-vivado.${isolated_profile}.XXXXXX")
-  isolated_project="$isolated_workdir/jyd-vivado-proj"
-  if [ -z "$archive_dir" ]; then
-    archive_dir="$jyd_data_root/archive/digital-twin-vivado-$isolated_stamp/$isolated_profile"
-  elif [ "${archive_dir#/}" = "$archive_dir" ]; then
-    archive_dir="$PWD/$archive_dir"
-  fi
-  mkdir -p -- "$isolated_project" "$archive_dir"
+  mkdir -p -- "$isolated_project"
 
-  source_project="$repo_root/jyd-vivado-proj"
   cp -a -- "$source_project/digital_twin.xpr" "$isolated_project/"
   for source_path in \
     "$source_project/digital_twin.srcs/constrs_1" \
@@ -389,7 +539,8 @@ if [ -n "$isolated_profile" ]; then
   mkdir -p -- "$isolated_project/digital_twin.srcs/sources_1/imports"
   cp -a -- "$pack_src" "$isolated_project/digital_twin.srcs/sources_1/imports/pack-fpga"
   mkdir -p -- "$isolated_project/digital_twin.srcs/sources_1/imports/cur_coe"
-  cp -a -- "$irom_coe" "$dram_coe" "$isolated_project/digital_twin.srcs/sources_1/imports/cur_coe/"
+  cp -a -- "$isolated_coe_dir/irom.coe" "$isolated_coe_dir/dram.coe" \
+    "$isolated_project/digital_twin.srcs/sources_1/imports/cur_coe/"
 
   configure_tcl="$isolated_workdir/configure-clock.tcl"
   cat >"$configure_tcl" <<'EOF'
@@ -408,75 +559,90 @@ if {abs(double($requested_cpu) - double($cpu_mhz)) > 0.001} { error "Clock Wizar
 if {abs(double($requested_peripheral) - 50.0) > 0.001} { error "Clock Wizard peripheral output is not 50 MHz: $requested_peripheral" }
 close_project
 EOF
+  isolated_stage=configuring-clock
+  set +e
   (
     cd "$isolated_project"
     "$vivado_bin" -mode batch -nolog -nojournal -notrace -source "$configure_tcl" \
       -tclargs "$isolated_project/digital_twin.xpr" "$isolated_cpu_mhz"
   ) 2>&1 | tee "$archive_dir/configure-clock.log"
-
-  {
-    echo "profile=$isolated_profile"
-    echo "cpu_mhz=$isolated_cpu_mhz"
-    echo "flow_profile=$isolated_flow_profile"
-    echo "repo_commit=$(git -C "$repo_root" rev-parse HEAD)"
-    echo "coe_dir=$coe_dir"
-    echo "irom_sha256=$actual_irom_sha"
-    echo "dram_sha256=$actual_dram_sha"
-    echo "workdir=$isolated_workdir"
-    echo "started_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  } >"$archive_dir/metadata.env"
+  configure_pipeline_status=("${PIPESTATUS[@]}")
+  configure_status=${configure_pipeline_status[0]}
+  configure_log_status=${configure_pipeline_status[1]}
+  set -e
+  if [ "$configure_status" -ne 0 ]; then
+    isolated_stage=configure-failed
+    exit "$configure_status"
+  fi
+  if [ "$configure_log_status" -ne 0 ]; then
+    isolated_stage=configure-log-failed
+    exit "$configure_log_status"
+  fi
 
   if [ "$prepare_only" -eq 1 ]; then
-    {
-      echo "vivado_status=not-run"
-      echo "archive_dir=$archive_dir"
-      echo "finished_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-    } >>"$archive_dir/metadata.env"
-    echo "ISOLATED_PROFILE=$isolated_profile"
-    echo "ISOLATED_ARCHIVE=$archive_dir"
-    echo "ISOLATED_WORKDIR=$isolated_workdir"
+    isolated_stage=prepared
     exit 0
   fi
 
-  set +e
-  "$script_dir/run_digital_twin_vivado.sh" "$mode" \
-    --project-root "$isolated_project" --expected-cpu-mhz "$isolated_cpu_mhz" \
-    --flow-profile "$isolated_flow_profile" --coe-dir "$coe_dir" \
-    --jobs "$jobs" --ip-jobs "$ip_jobs" --reset-runs --skip-pack \
-    2>&1 | tee "$archive_dir/vivado-runner.log"
-  isolated_status=${PIPESTATUS[0]}
-  set -e
+  inner_common=(
+    --project-root "$isolated_project"
+    --expected-cpu-mhz "$isolated_cpu_mhz"
+    --flow-profile "$isolated_flow_profile"
+    --coe-dir "$isolated_coe_dir"
+    --jobs "$jobs"
+    --ip-jobs "$ip_jobs"
+    --skip-pack
+  )
+  if [ "$user_approved_low_jobs" -eq 1 ]; then
+    inner_common+=(--user-approved-low-jobs)
+  fi
 
-  mkdir -p -- "$archive_dir/artifacts"
-  for run_name in synth_1 impl_1; do
-    run_path="$isolated_project/digital_twin.runs/$run_name"
-    [ ! -d "$run_path" ] || find "$run_path" -maxdepth 1 -type f \
-      \( -name '*.bit' -o -name '*.dcp' -o -name '*timing*.rpt' -o -name 'runme.log' -o -name 'runme.jou' \) \
-      -exec cp -a --parents -- {} "$archive_dir/artifacts" \;
-  done
-  if [ "$isolated_status" -eq 0 ] && [ "$mode" = write_bitstream ]; then
-    cp -a -- "$isolated_project/digital_twin.runs/impl_1/top.bit" "$archive_dir/top.bit"
-    cp -a -- "$isolated_project/digital_twin.runs/impl_1/top.bit.coe-manifest" "$archive_dir/"
-    sha256sum "$archive_dir/top.bit" >"$archive_dir/bitstream-sha256.txt"
+  isolated_stage=implementation
+  set +e
+  "$script_dir/run_digital_twin_vivado.sh" impl "${inner_common[@]}" \
+    --reset-runs --archive-dir "$archive_dir/impl" \
+    2>&1 | tee "$archive_dir/impl-runner.log"
+  impl_pipeline_status=("${PIPESTATUS[@]}")
+  impl_status=${impl_pipeline_status[0]}
+  impl_log_status=${impl_pipeline_status[1]}
+  set -e
+  if [ "$impl_status" -ne 0 ]; then
+    isolated_stage=implementation-failed
+    exit "$impl_status"
   fi
-  timing_report="$isolated_project/digital_twin.runs/impl_1/top_timing_summary_postroute_physopted.rpt"
-  [ -f "$timing_report" ] || timing_report="$isolated_project/digital_twin.runs/impl_1/top_timing_summary_routed.rpt"
-  if [ -f "$timing_report" ]; then
-    python3 "$repo_root/jyd-vivado-proj/scripts/extract-timing-summary.py" "$timing_report" >"$archive_dir/timing-summary.txt"
+  if [ "$impl_log_status" -ne 0 ]; then
+    isolated_stage=implementation-log-failed
+    exit "$impl_log_status"
   fi
-  {
-    echo "vivado_status=$isolated_status"
-    echo "archive_dir=$archive_dir"
-    echo "finished_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  } >>"$archive_dir/metadata.env"
-  echo "ISOLATED_PROFILE=$isolated_profile"
-  echo "ISOLATED_ARCHIVE=$archive_dir"
-  if [ "$keep_workdir" -eq 1 ] || [ "$isolated_status" -ne 0 ]; then
-    echo "ISOLATED_WORKDIR=$isolated_workdir"
-  else
-    rm -rf -- "$isolated_workdir"
+  cp -a -- "$archive_dir/impl/timing-summary.txt" "$archive_dir/timing-summary.txt"
+
+  if [ "$mode" = write_bitstream ]; then
+    isolated_stage=bitstream
+    set +e
+    "$script_dir/run_digital_twin_vivado.sh" write_bitstream "${inner_common[@]}" \
+      --archive-dir "$archive_dir/bitstream" \
+      2>&1 | tee "$archive_dir/bitstream-runner.log"
+    bitstream_pipeline_status=("${PIPESTATUS[@]}")
+    bitstream_status=${bitstream_pipeline_status[0]}
+    bitstream_log_status=${bitstream_pipeline_status[1]}
+    set -e
+    if [ "$bitstream_status" -ne 0 ]; then
+      isolated_stage=bitstream-failed
+      exit "$bitstream_status"
+    fi
+    if [ "$bitstream_log_status" -ne 0 ]; then
+      isolated_stage=bitstream-log-failed
+      exit "$bitstream_log_status"
+    fi
+    cp -a -- "$archive_dir/bitstream/top.bit" "$archive_dir/top.bit"
+    cp -a -- "$archive_dir/bitstream/timing-summary.txt" "$archive_dir/timing-summary.txt"
+    (
+      cd "$archive_dir"
+      sha256sum top.bit >bitstream-sha256.txt
+    )
   fi
-  exit "$isolated_status"
+  isolated_stage=complete
+  exit 0
 fi
 
 if [ -n "$project_root" ]; then
@@ -498,6 +664,327 @@ fi
 if [ ! -f "$vivado_project" ]; then
   echo "Vivado project file does not exist: $vivado_project" >&2
   exit 1
+fi
+
+if [ -n "$archive_dir" ]; then
+  if [ "${archive_dir#/}" = "$archive_dir" ]; then
+    archive_dir="$invocation_dir/$archive_dir"
+  fi
+  archive_dir=$(realpath -m -- "$archive_dir")
+  vivado_proj_home_canonical=$(realpath -m -- "$vivado_proj_home")
+  pack_src_canonical=$(realpath -m -- "$pack_src")
+  for mutable_tree in "$vivado_proj_home_canonical" "$pack_src_canonical"; do
+    if path_is_within "$archive_dir" "$mutable_tree" || path_is_within "$mutable_tree" "$archive_dir"; then
+      echo "Vivado archive must not overlap a mutable input/output tree:" >&2
+      echo "  archive: $archive_dir" >&2
+      echo "  tree:    $mutable_tree" >&2
+      exit 1
+    fi
+  done
+  if [ -e "$archive_dir" ] && [ ! -d "$archive_dir" ]; then
+    echo "Vivado archive path exists and is not a directory: $archive_dir" >&2
+    exit 1
+  fi
+  mkdir -p -- "$archive_dir"
+  exec 8<"$archive_dir"
+  if ! flock -n 8; then
+    echo "Another Vivado flow is already writing archive: $archive_dir" >&2
+    exit 1
+  fi
+  if [ -n "$(find "$archive_dir" -mindepth 1 -print -quit)" ]; then
+    echo "Vivado archive directory is not empty: $archive_dir" >&2
+    exit 1
+  fi
+  archive_started_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  archive_flow_started=1
+fi
+
+list_in_tree_archive_candidates() {
+  local run_name run_path artifact
+
+  for run_name in synth_1 impl_1; do
+    run_path="$vivado_proj_home/digital_twin.runs/$run_name"
+    [ -d "$run_path" ] || continue
+    find "$run_path" -maxdepth 1 -type f \
+      \( -name '*.dcp' -o -name '*timing*.rpt' -o -name 'runme.log' -o -name 'runme.jou' \) \
+      -print0
+  done
+  for artifact in "$vivado_proj_home/vivado.log" "$vivado_proj_home/vivado.jou"; do
+    [ ! -f "$artifact" ] || printf '%s\0' "$artifact"
+  done
+}
+
+snapshot_in_tree_archive_candidates() {
+  local artifact
+
+  [ -n "$archive_dir" ] || return 0
+  while IFS= read -r -d '' artifact; do
+    archive_pre_signature["$artifact"]=$(sha256sum "$artifact" | awk '{print $1}')
+  done < <(list_in_tree_archive_candidates)
+  archive_snapshot_ready=1
+}
+
+archive_candidate_changed() {
+  local artifact=$1
+  local current_signature previous_signature
+
+  [ "$archive_snapshot_ready" -eq 1 ] || return 1
+  current_signature=$(sha256sum "$artifact" | awk '{print $1}')
+  previous_signature=${archive_pre_signature["$artifact"]-}
+  [ -z "$previous_signature" ] || [ "$current_signature" != "$previous_signature" ]
+}
+
+archive_in_tree_run() (
+  set -euo pipefail
+  local flow_status=$1
+  local cleanup_status=$2
+  local run_name run_path artifact selected_checkpoint selected_timing_report
+  local selected_checkpoint_name expected_timing_report selected_checkpoint_rel selected_timing_report_rel
+
+  [ -n "$archive_dir" ] || exit 0
+  mkdir -p -- "$archive_dir/artifacts"
+  for run_name in synth_1 impl_1; do
+    run_path="$vivado_proj_home/digital_twin.runs/$run_name"
+    [ -d "$run_path" ] || continue
+    while IFS= read -r -d '' artifact; do
+      if archive_candidate_changed "$artifact"; then
+        mkdir -p -- "$archive_dir/artifacts/$run_name"
+        cp -a -- "$artifact" "$archive_dir/artifacts/$run_name/"
+      fi
+    done < <(find "$run_path" -maxdepth 1 -type f \
+      \( -name '*.dcp' -o -name '*timing*.rpt' -o -name 'runme.log' -o -name 'runme.jou' \) \
+      -print0 | sort -z)
+  done
+  for artifact in "$vivado_proj_home/vivado.log" "$vivado_proj_home/vivado.jou"; do
+    if [ -f "$artifact" ] && archive_candidate_changed "$artifact"; then
+      cp -a -- "$artifact" "$archive_dir/"
+    fi
+  done
+
+  if [ "$products_complete" -eq 1 ]; then
+    [ -s "$selection_record" ] || {
+      echo "Successful Vivado flow did not emit an implementation evidence record: $selection_record" >&2
+      exit 1
+    }
+    selected_checkpoint=$(sed -n 's/^selected_checkpoint=//p' "$selection_record")
+    selected_timing_report=$(sed -n 's/^selected_timing_report=//p' "$selection_record")
+    [ -n "$selected_checkpoint" ] && [ -n "$selected_timing_report" ] || {
+      echo "Implementation evidence record is incomplete: $selection_record" >&2
+      exit 1
+    }
+    selected_checkpoint=$(realpath -e -- "$selected_checkpoint")
+    selected_timing_report=$(realpath -e -- "$selected_timing_report")
+    run_path=$(realpath -e -- "$vivado_proj_home/digital_twin.runs/impl_1")
+    path_is_within "$selected_checkpoint" "$run_path" || {
+      echo "Selected checkpoint escaped impl_1: $selected_checkpoint" >&2
+      exit 1
+    }
+    path_is_within "$selected_timing_report" "$run_path" || {
+      echo "Selected timing report escaped impl_1: $selected_timing_report" >&2
+      exit 1
+    }
+    selected_checkpoint_name=$(basename -- "$selected_checkpoint")
+    case "$selected_checkpoint_name" in
+      top_routed.dcp)
+        expected_timing_report="$run_path/top_timing_summary_routed.rpt"
+        ;;
+      top_postroute_physopt.dcp)
+        expected_timing_report="$run_path/top_timing_summary_postroute_physopted.rpt"
+        ;;
+      *)
+        echo "Unsupported selected implementation checkpoint: $selected_checkpoint" >&2
+        exit 1
+        ;;
+    esac
+    [ "$selected_timing_report" = "$(realpath -e -- "$expected_timing_report")" ] || {
+      echo "Selected timing report does not match selected checkpoint:" >&2
+      echo "  checkpoint: $selected_checkpoint" >&2
+      echo "  report:     $selected_timing_report" >&2
+      echo "  expected:   $expected_timing_report" >&2
+      exit 1
+    }
+    mkdir -p -- "$archive_dir/artifacts/impl_1" "$archive_dir/provenance"
+    cp -a -- "$selected_checkpoint" "$archive_dir/artifacts/impl_1/"
+    cp -a -- "$selected_timing_report" "$archive_dir/artifacts/impl_1/"
+    cp -a -- "$selection_record" "$archive_dir/provenance/implementation-selection.env"
+    selected_checkpoint_rel="artifacts/impl_1/$selected_checkpoint_name"
+    selected_timing_report_rel="artifacts/impl_1/$(basename -- "$selected_timing_report")"
+    {
+      echo "selected_checkpoint=$selected_checkpoint_rel"
+      echo "selected_checkpoint_sha256=$(sha256sum "$selected_checkpoint" | awk '{print $1}')"
+      echo "selected_timing_report=$selected_timing_report_rel"
+      echo "selected_timing_report_sha256=$(sha256sum "$selected_timing_report" | awk '{print $1}')"
+      echo "original_selected_checkpoint=$selected_checkpoint"
+      echo "original_selected_timing_report=$selected_timing_report"
+    } >"$archive_dir/implementation-provenance.env"
+    python3 "$repo_root/jyd-vivado-proj/scripts/extract-timing-summary.py" "$selected_timing_report" \
+      >"$archive_dir/timing-summary.txt"
+
+    if [ "$mode" = write_bitstream ]; then
+      run_path="$vivado_proj_home/digital_twin.runs/impl_1"
+      for artifact in top.bit top.project-init.bit top.bit.base-checkpoint top.bit.coe-manifest; do
+        [ -f "$run_path/$artifact" ] || {
+          echo "Successful bitstream flow is missing: $run_path/$artifact" >&2
+          exit 1
+        }
+      done
+      mkdir -p -- "$archive_dir/inputs/coe"
+      cp -a -- "$run_path/top.bit" "$archive_dir/top.bit"
+      cp -a -- "$run_path/top.project-init.bit" "$archive_dir/artifacts/impl_1/"
+      cp -a -- "$run_path/top.bit.base-checkpoint" \
+        "$archive_dir/provenance/original-top.bit.base-checkpoint"
+      cp -a -- "$run_path/top.bit.coe-manifest" \
+        "$archive_dir/provenance/original-top.bit.coe-manifest"
+      cp -a -- "$irom_coe" "$archive_dir/inputs/coe/irom.coe"
+      cp -a -- "$dram_coe" "$archive_dir/inputs/coe/dram.coe"
+      printf '%s\n' "$selected_checkpoint_rel" >"$archive_dir/top.bit.base-checkpoint"
+      {
+        echo "irom_coe=inputs/coe/irom.coe"
+        echo "irom_sha256=$(sha256sum "$irom_coe" | awk '{print $1}')"
+        echo "original_irom_coe=$source_irom_coe"
+        echo "dram_coe=inputs/coe/dram.coe"
+        echo "dram_sha256=$(sha256sum "$dram_coe" | awk '{print $1}')"
+        echo "original_dram_coe=$source_dram_coe"
+        echo "project_init_bit=artifacts/impl_1/top.project-init.bit"
+        echo "project_init_bit_sha256=$(sha256sum "$run_path/top.project-init.bit" | awk '{print $1}')"
+        echo "output_bit=top.bit"
+        echo "output_bit_sha256=$(sha256sum "$run_path/top.bit" | awk '{print $1}')"
+        echo "implementation_checkpoint=$selected_checkpoint_rel"
+        echo "implementation_checkpoint_sha256=$(sha256sum "$selected_checkpoint" | awk '{print $1}')"
+        echo "timing_report=$selected_timing_report_rel"
+        echo "timing_report_sha256=$(sha256sum "$selected_timing_report" | awk '{print $1}')"
+        echo "original_implementation_checkpoint=$selected_checkpoint"
+        echo "post_route_phys_opt_directive=$post_route_phys_opt_directive"
+      } >"$archive_dir/top.bit.coe-manifest"
+      (
+        cd "$archive_dir"
+        sha256sum top.bit >bitstream-sha256.txt
+      )
+    fi
+  fi
+
+  {
+    echo "mode=$mode"
+    echo "repo_commit=$(git -C "$repo_root" rev-parse HEAD)"
+    echo "project_root=$vivado_proj_home"
+    echo "jobs=$jobs"
+    echo "ip_jobs=$ip_jobs"
+    echo "flow_profile=$flow_profile"
+    echo "flow_status=$flow_status"
+    echo "flow_stage=$flow_stage"
+    echo "vivado_status=$vivado_status"
+    echo "runner_log_status=$runner_log_status"
+    echo "cleanup_status=$cleanup_status"
+    echo "products_complete=$products_complete"
+    echo "archive_status=0"
+    echo "artifact_policy=sha256-changed-since-pre-run-plus-explicit-selected-evidence"
+    echo "archive_dir=$archive_dir"
+    if [ "$mode" = write_bitstream ]; then
+      echo "original_coe_dir=$coe_dir"
+      echo "irom_sha256=$(sha256sum "$irom_coe" | awk '{print $1}')"
+      echo "dram_sha256=$(sha256sum "$dram_coe" | awk '{print $1}')"
+    fi
+    echo "started_utc=$archive_started_utc"
+    echo "finished_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  } >"$archive_dir/metadata.env"
+  git -C "$repo_root" status --short >"$archive_dir/git-status.txt"
+  (
+    cd "$archive_dir"
+    find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum >SHA256SUMS
+  )
+  echo "VIVADO_ARCHIVE=$archive_dir"
+)
+
+cleanup_transients() {
+  local cleanup_status=0
+
+  if [ -n "${xpr_backup:-}" ] && [ -f "$xpr_backup" ]; then
+    if cp -- "$xpr_backup" "$vivado_project"; then
+      rm -f -- "$xpr_backup" || cleanup_status=1
+      xpr_backup=""
+    else
+      cleanup_status=1
+    fi
+  fi
+  [ -z "${mul16_xci_backup:-}" ] || rm -f -- "$mul16_xci_backup" || cleanup_status=1
+  [ -z "${xci_backup_dir:-}" ] || rm -rf -- "$xci_backup_dir" || cleanup_status=1
+  [ -z "${tcl_file:-}" ] || rm -f -- "$tcl_file" || cleanup_status=1
+  [ -z "${replace_workdir:-}" ] || rm -rf -- "$replace_workdir" || cleanup_status=1
+  if [ -n "${stale_pack_placeholder_list:-}" ] && [ -f "$stale_pack_placeholder_list" ]; then
+    while IFS= read -r stale_pack_placeholder; do
+      rm -f -- "$stale_pack_placeholder" || cleanup_status=1
+    done <"$stale_pack_placeholder_list"
+    rm -f -- "$stale_pack_placeholder_list" || cleanup_status=1
+  fi
+  return "$cleanup_status"
+}
+
+finalize_flow() {
+  local primary_status=$?
+  local cleanup_status archive_status effective_status
+
+  trap - EXIT
+  set +e
+  cleanup_transients
+  cleanup_status=$?
+  effective_status=$primary_status
+  if [ "$effective_status" -eq 0 ] && [ "$cleanup_status" -ne 0 ]; then
+    effective_status=1
+  fi
+  archive_status=0
+  if [ "$archive_flow_started" -eq 1 ]; then
+    archive_in_tree_run "$effective_status" "$cleanup_status"
+    archive_status=$?
+    if [ "$archive_status" -ne 0 ]; then
+      echo "Vivado archive finalization failed with status $archive_status: $archive_dir" >&2
+      {
+        echo "flow_status=$effective_status"
+        echo "flow_stage=$flow_stage"
+        echo "vivado_status=$vivado_status"
+        echo "runner_log_status=$runner_log_status"
+        echo "cleanup_status=$cleanup_status"
+        echo "products_complete=$products_complete"
+        echo "archive_status=$archive_status"
+        echo "finished_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+      } >"$archive_dir/archive-error.env"
+      (
+        cd "$archive_dir" || exit 1
+        find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum >SHA256SUMS
+      )
+    fi
+  fi
+  [ -z "${selection_record:-}" ] || rm -f -- "$selection_record"
+  [ -z "${coe_snapshot_dir:-}" ] || rm -rf -- "$coe_snapshot_dir"
+  if [ "$effective_status" -eq 0 ] && [ "$archive_status" -ne 0 ]; then
+    effective_status=1
+  fi
+  exit "$effective_status"
+}
+
+trap finalize_flow EXIT
+flow_stage=preparing-project
+
+if [ "$mode" = write_bitstream ]; then
+  source_irom_coe="$irom_coe"
+  source_dram_coe="$dram_coe"
+  coe_snapshot_dir=$(mktemp -d "${TMPDIR:-/tmp}/digital_twin_coe.XXXXXX")
+  source_irom_sha_before=$(sha256sum "$source_irom_coe" | awk '{print $1}')
+  source_dram_sha_before=$(sha256sum "$source_dram_coe" | awk '{print $1}')
+  cp -- "$source_irom_coe" "$coe_snapshot_dir/irom.coe"
+  cp -- "$source_dram_coe" "$coe_snapshot_dir/dram.coe"
+  source_irom_sha_after=$(sha256sum "$source_irom_coe" | awk '{print $1}')
+  source_dram_sha_after=$(sha256sum "$source_dram_coe" | awk '{print $1}')
+  snapshot_irom_sha=$(sha256sum "$coe_snapshot_dir/irom.coe" | awk '{print $1}')
+  snapshot_dram_sha=$(sha256sum "$coe_snapshot_dir/dram.coe" | awk '{print $1}')
+  if [ "$source_irom_sha_before" != "$source_irom_sha_after" ] || \
+    [ "$source_irom_sha_before" != "$snapshot_irom_sha" ] || \
+    [ "$source_dram_sha_before" != "$source_dram_sha_after" ] || \
+    [ "$source_dram_sha_before" != "$snapshot_dram_sha" ]; then
+    echo "COE input changed while creating the immutable bitstream snapshot" >&2
+    exit 1
+  fi
+  irom_coe="$coe_snapshot_dir/irom.coe"
+  dram_coe="$coe_snapshot_dir/dram.coe"
 fi
 
 # A second flow can otherwise overlap the first flow's project-manager and
@@ -540,6 +1027,7 @@ if ! command -v "$vivado_bin" >/dev/null 2>&1; then
 fi
 
 tcl_file=$(mktemp "${TMPDIR:-/tmp}/digital_twin_flow.XXXXXX.tcl")
+selection_record=$(mktemp "${TMPDIR:-/tmp}/digital_twin_selection.XXXXXX.env")
 xpr_backup=$(mktemp "${TMPDIR:-/tmp}/digital_twin_project.XXXXXX.xpr")
 cp -- "$vivado_project" "$xpr_backup"
 xpr_hash_before=$(sha256sum "$vivado_project" | awk '{print $1}')
@@ -550,28 +1038,10 @@ while IFS= read -r -d '' xci_file; do
   cp -- "$xci_file" "$xci_backup_dir/$xci_relative"
 done < <(find "$vivado_proj_home/digital_twin.srcs/sources_1/ip" -type f -name '*.xci' -print0)
 mul16_xci="$vivado_proj_home/digital_twin.srcs/sources_1/ip/mult_gen_mul16_fast/mult_gen_mul16_fast.xci"
-mul16_xci_backup=""
-stale_pack_placeholder_list=""
 if [ -f "$mul16_xci" ]; then
   mul16_xci_backup=$(mktemp "${TMPDIR:-/tmp}/mult_gen_mul16_fast.XXXXXX.xci")
   cp -- "$mul16_xci" "$mul16_xci_backup"
 fi
-cleanup() {
-  if [ -n "${xpr_backup:-}" ] && [ -f "$xpr_backup" ]; then
-    cp -- "$xpr_backup" "$vivado_project"
-    rm -f -- "$xpr_backup"
-  fi
-  rm -f -- "${mul16_xci_backup:-}"
-  rm -rf -- "${xci_backup_dir:-}"
-  rm -f -- "$tcl_file"
-  if [ -n "${stale_pack_placeholder_list:-}" ] && [ -f "$stale_pack_placeholder_list" ]; then
-    while IFS= read -r stale_pack_placeholder; do
-      rm -f -- "$stale_pack_placeholder"
-    done <"$stale_pack_placeholder_list"
-    rm -f -- "$stale_pack_placeholder_list"
-  fi
-}
-trap cleanup EXIT
 
 # A copied XPR records the original project directory and Vivado searches that
 # directory when a registered source has disappeared. Keep project opening
@@ -600,8 +1070,8 @@ for ((xpr_pack_index = 1; xpr_pack_index <= xpr_pack_count; xpr_pack_index++)); 
 done
 
 cat >"$tcl_file" <<'EOF'
-if {$argc != 16} {
-  error "Expected Tcl args: <mode> <jobs> <ip-jobs> <expected-pack-fpga-dir> <reset-runs> <reuse-ip> <expected-cpu-mhz> <flow-profile> <global-retiming> <keep-equivalent-registers> <flatten-hierarchy> <place-directive> <route-directive> <pre-route-physopt-directive> <post-route-physopt-directive> <source-manifest-only>"
+if {$argc != 17} {
+  error "Expected Tcl args: <mode> <jobs> <ip-jobs> <expected-pack-fpga-dir> <reset-runs> <reuse-ip> <expected-cpu-mhz> <flow-profile> <global-retiming> <keep-equivalent-registers> <flatten-hierarchy> <place-directive> <route-directive> <pre-route-physopt-directive> <post-route-physopt-directive> <source-manifest-only> <selection-record>"
 }
 set mode [lindex $argv 0]
 set jobs [lindex $argv 1]
@@ -619,6 +1089,7 @@ set route_directive [lindex $argv 12]
 set pre_route_phys_opt_directive [lindex $argv 13]
 set post_route_phys_opt_directive [lindex $argv 14]
 set source_manifest_only [lindex $argv 15]
+set selection_record [file normalize [lindex $argv 16]]
 if {$reset_runs ni {0 1}} {
   error "reset-runs must be 0 or 1, got: $reset_runs"
 }
@@ -794,28 +1265,51 @@ if {$expected_cpu_mhz ne "" && abs(double($expected_cpu_mhz) - $configured_cpu_m
     $expected_cpu_mhz $configured_cpu_mhz]
 }
 
+proc select_implementation_evidence {impl_run} {
+  set impl_dir [file normalize [get_property DIRECTORY $impl_run]]
+  set routed_dcp [file join $impl_dir top_routed.dcp]
+  set routed_report [file join $impl_dir top_timing_summary_routed.rpt]
+  set postroute_dcp [file join $impl_dir top_postroute_physopt.dcp]
+  set postroute_report [file join $impl_dir top_timing_summary_postroute_physopted.rpt]
+  set postroute_end [file join $impl_dir .post_route_phys_opt_design.end.rst]
+  set postroute_enabled [get_property STEPS.POST_ROUTE_PHYS_OPT_DESIGN.IS_ENABLED $impl_run]
+
+  # A failed post-route physopt can leave stale outputs behind. Select them only
+  # when the step is enabled, its completion marker exists, and the DCP is at
+  # least as new as the routed design.
+  set selected_dcp $routed_dcp
+  set selected_report $routed_report
+  if {$postroute_enabled && [file isfile $postroute_end] && [file isfile $postroute_dcp] &&
+      [file isfile $postroute_report] && [file isfile $routed_dcp] &&
+      [file mtime $postroute_dcp] >= [file mtime $routed_dcp]} {
+    set selected_dcp $postroute_dcp
+    set selected_report $postroute_report
+  }
+  if {![file isfile $selected_dcp]} {
+    error "Implemented checkpoint does not exist: $selected_dcp; run impl first"
+  }
+  if {![file isfile $selected_report]} {
+    error "Timing report matching implemented checkpoint does not exist: $selected_report"
+  }
+  return [list $selected_dcp $selected_report]
+}
+
+proc write_implementation_evidence {record_path checkpoint timing_report} {
+  set record_file [open $record_path w]
+  puts $record_file "selected_checkpoint=$checkpoint"
+  puts $record_file "selected_timing_report=$timing_report"
+  close $record_file
+  puts "IMPLEMENTATION_CHECKPOINT=$checkpoint"
+  puts "IMPLEMENTATION_TIMING_REPORT=$timing_report"
+}
+
 if {$mode eq "write_bitstream"} {
   if {[llength [get_runs impl_1]] != 1} {
     error "Vivado run impl_1 was not found"
   }
   set impl_run [get_runs impl_1]
   set impl_dir [file normalize [get_property DIRECTORY $impl_run]]
-  set routed_dcp [file join $impl_dir top_routed.dcp]
-  set postroute_dcp [file join $impl_dir top_postroute_physopt.dcp]
-  set postroute_end [file join $impl_dir .postroute_physopt_design.end.rst]
-  set postroute_enabled [get_property STEPS.POST_ROUTE_PHYS_OPT_DESIGN.IS_ENABLED $impl_run]
-
-  # A failed post-route physopt can leave a stale DCP behind.  Select it only
-  # when this implementation enabled the step, its completion marker exists,
-  # and the checkpoint is at least as new as the routed design.
-  set bitstream_dcp $routed_dcp
-  if {$postroute_enabled && [file isfile $postroute_end] && [file isfile $postroute_dcp] &&
-      [file isfile $routed_dcp] && [file mtime $postroute_dcp] >= [file mtime $routed_dcp]} {
-    set bitstream_dcp $postroute_dcp
-  }
-  if {![file isfile $bitstream_dcp]} {
-    error "Implemented checkpoint does not exist: $bitstream_dcp; run impl first"
-  }
+  lassign [select_implementation_evidence $impl_run] bitstream_dcp bitstream_timing_report
 
   puts "Opening completed implementation checkpoint for bitstream: $bitstream_dcp"
   open_checkpoint $bitstream_dcp
@@ -840,6 +1334,7 @@ if {$mode eq "write_bitstream"} {
   set checkpoint_file [open $checkpoint_record w]
   puts $checkpoint_file $bitstream_dcp
   close $checkpoint_file
+  write_implementation_evidence $selection_record $bitstream_dcp $bitstream_timing_report
   puts "BITSTREAM_CHECKPOINT=$bitstream_dcp"
   puts "BITSTREAM_OUTPUT=$raw_bit"
   close_design
@@ -1153,6 +1648,9 @@ if {[string match -nocase {*failed*} $status]} {
   error "impl_1 failed: $status"
 }
 
+set impl_run [get_runs impl_1]
+lassign [select_implementation_evidence $impl_run] selected_impl_dcp selected_impl_timing_report
+write_implementation_evidence $selection_record $selected_impl_dcp $selected_impl_timing_report
 close_project
 EOF
 
@@ -1175,15 +1673,33 @@ ip_config_hash() {
 # run is active, then silently reuse a cached output product. Freeze the XCI
 # manifest across the entire process so such a run is always rejected.
 ip_config_hash_before=$(ip_config_hash)
+snapshot_in_tree_archive_candidates
+flow_stage=vivado
 set +e
-"$vivado_bin" -mode batch -source "$tcl_file" -tclargs \
-  "$mode" "$jobs" "$ip_jobs" "$pack_dst" "$reset_runs" "$reuse_ip" \
-  "$expected_cpu_mhz" "$flow_profile" \
-  "$synth_global_retiming" "$synth_keep_equivalent_registers" \
-  "$synth_flatten_hierarchy" "$place_directive" "$route_directive" \
-  "$pre_route_phys_opt_directive" "$post_route_phys_opt_directive" "$source_manifest_only"
-vivado_status=$?
+if [ -n "$archive_dir" ]; then
+  "$vivado_bin" -mode batch -source "$tcl_file" -tclargs \
+    "$mode" "$jobs" "$ip_jobs" "$pack_dst" "$reset_runs" "$reuse_ip" \
+    "$expected_cpu_mhz" "$flow_profile" \
+    "$synth_global_retiming" "$synth_keep_equivalent_registers" \
+    "$synth_flatten_hierarchy" "$place_directive" "$route_directive" \
+    "$pre_route_phys_opt_directive" "$post_route_phys_opt_directive" "$source_manifest_only" \
+    "$selection_record" \
+    2>&1 | tee "$archive_dir/vivado-runner.log"
+  pipeline_status=("${PIPESTATUS[@]}")
+  vivado_status=${pipeline_status[0]}
+  runner_log_status=${pipeline_status[1]}
+else
+  "$vivado_bin" -mode batch -source "$tcl_file" -tclargs \
+    "$mode" "$jobs" "$ip_jobs" "$pack_dst" "$reset_runs" "$reuse_ip" \
+    "$expected_cpu_mhz" "$flow_profile" \
+    "$synth_global_retiming" "$synth_keep_equivalent_registers" \
+    "$synth_flatten_hierarchy" "$place_directive" "$route_directive" \
+    "$pre_route_phys_opt_directive" "$post_route_phys_opt_directive" "$source_manifest_only" \
+    "$selection_record"
+  vivado_status=$?
+fi
 set -e
+flow_stage=post-vivado-integrity
 
 # Opening a project from a worktree causes Vivado to persist relocated paths
 # in the XPR. Runs and reports are outputs, but the versioned project is an
@@ -1254,11 +1770,11 @@ if [ "$ip_config_hash_before" != "$ip_config_hash_after" ]; then
 fi
 rm -rf -- "$xci_backup_dir"
 xci_backup_dir=""
-if [ "$vivado_status" -ne 0 ]; then
-  exit "$vivado_status"
+if [ "$vivado_status" -eq 0 ] && [ "$mode" = impl ]; then
+  products_complete=1
 fi
-
-if [ "$mode" = write_bitstream ]; then
+if [ "$vivado_status" -eq 0 ] && [ "$mode" = write_bitstream ]; then
+  flow_stage=coe-replacement
   impl_dir="$vivado_proj_home/digital_twin.runs/impl_1"
   raw_bit="$impl_dir/top.bit"
   checkpoint_record="$impl_dir/top.bit.base-checkpoint"
@@ -1306,4 +1822,16 @@ if [ "$mode" = write_bitstream ]; then
   } >"$manifest"
   echo "# Bitstream COE manifest: $manifest"
   cat "$manifest"
+  products_complete=1
 fi
+
+if [ "$runner_log_status" != not-run ] && [ "$runner_log_status" -ne 0 ]; then
+  flow_stage=runner-log-failed
+  echo "Failed to retain the complete Vivado runner log (tee status $runner_log_status)" >&2
+  exit "$runner_log_status"
+fi
+if [ "$vivado_status" -ne 0 ]; then
+  flow_stage=vivado-failed
+  exit "$vivado_status"
+fi
+flow_stage=complete

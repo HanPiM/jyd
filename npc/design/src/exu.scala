@@ -84,6 +84,8 @@ class EXU(
     val dcache = new Bundle {
       val hit        = Input(Bool())
       val readData   = Input(Types.UWord)
+      val listReverseHitCapture = Output(Bool())
+      val listReverseCapturedHit = Input(Bool())
       val storeEpoch = Input(Bool())
       val queryIndex = Output(UInt(10.W))
       val queryTag   = Output(UInt(7.W))
@@ -98,6 +100,18 @@ class EXU(
       val listFindRequestAddress = Input(Types.UWord)
       val listFindDone = Input(Bool())
       val listFindResult = Input(Types.UWord)
+      val dotNStart = Output(Bool())
+      val dotNConsume = Output(Bool())
+      val dotNAddressA = Output(Types.UWord)
+      val dotNAddressB = Output(Types.UWord)
+      val dotNLength = Output(UInt(16.W))
+      val dotNBitMode = Output(Bool())
+      val dotNRequestFire = Output(Bool())
+      val dotNMemResponse = Output(Valid(Types.UWord))
+      val dotNRequest = Input(Bool())
+      val dotNRequestAddress = Input(Types.UWord)
+      val dotNDone = Input(Bool())
+      val dotNResult = Input(Types.UWord)
       val storeUpdate = Output(Bool())
       val storeFull   = Output(Bool())
       val storeData   = Output(Types.UWord)
@@ -144,7 +158,7 @@ class EXU(
   val isNumericDfa = dinst.info.numericDfaValid
 
   object ListReverseState extends ChiselEnum {
-    val idle, lookup, lookupResolve, loadRequest, loadResponse, storeRequest, done = Value
+    val idle, lookup, lookupResolve, loadRequest, loadResponse, storeRequest, cacheUpdate, done = Value
   }
   val listReverseState = RegInit(ListReverseState.idle)
   val listReverseCurrent = Reg(Types.UWord)
@@ -153,35 +167,40 @@ class EXU(
   val listReverseNext = Reg(Types.UWord)
   val listReverseResult = Reg(Types.UWord)
   val listReverseLoopAddress = RegInit(0.U(32.W))
-  val listReverseStepStoreCommitted = RegInit(false.B)
   val isListReverse = dinst.info.listReverseValid
   val isListReverseStep = dinst.info.listReverseStep
   val isListReverseLoop = dinst.info.listReverseLoop
-  val listReverseLoopTaken = RegInit(false.B)
   val listReversePrefetchValid = RegInit(false.B)
   val listReversePrefetchHit = Reg(Bool())
   val listReversePrefetchData = Reg(Types.UWord)
-  val listReverseLookupHit = Reg(Bool())
   val listReverseQueryAddress = Reg(Types.UWord)
 
   val isListFind = dinst.info.listFindValid
+  val isDotConfig = dinst.info.xdotConfigValid
+  val isDotN = dinst.info.xdotNValid
+  val isDcacheWalker = isListFind || isDotN
+  val dotLength = RegInit(9.U(16.W))
 
   object XmsumState extends ChiselEnum {
-    val idle, request, response, finalizeResult, done = Value
+    val idle, firstRequest, stream, done = Value
   }
-  val xmsumState  = RegInit(XmsumState.idle)
-  val xmsumAddress = Reg(Types.UWord)
-  val xmsumSize   = Reg(UInt(16.W))
-  val xmsumRow    = Reg(UInt(16.W))
-  val xmsumColumn = Reg(UInt(16.W))
-  val xmsumClip   = Reg(SInt(32.W))
-  val xmsumTmp    = Reg(UInt(32.W))
-  val xmsumPrev   = Reg(UInt(32.W))
-  val xmsumRet    = Reg(UInt(16.W))
-  val xmsumResponseData = Reg(UInt(32.W))
+  val xmsumState               = RegInit(XmsumState.idle)
+  val xmsumAddress             = Reg(Types.UWord)
+  val xmsumSize                = Reg(UInt(16.W))
+  val xmsumIssueRow            = Reg(UInt(16.W))
+  val xmsumIssueColumn         = Reg(UInt(16.W))
+  val xmsumResponseRow         = Reg(UInt(16.W))
+  val xmsumResponseColumn      = Reg(UInt(16.W))
+  val xmsumAllIssued           = RegInit(false.B)
+  val xmsumClip                = Reg(SInt(32.W))
+  val xmsumTmp                 = Reg(UInt(32.W))
+  val xmsumPrev                = Reg(UInt(32.W))
+  val xmsumRet                 = Reg(UInt(16.W))
+  val xmsumResponseData        = Reg(UInt(32.W))
   val xmsumResponsePending = RegInit(false.B)
-  val xmsumResult = Reg(Types.UWord)
-  val isXmsum     = dinst.info.xmsumValid
+  val xmsumResponseLast        = Reg(Bool())
+  val xmsumResult              = Reg(Types.UWord)
+  val isXmsum                  = dinst.info.xmsumValid
 
   // Store zero after a clipped sample so the following sum does not need the
   // previous-clipped bit in front of its carry chain.
@@ -221,6 +240,12 @@ class EXU(
   val reg_v1       = baseRegV1
   val reg_v2       = baseRegV2
   val listReverseActiveCurrent = Mux(isListReverseLoop, listReverseLoopAddress, reg_v1)
+
+  // The configuration instruction retires before the following walker can
+  // enter EXU.  Keep N local to EXU and snapshot it into DCache on dot start.
+  when(io.in.valid && io.out.ready && isDotConfig) {
+    dotLength := reg_v1(15, 0)
+  }
 
   // A numeric-token scan consumes at most the configured data-region size, so 16-bit
   // counters retain the full architectural result while avoiding sixteen
@@ -347,7 +372,6 @@ class EXU(
     val usePrefetch = isListReverseLoop && listReversePrefetchValid
     listReverseNext := listReversePrefetchData
     listReversePrefetchValid := false.B
-    listReverseStepStoreCommitted := false.B
     listReverseCurrent := listReverseActiveCurrent
     listReverseQueryAddress := Mux(isListReverseLoop, listReversePrefetchData, listReverseActiveCurrent)
     listReversePrevious := Mux(isListReverseLoop, listReverseChainPrevious, reg_v2)
@@ -356,7 +380,6 @@ class EXU(
     }
     when(listReverseActiveCurrent === 0.U) {
       listReverseResult := Mux(isListReverseLoop, listReverseChainPrevious, 0.U)
-      listReverseLoopTaken := false.B
       listReverseState := ListReverseState.done
     }.elsewhen(isListReverseLoop) {
       listReverseState := Mux(usePrefetch && listReversePrefetchHit,
@@ -367,12 +390,12 @@ class EXU(
       listReverseState := ListReverseState.lookup
     }
   }.elsewhen(listReverseState === ListReverseState.lookup) {
-    listReverseLookupHit := io.dcache.hit
     listReverseState := ListReverseState.lookupResolve
   }.elsewhen(listReverseState === ListReverseState.lookupResolve) {
     listReverseQueryAddress := io.dcache.readData
     listReverseNext := io.dcache.readData
-    listReverseState := Mux(listReverseLookupHit, ListReverseState.storeRequest, ListReverseState.loadRequest)
+    listReverseState := Mux(io.dcache.listReverseCapturedHit,
+      ListReverseState.storeRequest, ListReverseState.loadRequest)
   }.elsewhen(listReverseState === ListReverseState.loadRequest && io.memReq.fire) {
     listReverseState := ListReverseState.loadResponse
   }.elsewhen(listReverseState === ListReverseState.loadResponse && io.memResp.valid) {
@@ -380,19 +403,28 @@ class EXU(
     listReverseNext := io.memResp.bits
     listReverseState := ListReverseState.storeRequest
   }.elsewhen(listReverseState === ListReverseState.storeRequest && io.memReq.fire) {
-    listReverseStepStoreCommitted := true.B
-    listReversePrefetchHit := Mux(listReverseNext === listReverseCurrent, true.B, io.dcache.hit)
-    val loopTaken = isListReverseLoop && listReverseNext =/= 0.U
-    listReverseResult := Mux(isListReverseLoop && !loopTaken, listReverseCurrent, listReverseNext)
-    listReverseLoopTaken := loopTaken
-    listReverseState := ListReverseState.done
-  }.elsewhen(listReverseState === ListReverseState.done && io.out.fire) {
-    listReversePrefetchValid := listReverseNext =/= 0.U
-    listReversePrefetchData := Mux(
+    listReverseState := ListReverseState.cacheUpdate
+  }.elsewhen(listReverseState === ListReverseState.cacheUpdate) {
+    val resolvedPrefetchHit = listReverseNext === listReverseCurrent || io.dcache.listReverseCapturedHit
+    val prefetchedData = Mux(
       listReverseNext === listReverseCurrent,
       listReversePrevious,
       io.dcache.readData
     )
+    listReversePrefetchHit := resolvedPrefetchHit
+    listReversePrefetchData := prefetchedData
+    when(isListReverseLoop && listReverseNext =/= 0.U) {
+      listReversePrevious := listReverseCurrent
+      listReverseCurrent := listReverseNext
+      listReverseNext := prefetchedData
+      listReverseQueryAddress := prefetchedData
+      listReverseState := Mux(resolvedPrefetchHit, ListReverseState.storeRequest, ListReverseState.loadRequest)
+    }.otherwise {
+      listReverseResult := Mux(isListReverseLoop, listReverseCurrent, listReverseNext)
+      listReversePrefetchValid := !isListReverseLoop && listReverseNext =/= 0.U
+      listReverseState := ListReverseState.done
+    }
+  }.elsewhen(listReverseState === ListReverseState.done && io.out.fire) {
     listReverseState := ListReverseState.idle
   }
 
@@ -407,51 +439,75 @@ class EXU(
     val n = reg_v2(31, 16)
     xmsumAddress := reg_v1
     xmsumSize := n
-    xmsumRow := 0.U
-    xmsumColumn := 0.U
+    xmsumIssueRow := 0.U
+    xmsumIssueColumn := 0.U
+    xmsumResponseRow := 0.U
+    xmsumResponseColumn := 0.U
+    xmsumAllIssued := false.B
     xmsumClip  := Cat(Fill(16, reg_v2(15)), reg_v2(15, 0)).asSInt
     xmsumTmp   := 0.U
     xmsumPrev  := 0.U
     xmsumRet   := 0.U
     xmsumResponsePending := false.B
+    xmsumResponseLast := false.B
     when(n === 0.U) {
       xmsumResult := 0.U
       xmsumState  := XmsumState.done
     }.otherwise {
-      xmsumState := XmsumState.request
+      xmsumState := XmsumState.firstRequest
     }
-  }.elsewhen(xmsumState === XmsumState.request && io.memReq.fire) {
-    xmsumState := XmsumState.response
-  }.elsewhen(xmsumState === XmsumState.response && io.memResp.valid) {
-    xmsumResponseData := io.memResp.bits
-    val endOfRow = xmsumColumn + 1.U === xmsumSize
-    val endOfMatrix = endOfRow && xmsumRow + 1.U === xmsumSize
-    when(endOfMatrix) {
-      xmsumState := XmsumState.finalizeResult
-    }.otherwise {
-      xmsumAddress := xmsumAddress + 4.U
-      when(endOfRow) {
-        xmsumRow := xmsumRow + 1.U
-        xmsumColumn := 0.U
-      }.otherwise {
-        xmsumColumn := xmsumColumn + 1.U
+  }.elsewhen(xmsumState === XmsumState.firstRequest && io.memReq.fire) {
+    xmsumState := XmsumState.stream
+  }.elsewhen(xmsumState === XmsumState.stream) {
+    when(xmsumResponsePending) {
+      xmsumTmp := Mux(xmsumResponseClipped, 0.U, xmsumResponseSum)
+      xmsumPrev := xmsumResponseData
+      xmsumRet := xmsumResponseNextRet
+      xmsumResponsePending := false.B
+      when(xmsumResponseLast) {
+        xmsumResult := Cat(Fill(16, xmsumResponseNextRet(15)), xmsumResponseNextRet)
+        xmsumState := XmsumState.done
       }
-      xmsumResponsePending := true.B
-      xmsumState := XmsumState.request
     }
-  }.elsewhen(xmsumState === XmsumState.finalizeResult) {
-    xmsumResult := Cat(Fill(16, xmsumResponseNextRet(15)), xmsumResponseNextRet)
-    xmsumState   := XmsumState.done
+
+    when(io.memResp.valid) {
+      val endOfResponseRow = xmsumResponseColumn + 1.U === xmsumSize
+      val endOfResponseMatrix = endOfResponseRow && xmsumResponseRow + 1.U === xmsumSize
+      xmsumResponseData := io.memResp.bits
+      xmsumResponseLast := endOfResponseMatrix
+      xmsumResponsePending := true.B
+      when(!endOfResponseMatrix) {
+        when(endOfResponseRow) {
+          xmsumResponseRow := xmsumResponseRow + 1.U
+          xmsumResponseColumn := 0.U
+        }.otherwise {
+          xmsumResponseColumn := xmsumResponseColumn + 1.U
+        }
+      }
+    }
   }.elsewhen(xmsumState === XmsumState.done && io.out.fire) {
     xmsumState := XmsumState.idle
   }
 
-  when((xmsumState === XmsumState.request && xmsumResponsePending) ||
-    xmsumState === XmsumState.finalizeResult) {
-    xmsumTmp := Mux(xmsumResponseClipped, 0.U, xmsumResponseSum)
-    xmsumPrev := xmsumResponseData
-    xmsumRet := xmsumResponseNextRet
-    xmsumResponsePending := false.B
+  val xmsumIssueActive = xmsumState === XmsumState.firstRequest || xmsumState === XmsumState.stream
+  when(xmsumIssueActive && io.memReq.fire) {
+    val endOfIssueRow = xmsumIssueColumn + 1.U === xmsumSize
+    val endOfIssueMatrix = endOfIssueRow && xmsumIssueRow + 1.U === xmsumSize
+    when(endOfIssueMatrix) {
+      xmsumAllIssued := true.B
+    }.otherwise {
+      xmsumAddress := xmsumAddress + 4.U
+      when(endOfIssueRow) {
+        xmsumIssueRow := xmsumIssueRow + 1.U
+        xmsumIssueColumn := 0.U
+      }.otherwise {
+        xmsumIssueColumn := xmsumIssueColumn + 1.U
+      }
+    }
+  }
+
+  when(xmsumState === XmsumState.stream && xmsumResponseLast && xmsumResponsePending) {
+    assert(!io.memResp.valid, "xmsum must not receive data after the final matrix element")
   }
 
   // val pcAddImm   = dinst.pc + dinst.info.imm
@@ -500,7 +556,7 @@ class EXU(
   alu.io.in.valid :=
     io.in.valid && isTypArithmetic && (resultIsLong || (resultIsAccelerator && simpleAccelerator))
 
-  when(io.in.valid && (fastAluRs1Groups.orR || fastAluRs2Groups.orR)) {
+  when(io.in.valid && !isDotConfig && !isDotN && (fastAluRs1Groups.orR || fastAluRs2Groups.orR)) {
     assert(resultIsFast && isTypArithmetic, "fast ALU token used by a non-fast consumer")
     assert(io.previousStageFwd.dataVaild && io.previousStageFwd.kind === ResultKind.fastInt,
       "deferred result entered the fast integer cluster")
@@ -656,11 +712,12 @@ class EXU(
   val snpc = Mux(isTypSys, csrNextPCReg, dinst.info.staticNextPCOrCSRTarget)
 
   val useSingleCycleForward = isTypArithmetic && resultIsFast
+  val dcacheWalkerResult = Mux(isDotN, io.dcache.dotNResult, io.dcache.listFindResult)
   val acceleratorData = Mux(
     isNumericDfa,
     xdfaWordResult,
     Mux(isListReverse, listReverseResult,
-      Mux(isListFind, io.dcache.listFindResult, Mux(isXmsum, xmsumResult, simpleAcceleratorOut)))
+      Mux(isDcacheWalker, dcacheWalkerResult, Mux(isXmsum, xmsumResult, simpleAcceleratorOut)))
   )
 
   writeBackInfo.resultKind := dinst.info.resultKind
@@ -708,7 +765,7 @@ class EXU(
   val xdfaWordDone = isNumericDfaStep && xdfaWordState === NumericDfaState.done
   val ordinaryResultValid =
     (!isTypSys || csrPrepared) &&
-      (!isTypArithmetic || isNumericDfa || Mux(resultIsFast, fastInteger.io.out.valid, alu.io.out.valid))
+      (!isTypArithmetic || isNumericDfa || isDotConfig || Mux(resultIsFast, fastInteger.io.out.valid, alu.io.out.valid))
   val exuResultValid =
     Mux(isNumericDfaStep, xdfaWordDone,
       Mux(isListReverse, listReverseDone, Mux(isXmsum, xmsumDone, ordinaryResultValid)))
@@ -729,26 +786,35 @@ class EXU(
   // The list-reversal operand is held in the IDU/EXU payload for the instruction's
   // entire residence in EXU.  Its decoder disables the previous-EXU direct
   // bypass, so this registered value cannot create a forwarding-to-tag path.
-  // The loop always consumes the preceding list-reversal result: first the init
-  // result, then the result of its previous self-iteration. The done-boundary
-  // register keeps that private recurrence out of the asynchronous tag RAM.
+  // The loop consumes the init result and then walks the remaining runtime
+  // chain internally. The done-boundary register keeps that private handoff out
+  // of the asynchronous tag RAM.
   val dcacheQueryAddr = Mux(isListReverse, listReverseQueryAddress, reg1AddImm)
   io.dcache.queryIndex := Mux(isListReverse, listReverseQueryAddress(11, 2), io.stagedDcacheQueryIndex)
   io.dcache.queryTag   := dcacheQueryAddr(17, 11)
+  io.dcache.listReverseHitCapture :=
+    listReverseState === ListReverseState.lookup || listReverseState === ListReverseState.storeRequest
   io.dcache.listFindStart := io.in.valid && isListFind && !io.dcache.listFindDone
   io.dcache.listFindConsume := io.out.fire && isListFind
   io.dcache.listFindAddress := reg_v1
   io.dcache.listFindTarget := reg_v2(15, 0)
   io.dcache.listFindDataMode := func7t === 3.U
-  io.dcache.listFindRequestFire := io.memReq.fire && isListFind
+  io.dcache.listFindRequestFire := io.memReq.fire && io.dcache.listFindRequest
   io.dcache.listFindMemResponse := io.memResp
+  io.dcache.dotNStart := io.in.valid && isDotN && !io.dcache.dotNDone
+  io.dcache.dotNConsume := io.out.fire && isDotN
+  io.dcache.dotNAddressA := reg_v1
+  io.dcache.dotNAddressB := reg_v2
+  io.dcache.dotNLength := dotLength
+  io.dcache.dotNBitMode := func7t === 5.U
+  io.dcache.dotNRequestFire := io.memReq.fire && io.dcache.dotNRequest
+  io.dcache.dotNMemResponse := io.memResp
   // Accelerator requests share the external bus but cannot update the cache's
   // normal store port. Qualify the architectural store locally so cache hit or
   // accelerator state never enters a distributed-memory write-enable cone.
   val normalStoreRequest = isTypStore && io.in.valid && io.out.ready
   val cacheableStoreFire = io.memReq.fire && normalStoreRequest && reg1AddImm(21, 20) === "b01".U
-  val listReverseStepCacheStore = isListReverseStep && listReverseState === ListReverseState.done &&
-    listReverseStepStoreCommitted
+  val listReverseStepCacheStore = isListReverseStep && listReverseState === ListReverseState.cacheUpdate
   // Keep the asynchronous tag lookup out of this cross-module control and
   // every data-memory write enable.
   io.dcache.storeUpdate := cacheableStoreFire
@@ -763,7 +829,14 @@ class EXU(
   val listReverseLoadRequest = listReverseState === ListReverseState.loadRequest
   val listReverseRequest = listReverseLoadRequest || listReverseStoreRequest
   val listFindRequest = io.dcache.listFindRequest
-  val xmsumRequest = xmsumState === XmsumState.request
+  val dotNRequest = io.dcache.dotNRequest
+  val dcacheWalkerRequest = listFindRequest || dotNRequest
+  val dcacheWalkerRequestAddress = Mux(
+    dotNRequest,
+    io.dcache.dotNRequestAddress,
+    io.dcache.listFindRequestAddress
+  )
+  val xmsumRequest = xmsumIssueActive && !xmsumAllIssued
   val xdfaWordFirstRequest = xdfaWordState === NumericDfaState.idle && io.in.valid && isNumericDfaStep
   val xdfaWordRequest = xdfaWordState === NumericDfaState.request || xdfaWordFirstRequest
   val normalMemReq = Wire(new MemReq)
@@ -774,15 +847,16 @@ class EXU(
   normalMemReq.addr  := Mux(isNumericDfaStep,
     Mux(xdfaWordFirstRequest, reg_v2, xdfaWordAddress) & ~3.U(32.W),
     Mux(isListReverse, listReverseCurrent,
-      Mux(isListFind, io.dcache.listFindRequestAddress, Mux(isXmsum, xmsumAddress, reg1AddImm))))
-  normalMemReq.size  := Mux(isNumericDfaStep || isListReverse || isListFind || isXmsum, 2.U, func3t(1, 0))
+      Mux(isDcacheWalker, dcacheWalkerRequestAddress, Mux(isXmsum, xmsumAddress, reg1AddImm))))
+  normalMemReq.size  := Mux(isNumericDfaStep || isListReverse || isDcacheWalker || isXmsum,
+    2.U, func3t(1, 0))
   normalMemReq.wen   := Mux(isNumericDfaStep, false.B,
-    Mux(isListReverse, listReverseStoreRequest, !isXmsum && isTypStore))
+    Mux(isListReverse, listReverseStoreRequest, !isDcacheWalker && !isXmsum && isTypStore))
   normalMemReq.wdata := Mux(listReverseStoreRequest, listReversePrevious,
-    Mux(isXmsum || isListFind || (isListReverse && !listReverseStoreRequest), 0.U, memWData))
+    Mux(isXmsum || isDcacheWalker || (isListReverse && !listReverseStoreRequest), 0.U, memWData))
   normalMemReq.wmask := Mux(listReverseStoreRequest, "b1111".U,
-    Mux(isXmsum || isListFind || (isListReverse && !listReverseStoreRequest), 0.U, memWMask))
-  io.memReq.valid := xdfaWordRequest || listReverseRequest || listFindRequest || xmsumRequest ||
+    Mux(isXmsum || isDcacheWalker || (isListReverse && !listReverseStoreRequest), 0.U, memWMask))
+  io.memReq.valid := xdfaWordRequest || listReverseRequest || dcacheWalkerRequest || xmsumRequest ||
     (needMemReq && io.in.valid && io.out.ready)
   io.memReq.bits := normalMemReq
 
@@ -792,21 +866,20 @@ class EXU(
   val normalValid = memReqFire || (
     io.in.valid && !needMemReq && exuResultValid
   )
+  val dcacheWalkerDone = Mux(isDotN, io.dcache.dotNDone, io.dcache.listFindDone)
   io.in.ready := Mux(isNumericDfaStep, xdfaWordDone && io.out.ready,
     Mux(isListReverse, listReverseDone && io.out.ready,
-      Mux(isListFind, io.dcache.listFindDone && io.out.ready,
+      Mux(isDcacheWalker, dcacheWalkerDone && io.out.ready,
         Mux(isXmsum, xmsumDone && io.out.ready, normalReady))))
   io.out.valid := Mux(isNumericDfaStep, xdfaWordDone,
     Mux(isListReverse, listReverseDone,
-      Mux(isListFind, io.dcache.listFindDone, Mux(isXmsum, xmsumDone, normalValid))))
+      Mux(isDcacheWalker, dcacheWalkerDone, Mux(isXmsum, xmsumDone, normalValid))))
 
   writeBackInfo.iid := dinst.iid
 
   // --- Next PC ---
   val isJmpCsr = is_ecall || is_mret
-  val listReverseLoopBranch = isListReverseLoop && listReverseDone
   val normalNxtPC = Wire(Types.UWord)
-  val nxtPC       = Wire(Types.UWord)
 
   normalNxtPC := TrimmedPC.expand(
     Mux(
@@ -819,36 +892,28 @@ class EXU(
       )
     )
   )
-  nxtPC       := Mux(listReverseLoopBranch && listReverseLoopTaken, dinst.pc, normalNxtPC)
-  io.nxtPC    := nxtPC
+  io.nxtPC    := normalNxtPC
   io.pc       := dinst.pc
 
-  io.branchTarget := Mux(isTypBranch || isTypJAL || isTypJALR || listReverseLoopBranch,
-    controlFlowTarget, snpc)
+  io.branchTarget := Mux(isTypBranch || isTypJAL || isTypJALR, controlFlowTarget, snpc)
   // Reuse the existing unconditional-entry bit for direct JAL and the exact
   // return encoding that IDU can validate without an address-add dependency.
   io.isJAL       := isTypJAL || dinst.code === "h00008067".U
-  io.isBranch    := isTypBranch || listReverseLoopBranch
+  io.isBranch    := isTypBranch
   io.isReturn    := isTypJALR && dinst.code === "h00008067".U
   io.isCall      := (isTypJAL || isTypJALR) && dinst.info.rd =/= 0.U
-  io.branchTaken := Mux(listReverseLoopBranch, listReverseLoopTaken, takeBranch)
-  io.btbUpdateEn := isTypBranch || isTypJAL || isTypJALR || listReverseLoopBranch
+  io.branchTaken := takeBranch
+  io.btbUpdateEn := isTypBranch || isTypJAL || isTypJALR
   val adjacentFastBranchResolve = dinst.info.adjacentFastBranch
   val registeredBranchResolve = adjacentFastBranchResolve
   val registeredBranchRedirect = adjacentFastBranchResolve && (takeBranch ^ dinst.predTake)
   lsuInfo.lateBranchRedirect := exuResultValid && registeredBranchRedirect
-  io.predWrong := exuResultValid && Mux(
-    listReverseLoopBranch,
-    listReverseLoopTaken ^ dinst.predTake,
-    (isFmtB && (takeBranch ^ dinst.predTake)) || io.in.bits.info.notBranchPredWrong
-  )
+  io.predWrong := exuResultValid &&
+    ((isFmtB && (takeBranch ^ dinst.predTake)) || io.in.bits.info.notBranchPredWrong)
   dontTouch(io.predWrong)
-  io.immediatePredWrong := exuResultValid && Mux(
-    listReverseLoopBranch,
-    listReverseLoopTaken ^ dinst.predTake,
-    (isFmtB && !registeredBranchResolve && (immediateTakeBranch ^ dinst.predTake)) ||
-      io.in.bits.info.notBranchPredWrong
-  )
+  io.immediatePredWrong := exuResultValid &&
+    ((isFmtB && !registeredBranchResolve && (immediateTakeBranch ^ dinst.predTake)) ||
+      io.in.bits.info.notBranchPredWrong)
 
   StageLogger(
     clock,

@@ -5,11 +5,13 @@ The build compiles ordinary C sources. GCC recognizes the supported source idiom
 emits the custom instructions through internal functions and RISC-V machine
 descriptions.
 
-Apply `active-accel-gcc16.patch` to GCC at base commit `39064899496`, then
-configure and build an RV32-capable RISC-V cross compiler in separate source,
-build, and install directories.  The validated patched source commit is
-`9fc2dbe6960b6990eb536858d879c3b20e3d1034`; the patch SHA-256 is
-`c6633c43fbc9eda8eb3eaa4b6c59d7bf5ba331eedb47a5d4116e1ad92f97e01a`.
+Check out public GCC base commit `ff20c357b3f`, then apply
+`active-accel-gcc16.patch` with `git apply --index --unidiff-zero`. Configure
+and build an RV32-capable RISC-V cross compiler in separate source, build, and
+install directories. The patch SHA-256 is
+`b3b72a207c63383b6c66fbfe0d90b2b99d3ee40117722e6368b7d04c7879d775`.
+The patch includes the loop-bound analysis prerequisite that was previously a
+local-only commit on top of that public base.
 
 ## Selection paths
 
@@ -22,12 +24,15 @@ build, and install directories.  The validated patched source commit is
 | xdfa4p | numeric-token state-scan recognizer | `-mxdfa4p` | custom-2, funct3 5, funct7 2 |
 | xlistfind | linked-list search recognizer | `-mxlistfind` | custom-0, funct3 6, funct7 1/3 |
 | xmacacc | matrix multiply recognizer and target loop expansion | `-mxmacacc` | custom-0, funct3 3, funct7 4-9 |
+| xdotn | runtime-N matrix dot walker selected by the matrix recognizer | `-mxdotn` | custom-0, funct3 4, funct7 3/4/5 |
 
-The combined build enables both `-mxmbm` and `-mxmacacc`. `xmacacc` lowers
-the entire matrix multiply and bit-extract loops, so no xmbm site remains in
-that ELF; the ELF auditor reports xmbm as superseded.  Building with `-mxmbm`
-without `-mxmacacc` still selects the two expected xmbm sites from unmodified
-`core_matrix.c`.
+The combined build enables `-mxmbm`, `-mxmacacc`, and `-mxdotn`. GCC emits a
+runtime-dimension configuration operation followed by one xdotn instruction
+per signed or bit-extract dot product. Dimensions from 1 through 65535 use the
+walker; zero or larger dimensions retain the scalar xmacacc target-loop
+expansion. Consequently no xmbm site remains in the combined ELF; the ELF
+auditor reports xmbm as superseded. Building with `-mxmbm` without `-mxmacacc`
+still selects the two expected xmbm sites from unmodified `core_matrix.c`.
 
 The xcrcu8 integration uses GCC's generic
 `__builtin_rev_crc16_data8(crc, data, 0x8005)` interface in `xcrc_hw.h`.  The
@@ -61,8 +66,9 @@ make ARCH=riscv32-jyd \
   audit-accel
 ```
 
-The auditor requires all enabled instruction families, every xlistfind and
-xmacacc sub-operation, and the xdfa final-counter read. Soft-float helper symbols are expected in the normal report
+The auditor requires all enabled instruction families, xdotn configuration and
+both data modes, every xlistfind and xmacacc sub-operation, and the xdfa
+final-counter read. Soft-float helper symbols are expected in the normal report
 path and are not accelerator-audit failures.
 
 ## Validation
@@ -72,22 +78,22 @@ The frozen compiler passed:
 - GCC `all-gcc` and `install-gcc` with 16 jobs.
 - Every checker listed below.
 - `make -C npc checkformat` and `make -C npc verilog`.
-- NPC ITERATIONS=10 with difftest: 1,641,168 cycles, 804,670 retired
+- NPC ITERATIONS=10 with difftest: 1,518,228 cycles, 485,420 retired
   instructions, correct CRCs, and GOOD TRAP.
-- NPC ITERATIONS=100 without difftest: 15,930,335 cycles, 7,767,333 retired
+- NPC ITERATIONS=100 without difftest: 14,516,900 cycles, 4,405,217 retired
   instructions, correct CRCs, and GOOD TRAP.
 - The affine 10/100 estimate for ITERATIONS=10000 at 300 MHz:
-  1,587,738,705 cycles, or `5.292462350s`, leaving `107.537650ms` below the
-  strict 5.4-second target.
+  1,444,370,820 cycles, or `4.814569400s`, leaving `185.430600ms` below the
+  strict 5-second target. The retained machine-readable result is
+  `/srv/data/jyd/archive/coremark-cycle-estimate-xdot-runtime-n-d4b6282-20260815T2251Z/estimate.json`.
 - Exact NEMU ITERATIONS=10000 through the owning AM `make run` target:
   CRCs `e714/1fd7/8e3a/988c`, Correct operation validated, GOOD TRAP, and
-  773,441,484 guest instructions.
+  434,662,586 guest instructions.
 
 The final ELF has 38 static xcrcu8 sites, one xlistrev site, five xmsum sites,
-two xdfa4p step sites, four xlistfind sites, six xmacacc sites, and one xdfa
-final-counter read.  No Vivado implementation was needed for this migration:
-the RTL and the custom instruction encodings are unchanged, while the generated
-program image was exercised by NEMU and NPC difftest.
+two xdfa4p step sites, four xlistfind sites, six xmacacc sites, four xdotn sites
+(two configuration, one signed, and one bit-extract), and one xdfa final-counter
+read. The generated program image was exercised by NEMU and NPC difftest.
 
 ## Checkers
 
@@ -100,9 +106,12 @@ program image was exercised by NEMU and NPC difftest.
   selection.
 - `check-xdfa4h.sh <gcc>` preserves coverage for the older xdfa4h mode.
 - `check-xlistfind-xmacacc.sh <gcc>` checks both xlistfind sub-operations and
-  all six xmacacc sub-operations.
+  all six xmacacc sub-operations, all three xdotn sub-operations, the invalid-N
+  fallback, and renamed-source name independence.
 - `check-backend-integrity.sh` rejects symbol-name matching, pseudo-float
-  support, and alternate compiler-extension paths.
+  support, and alternate compiler-extension paths. It also proves that the
+  patch itself materializes the accelerator pass source; the GCC build invokes
+  its clean-tree mode before compiling.
 
 ## History
 

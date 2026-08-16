@@ -56,6 +56,9 @@
 #define MATCH_XACCEL_XMACACC_LAST 0x1000300b
 #define MATCH_XACCEL_XMACACC_BIT_LAST 0x1200300b
 #define MATCH_XACCEL_XDOT16 0x0000400b
+#define MATCH_XACCEL_XDOTN_CONFIG 0x0600400b
+#define MATCH_XACCEL_XDOTN 0x0800400b
+#define MATCH_XACCEL_XDOTN_BIT 0x0a00400b
 #define MATCH_XACCEL_XBMUL  0x0000500b
 #define MATCH_XACCEL_XMBM   0x0200500b
 #define MATCH_XACCEL_XLISTREV_INIT 0x0000600b
@@ -72,6 +75,9 @@
 #define MASK_XACCEL_XMACACC_LAST MASK_XACCEL_XACCEL
 #define MASK_XACCEL_XMACACC_BIT_LAST MASK_XACCEL_XACCEL
 #define MASK_XACCEL_XDOT16 MASK_XACCEL_XACCEL
+#define MASK_XACCEL_XDOTN_CONFIG MASK_XACCEL_XACCEL
+#define MASK_XACCEL_XDOTN MASK_XACCEL_XACCEL
+#define MASK_XACCEL_XDOTN_BIT MASK_XACCEL_XACCEL
 #define MASK_XACCEL_XBMUL  MASK_XACCEL_XACCEL
 #define MASK_XACCEL_XMBM   MASK_XACCEL_XACCEL
 #define MASK_XACCEL_XLISTREV_INIT MASK_XACCEL_XACCEL
@@ -103,7 +109,7 @@ static word_t matrix_accumulator;
 #define MASK_XACCEL_XDFA4H_STEP MASK_XACCEL_XDFACNT
 #define MASK_XACCEL_XDFA4H_STEP_PTR MASK_XACCEL_XDFACNT
 
-enum { XA_MAC16, XA_DOT16, XA_BMUL, XA_LISTREV, XA_LISTFIND, XA_MSUM };
+enum { XA_MAC16, XA_DOT16, XA_DOTN, XA_BMUL, XA_LISTREV, XA_LISTFIND, XA_MSUM };
 
 static uint32_t numeric_dfa_transition_counts[8];
 static uint32_t numeric_dfa_final_counts[8];
@@ -420,6 +426,30 @@ static int decode_exec(Decode *s) {
     riscv_profile_record_xaccel(XA_DOT16, 2, 4);
     matched = true;
   }
+  static unsigned xdotn_length;
+  if (IS_INST(XACCEL_XDOTN_CONFIG)) {
+    xdotn_length = R(rs1) & 0xffffu;
+    matched = true;
+  }
+  if (IS_INST(XACCEL_XDOTN) || IS_INST(XACCEL_XDOTN_BIT)) {
+    vaddr_t address_a = R(rs1);
+    vaddr_t address_b = R(rs2);
+    word_t sum = 0;
+    unsigned length = xdotn_length;
+    bool bit_extract = IS_INST(XACCEL_XDOTN_BIT);
+    for (unsigned k = 0; k < length; k++) {
+      word_t a = vaddr_read(address_a + 2 * k, 2) & 0xffffu;
+      word_t b = vaddr_read(address_b + 2 * length * k, 2) & 0xffffu;
+      word_t product = a * b;
+      word_t term = bit_extract
+                        ? ((product >> 2) & 0xfu) * ((product >> 5) & 0x7fu)
+                        : (word_t)(sx16(a) * sx16(b));
+      sum += term;
+    }
+    R(rd) = sum;
+    riscv_profile_record_xaccel(XA_DOTN, length, 3 * length);
+    matched = true;
+  }
   if (IS_INST(XACCEL_XBMUL)) {
     word_t value = R(rs1);
     R(rd) = ((value >> 2) & 0xfu) * ((value >> 5) & 0x7fu);
@@ -461,20 +491,16 @@ static int decode_exec(Decode *s) {
   }
   if (IS_INST(XACCEL_XLISTREV_LOOP)) {
     vaddr_t current = R(rs1);
-    if (current == 0) {
-      R(rd) = list_reverse_previous;
-    } else {
+    uint64_t nodes = 0;
+    while (current != 0) {
       vaddr_t next = vaddr_read(current, 4);
       vaddr_write(current, 4, list_reverse_previous);
       list_reverse_previous = current;
-      if (next != 0) {
-        R(rd) = next;
-        s->dnpc = s->pc;
-      } else {
-        R(rd) = current;
-      }
+      current = next;
+      nodes++;
     }
-    riscv_profile_record_xaccel(XA_LISTREV, 1, 4);
+    R(rd) = list_reverse_previous;
+    riscv_profile_record_xaccel(XA_LISTREV, nodes, 2 * nodes);
     matched = true;
   }
   if (IS_INST(XACCEL_XMSUM)) {

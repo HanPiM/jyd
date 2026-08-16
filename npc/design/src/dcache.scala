@@ -2,6 +2,7 @@ package cpu
 
 import chisel3._
 import chisel3.util.{Cat, RegEnable, Valid}
+import cpu.alu.mult_gen_mul16_fast
 import jyd.{BlkMemGen2KB, DistMemGen512x8}
 
 class DCache extends Module {
@@ -10,6 +11,8 @@ class DCache extends Module {
     val queryTag   = Input(UInt(7.W))
     val hit       = Output(Bool())
     val readData  = Output(UInt(32.W))
+    val listReverseHitCapture = Input(Bool())
+    val listReverseCapturedHit = Output(Bool())
 
     val listFindStart = Input(Bool())
     val listFindConsume = Input(Bool())
@@ -22,6 +25,19 @@ class DCache extends Module {
     val listFindRequestAddress = Output(UInt(32.W))
     val listFindDone = Output(Bool())
     val listFindResult = Output(UInt(32.W))
+
+    val dotNStart = Input(Bool())
+    val dotNConsume = Input(Bool())
+    val dotNAddressA = Input(UInt(32.W))
+    val dotNAddressB = Input(UInt(32.W))
+    val dotNLength = Input(UInt(16.W))
+    val dotNBitMode = Input(Bool())
+    val dotNRequestFire = Input(Bool())
+    val dotNMemResponse = Input(Valid(UInt(32.W)))
+    val dotNRequest = Output(Bool())
+    val dotNRequestAddress = Output(UInt(32.W))
+    val dotNDone = Output(Bool())
+    val dotNResult = Output(UInt(32.W))
 
     val storeUpdate = Input(Bool())
     val storeFull   = Input(Bool())
@@ -66,6 +82,26 @@ class DCache extends Module {
   val listFindRequestValid = RegInit(false.B)
   val listFindRequestAddressReg = Reg(UInt(32.W))
 
+  object DotNState extends ChiselEnum {
+    val idle, stream, requestA, responseA, requestB, responseB, launchStored, drain, done = Value
+  }
+  val dotNState = RegInit(DotNState.idle)
+  val dotNOperandA = Reg(UInt(16.W))
+  val dotNOperandB = Reg(UInt(16.W))
+  val dotNOperandAHigh = Reg(Bool())
+  val dotNBufferedBValid = Reg(Bool())
+  val dotNBufferedBAddress = Reg(UInt(32.W))
+  val dotNMultiplierOperandA = Reg(UInt(16.W))
+  val dotNMultiplierOperandB = Reg(UInt(16.W))
+  val dotNProductOperandA = Reg(UInt(16.W))
+  val dotNProductOperandB = Reg(UInt(16.W))
+  val dotNRemaining = Reg(UInt(16.W))
+  val dotNStride = Reg(UInt(17.W))
+  val dotNAccumulator = Reg(UInt(32.W))
+  val dotNBitMode = Reg(Bool())
+  val dotNRequestValid = RegInit(false.B)
+  val dotNRequestAddressReg = Reg(UInt(32.W))
+
   // The backing store accepts an ordinary store one cycle before the mirrored
   // cache memories apply it. Do not expose the old line as a hit in that
   // intervening cycle.
@@ -82,6 +118,8 @@ class DCache extends Module {
   val queryHit = tagEntry(0) && tagEntry(7, 1) === io.queryTag
   val queryStoreConflict = storeUpdate && storeIndex === io.queryIndex && storeTag === io.queryTag
   io.hit := queryHit && !queryStoreConflict
+  val listReverseCapturedHit = RegEnable(queryHit && !queryStoreConflict, io.listReverseHitCapture)
+  io.listReverseCapturedHit := listReverseCapturedHit
 
   dataMem.foreach { bank =>
     bank.io.clkb  := clock
@@ -94,6 +132,9 @@ class DCache extends Module {
   val readBank = RegNext(queryBank)
   io.readData := Mux(readBank, dataMem(1).io.doutb, dataMem(0).io.doutb)
 
+  // List-find and dotN are mutually exclusive, so share their registered
+  // private-query addresses. This keeps FSM decode and a 32-bit mux out of the
+  // asynchronous tag/data RAM address cone.
   val listQueryAddresses = Seq(listFindQueryAddress, listFindQueryAddressB)
   val listQueryTags = listQueryAddresses.map(_(17, 11))
   val listQueryBanks = listQueryAddresses.map(_(11))
@@ -113,7 +154,118 @@ class DCache extends Module {
     Mux(listQueryBanks(port), bankData(1), bankData(0))
   }
 
+  val dotNStreamOperandA = Mux(listFindQueryAddress(1), listReadData(0)(31, 16), listReadData(0)(15, 0))
+  val dotNStreamOperandB = Mux(listFindQueryAddressB(1), listReadData(1)(31, 16), listReadData(1)(15, 0))
+  val dotNStreamLaunch = dotNState === DotNState.stream && listQueryHits(0) && listQueryHits(1)
+  val dotNStoredLaunch = dotNState === DotNState.launchStored
+  val dotNLaunchValid = dotNStreamLaunch || dotNStoredLaunch
+  val dotNLaunchOperandA = Mux(dotNState === DotNState.stream, dotNStreamOperandA, dotNOperandA)
+  val dotNLaunchOperandB = Mux(dotNState === DotNState.stream, dotNStreamOperandB, dotNOperandB)
+  val dotNLaunchLast = dotNLaunchValid && Mux(dotNStoredLaunch, dotNRemaining === 0.U, dotNRemaining === 1.U)
+
+  dotNMultiplierOperandA := dotNLaunchOperandA
+  dotNMultiplierOperandB := dotNLaunchOperandB
+  val dotNMultiplierInputValid = RegNext(dotNLaunchValid, false.B)
+  val dotNMultiplierInputLast = RegNext(dotNLaunchLast, false.B)
+
+  val dotNMultiplier = Module(new mult_gen_mul16_fast)
+  dotNMultiplier.io.CLK := clock
+  dotNMultiplier.io.A := dotNMultiplierOperandA
+  dotNMultiplier.io.B := dotNMultiplierOperandB
+  dotNProductOperandA := dotNMultiplierOperandA
+  dotNProductOperandB := dotNMultiplierOperandB
+  val dotNProductValid = RegNext(dotNMultiplierInputValid, false.B)
+  val dotNProductLast = RegNext(dotNMultiplierInputLast, false.B)
+  val dotNProduct = dotNMultiplier.io.P
+  val dotNSignedTerm = dotNProduct -
+    Mux(dotNProductOperandA(15), Cat(dotNProductOperandB, 0.U(16.W)), 0.U) -
+    Mux(dotNProductOperandB(15), Cat(dotNProductOperandA, 0.U(16.W)), 0.U)
+  val dotNBitTerm = (dotNProduct(5, 2) * dotNProduct(11, 5)).pad(32)
+  val dotNTerm = Mux(dotNBitMode, dotNBitTerm, dotNSignedTerm)
+  val dotNNextAccumulator = dotNAccumulator + dotNTerm
+
+  when(dotNState === DotNState.idle && io.dotNStart) {
+    assert(listFindState === ListFindState.idle, "dotN and list-find walkers must be mutually exclusive")
+    listFindQueryAddress := io.dotNAddressA
+    listFindQueryAddressB := io.dotNAddressB
+    dotNRemaining := io.dotNLength
+    dotNStride := Cat(io.dotNLength, 0.U(1.W))
+    dotNAccumulator := 0.U
+    dotNBitMode := io.dotNBitMode
+    dotNRequestValid := false.B
+    dotNState := Mux(io.dotNLength === 0.U, DotNState.done, DotNState.stream)
+  }.elsewhen(dotNState === DotNState.stream) {
+    dotNOperandA := dotNStreamOperandA
+    dotNOperandB := dotNStreamOperandB
+    dotNOperandAHigh := listFindQueryAddress(1)
+    dotNBufferedBAddress := listFindQueryAddressB
+    dotNRemaining := dotNRemaining - 1.U
+    listFindQueryAddress := listFindQueryAddress + 2.U
+    listFindQueryAddressB := listFindQueryAddressB + dotNStride
+    when(dotNStreamLaunch) {
+      when(dotNRemaining === 1.U) {
+        dotNState := DotNState.drain
+      }
+    }.elsewhen(!listQueryHits(0)) {
+      dotNBufferedBValid := listQueryHits(1)
+      dotNRequestValid := true.B
+      dotNRequestAddressReg := listFindQueryAddress & ~3.U(32.W)
+      dotNState := DotNState.requestA
+    }.otherwise {
+      dotNRequestValid := true.B
+      dotNRequestAddressReg := listFindQueryAddressB & ~3.U(32.W)
+      dotNState := DotNState.requestB
+    }
+  }.elsewhen(dotNState === DotNState.requestA && io.dotNRequestFire) {
+    dotNRequestValid := false.B
+    dotNState := DotNState.responseA
+  }.elsewhen(dotNState === DotNState.responseA && io.dotNMemResponse.valid) {
+    dotNOperandA := Mux(
+      dotNOperandAHigh,
+      io.dotNMemResponse.bits(31, 16),
+      io.dotNMemResponse.bits(15, 0)
+    )
+    when(dotNBufferedBValid) {
+      dotNState := DotNState.launchStored
+    }.otherwise {
+      dotNRequestValid := true.B
+      dotNRequestAddressReg := dotNBufferedBAddress & ~3.U(32.W)
+      dotNState := DotNState.requestB
+    }
+  }.elsewhen(dotNState === DotNState.requestB && io.dotNRequestFire) {
+    dotNRequestValid := false.B
+    dotNState := DotNState.responseB
+  }.elsewhen(dotNState === DotNState.responseB && io.dotNMemResponse.valid) {
+    dotNOperandB := Mux(
+      dotNBufferedBAddress(1),
+      io.dotNMemResponse.bits(31, 16),
+      io.dotNMemResponse.bits(15, 0)
+    )
+    dotNState := DotNState.launchStored
+  }.elsewhen(dotNState === DotNState.launchStored) {
+    when(dotNRemaining === 0.U) {
+      dotNState := DotNState.drain
+    }.otherwise {
+      dotNState := DotNState.stream
+    }
+  }.elsewhen(dotNState === DotNState.drain && dotNProductValid && dotNProductLast) {
+    dotNState := DotNState.done
+  }.elsewhen(dotNState === DotNState.done && io.dotNConsume) {
+    dotNRequestValid := false.B
+    dotNState := DotNState.idle
+  }
+
+  when(dotNProductValid) {
+    dotNAccumulator := dotNNextAccumulator
+  }
+
+  io.dotNRequest := dotNRequestValid
+  io.dotNRequestAddress := dotNRequestAddressReg
+  io.dotNDone := dotNState === DotNState.done
+  io.dotNResult := dotNAccumulator
+
   when(listFindState === ListFindState.idle && io.listFindStart) {
+    assert(dotNState === DotNState.idle, "list-find and dotN walkers must be mutually exclusive")
     listFindRequestValid := false.B
     listFindCurrent := io.listFindAddress
     listFindQueryAddress := io.listFindAddress
@@ -181,6 +333,12 @@ class DCache extends Module {
   }.elsewhen(listFindState === ListFindState.dataResolve) {
     when(listFindDataHit) {
       val value = Mux(listFindDataMode, Cat(0.U(8.W), listFindWord(7, 0)), listFindWord(31, 16))
+      // Speculatively stage the next node before resolving the match.  These
+      // registers are irrelevant in done, so the value comparison no longer
+      // selects their timing-sensitive D inputs.
+      listFindCurrent := listFindNext
+      listFindQueryAddress := listFindNext
+      listFindQueryAddressB := listFindNext + 4.U
       when(value === listFindTarget) {
         listFindResult := listFindCurrent
         listFindState := ListFindState.done
@@ -188,9 +346,6 @@ class DCache extends Module {
         listFindResult := 0.U
         listFindState := ListFindState.done
       }.otherwise {
-        listFindCurrent := listFindNext
-        listFindQueryAddress := listFindNext
-        listFindQueryAddressB := listFindNext + 4.U
         listFindState := ListFindState.nodeLookup
       }
     }.elsewhen(io.listFindRequestFire) {
@@ -199,6 +354,9 @@ class DCache extends Module {
   }.elsewhen(listFindState === ListFindState.dataMemory && io.listFindMemResponse.valid) {
     val value = Mux(listFindDataMode, Cat(0.U(8.W), io.listFindMemResponse.bits(7, 0)),
       io.listFindMemResponse.bits(31, 16))
+    listFindCurrent := listFindNext
+    listFindQueryAddress := listFindNext
+    listFindQueryAddressB := listFindNext + 4.U
     when(value === listFindTarget) {
       listFindResult := listFindCurrent
       listFindState := ListFindState.done
@@ -206,9 +364,6 @@ class DCache extends Module {
       listFindResult := 0.U
       listFindState := ListFindState.done
     }.otherwise {
-      listFindCurrent := listFindNext
-      listFindQueryAddress := listFindNext
-      listFindQueryAddressB := listFindNext + 4.U
       listFindState := ListFindState.nodeLookup
     }
   }.elsewhen(listFindState === ListFindState.done && io.listFindConsume) {

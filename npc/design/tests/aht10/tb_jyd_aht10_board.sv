@@ -7,7 +7,7 @@ module tb_jyd_aht10_board;
     wire press_pulse;
     integer pulse_count = 0;
     reg display_mode = 0;
-    reg [15:0] binary;
+    reg [10:0] binary;
     wire [15:0] bcd;
 
     always #500 clk = ~clk;
@@ -15,7 +15,7 @@ module tb_jyd_aht10_board;
     jyd_key_debounce #(.CLK_HZ(1_000_000), .DEBOUNCE_MS(1)) debounce (
         .clk(clk), .rst_n(rst_n), .key_n(key_n), .press_pulse(press_pulse)
     );
-    jyd_bin16_to_bcd formatter (.binary(binary), .bcd(bcd));
+    jyd_aht10_bin11_to_bcd formatter (.binary(binary), .bcd(bcd));
 
     always @(posedge clk) begin
         if (!rst_n) begin
@@ -28,12 +28,36 @@ module tb_jyd_aht10_board;
     end
 
     initial begin
-        binary = 16'd264;
+        binary = 11'd0;
+        #1;
+        if (bcd !== 16'h0000) begin $display("FAIL BCD zero %h", bcd); $finish; end
+        binary = 11'd9;
+        #1;
+        if (bcd !== 16'h0009) begin $display("FAIL BCD one digit %h", bcd); $finish; end
+        binary = 11'd10;
+        #1;
+        if (bcd !== 16'h0010) begin $display("FAIL BCD ten %h", bcd); $finish; end
+        binary = 11'd99;
+        #1;
+        if (bcd !== 16'h0099) begin $display("FAIL BCD two digits %h", bcd); $finish; end
+        binary = 11'd100;
+        #1;
+        if (bcd !== 16'h0100) begin $display("FAIL BCD hundred %h", bcd); $finish; end
+        binary = 11'd264;
         #1;
         if (bcd !== 16'h0264) begin $display("FAIL BCD temperature %h", bcd); $finish; end
-        binary = 16'd637;
+        binary = 11'd637;
         #1;
         if (bcd !== 16'h0637) begin $display("FAIL BCD humidity %h", bcd); $finish; end
+        binary = 11'd999;
+        #1;
+        if (bcd !== 16'h0999) begin $display("FAIL BCD 999 %h", bcd); $finish; end
+        binary = 11'd1000;
+        #1;
+        if (bcd !== 16'h1000) begin $display("FAIL BCD humidity max %h", bcd); $finish; end
+        binary = 11'd1500;
+        #1;
+        if (bcd !== 16'h1500) begin $display("FAIL BCD temperature max %h", bcd); $finish; end
 
         repeat (4) @(posedge clk); rst_n = 1;
         repeat (5) begin

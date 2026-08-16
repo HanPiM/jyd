@@ -53,7 +53,7 @@ module student_top#(
     logic signed [15:0] aht10_temperature_x10;
     logic [15:0] aht10_humidity_x10;
     logic aht10_data_valid;
-    logic [15:0] aht10_display_binary;
+    logic [10:0] aht10_display_binary;
     logic [15:0] aht10_display_bcd;
 
     always_ff @(posedge w_clk_50Mhz or posedge w_clk_rst) begin
@@ -75,14 +75,14 @@ module student_top#(
 
     always_comb begin
         if (aht10_display_mode)
-            aht10_display_binary = aht10_humidity_x10;
+            aht10_display_binary = aht10_humidity_x10[10:0];
         else if (aht10_temperature_x10 < 0)
             aht10_display_binary = -aht10_temperature_x10;
         else
-            aht10_display_binary = aht10_temperature_x10;
+            aht10_display_binary = aht10_temperature_x10[10:0];
     end
 
-    jyd_bin16_to_bcd aht10_bcd_formatter (
+    jyd_aht10_bin11_to_bcd aht10_bcd_formatter (
         .binary(aht10_display_binary),
         .bcd(aht10_display_bcd)
     );
@@ -236,24 +236,24 @@ module jyd_key_debounce #(
     end
 endmodule
 
-module jyd_bin16_to_bcd (
-    input  wire [15:0] binary,
+module jyd_aht10_bin11_to_bcd (
+    input  wire [10:0] binary,
     output reg  [15:0] bcd
 );
     integer i;
-    reg [31:0] work;
+    reg [26:0] work;
 
     always @* begin
         work = 0;
-        work[15:0] = binary;
-        for (i = 0; i < 16; i = i + 1) begin
-            if (work[19:16] >= 5) work[19:16] = work[19:16] + 3;
-            if (work[23:20] >= 5) work[23:20] = work[23:20] + 3;
-            if (work[27:24] >= 5) work[27:24] = work[27:24] + 3;
-            if (work[31:28] >= 5) work[31:28] = work[31:28] + 3;
+        work[10:0] = binary;
+        for (i = 0; i < 11; i = i + 1) begin
+            if (work[14:11] >= 5) work[14:11] = work[14:11] + 3;
+            if (work[18:15] >= 5) work[18:15] = work[18:15] + 3;
+            if (work[22:19] >= 5) work[22:19] = work[22:19] + 3;
+            if (work[26:23] >= 5) work[26:23] = work[26:23] + 3;
             work = work << 1;
         end
-        bcd = work[31:16];
+        bcd = work[26:11];
     end
 endmodule
 

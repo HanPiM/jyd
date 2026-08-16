@@ -301,7 +301,7 @@ class EXU(
       xdfaInternalStopped := true.B
       xdfaScanFinishAfterCommit := false.B
     }
-    xdfaWordState := Mux(io.memReq.fire, NumericDfaState.response, NumericDfaState.request)
+    xdfaWordState := NumericDfaState.request
   }.elsewhen(xdfaWordState === NumericDfaState.request && io.memReq.fire) {
     xdfaWordState := NumericDfaState.response
   }.elsewhen(xdfaWordState === NumericDfaState.response && io.memResp.valid) {
@@ -868,12 +868,10 @@ class EXU(
     io.dcache.listFindRequestAddress
   )
   val xmsumRequest = xmsumIssueActive && !xmsumAllIssued
-  // The whole-string instruction can arrive immediately behind an ordinary
-  // memory operation. Delay only its first request by one state so an older
-  // untagged response cannot be mistaken for the scan's first word.
-  val xdfaWordFirstRequest = xdfaWordState === NumericDfaState.idle && io.in.valid && isNumericDfaStep &&
-    !isNumericDfaScan
-  val xdfaWordRequest = xdfaWordState === NumericDfaState.request || xdfaWordFirstRequest
+  // Register every DFA request before presenting it to shared memory. This
+  // keeps instruction decode out of the BRAM request-control path and also
+  // prevents an older untagged response from being mistaken for the first word.
+  val xdfaWordRequest = xdfaWordState === NumericDfaState.request
   val normalMemReq = Wire(new MemReq)
   // The accelerator kind is held in ID/EX for the instruction's entire EXU
   // residence. Use that registered identity to select the request payload;
@@ -883,7 +881,7 @@ class EXU(
   // direct arm instead of passing its selector through every accelerator mux.
   normalMemReq.addr  := Mux(isXmsum, xmsumAddress,
     Mux(isNumericDfaStep,
-      Mux(xdfaWordFirstRequest, reg_v2, xdfaWordAddress) & ~3.U(32.W),
+      xdfaWordAddress & ~3.U(32.W),
       Mux(isListReverse, listReverseCurrent,
         Mux(isDcacheWalker, dcacheWalkerRequestAddress, reg1AddImm))))
   normalMemReq.size  := Mux(isNumericDfaStep || isListReverse || isDcacheWalker || isXmsum,

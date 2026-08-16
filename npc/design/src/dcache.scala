@@ -97,8 +97,6 @@ class DCache extends Module {
   val dotNStride = Reg(UInt(17.W))
   val dotNAccumulator = Reg(UInt(32.W))
   val dotNBitMode = Reg(Bool())
-  val dotNRequestValid = RegInit(false.B)
-  val dotNRequestUseB = RegInit(false.B)
   val dotNRequestAddressReg = Reg(UInt(32.W))
 
   // The backing store accepts an ordinary store one cycle before the mirrored
@@ -185,14 +183,15 @@ class DCache extends Module {
     dotNStride := Cat(io.dotNLength, 0.U(1.W))
     dotNAccumulator := 0.U
     dotNBitMode := io.dotNBitMode
-    dotNRequestValid := false.B
-    dotNRequestUseB := false.B
     dotNState := Mux(io.dotNLength === 0.U, DotNState.done, DotNState.stream)
   }.elsewhen(dotNState === DotNState.stream) {
     dotNOperandA := dotNStreamOperandA
     dotNOperandB := dotNStreamOperandB
     dotNOperandAHigh := listFindQueryAddress(1)
-    dotNRequestAddressReg := listFindQueryAddress & ~3.U(32.W)
+    // Select and register the missing operand address at the lookup boundary.
+    // The external memory path then sees only a registered address, rather than
+    // a request-kind selector followed by a 32-bit address mux.
+    dotNRequestAddressReg := Mux(listQueryHits(0), listFindQueryAddressB, listFindQueryAddress) & ~3.U(32.W)
     dotNBufferedBAddress := listFindQueryAddressB
     dotNRemaining := dotNRemaining - 1.U
     listFindQueryAddress := listFindQueryAddress + 2.U
@@ -203,16 +202,11 @@ class DCache extends Module {
       }
     }.elsewhen(!listQueryHits(0)) {
       dotNBufferedBValid := listQueryHits(1)
-      dotNRequestValid := true.B
-      dotNRequestUseB := false.B
       dotNState := DotNState.requestA
     }.otherwise {
-      dotNRequestValid := true.B
-      dotNRequestUseB := true.B
       dotNState := DotNState.requestB
     }
   }.elsewhen(dotNState === DotNState.requestA && io.dotNRequestFire) {
-    dotNRequestValid := false.B
     dotNState := DotNState.responseA
   }.elsewhen(dotNState === DotNState.responseA && io.dotNMemResponse.valid) {
     dotNOperandA := Mux(
@@ -223,12 +217,10 @@ class DCache extends Module {
     when(dotNBufferedBValid) {
       dotNState := DotNState.launchStored
     }.otherwise {
-      dotNRequestValid := true.B
-      dotNRequestUseB := true.B
+      dotNRequestAddressReg := dotNBufferedBAddress & ~3.U(32.W)
       dotNState := DotNState.requestB
     }
   }.elsewhen(dotNState === DotNState.requestB && io.dotNRequestFire) {
-    dotNRequestValid := false.B
     dotNState := DotNState.responseB
   }.elsewhen(dotNState === DotNState.responseB && io.dotNMemResponse.valid) {
     dotNOperandB := Mux(
@@ -246,7 +238,6 @@ class DCache extends Module {
   }.elsewhen(dotNState === DotNState.drain && dotNProductValid && dotNProductLast) {
     dotNState := DotNState.done
   }.elsewhen(dotNState === DotNState.done && io.dotNConsume) {
-    dotNRequestValid := false.B
     dotNState := DotNState.idle
   }
 
@@ -254,15 +245,8 @@ class DCache extends Module {
     dotNAccumulator := dotNNextAccumulator
   }
 
-  io.dotNRequest := dotNRequestValid
-  when(dotNRequestValid) {
-    assert(dotNState === DotNState.requestA || dotNState === DotNState.requestB)
-  }
-  io.dotNRequestAddress := Mux(
-    dotNRequestUseB,
-    dotNBufferedBAddress & ~3.U(32.W),
-    dotNRequestAddressReg
-  )
+  io.dotNRequest := dotNState === DotNState.requestA || dotNState === DotNState.requestB
+  io.dotNRequestAddress := dotNRequestAddressReg
   io.dotNDone := dotNState === DotNState.done
   io.dotNResult := dotNAccumulator
 

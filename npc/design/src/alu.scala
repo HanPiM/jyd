@@ -29,10 +29,11 @@ class FastIntegerALUInput extends Bundle {
   val isImm        = Bool()
   val isSub        = Bool()
   val xdup8loValid  = Bool()
-  val func3t       = UInt(3.W)
-  val func7t       = UInt(7.W)
-  val src1         = Types.UWord
-  val src2         = Types.UWord
+  val xpaddh2       = Bool()
+  val func3t        = UInt(3.W)
+  val func7t        = UInt(7.W)
+  val src1          = Types.UWord
+  val src2          = Types.UWord
 }
 
 class FastIntegerALU extends Module {
@@ -51,8 +52,6 @@ class FastIntegerALU extends Module {
   val addSubResult = Cat(Mux(addSubLow(16), addSubHighCarry1, addSubHighCarry0), addSubLow(15, 0))
   val isPack = !io.in.bits.isImm && io.in.bits.func3t === "b100".U && io.in.bits.func7t === "b0000100".U
   val xdup8loResult = Cat(src1(31, 8), src1(15, 8))
-  val isPackedHalfAdd =
-    !io.in.bits.isImm && io.in.bits.func3t === "b001".U && io.in.bits.func7t === "b0000010".U
   val packedHalfAddResult = Cat(
     (src1(31, 16) + src2(15, 0))(15, 0),
     (src1(15, 0) + src2(15, 0))(15, 0)
@@ -61,7 +60,11 @@ class FastIntegerALU extends Module {
   io.out.bits := MuxLookup(io.in.bits.func3t, 0.U)(
     Seq(
       0.U -> addSubResult,
-      1.U -> Mux(io.in.bits.xdup8loValid, xdup8loResult, Mux(isPackedHalfAdd, packedHalfAddResult, src1 << shamt)),
+      1.U -> Mux(
+        io.in.bits.xdup8loValid,
+        xdup8loResult,
+        Mux(io.in.bits.xpaddh2, packedHalfAddResult, src1 << shamt)
+      ),
       2.U -> (src1.asSInt < src2.asSInt),
       3.U -> (src1 < src2),
       4.U -> Mux(isPack, Cat(src2(15, 0), src1(15, 0)), src1 ^ src2),

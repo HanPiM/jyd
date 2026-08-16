@@ -523,6 +523,7 @@ class EXU(
   fast_in.isImm  := isFmtI
   fast_in.isSub  := dinst.info.aluIsSub
   fast_in.xdup8loValid := dinst.info.xdup8loValid
+  fast_in.xpaddh2 := dinst.code(6, 0) === "b0001011".U && func3t === 1.U && func7t === 2.U
   fast_in.func3t := func3t
   fast_in.func7t := func7t
 

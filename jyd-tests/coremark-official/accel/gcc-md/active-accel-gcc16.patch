@@ -1,5 +1,5 @@
 diff --git a/gcc/Makefile.in b/gcc/Makefile.in
-index 8ecef4ccdc7f222658a5e9cef1a3b0362bcfc788..e26943123656804c96608eb99f8ba74a1bf8a04e 100644
+index 8ecef4ccdc7..e2694312365 100644
 --- a/gcc/Makefile.in
 +++ b/gcc/Makefile.in
 @@ -1762,6 +1762,7 @@ OBJS = \
@@ -11,7 +11,7 @@ index 8ecef4ccdc7f222658a5e9cef1a3b0362bcfc788..e26943123656804c96608eb99f8ba74a
  	gimple-crc-optimization.o \
  	sym-exec/sym-exec-expression.o \
 diff --git a/gcc/config/riscv/bitmanip.md b/gcc/config/riscv/bitmanip.md
-index 0d16d79df3ae4cbe6f01556ee32dc6aed6552685..6c75513b1dc80f609abf91044389cf0010294554 100644
+index 0d16d79df3a..6c75513b1dc 100644
 --- a/gcc/config/riscv/bitmanip.md
 +++ b/gcc/config/riscv/bitmanip.md
 @@ -1217,6 +1217,26 @@
@@ -60,10 +60,10 @@ index 0d16d79df3ae4cbe6f01556ee32dc6aed6552685..6c75513b1dc80f609abf91044389cf00
       it is possible to store the quotient within a single variable
       (E.g.  CRC64's quotient may need 65 bits,
 diff --git a/gcc/config/riscv/peephole.md b/gcc/config/riscv/peephole.md
-index e49bc0426653fd29e564335d3d9e891291e68c5e..af6dc675447b19e542251825525dace6c54f4b33 100644
+index e49bc042665..61abac422b6 100644
 --- a/gcc/config/riscv/peephole.md
 +++ b/gcc/config/riscv/peephole.md
-@@ -19,6 +19,304 @@
+@@ -19,6 +19,285 @@
  ;; <http://www.gnu.org/licenses/>.
  
  ;; Simplify (unsigned long)(unsigned int)a << const
@@ -103,6 +103,16 @@ index e49bc0426653fd29e564335d3d9e891291e68c5e..af6dc675447b19e542251825525dace6
 +  "TARGET_XBMUL && !TARGET_64BIT"
 +  ".insn r 0x0b, 5, 0, %0, %1, x0"
 +  [(set_attr "type" "imul")
++   (set_attr "mode" "SI")])
++
++(define_insn "xpaddh2si3"
++  [(set (match_operand:SI 0 "register_operand" "=r")
++	(unspec:SI [(match_operand:SI 1 "register_operand" "r")
++		    (match_operand:SI 2 "register_operand" "r")]
++		   UNSPEC_XPADDH2))]
++  "TARGET_XPADDH2 && !TARGET_64BIT"
++  ".insn r 0x0b, 1, 2, %0, %1, %2"
++  [(set_attr "type" "arith")
 +   (set_attr "mode" "SI")])
 +
 +(define_insn "xmbmsi3"
@@ -369,7 +379,7 @@ index e49bc0426653fd29e564335d3d9e891291e68c5e..af6dc675447b19e542251825525dace6
    [(set (match_operand:DI 0 "register_operand")
  	(ashift:DI (match_operand:DI 1 "register_operand")
 diff --git a/gcc/config/riscv/riscv.md b/gcc/config/riscv/riscv.md
-index d2883ef9f5af7c368f11f945298699da6759e2ec..cb461425f192966eb5eaa7913bdd4e49a404de83 100644
+index d2883ef9f5a..d50d9f784b9 100644
 --- a/gcc/config/riscv/riscv.md
 +++ b/gcc/config/riscv/riscv.md
 @@ -100,6 +100,32 @@
@@ -394,6 +404,7 @@ index d2883ef9f5af7c368f11f945298699da6759e2ec..cb461425f192966eb5eaa7913bdd4e49
 +  UNSPEC_XDOTN_CONFIG
 +  UNSPEC_XDOTN
 +  UNSPEC_XDOTN_BIT
++  UNSPEC_XPADDH2
 +
 +  ;; Numeric-token DFA (xdfa4h).
 +  UNSPEC_XDFA4H_STEP
@@ -406,7 +417,7 @@ index d2883ef9f5af7c368f11f945298699da6759e2ec..cb461425f192966eb5eaa7913bdd4e49
    UNSPEC_SSP_SET
    UNSPEC_SSP_TEST
 diff --git a/gcc/config/riscv/riscv.opt b/gcc/config/riscv/riscv.opt
-index 2c26ee99691315d1374d6e5d4ddebf30f259eb1f..4fd6522cb412db3791db44e1288ebb7503693890 100644
+index 2c26ee99691..71d4b2cd7af 100644
 --- a/gcc/config/riscv/riscv.opt
 +++ b/gcc/config/riscv/riscv.opt
 @@ -81,6 +81,50 @@ mdiv
@@ -445,6 +456,10 @@ index 2c26ee99691315d1374d6e5d4ddebf30f259eb1f..4fd6522cb412db3791db44e1288ebb75
 +Target Mask(XMACACC)
 +Use the matrix multiply-accumulate instruction sequence.
 +
++mxpaddh2
++Target Mask(XPADDH2)
++Use packed halfword scalar-add instructions for matched in-place loops.
++
 +mxdotn
 +Target Mask(XDOTN)
 +Use runtime-sized strided matrix dot-product instructions.
@@ -461,7 +476,7 @@ index 2c26ee99691315d1374d6e5d4ddebf30f259eb1f..4fd6522cb412db3791db44e1288ebb75
  Target RejectNegative Joined Negative(march=) Var(riscv_arch_string) Save
  -march=	Generate code for given RISC-V ISA (e.g. RV64IM).  ISA strings must be
 diff --git a/gcc/internal-fn.cc b/gcc/internal-fn.cc
-index 25acc63b247b531179aa6d16873cabe23aadce52..7073cfcacd49d0759f6ac40042cc69939d6c01f6 100644
+index 25acc63b247..201edc04318 100644
 --- a/gcc/internal-fn.cc
 +++ b/gcc/internal-fn.cc
 @@ -38,6 +38,7 @@ along with GCC; see the file COPYING3.  If not see
@@ -472,7 +487,7 @@ index 25acc63b247b531179aa6d16873cabe23aadce52..7073cfcacd49d0759f6ac40042cc6993
  #include "dojump.h"
  #include "expr.h"
  #include "stringpool.h"
-@@ -3464,6 +3465,189 @@ expand_UNIQUE (internal_fn, gcall *stmt)
+@@ -3464,6 +3465,256 @@ expand_UNIQUE (internal_fn, gcall *stmt)
      emit_insn (pattern);
  }
  
@@ -659,14 +674,81 @@ index 25acc63b247b531179aa6d16873cabe23aadce52..7073cfcacd49d0759f6ac40042cc6993
 +  expand_xmacacc_matrix (stmt, true);
 +}
 +
++static void
++xpaddh2_scalar_update (rtx address, rtx addend)
++{
++  rtx half = gen_reg_rtx (HImode);
++  rtx value = gen_reg_rtx (SImode);
++  rtx sum = gen_reg_rtx (SImode);
++  emit_move_insn (half, gen_rtx_MEM (HImode, address));
++  emit_insn (gen_zero_extendhisi2 (value, half));
++  emit_insn (gen_addsi3 (sum, value, addend));
++  emit_move_insn (gen_rtx_MEM (HImode, address), gen_lowpart (HImode, sum));
++}
++
++/* Expand a matched square int16 matrix scalar-add loop.  Any defined source
++   execution has an addressable N*N-element object, so the 32-bit element and
++   byte counts cannot wrap.  Peel a 2-byte-aligned first element when needed,
++   process aligned pairs, and retain a scalar tail for an odd element count.  */
++static void
++expand_XPADDH2_MATRIX_ADD (internal_fn, gcall *stmt)
++{
++  rtx n = force_reg (SImode, expand_normal (gimple_call_arg (stmt, 0)));
++  rtx base = force_reg (SImode, expand_normal (gimple_call_arg (stmt, 1)));
++  rtx raw_addend = expand_normal (gimple_call_arg (stmt, 2));
++  rtx addend = force_reg (SImode,
++			 convert_to_mode (SImode, raw_addend, true));
++  rtx elements = gen_reg_rtx (SImode);
++  emit_insn (gen_mulsi3 (elements, n, n));
++  rtx bytes = xmacacc_shift (elements, 1);
++  rtx end = xmacacc_add (base, bytes);
++  rtx ptr = copy_to_mode_reg (SImode, base);
++  rtx aligned = gen_label_rtx ();
++  rtx pair = gen_label_rtx ();
++  rtx tail = gen_label_rtx ();
++  rtx done = gen_label_rtx ();
++
++  emit_cmp_and_jump_insns (elements, const0_rtx, EQ, NULL_RTX, SImode, 1,
++			   done, profile_probability::very_unlikely ());
++  rtx alignment = gen_reg_rtx (SImode);
++  emit_insn (gen_andsi3 (alignment, ptr, GEN_INT (2)));
++  emit_cmp_and_jump_insns (alignment, const0_rtx, EQ, NULL_RTX, SImode, 1,
++			   aligned, profile_probability::likely ());
++  xpaddh2_scalar_update (ptr, addend);
++  emit_insn (gen_addsi3 (ptr, ptr, GEN_INT (2)));
++  emit_cmp_and_jump_insns (ptr, end, EQ, NULL_RTX, SImode, 1, done,
++			   profile_probability::unlikely ());
++
++  emit_label (aligned);
++  rtx pair_end = gen_reg_rtx (SImode);
++  emit_insn (gen_andsi3 (pair_end, end, GEN_INT (-4)));
++  emit_cmp_and_jump_insns (ptr, pair_end, EQ, NULL_RTX, SImode, 1, tail,
++			   profile_probability::unlikely ());
++  emit_label (pair);
++  rtx word = gen_reg_rtx (SImode);
++  rtx result = gen_reg_rtx (SImode);
++  emit_move_insn (word, gen_rtx_MEM (SImode, ptr));
++  emit_insn (gen_xpaddh2si3 (result, word, addend));
++  emit_move_insn (gen_rtx_MEM (SImode, ptr), result);
++  emit_insn (gen_addsi3 (ptr, ptr, GEN_INT (4)));
++  emit_cmp_and_jump_insns (ptr, pair_end, NE, NULL_RTX, SImode, 1, pair,
++			   profile_probability::likely ());
++
++  emit_label (tail);
++  emit_cmp_and_jump_insns (ptr, end, EQ, NULL_RTX, SImode, 1, done,
++			   profile_probability::likely ());
++  xpaddh2_scalar_update (ptr, addend);
++  emit_label (done);
++}
++
  /* Expand the IFN_DEFERRED_INIT function:
     LHS = DEFERRED_INIT (SIZE of the DECL, INIT_TYPE, NAME of the DECL);
  
 diff --git a/gcc/internal-fn.def b/gcc/internal-fn.def
-index d142416725a2950c5f943338ad97701a031c795c..38c960df8f27780d394518fa41390779e5f5a5b9 100644
+index d142416725a..1737d6809c5 100644
 --- a/gcc/internal-fn.def
 +++ b/gcc/internal-fn.def
-@@ -204,6 +204,22 @@ along with GCC; see the file COPYING3.  If not see
+@@ -204,6 +204,23 @@ along with GCC; see the file COPYING3.  If not see
  
  DEF_INTERNAL_OPTAB_FN (CRC, ECF_CONST | ECF_NOTHROW, crc, crc)
  DEF_INTERNAL_OPTAB_FN (CRC_REV, ECF_CONST | ECF_NOTHROW, crc_rev, crc)
@@ -677,6 +759,7 @@ index d142416725a2950c5f943338ad97701a031c795c..38c960df8f27780d394518fa41390779
 +DEF_INTERNAL_OPTAB_FN (XMBM, ECF_CONST | ECF_NOTHROW, xmbm, binary)
 +DEF_INTERNAL_FN (XMACACC_MATRIX, ECF_NOTHROW | ECF_LEAF, NULL)
 +DEF_INTERNAL_FN (XMACACC_BIT_MATRIX, ECF_NOTHROW | ECF_LEAF, NULL)
++DEF_INTERNAL_FN (XPADDH2_MATRIX_ADD, ECF_NOTHROW | ECF_LEAF, NULL)
 +DEF_INTERNAL_OPTAB_FN (XDFA4H_STEP, ECF_NOTHROW | ECF_LEAF, xdfa4h_step,
 +		       binary)
 +DEF_INTERNAL_OPTAB_FN (XDFA4P_STEP, ECF_NOTHROW | ECF_LEAF, xdfa4p_step,
@@ -690,7 +773,7 @@ index d142416725a2950c5f943338ad97701a031c795c..38c960df8f27780d394518fa41390779
  DEF_INTERNAL_OPTAB_FN (LOAD_LANES, ECF_CONST, vec_load_lanes, load_lanes)
  DEF_INTERNAL_OPTAB_FN (MASK_LOAD_LANES, ECF_PURE,
 diff --git a/gcc/optabs.def b/gcc/optabs.def
-index 193f42a728a2d414f078bce785f760cca00087ca..cc18d85a7b9f069bc94e66a0c98a5c689513f6c1 100644
+index 193f42a728a..cc18d85a7b9 100644
 --- a/gcc/optabs.def
 +++ b/gcc/optabs.def
 @@ -226,6 +226,14 @@ OPTAB_NC(sync_lock_test_and_set_optab, "sync_lock_test_and_set$I$a", UNKNOWN)
@@ -709,7 +792,7 @@ index 193f42a728a2d414f078bce785f760cca00087ca..cc18d85a7b9f069bc94e66a0c98a5c68
  OPTAB_D (insv_optab, "insv$a")
  OPTAB_D (extv_optab, "extv$a")
 diff --git a/gcc/passes.def b/gcc/passes.def
-index cdddb87302f647b4709b246b84cb5766230c6a97..b2e228086fe56796b0cdb1a85511c6ceaa2392e9 100644
+index cdddb87302f..b2e228086fe 100644
 --- a/gcc/passes.def
 +++ b/gcc/passes.def
 @@ -94,6 +94,7 @@ along with GCC; see the file COPYING3.  If not see
@@ -722,10 +805,10 @@ index cdddb87302f647b4709b246b84cb5766230c6a97..b2e228086fe56796b0cdb1a85511c6ce
  	  NEXT_PASS (pass_cd_dce, false /* update_address_taken_p */, true /* remove_unused_locals */);
 diff --git a/gcc/tree-clipped-rising-score.cc b/gcc/tree-clipped-rising-score.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..1dfe1b5c453867ff2059d3823e616167d1dba7c1
+index 00000000000..1cf188c75c7
 --- /dev/null
 +++ b/gcc/tree-clipped-rising-score.cc
-@@ -0,0 +1,1401 @@
+@@ -0,0 +1,1704 @@
 +/* Recognize accelerator idioms (clipped rising-score reduction, in-place
 +   list reversal, numeric-token DFA scan) and expose them to the target.  */
 +
@@ -741,6 +824,7 @@ index 0000000000000000000000000000000000000000..1dfe1b5c453867ff2059d3823e616167
 +#include "tree-dfa.h"
 +#include "tree-cfg.h"
 +#include "tree-into-ssa.h"
++#include "fold-const.h"
 +#include "cfghooks.h"
 +#include "cfgloop.h"
 +#include "cgraph.h"
@@ -940,7 +1024,18 @@ index 0000000000000000000000000000000000000000..1dfe1b5c453867ff2059d3823e616167
 +	    continue;
 +	  }
 +	if (!is_gimple_assign (stmt))
-+	  continue;
++	  {
++	    switch (gimple_code (stmt))
++	      {
++	      case GIMPLE_GOTO:
++	      case GIMPLE_LABEL:
++	      case GIMPLE_NOP:
++	      case GIMPLE_PREDICT:
++		continue;
++	      default:
++		return false;
++	      }
++	  }
 +	enum tree_code code = gimple_assign_rhs_code (stmt);
 +	if (code != MEM_REF && code != COMPONENT_REF)
 +	  continue;
@@ -1049,6 +1144,268 @@ index 0000000000000000000000000000000000000000..1dfe1b5c453867ff2059d3823e616167
 +    && multiplies >= 4 && accumulates >= 3 && bounds >= 3;
 +}
 +
++static bool
++conversion_chain_from_p (tree value, tree root, unsigned depth = 0)
++{
++  if (!value || !root
++      || !INTEGRAL_TYPE_P (TREE_TYPE (value))
++      || TYPE_PRECISION (TREE_TYPE (value)) < 16
++      || !INTEGRAL_TYPE_P (TREE_TYPE (root))
++      || TYPE_PRECISION (TREE_TYPE (root)) < 16)
++    return false;
++  if (value == root)
++    return true;
++  if (depth == 4 || TREE_CODE (value) != SSA_NAME)
++    return false;
++  gimple *def = SSA_NAME_DEF_STMT (value);
++  if (!def || !is_gimple_assign (def))
++    return false;
++  enum tree_code code = gimple_assign_rhs_code (def);
++  if (code != NOP_EXPR && code != CONVERT_EXPR)
++    return false;
++  tree source = gimple_assign_rhs1 (def);
++  if (!INTEGRAL_TYPE_P (TREE_TYPE (source))
++      || TYPE_PRECISION (TREE_TYPE (source)) < 16)
++    return false;
++  return conversion_chain_from_p (source, root, depth + 1);
++}
++
++static bool
++unit_step_counter_p (tree counter, class loop **counter_loop)
++{
++  if (TREE_CODE (counter) != SSA_NAME)
++    return false;
++  gimple *phi_stmt = SSA_NAME_DEF_STMT (counter);
++  if (!phi_stmt || gimple_code (phi_stmt) != GIMPLE_PHI
++      || gimple_phi_num_args (phi_stmt) != 2)
++    return false;
++  gphi *phi = as_a<gphi *> (phi_stmt);
++  basic_block header = gimple_bb (phi_stmt);
++  class loop *loop = header->loop_father;
++  if (!loop || loop == loops_for_fn (cfun)->tree_root || loop->header != header)
++    return false;
++  tree update = NULL_TREE;
++  bool has_zero = false;
++  for (unsigned i = 0; i < 2; ++i)
++    {
++      tree arg = gimple_phi_arg_def (phi, i);
++      if (zero_cst_p (arg))
++	{
++	  if (flow_bb_inside_loop_p (loop, gimple_phi_arg_edge (phi, i)->src))
++	    return false;
++	  has_zero = true;
++	}
++      else
++	{
++	  if (!flow_bb_inside_loop_p (loop,
++				      gimple_phi_arg_edge (phi, i)->src))
++	    return false;
++	  update = arg;
++	}
++    }
++  if (!has_zero || !update || TREE_CODE (update) != SSA_NAME)
++    return false;
++  gimple *update_stmt = SSA_NAME_DEF_STMT (update);
++  if (!update_stmt || !is_gimple_assign (update_stmt)
++      || gimple_assign_rhs_code (update_stmt) != PLUS_EXPR
++      || !flow_bb_inside_loop_p (loop, gimple_bb (update_stmt)))
++    return false;
++  tree lhs = gimple_assign_rhs1 (update_stmt);
++  tree rhs = gimple_assign_rhs2 (update_stmt);
++  tree one = TREE_CODE (lhs) == INTEGER_CST ? lhs
++    : TREE_CODE (rhs) == INTEGER_CST ? rhs : NULL_TREE;
++  tree source = lhs == one ? rhs : lhs;
++  if (source != counter || !one || !integer_onep (one))
++    return false;
++  *counter_loop = loop;
++  return true;
++}
++
++static bool
++matrix_element_address_p (tree reference, tree base, tree n,
++			  tree first_counter, tree second_counter)
++{
++  if (TREE_CODE (reference) != MEM_REF
++      || !INTEGRAL_TYPE_P (TREE_TYPE (reference))
++      || TYPE_PRECISION (TREE_TYPE (reference)) != 16
++      || TYPE_ALIGN (TREE_TYPE (reference)) < 16)
++    return false;
++  if (TREE_THIS_VOLATILE (reference)
++      || !zero_cst_p (TREE_OPERAND (reference, 1)))
++    return false;
++  tree address = TREE_OPERAND (reference, 0);
++  if (TREE_CODE (address) != SSA_NAME)
++    return false;
++  gimple *pointer = SSA_NAME_DEF_STMT (address);
++  if (!pointer || !is_gimple_assign (pointer)
++      || gimple_assign_rhs_code (pointer) != POINTER_PLUS_EXPR
++      || gimple_assign_rhs1 (pointer) != base)
++    return false;
++  tree scaled = gimple_assign_rhs2 (pointer);
++  if (TREE_CODE (scaled) != SSA_NAME)
++    return false;
++  gimple *scale = SSA_NAME_DEF_STMT (scaled);
++  if (!scale || !is_gimple_assign (scale)
++      || gimple_assign_rhs_code (scale) != MULT_EXPR)
++    return false;
++  tree scale_lhs = gimple_assign_rhs1 (scale);
++  tree scale_rhs = gimple_assign_rhs2 (scale);
++  tree two = TREE_CODE (scale_lhs) == INTEGER_CST ? scale_lhs
++    : TREE_CODE (scale_rhs) == INTEGER_CST ? scale_rhs : NULL_TREE;
++  tree index = scale_lhs == two ? scale_rhs : scale_lhs;
++  if (!two || wi::to_wide (two) != 2 || TREE_CODE (index) != SSA_NAME)
++    return false;
++  gimple *sum = SSA_NAME_DEF_STMT (index);
++  if (!sum || !is_gimple_assign (sum)
++      || gimple_assign_rhs_code (sum) != PLUS_EXPR)
++    return false;
++  tree sum_lhs = gimple_assign_rhs1 (sum);
++  tree sum_rhs = gimple_assign_rhs2 (sum);
++  tree product = sum_lhs == first_counter || sum_lhs == second_counter
++    ? sum_rhs : sum_lhs;
++  tree inner = product == sum_lhs ? sum_rhs : sum_lhs;
++  if (inner != first_counter && inner != second_counter)
++    return false;
++  tree outer = inner == first_counter ? second_counter : first_counter;
++  if (TREE_CODE (product) != SSA_NAME)
++    return false;
++  gimple *multiply = SSA_NAME_DEF_STMT (product);
++  if (!multiply || !is_gimple_assign (multiply)
++      || gimple_assign_rhs_code (multiply) != MULT_EXPR)
++    return false;
++  tree mul_lhs = gimple_assign_rhs1 (multiply);
++  tree mul_rhs = gimple_assign_rhs2 (multiply);
++  return ((mul_lhs == outer && mul_rhs == n)
++	  || (mul_rhs == outer && mul_lhs == n));
++}
++
++/* Match exactly an in-place square int16 matrix scalar-add loop.  Selection
++   depends on types, induction variables, address arithmetic and value flow;
++   function and local-variable names are irrelevant.  */
++static bool
++matrix_add_const_p ()
++{
++  tree n = DECL_ARGUMENTS (cfun->decl);
++  tree base = n ? DECL_CHAIN (n) : NULL_TREE;
++  tree addend = base ? DECL_CHAIN (base) : NULL_TREE;
++  if (!n || !base || !addend || DECL_CHAIN (addend)
++      || TREE_TYPE (TREE_TYPE (cfun->decl)) != void_type_node
++      || !INTEGRAL_TYPE_P (TREE_TYPE (n))
++      || TYPE_PRECISION (TREE_TYPE (n)) != 32
++      || !TYPE_UNSIGNED (TREE_TYPE (n))
++      || !POINTER_TYPE_P (TREE_TYPE (base))
++      || !INTEGRAL_TYPE_P (TREE_TYPE (TREE_TYPE (base)))
++      || TYPE_PRECISION (TREE_TYPE (TREE_TYPE (base))) != 16
++      || TYPE_ALIGN (TREE_TYPE (TREE_TYPE (base))) < 16
++      || !INTEGRAL_TYPE_P (TREE_TYPE (addend))
++      || TYPE_PRECISION (TREE_TYPE (addend)) != 16)
++    return false;
++
++  tree n_ssa = ssa_default_def (cfun, n);
++  tree base_ssa = ssa_default_def (cfun, base);
++  tree addend_ssa = ssa_default_def (cfun, addend);
++  tree counters[2] = { NULL_TREE, NULL_TREE };
++  class loop *counter_loops[2] = { NULL, NULL };
++  tree load_value = NULL_TREE, data_sum = NULL_TREE;
++  tree load_ref = NULL_TREE, store_ref = NULL_TREE, store_value = NULL_TREE;
++  unsigned conditions = 0, returns = 0, loads = 0, stores = 0;
++  basic_block bb;
++  FOR_EACH_BB_FN (bb, cfun)
++    for (gimple_stmt_iterator gsi = gsi_start_bb (bb);
++	 !gsi_end_p (gsi); gsi_next (&gsi))
++      {
++	gimple *stmt = gsi_stmt (gsi);
++	if (is_gimple_debug (stmt))
++	  continue;
++	if (gimple_code (stmt) == GIMPLE_CALL)
++	  return false;
++	if (gimple_code (stmt) == GIMPLE_RETURN)
++	  {
++	    if (gimple_return_retval (as_a<greturn *> (stmt)))
++	      return false;
++	    ++returns;
++	    continue;
++	  }
++	if (gimple_code (stmt) == GIMPLE_COND)
++	  {
++	    gcond *cond = as_a<gcond *> (stmt);
++	    if (gimple_cond_code (cond) != LT_EXPR
++		|| gimple_cond_rhs (cond) != n_ssa || conditions == 2)
++	      return false;
++	    tree counter = gimple_cond_lhs (cond);
++	    if (!unit_step_counter_p (counter, &counter_loops[conditions]))
++	      return false;
++	    class loop *counter_loop = counter_loops[conditions];
++	    auto_vec<edge> loop_exits = get_loop_exit_edges (counter_loop);
++	    edge loop_exit = loop_exits.length () == 1 ? loop_exits[0] : NULL;
++	    if (gimple_bb (cond) != counter_loop->header || !loop_exit
++		|| loop_exit->src != gimple_bb (cond)
++		|| !(loop_exit->flags & EDGE_FALSE_VALUE))
++	      return false;
++	    counters[conditions++] = counter;
++	    continue;
++	  }
++	if (!is_gimple_assign (stmt))
++	  {
++	    enum gimple_code code = gimple_code (stmt);
++	    if (code == GIMPLE_LABEL || code == GIMPLE_NOP
++		|| code == GIMPLE_PREDICT)
++	      continue;
++	    return false;
++	  }
++	if (gimple_has_volatile_ops (stmt))
++	  return false;
++	if (gimple_store_p (stmt))
++	  {
++	    ++stores;
++	    store_ref = gimple_assign_lhs (stmt);
++	    store_value = gimple_assign_rhs1 (stmt);
++	    continue;
++	  }
++	enum tree_code code = gimple_assign_rhs_code (stmt);
++	if (code == MEM_REF)
++	  {
++	    ++loads;
++	    load_ref = gimple_assign_rhs1 (stmt);
++	    load_value = gimple_assign_lhs (stmt);
++	  }
++	else if (code == PLUS_EXPR)
++	  {
++	    tree result = gimple_assign_lhs (stmt);
++	    tree lhs = gimple_assign_rhs1 (stmt);
++	    tree rhs = gimple_assign_rhs2 (stmt);
++	    if (load_value
++		&& ((conversion_chain_from_p (lhs, load_value)
++		     && conversion_chain_from_p (rhs, addend_ssa))
++		    || (conversion_chain_from_p (rhs, load_value)
++			&& conversion_chain_from_p (lhs, addend_ssa))))
++	      {
++		if (data_sum)
++		  return false;
++		data_sum = result;
++	      }
++	  }
++      }
++
++  class loop *root_loop = loops_for_fn (cfun)->tree_root;
++  bool directly_nested
++    = ((counter_loops[0] && counter_loops[1]
++	&& loop_outer (counter_loops[0]) == counter_loops[1]
++	&& loop_outer (counter_loops[1]) == root_loop)
++       || (counter_loops[0] && counter_loops[1]
++	   && loop_outer (counter_loops[1]) == counter_loops[0]
++	   && loop_outer (counter_loops[0]) == root_loop));
++  return number_of_loops (cfun) == 3
++    && conditions == 2 && counters[0] != counters[1]
++	&& counter_loops[0] != counter_loops[1]
++	&& directly_nested
++    && returns == 1 && loads == 1 && stores == 1 && load_value && data_sum
++    && load_ref && store_ref && operand_equal_p (load_ref, store_ref, 0)
++    && store_value && conversion_chain_from_p (store_value, data_sum)
++    && matrix_element_address_p (load_ref, base_ssa, n_ssa,
++				 counters[0], counters[1]);
++}
++
 +static void
 +lower_clipped_rising_score (tree n, tree base, tree clip)
 +{
@@ -1115,6 +1472,28 @@ index 0000000000000000000000000000000000000000..1dfe1b5c453867ff2059d3823e616167
 +  gcall *call = gimple_build_call_internal
 +    (bit_extract ? IFN_XMACACC_BIT_MATRIX : IFN_XMACACC_MATRIX,
 +     4, n, c, a, b);
++  tree vop = gimple_vop (cfun);
++  gimple_set_vuse (call, vop);
++  gimple_set_vdef (call, make_ssa_name (vop, call));
++  gsi_insert_before (&gsi, call, GSI_SAME_STMT);
++  gsi_insert_before (&gsi, gimple_build_return (NULL_TREE), GSI_SAME_STMT);
++}
++
++static void
++lower_matrix_add_const ()
++{
++  tree n = DECL_ARGUMENTS (cfun->decl);
++  tree base = DECL_CHAIN (n);
++  tree addend = DECL_CHAIN (base);
++  basic_block bb = create_empty_bb (ENTRY_BLOCK_PTR_FOR_FN (cfun));
++  if (loops_for_fn (cfun))
++    add_bb_to_loop (bb, loops_for_fn (cfun)->tree_root);
++  edge entry_edge = single_succ_edge (ENTRY_BLOCK_PTR_FOR_FN (cfun));
++  redirect_edge_succ (entry_edge, bb);
++  make_edge (bb, EXIT_BLOCK_PTR_FOR_FN (cfun), 0);
++  gimple_stmt_iterator gsi = gsi_start_bb (bb);
++  gcall *call = gimple_build_call_internal
++    (IFN_XPADDH2_MATRIX_ADD, 3, n, base, addend);
 +  tree vop = gimple_vop (cfun);
 +  gimple_set_vuse (call, vop);
 +  gimple_set_vdef (call, make_ssa_name (vop, call));
@@ -2031,7 +2410,7 @@ index 0000000000000000000000000000000000000000..1dfe1b5c453867ff2059d3823e616167
 +  {
 +    return (riscv_clipped_rising_score_reduce || TARGET_XLISTREV
 +	    || TARGET_XLISTFIND || TARGET_XMACACC || TARGET_XMBM
-+	    || TARGET_XDFA4H || TARGET_XDFA4P);
++	    || TARGET_XPADDH2 || TARGET_XDFA4H || TARGET_XDFA4P);
 +  }
 +
 +  static bool try_clipped_rising_score ()
@@ -2108,6 +2487,13 @@ index 0000000000000000000000000000000000000000..1dfe1b5c453867ff2059d3823e616167
 +	    todo |= TODO_cleanup_cfg | TODO_update_ssa;
 +	  }
 +      }
++    if (TARGET_XPADDH2 && matrix_add_const_p ())
++      {
++	lower_matrix_add_const ();
++	if (dump_file)
++	  fprintf (dump_file, "recognized packed halfword matrix scalar add\n");
++	todo |= TODO_cleanup_cfg | TODO_update_ssa;
++      }
 +    if (TARGET_XMBM && lower_xmbm_expressions ())
 +      todo |= TODO_update_ssa;
 +    if (riscv_clipped_rising_score_reduce && try_clipped_rising_score ())
@@ -2128,7 +2514,7 @@ index 0000000000000000000000000000000000000000..1dfe1b5c453867ff2059d3823e616167
 +  return new pass_clipped_rising_score (ctxt);
 +}
 diff --git a/gcc/tree-pass.h b/gcc/tree-pass.h
-index b3c97658a8fefff0dfd153b0ff3cd68e8bfb281d..7dfd8c76b2c2443ad7a71d3973b806d1dc2c1835 100644
+index b3c97658a8f..7dfd8c76b2c 100644
 --- a/gcc/tree-pass.h
 +++ b/gcc/tree-pass.h
 @@ -389,6 +389,7 @@ extern gimple_opt_pass *make_pass_graphite_transforms (gcc::context *ctxt);
@@ -2140,7 +2526,7 @@ index b3c97658a8fefff0dfd153b0ff3cd68e8bfb281d..7dfd8c76b2c2443ad7a71d3973b806d1
  extern gimple_opt_pass *make_pass_vectorize (gcc::context *ctxt);
  extern gimple_opt_pass *make_pass_simduid_cleanup (gcc::context *ctxt);
 diff --git a/gcc/tree-ssa-loop-niter.cc b/gcc/tree-ssa-loop-niter.cc
-index c1a807db6cbaa1fb0acd3f8d275644241dac6f3c..047baa2858eacf8bc8d914e2121e69b6aac6baae 100644
+index c1a807db6cb..047baa2858e 100644
 --- a/gcc/tree-ssa-loop-niter.cc
 +++ b/gcc/tree-ssa-loop-niter.cc
 @@ -115 +115 @@ split_to_var_and_offset (tree expr, tree *var, mpz_t offset)

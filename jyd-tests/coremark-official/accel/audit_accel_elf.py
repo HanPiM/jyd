@@ -6,6 +6,7 @@ import subprocess
 ENCODINGS = {
     "xcrcu8": (0x0000000B,),
     "xdup8lo": (0x0200100B,),
+    "xpaddh2": (0x0400100B,),
     "xmac16": (0x0000300B,),
     "xdot16": (0x0000400B,),
     "xdotn": (0x0600400B, 0x0800400B, 0x0A00400B),
@@ -20,6 +21,7 @@ ENCODINGS = {
     "xdfa4": (0x0000505B,),
     "xdfa4h": (0x0200505B,),
     "xdfa4p": (0x0400505B,),
+    "xdfascan": (0x0600505B,),
 }
 MASK = 0xFE00707F
 MASKS = {"xdup8lo": 0xFFF0707F}
@@ -92,7 +94,7 @@ def main():
         if commit_count == 0:
             raise SystemExit("xdfa word image has no counter-mask commit instruction")
 
-    if "xdfa4h" in counts or "xdfa4p" in counts:
+    if any(name in counts for name in ("xdfa4h", "xdfa4p", "xdfascan")):
         final_read_count = 0
         for line in disassembly.splitlines():
             fields = line.split()
@@ -105,7 +107,7 @@ def main():
             if instruction & MASK == 0x0200205B:
                 final_read_count += 1
         if final_read_count == 0:
-            raise SystemExit("xdfa4h image has no final-counter read instruction")
+            raise SystemExit("xdfa image has no final-counter read instruction")
 
     missing = [name for name, count in counts.items() if count == 0]
     if missing:
@@ -117,8 +119,8 @@ def main():
         print(f"{name}: {count} static instruction site(s)")
     if "xdfa2" in counts or "xdfa4" in counts:
         print(f"xdfa word commit: {commit_count} static instruction site(s)")
-    if "xdfa4h" in counts or "xdfa4p" in counts:
-        print(f"xdfa4h final read: {final_read_count} static instruction site(s)")
+    if any(name in counts for name in ("xdfa4h", "xdfa4p", "xdfascan")):
+        print(f"xdfa final read: {final_read_count} static instruction site(s)")
 
 
 if __name__ == "__main__":

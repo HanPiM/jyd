@@ -130,8 +130,6 @@ exercised by NEMU and NPC difftest.
 - `check-xlistrev.sh <gcc>` checks list-reversal positive and negative
   selection.
 - `check-xdfa4h.sh <gcc>` preserves coverage for the older xdfa4h mode.
-- `check-xdup8lo.sh <gcc>` checks the exact expression, renamed-source
-  selection, disable fallback, and nearby non-equivalent expressions.
 - `check-xpaddh2.sh <gcc>` checks the aligned canonical loop, control-flow and
   conversion guards, renamed-source selection, and disable fallback.
 - `check-xdfascan.sh <gcc>` checks the full runtime NUL scan and rejects

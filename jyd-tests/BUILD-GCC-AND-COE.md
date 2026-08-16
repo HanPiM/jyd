@@ -63,7 +63,7 @@ mkdir -p "$PWD/out"
 只存在于本机提交的循环边界分析前置修复。补丁 SHA-256 应为：
 
 ```text
-05c3db37685d83f28f3575b0e175ddffcb6b01c95faa9858d87e43a85d0db20c
+accc713e001e15a736172596863629c15ccc94bbd127b46f1593b3fbfa49b8c1
 ```
 
 检查版本和后端完整性：
@@ -73,13 +73,17 @@ mkdir -p "$PWD/out"
 ./jyd-tests/coremark-official/accel/gcc-md/check-backend-integrity.sh
 ./jyd-tests/coremark-official/accel/gcc-md/check-xdup8lo.sh \
   "$JYD_GCC/bin/riscv64-unknown-linux-gnu-gcc"
+./jyd-tests/coremark-official/accel/gcc-md/check-xpaddh2.sh \
+  "$JYD_GCC/bin/riscv64-unknown-linux-gnu-gcc"
+./jyd-tests/coremark-official/accel/gcc-md/check-xdfascan.sh \
+  "$JYD_GCC/bin/riscv64-unknown-linux-gnu-gcc"
 ./jyd-tests/coremark-official/accel/gcc-md/check-xlistfind-xmacacc.sh \
   "$JYD_GCC/bin/riscv64-unknown-linux-gnu-gcc"
 ./jyd-tests/coremark-official/accel/gcc-md/check-xmbm-xdfa4p.sh \
   "$JYD_GCC/bin/riscv64-unknown-linux-gnu-gcc"
 ```
 
-后两个检查还会复制并重命名待匹配的 C 函数；改名后仍须生成相同
+这些形状检查包含重命名正例和近似形状负例；改名后仍须生成相同
 指令，以验证选择依据是控制流和数据流形状，而不是函数符号。
 
 ## 3. 生成 CoreMark COE

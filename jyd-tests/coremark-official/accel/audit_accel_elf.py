@@ -25,6 +25,10 @@ ENCODINGS = {
 }
 MASK = 0xFE00707F
 MASKS = {"xdup8lo": 0xFFF0707F}
+EXACT_COUNTS = {
+    "xpaddh2": 2,
+    "xdfascan": 2,
+}
 
 
 def matches_encoding(name, instruction, encoding):
@@ -108,10 +112,19 @@ def main():
                 final_read_count += 1
         if final_read_count == 0:
             raise SystemExit("xdfa image has no final-counter read instruction")
+        if "xdfascan" in counts and final_read_count != 1:
+            raise SystemExit(
+                f"xdfascan final-counter read count mismatch: expected 1, got {final_read_count}"
+            )
 
     missing = [name for name, count in counts.items() if count == 0]
     if missing:
         raise SystemExit("enabled instructions absent from final ELF: " + ", ".join(missing))
+    for name, expected in EXACT_COUNTS.items():
+        if name in counts and counts[name] != expected:
+            raise SystemExit(
+                f"{name} static instruction count mismatch: expected {expected}, got {counts[name]}"
+            )
     print("custom-instruction encoding audit: PASS")
     for name in superseded:
         print(f"superseded: {name}")

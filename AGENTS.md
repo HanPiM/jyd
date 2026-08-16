@@ -64,7 +64,14 @@ If you modify RISC-V M-extension/Zmmul multiply behavior in `npc` (for example A
 
 For multi-cycle EXU units, also keep an eye on RAW forwarding/stall behavior: the producer should advertise the destination register while its data is not yet valid so IDU stalls dependent consumers, then mark the data valid once the EXU result can be forwarded.
 
-If you modify CSR-related code, you must also run the `rt-thread` (`rtt`) test because it is needed to cover CSR paths. For `rt-thread`, use `make -C rt-thread-am/bsp/abstract-machine run ARCH=<target>`; because it does not exit on its own, treat reaching the `msh />` prompt as success and stop the run manually. `Exception ETRACE` lines during that run are expected tracing output for `ecall`/`mret`, not failures.
+If you modify CSR-related code, you must also run the pinned RT-Thread Nano test
+because it is needed to cover CSR paths. Use
+`make -C jyd-tests/rtthread-nano ARCH=riscv32-jyd COREMARK_ENABLE=0 run`;
+because it does not exit on its own, treat reaching the `msh >` prompt as
+success and stop the run manually. `Exception ETRACE` lines during that run are
+expected tracing output for `ecall`/`mret`, not failures. Do not use the legacy
+full `rt-thread-am` image for this regression; its current configuration does
+not fit the JYD IROM/DRAM capacity.
 
 If you modify `JYDDevices` or other JYD-specific code, you must run tests with `ARCH=riscv32-jyd` so the JYD-only paths are covered.
 

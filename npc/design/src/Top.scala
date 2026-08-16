@@ -477,7 +477,9 @@ class CPUCore(
   exu.io.in.bits := exuPipe.bits
   exu.io.in.valid := exuPipe.valid
   exuPipe.ready := exu.io.in.ready
-  val adjacentBranchBubble = exu.io.in.fire && exu.io.in.bits.info.adjacentFastBranch
+  // Adjacent-fast is only set on ordinary branches, whose EXU readiness is
+  // exactly downstream readiness. Keep the generic multi-cycle ready mux out of this bubble control.
+  val adjacentBranchBubble = exuPipe.valid && exuPipe.bits.info.adjacentFastBranch && exu.io.out.ready
   val exuAllowIn = !exuValidReg || exuPipe.ready
   // Hold the younger IDU instruction for one cycle after an adjacent-result
   // branch. If the registered comparison redirects on the following cycle,

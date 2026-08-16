@@ -1,23 +1,14 @@
 diff --git a/gcc/Makefile.in b/gcc/Makefile.in
-index 8ecef4ccdc7..e2694312365 100644
+index 8ecef4ccdc7f222658a5e9cef1a3b0362bcfc788..e26943123656804c96608eb99f8ba74a1bf8a04e 100644
 --- a/gcc/Makefile.in
 +++ b/gcc/Makefile.in
-@@ -1762,6 +1762,7 @@ OBJS = \
- 	tree-iterator.o \
- 	tree-logical-location.o \
- 	tree-loop-distribution.o \
+@@ -1764,0 +1765 @@ OBJS = \
 +	tree-clipped-rising-score.o \
- 	crc-verification.o \
- 	gimple-crc-optimization.o \
- 	sym-exec/sym-exec-expression.o \
 diff --git a/gcc/config/riscv/bitmanip.md b/gcc/config/riscv/bitmanip.md
-index 0d16d79df3a..6c75513b1dc 100644
+index 0d16d79df3ae4cbe6f01556ee32dc6aed6552685..6c75513b1dc80f609abf91044389cf0010294554 100644
 --- a/gcc/config/riscv/bitmanip.md
 +++ b/gcc/config/riscv/bitmanip.md
-@@ -1217,6 +1217,26 @@
-   [(set_attr "type" "clmul")])
- 
- ;; Reversed CRC 8, 16, 32 for TARGET_64
+@@ -1219,0 +1220,20 @@
 +(define_insn "byte_crc16_hi"
 +  [(set (match_operand:HI 0 "register_operand" "=r")
 +	(unspec:HI [(match_operand:HI 1 "register_operand" "r")
@@ -38,13 +29,7 @@ index 0d16d79df3a..6c75513b1dc 100644
 +  [(set_attr "type" "bitmanip")
 +   (set_attr "mode" "SI")])
 +
- (define_expand "crc_rev<ANYI1:mode><ANYI:mode>4"
- 	;; return value (calculated CRC)
-   [(set (match_operand:ANYI 0 "register_operand")
-@@ -1230,6 +1250,17 @@
-   /* We don't support the case when data's size is bigger than CRC's size.  */
-   "<ANYI:MODE>mode >= <ANYI1:MODE>mode"
- {
+@@ -1232,0 +1253,11 @@
 +  if (riscv_xcrcu8 && <ANYI1:MODE>mode == QImode
 +      && (UINTVAL (operands[3]) & 0xffff) == 0x8005
 +      && (<ANYI:MODE>mode == HImode || <ANYI:MODE>mode == SImode))
@@ -56,17 +41,11 @@ index 0d16d79df3a..6c75513b1dc 100644
 +      DONE;
 +    }
 +
-   /* If we have the ZBC or ZBKC extension (ie, clmul) and
-      it is possible to store the quotient within a single variable
-      (E.g.  CRC64's quotient may need 65 bits,
 diff --git a/gcc/config/riscv/peephole.md b/gcc/config/riscv/peephole.md
-index e49bc042665..61abac422b6 100644
+index e49bc0426653fd29e564335d3d9e891291e68c5e..5864c590efe92934055dbc5474755bce4e94a016 100644
 --- a/gcc/config/riscv/peephole.md
 +++ b/gcc/config/riscv/peephole.md
-@@ -19,6 +19,285 @@
- ;; <http://www.gnu.org/licenses/>.
- 
- ;; Simplify (unsigned long)(unsigned int)a << const
+@@ -21,0 +22,318 @@
 +(define_insn "xdup8losi2"
 +  [(set (match_operand:SI 0 "register_operand" "=r")
 +	(unspec:SI [(match_operand:SI 1 "register_operand" "r")]
@@ -326,12 +305,22 @@ index e49bc042665..61abac422b6 100644
 +  [(set_attr "type" "multi")
 +   (set_attr "mode" "SI")])
 +
++(define_insn "xdfascansi2"
++  [(set (match_operand:SI 0 "register_operand" "=r")
++	(unspec:SI [(match_operand:SI 1 "register_operand" "r")]
++		   UNSPEC_XDFASCAN))
++   (clobber (mem:BLK (scratch)))]
++  "TARGET_XDFASCAN && !TARGET_64BIT"
++  ".insn r 0x5b, 5, 3, %0, x0, %1"
++  [(set_attr "type" "multi")
++   (set_attr "mode" "SI")])
++
 +(define_insn "xdfa4h_readsi2"
 +  [(set (match_operand:SI 0 "register_operand" "=r")
 +	(unspec:SI [(match_operand:SI 1 "register_operand" "r")]
 +		   UNSPEC_XDFA4H_READ))
 +   (clobber (mem:BLK (scratch)))]
-+  "(TARGET_XDFA4H || TARGET_XDFA4P) && !TARGET_64BIT"
++  "(TARGET_XDFA4H || TARGET_XDFA4P || TARGET_XDFASCAN) && !TARGET_64BIT"
 +  ".insn r 0x5b, 2, 0, %0, %1, x0"
 +  [(set_attr "type" "multi")
 +   (set_attr "mode" "SI")])
@@ -341,7 +330,7 @@ index e49bc042665..61abac422b6 100644
 +	(unspec:SI [(match_operand:SI 1 "register_operand" "r")]
 +		   UNSPEC_XDFA4H_FINAL_READ))
 +   (clobber (mem:BLK (scratch)))]
-+  "(TARGET_XDFA4H || TARGET_XDFA4P) && !TARGET_64BIT"
++  "(TARGET_XDFA4H || TARGET_XDFA4P || TARGET_XDFASCAN) && !TARGET_64BIT"
 +  ".insn r 0x5b, 2, 1, %0, %1, x0"
 +  [(set_attr "type" "multi")
 +   (set_attr "mode" "SI")])
@@ -349,7 +338,7 @@ index e49bc042665..61abac422b6 100644
 +(define_insn "xdfacnt_init_si"
 +  [(unspec:SI [(const_int 0)] UNSPEC_XDFACNT_INIT)
 +   (clobber (mem:BLK (scratch)))]
-+  "(TARGET_XDFA4H || TARGET_XDFA4P) && !TARGET_64BIT"
++  "(TARGET_XDFA4H || TARGET_XDFA4P || TARGET_XDFASCAN) && !TARGET_64BIT"
 +  ".insn r 0x5b, 0, 0, x0, x0, x0"
 +  [(set_attr "type" "multi")])
 +
@@ -375,17 +364,11 @@ index e49bc042665..61abac422b6 100644
 +  [(set (match_dup 5)
 +	(unspec:SI [(match_dup 1)] UNSPEC_XBMUL))])
 +
- (define_peephole2
-   [(set (match_operand:DI 0 "register_operand")
- 	(ashift:DI (match_operand:DI 1 "register_operand")
 diff --git a/gcc/config/riscv/riscv.md b/gcc/config/riscv/riscv.md
-index d2883ef9f5a..d50d9f784b9 100644
+index d2883ef9f5af7c368f11f945298699da6759e2ec..ae554ecda8d9c677c04bee810ce1bf2337b1c8fc 100644
 --- a/gcc/config/riscv/riscv.md
 +++ b/gcc/config/riscv/riscv.md
-@@ -100,6 +100,32 @@
-   UNSPEC_CRC
-   UNSPEC_CRC_REV
- 
+@@ -102,0 +103,28 @@
 +  ;; Packed bit-field multiply and byte-wise CRC16.
 +  UNSPEC_XBMUL
 +  UNSPEC_XMBM
@@ -406,24 +389,19 @@ index d2883ef9f5a..d50d9f784b9 100644
 +  UNSPEC_XDOTN_BIT
 +  UNSPEC_XPADDH2
 +
-+  ;; Numeric-token DFA (xdfa4h).
++  ;; Numeric-token DFA.
 +  UNSPEC_XDFA4H_STEP
 +  UNSPEC_XDFA4P_STEP
++  UNSPEC_XDFASCAN
 +  UNSPEC_XDFA4H_READ
 +  UNSPEC_XDFA4H_FINAL_READ
 +  UNSPEC_XDFACNT_INIT
 +
-   ;; Stack Smash Protector
-   UNSPEC_SSP_SET
-   UNSPEC_SSP_TEST
 diff --git a/gcc/config/riscv/riscv.opt b/gcc/config/riscv/riscv.opt
-index 2c26ee99691..71d4b2cd7af 100644
+index 2c26ee99691315d1374d6e5d4ddebf30f259eb1f..5f4a5c98f70d36dead2ee9b9e93635601ef29adb 100644
 --- a/gcc/config/riscv/riscv.opt
 +++ b/gcc/config/riscv/riscv.opt
-@@ -81,6 +81,50 @@ mdiv
- Target Mask(DIV)
- Use hardware instructions for integer division.
- 
+@@ -83,0 +84,52 @@ Use hardware instructions for integer division.
 +mxbmul
 +Target Mask(XBMUL)
 +Recognize packed bit-field multiply expressions and use the custom xbmul instruction.
@@ -472,25 +450,17 @@ index 2c26ee99691..71d4b2cd7af 100644
 +Target Mask(XDFA4P)
 +Use the in-place pointer numeric-token DFA (xdfa4p) instructions.
 +
- march=
- Target RejectNegative Joined Negative(march=) Var(riscv_arch_string) Save
- -march=	Generate code for given RISC-V ISA (e.g. RV64IM).  ISA strings must be
++mxdfascan
++Target Mask(XDFASCAN)
++Use the whole-string numeric-token DFA scan instruction.
++
 diff --git a/gcc/internal-fn.cc b/gcc/internal-fn.cc
-index 25acc63b247..201edc04318 100644
+index 25acc63b247b531179aa6d16873cabe23aadce52..201edc043189596d39b27c1121bb94f5a75fd26f 100644
 --- a/gcc/internal-fn.cc
 +++ b/gcc/internal-fn.cc
-@@ -38,6 +38,7 @@ along with GCC; see the file COPYING3.  If not see
- #include "fold-const.h"
- #include "internal-fn.h"
- #include "stor-layout.h"
+@@ -40,0 +41 @@ along with GCC; see the file COPYING3.  If not see
 +#include "insn-flags.h"
- #include "dojump.h"
- #include "expr.h"
- #include "stringpool.h"
-@@ -3464,6 +3465,256 @@ expand_UNIQUE (internal_fn, gcall *stmt)
-     emit_insn (pattern);
- }
- 
+@@ -3466,0 +3468,250 @@ expand_UNIQUE (internal_fn, gcall *stmt)
 +/* Reset the hardware numeric-DFA counters (xdfa4h).  */
 +static void
 +expand_XDFACNT_INIT (internal_fn, gcall *)
@@ -741,17 +711,11 @@ index 25acc63b247..201edc04318 100644
 +  emit_label (done);
 +}
 +
- /* Expand the IFN_DEFERRED_INIT function:
-    LHS = DEFERRED_INIT (SIZE of the DECL, INIT_TYPE, NAME of the DECL);
- 
 diff --git a/gcc/internal-fn.def b/gcc/internal-fn.def
-index d142416725a..1737d6809c5 100644
+index d142416725a2950c5f943338ad97701a031c795c..394cb463ec8ab8a4efff127aa029f98f7bf39d69 100644
 --- a/gcc/internal-fn.def
 +++ b/gcc/internal-fn.def
-@@ -204,6 +204,23 @@ along with GCC; see the file COPYING3.  If not see
- 
- DEF_INTERNAL_OPTAB_FN (CRC, ECF_CONST | ECF_NOTHROW, crc, crc)
- DEF_INTERNAL_OPTAB_FN (CRC_REV, ECF_CONST | ECF_NOTHROW, crc_rev, crc)
+@@ -206,0 +207,18 @@ DEF_INTERNAL_OPTAB_FN (CRC_REV, ECF_CONST | ECF_NOTHROW, crc_rev, crc)
 +DEF_INTERNAL_OPTAB_FN (CLIPPED_RISING_SCORE_REDUCE, ECF_PURE | ECF_NOTHROW,
 +                       clipped_rising_score_reduce, ternary)
 +DEF_INTERNAL_OPTAB_FN (XLISTREV, ECF_NOTHROW | ECF_LEAF, xlistrev, unary)
@@ -764,51 +728,38 @@ index d142416725a..1737d6809c5 100644
 +		       binary)
 +DEF_INTERNAL_OPTAB_FN (XDFA4P_STEP, ECF_NOTHROW | ECF_LEAF, xdfa4p_step,
 +		       unary)
++DEF_INTERNAL_OPTAB_FN (XDFASCAN, ECF_NOTHROW | ECF_LEAF, xdfascan, unary)
 +DEF_INTERNAL_OPTAB_FN (XDFA4H_READ, ECF_NOTHROW | ECF_LEAF, xdfa4h_read,
 +		       unary)
 +DEF_INTERNAL_OPTAB_FN (XDFA4H_FINAL_READ, ECF_NOTHROW | ECF_LEAF,
 +		       xdfa4h_final_read, unary)
 +DEF_INTERNAL_FN (XDFACNT_INIT, ECF_NOTHROW | ECF_LEAF, NULL)
- DEF_INTERNAL_OPTAB_FN (MASK_LOAD, ECF_PURE, maskload, mask_load)
- DEF_INTERNAL_OPTAB_FN (LOAD_LANES, ECF_CONST, vec_load_lanes, load_lanes)
- DEF_INTERNAL_OPTAB_FN (MASK_LOAD_LANES, ECF_PURE,
 diff --git a/gcc/optabs.def b/gcc/optabs.def
-index 193f42a728a..cc18d85a7b9 100644
+index 193f42a728a2d414f078bce785f760cca00087ca..cce8e9b7765b9571026b7bbe418acd1e0814b803 100644
 --- a/gcc/optabs.def
 +++ b/gcc/optabs.def
-@@ -226,6 +226,14 @@ OPTAB_NC(sync_lock_test_and_set_optab, "sync_lock_test_and_set$I$a", UNKNOWN)
- OPTAB_DC(mov_optab, "mov$a", SET)
- OPTAB_DC(movstrict_optab, "movstrict$a", STRICT_LOW_PART)
- OPTAB_D (movmisalign_optab, "movmisalign$a")
+@@ -228,0 +229,9 @@ OPTAB_D (movmisalign_optab, "movmisalign$a")
 +OPTAB_D (clipped_rising_score_reduce_optab, "clipped_rising_score_reduce$a4")
 +OPTAB_D (xlistrev_optab, "xlistrev$a2")
 +OPTAB_D (xlistfind_optab, "xlistfind$a3")
 +OPTAB_D (xmbm_optab, "xmbm$a3")
 +OPTAB_D (xdfa4h_step_optab, "xdfa4h_step$a3")
 +OPTAB_D (xdfa4p_step_optab, "xdfa4p_step$a2")
++OPTAB_D (xdfascan_optab, "xdfascan$a2")
 +OPTAB_D (xdfa4h_read_optab, "xdfa4h_read$a2")
 +OPTAB_D (xdfa4h_final_read_optab, "xdfa4h_final_read$a2")
- OPTAB_D (storent_optab, "storent$a")
- OPTAB_D (insv_optab, "insv$a")
- OPTAB_D (extv_optab, "extv$a")
 diff --git a/gcc/passes.def b/gcc/passes.def
-index cdddb87302f..b2e228086fe 100644
+index cdddb87302f647b4709b246b84cb5766230c6a97..b2e228086fe56796b0cdb1a85511c6ceaa2392e9 100644
 --- a/gcc/passes.def
 +++ b/gcc/passes.def
-@@ -94,6 +94,7 @@ along with GCC; see the file COPYING3.  If not see
- 	  NEXT_PASS (pass_phiprop);
- 	  NEXT_PASS (pass_fre, true /* may_iterate */);
- 	  NEXT_PASS (pass_early_vrp);
+@@ -96,0 +97 @@ along with GCC; see the file COPYING3.  If not see
 +	  NEXT_PASS (pass_clipped_rising_score);
- 	  NEXT_PASS (pass_merge_phi);
-           NEXT_PASS (pass_dse);
- 	  NEXT_PASS (pass_cd_dce, false /* update_address_taken_p */, true /* remove_unused_locals */);
 diff --git a/gcc/tree-clipped-rising-score.cc b/gcc/tree-clipped-rising-score.cc
 new file mode 100644
-index 00000000000..1cf188c75c7
+index 0000000000000000000000000000000000000000..0a3d56afbb3de95d34844200a1fc5fc9c04867fc
 --- /dev/null
 +++ b/gcc/tree-clipped-rising-score.cc
-@@ -0,0 +1,1704 @@
+@@ -0,0 +1,2202 @@
 +/* Recognize accelerator idioms (clipped rising-score reduction, in-place
 +   list reversal, numeric-token DFA scan) and expose them to the target.  */
 +
@@ -830,8 +781,14 @@ index 00000000000..1cf188c75c7
 +#include "cgraph.h"
 +#include "internal-fn.h"
 +#include "diagnostic-core.h"
++#include "hash-set.h"
 +
 +namespace {
++
++/* Callee bodies are not stable once their per-function passes have completed.
++   Record transition declarations while their own GIMPLE CFG is current, then
++   consume only those declarations when recognizing the enclosing scan.  */
++static hash_set<tree> xdfascan_transition_decls;
 +
 +/* Follow the small scalar expression graphs produced for this reduction.  */
 +static bool
@@ -1865,12 +1822,12 @@ index 00000000000..1cf188c75c7
 +}
 +
 +/* ------------------------------------------------------------------------ */
-+/* Numeric-token DFA scan (xdfa4h/xdfa4p).                                  */
++/* Numeric-token DFA scan (xdfa4h/xdfa4p/xdfascan).                         */
 +/* ------------------------------------------------------------------------ */
 +
-+/* The numeric-token DFA is selected from the scan/counter data flow.  Two
-+   matching state-transition calls become per-character step loops, and the
-+   associated counter-array loads become hardware counter reads.  */
++/* The numeric-token DFA is selected from the scan/counter data flow.  The
++   whole-string form additionally verifies the transition semantics and the
++   NUL-terminated outer loops before replacing them.  */
 +
 +/* Recover the element index of an ARRAY_REF/MEM_REF of track_counts:
 +   ARRAY_REF -> the index operand; MEM_REF -> the byte offset i * 4
@@ -1952,11 +1909,401 @@ index 00000000000..1cf188c75c7
 +  return NULL_TREE;
 +}
 +
++/* Follow pointer and memory expressions back to a declaration.  This is
++   deliberately structural: declarations' names and source locations are not
++   part of accelerator selection.  */
++static bool
++value_depends_on_decl (tree value, tree decl, unsigned depth = 0)
++{
++  if (!value || depth == 16)
++    return false;
++  if (value == decl
++      || (TREE_CODE (value) == SSA_NAME && SSA_NAME_VAR (value) == decl))
++    return true;
++  if (TREE_CODE (value) == SSA_NAME)
++    {
++      gimple *def = SSA_NAME_DEF_STMT (value);
++      if (!def || gimple_nop_p (def))
++	return false;
++      if (is_gimple_assign (def))
++	{
++	  for (unsigned i = 1; i < gimple_num_ops (def); ++i)
++	    if (value_depends_on_decl (gimple_op (def, i), decl, depth + 1))
++	      return true;
++	}
++      else if (gimple_code (def) == GIMPLE_PHI)
++	{
++	  for (unsigned i = 0; i < gimple_phi_num_args (def); ++i)
++	    if (value_depends_on_decl (gimple_phi_arg_def (def, i), decl,
++				       depth + 1))
++	      return true;
++	}
++      return false;
++    }
++  switch (TREE_CODE (value))
++    {
++    case MEM_REF:
++    case ARRAY_REF:
++    case ADDR_EXPR:
++    case POINTER_PLUS_EXPR:
++    case PLUS_EXPR:
++    case NOP_EXPR:
++    case CONVERT_EXPR:
++      for (int i = 0; i < TREE_OPERAND_LENGTH (value); ++i)
++	if (value_depends_on_decl (TREE_OPERAND (value, i), decl, depth + 1))
++	  return true;
++      break;
++    default:
++      break;
++    }
++  return false;
++}
++
++static bool
++integer_cst_p (tree value, unsigned HOST_WIDE_INT expected)
++{
++  return value && TREE_CODE (value) == INTEGER_CST
++	 && tree_fits_uhwi_p (value) && tree_to_uhwi (value) == expected;
++}
++
++/* Recover a constant byte offset from PARAM through SSA pointer additions.  */
++static bool
++pointer_offset_from_param (tree value, tree param, unsigned HOST_WIDE_INT *off,
++			   unsigned depth = 0)
++{
++  if (!value || depth == 12)
++    return false;
++  if (value == param
++      || (TREE_CODE (value) == SSA_NAME && SSA_NAME_VAR (value) == param))
++    return true;
++  if (TREE_CODE (value) == SSA_NAME)
++    {
++      gimple *def = SSA_NAME_DEF_STMT (value);
++      if (!is_gimple_assign (def))
++	return false;
++      enum tree_code code = gimple_assign_rhs_code (def);
++      if (code == POINTER_PLUS_EXPR || code == PLUS_EXPR)
++	{
++	  tree amount = gimple_assign_rhs2 (def);
++	  if (!amount || TREE_CODE (amount) != INTEGER_CST
++	      || !tree_fits_uhwi_p (amount))
++	    return false;
++	  *off += tree_to_uhwi (amount);
++	  return pointer_offset_from_param (gimple_assign_rhs1 (def), param,
++					    off, depth + 1);
++	}
++      if (code == SSA_NAME || code == NOP_EXPR || code == CONVERT_EXPR)
++	return pointer_offset_from_param (gimple_assign_rhs1 (def), param, off,
++					  depth + 1);
++      return false;
++    }
++  if (TREE_CODE (value) == POINTER_PLUS_EXPR
++      || TREE_CODE (value) == PLUS_EXPR)
++    {
++      tree amount = TREE_OPERAND (value, 1);
++      if (!amount || TREE_CODE (amount) != INTEGER_CST
++	  || !tree_fits_uhwi_p (amount))
++	return false;
++      *off += tree_to_uhwi (amount);
++      return pointer_offset_from_param (TREE_OPERAND (value, 0), param, off,
++					depth + 1);
++    }
++  return false;
++}
++
++static bool
++counter_ref_slot (tree ref, tree counter_param, unsigned *slot)
++{
++  if (TREE_CODE (ref) != MEM_REF)
++    return false;
++  unsigned HOST_WIDE_INT off = 0;
++  tree mem_off = TREE_OPERAND (ref, 1);
++  if (!mem_off || !tree_fits_uhwi_p (mem_off)
++      || !pointer_offset_from_param (TREE_OPERAND (ref, 0), counter_param,
++				    &off))
++    return false;
++  off += tree_to_uhwi (mem_off);
++  if (off > 24 || (off & 3) != 0)
++    return false;
++  *slot = off / 4;
++  return true;
++}
++
++/* Match one load/add-one/store update of a transition counter.  */
++static bool
++counter_increment_slot (gimple *store, tree counter_param, unsigned *slot)
++{
++  if (!is_gimple_assign (store)
++      || !counter_ref_slot (gimple_assign_lhs (store), counter_param, slot))
++    return false;
++  tree added = gimple_assign_rhs1 (store);
++  if (TREE_CODE (added) != SSA_NAME)
++    return false;
++  gimple *add = SSA_NAME_DEF_STMT (added);
++  if (!is_gimple_assign (add) || gimple_assign_rhs_code (add) != PLUS_EXPR)
++    return false;
++  tree old = NULL_TREE;
++  if (integer_cst_p (gimple_assign_rhs1 (add), 1))
++    old = gimple_assign_rhs2 (add);
++  else if (integer_cst_p (gimple_assign_rhs2 (add), 1))
++    old = gimple_assign_rhs1 (add);
++  if (!old || TREE_CODE (old) != SSA_NAME)
++    return false;
++  gimple *load = SSA_NAME_DEF_STMT (old);
++  unsigned load_slot;
++  return is_gimple_assign (load)
++	 && counter_ref_slot (gimple_assign_rhs1 (load), counter_param,
++			      &load_slot)
++	 && load_slot == *slot;
++}
++
++static bool
++byte_comparison_with_cst_p (tree lhs, tree rhs,
++			    unsigned HOST_WIDE_INT value)
++{
++  if (integer_cst_p (lhs, value))
++    {
++      tree tmp = lhs;
++      lhs = rhs;
++      rhs = tmp;
++    }
++  return integer_cst_p (rhs, value)
++	 && TYPE_PRECISION (TREE_TYPE (lhs)) == 8;
++}
++
++/* Verify the complete numeric-token transition function implemented by the
++   whole-string instruction.  The inventory is intentionally strict: a
++   semantically changed transition, delimiter, digit test, counter update, or
++   pointer-advance shape falls back to software.  */
++static bool
++xdfascan_transition_p ()
++{
++  tree decl = cfun->decl;
++  if (!decl || TREE_CODE (decl) != FUNCTION_DECL
++      || TYPE_PRECISION (TREE_TYPE (TREE_TYPE (decl))) != 32)
++    return false;
++  tree instr = DECL_ARGUMENTS (decl);
++  tree counters = instr ? DECL_CHAIN (instr) : NULL_TREE;
++  if (!instr || !counters || DECL_CHAIN (counters)
++      || !POINTER_TYPE_P (TREE_TYPE (instr))
++      || !POINTER_TYPE_P (TREE_TYPE (TREE_TYPE (instr)))
++      || TYPE_PRECISION (TREE_TYPE (TREE_TYPE (TREE_TYPE (instr)))) != 8
++      || !POINTER_TYPE_P (TREE_TYPE (counters))
++      || TYPE_PRECISION (TREE_TYPE (TREE_TYPE (counters))) != 32)
++    return false;
++
++  unsigned blocks = 0, conds = 0, switches = 0, returns = 0;
++  unsigned byte_loads = 0, pointer_stores = 0, pointer_add_one = 0;
++  unsigned digit_tests = 0, nul_tests = 0, switch_mask = 0;
++  unsigned counter_updates[7] = {};
++  unsigned eq_43 = 0, eq_44 = 0, eq_45 = 0, eq_46 = 0;
++  unsigned eq_69 = 0, eq_101 = 0;
++  basic_block bb;
++  FOR_EACH_BB_FN (bb, cfun)
++    {
++      ++blocks;
++      for (gimple_stmt_iterator gsi = gsi_start_bb (bb);
++	   !gsi_end_p (gsi); gsi_next (&gsi))
++	{
++	  gimple *s = gsi_stmt (gsi);
++	  if (gimple_code (s) == GIMPLE_COND)
++	    {
++	      ++conds;
++	      gcond *cond = as_a<gcond *> (s);
++	      tree lhs = gimple_cond_lhs (cond), rhs = gimple_cond_rhs (cond);
++	      if (gimple_cond_code (cond) == NE_EXPR
++		  && byte_comparison_with_cst_p (lhs, rhs, 0))
++		++nul_tests;
++	      if (gimple_cond_code (cond) == LE_EXPR
++		  && integer_cst_p (rhs, 9) && TREE_CODE (lhs) == SSA_NAME)
++		{
++		  gimple *def = SSA_NAME_DEF_STMT (lhs);
++		  if (is_gimple_assign (def)
++		      && gimple_assign_rhs_code (def) == PLUS_EXPR
++		      && (integer_cst_p (gimple_assign_rhs1 (def), 208)
++			  || integer_cst_p (gimple_assign_rhs2 (def), 208)))
++		    ++digit_tests;
++		}
++	      if (gimple_cond_code (cond) == EQ_EXPR)
++		{
++		  eq_43 += byte_comparison_with_cst_p (lhs, rhs, 43);
++		  eq_44 += byte_comparison_with_cst_p (lhs, rhs, 44);
++		  eq_45 += byte_comparison_with_cst_p (lhs, rhs, 45);
++		  eq_46 += byte_comparison_with_cst_p (lhs, rhs, 46);
++		  eq_69 += byte_comparison_with_cst_p (lhs, rhs, 69);
++		  eq_101 += byte_comparison_with_cst_p (lhs, rhs, 101);
++		}
++	    }
++	  else if (gimple_code (s) == GIMPLE_SWITCH)
++	    {
++	      ++switches;
++	      gswitch *sw = as_a<gswitch *> (s);
++	      if (gimple_switch_num_labels (sw) != 7)
++		return false;
++	      for (unsigned i = 1; i < gimple_switch_num_labels (sw); ++i)
++		{
++		  tree low = CASE_LOW (gimple_switch_label (sw, i));
++		  if (!low || !tree_fits_uhwi_p (low)
++		      || tree_to_uhwi (low) < 2 || tree_to_uhwi (low) > 7)
++		    return false;
++		  switch_mask |= 1u << tree_to_uhwi (low);
++		}
++	    }
++	  else if (gimple_code (s) == GIMPLE_RETURN)
++	    ++returns;
++
++	  if (!is_gimple_assign (s))
++	    continue;
++	  enum tree_code rhs_code = gimple_assign_rhs_code (s);
++	  tree lhs = gimple_assign_lhs (s);
++	  if (rhs_code == MEM_REF
++	      && TYPE_PRECISION (TREE_TYPE (gimple_assign_rhs1 (s))) == 8)
++	    ++byte_loads;
++	  if (TREE_CODE (lhs) == MEM_REF && POINTER_TYPE_P (TREE_TYPE (lhs))
++	      && value_depends_on_decl (TREE_OPERAND (lhs, 0), instr))
++	    ++pointer_stores;
++	  if (rhs_code == POINTER_PLUS_EXPR
++	      && integer_cst_p (gimple_assign_rhs2 (s), 1))
++	    ++pointer_add_one;
++	  unsigned slot;
++	  if (counter_increment_slot (s, counters, &slot))
++	    ++counter_updates[slot];
++	  if (rhs_code == EQ_EXPR)
++	    {
++	      tree a = gimple_assign_rhs1 (s), b = gimple_assign_rhs2 (s);
++	      eq_43 += byte_comparison_with_cst_p (a, b, 43);
++	      eq_44 += byte_comparison_with_cst_p (a, b, 44);
++	      eq_45 += byte_comparison_with_cst_p (a, b, 45);
++	      eq_46 += byte_comparison_with_cst_p (a, b, 46);
++	      eq_69 += byte_comparison_with_cst_p (a, b, 69);
++	      eq_101 += byte_comparison_with_cst_p (a, b, 101);
++	    }
++	}
++    }
++
++  static const unsigned expected_updates[7] = {1, 2, 3, 2, 2, 2, 2};
++  for (unsigned i = 0; i < 7; ++i)
++    if (counter_updates[i] != expected_updates[i])
++      return false;
++  /* Command-line O3 folds the +/- and E/e disjunctions into boolean ORs.
++     The formal -Os build with a function-level O3 pragma retains them as
++     short-circuit branches.  All semantic inventories below stay identical.  */
++  bool known_cfg = ((blocks == 34 && conds == 15)
++		    || (blocks == 37 && conds == 18));
++  return known_cfg && switches == 1 && returns == 1
++	 && byte_loads == 1 && pointer_stores == 1 && pointer_add_one == 2
++	 && digit_tests == 6 && nul_tests == 1 && switch_mask == 0xfc
++	 && eq_43 == 2 && eq_44 == 1 && eq_45 == 2 && eq_46 == 3
++	 && eq_69 == 1 && eq_101 == 1;
++}
++
++static bool
++counter_array_ref (tree ref, tree *base, tree *index)
++{
++  if (TREE_CODE (ref) != ARRAY_REF && TREE_CODE (ref) != MEM_REF)
++    return false;
++  *base = counts_ref_base_decl (ref);
++  *index = counts_ref_index (ref);
++  return *base && *index;
++}
++
++/* Match final_counts[fstate] = final_counts[fstate] + 1 in CALL's block.  */
++static bool
++find_final_increment (gcall *call, tree track_counts, tree *final_counts)
++{
++  tree fstate = gimple_call_lhs (call);
++  unsigned matches = 0;
++  for (gimple_stmt_iterator gsi = gsi_start_bb (gimple_bb (call));
++       !gsi_end_p (gsi); gsi_next (&gsi))
++    {
++      gimple *store = gsi_stmt (gsi);
++      if (!is_gimple_assign (store))
++	continue;
++      tree store_base, store_index;
++      if (!counter_array_ref (gimple_assign_lhs (store), &store_base,
++			      &store_index)
++	  || store_base == track_counts || store_index != fstate)
++	continue;
++      tree added = gimple_assign_rhs1 (store);
++      if (TREE_CODE (added) != SSA_NAME)
++	continue;
++      gimple *add = SSA_NAME_DEF_STMT (added);
++      if (!is_gimple_assign (add) || gimple_assign_rhs_code (add) != PLUS_EXPR)
++	continue;
++      tree old = NULL_TREE;
++      if (integer_cst_p (gimple_assign_rhs1 (add), 1))
++	old = gimple_assign_rhs2 (add);
++      else if (integer_cst_p (gimple_assign_rhs2 (add), 1))
++	old = gimple_assign_rhs1 (add);
++      if (!old || TREE_CODE (old) != SSA_NAME)
++	continue;
++      gimple *load = SSA_NAME_DEF_STMT (old);
++      tree load_base, load_index;
++      if (!is_gimple_assign (load)
++	  || !counter_array_ref (gimple_assign_rhs1 (load), &load_base,
++				  &load_index)
++	  || load_base != store_base || load_index != fstate)
++	continue;
++      *final_counts = store_base;
++      ++matches;
++    }
++  return matches == 1;
++}
++
++/* CALL must be the body of while (*position != 0), with the body returning
++   directly to that same header.  */
++static bool
++xdfascan_outer_loop_p (gcall *call, tree position)
++{
++  basic_block body = gimple_bb (call);
++  if (EDGE_COUNT (body->preds) != 1 || EDGE_COUNT (body->succs) != 1)
++    return false;
++  edge enter = EDGE_PRED (body, 0);
++  basic_block header = enter->src;
++  if (!(enter->flags & EDGE_TRUE_VALUE)
++      || EDGE_COUNT (header->succs) != 2
++      || EDGE_SUCC (body, 0)->dest != header)
++    return false;
++  gimple_stmt_iterator last = gsi_last_bb (header);
++  if (gsi_end_p (last) || gimple_code (gsi_stmt (last)) != GIMPLE_COND)
++    return false;
++  gcond *cond = as_a<gcond *> (gsi_stmt (last));
++  tree lhs = gimple_cond_lhs (cond), rhs = gimple_cond_rhs (cond);
++  if (gimple_cond_code (cond) != NE_EXPR)
++    return false;
++  if (integer_cst_p (lhs, 0))
++    {
++      tree tmp = lhs;
++      lhs = rhs;
++      rhs = tmp;
++    }
++  return integer_cst_p (rhs, 0)
++	 && TYPE_PRECISION (TREE_TYPE (lhs)) == 8
++	 && value_depends_on_decl (lhs, position);
++}
++
++static unsigned
++runtime_pointer_assignments (tree position, tree runtime_pointer)
++{
++  unsigned count = 0;
++  basic_block bb;
++  FOR_EACH_BB_FN (bb, cfun)
++    for (gimple_stmt_iterator gsi = gsi_start_bb (bb);
++	 !gsi_end_p (gsi); gsi_next (&gsi))
++      {
++	gimple *s = gsi_stmt (gsi);
++	if (is_gimple_assign (s) && gimple_assign_lhs (s) == position
++	    && value_depends_on_decl (gimple_assign_rhs1 (s), runtime_pointer))
++	  ++count;
++      }
++  return count;
++}
++
 +/* Find two transition calls with the same pointer/counter-array relationship
 +   inside a six-argument scan routine.  */
 +static bool
 +find_xdfa_scan (vec<gcall *> &calls, tree *track_counts_decl,
-+		    tree *final_counts_decl)
++		    tree *final_counts_decl, bool whole_scan)
 +{
 +  tree decl = cfun->decl;
 +  /* Shape: one 32-bit size, one byte pointer, three 16-bit controls and one
@@ -1980,7 +2327,9 @@ index 00000000000..1cf188c75c7
 +  if (args)
 +    return false;
 +
-+  tree tc = NULL_TREE, fc = NULL_TREE;
++  tree runtime_pointer = DECL_CHAIN (DECL_ARGUMENTS (decl));
++  tree tc = NULL_TREE, fc = NULL_TREE, position = NULL_TREE;
++  tree transition_decl = NULL_TREE;
 +  basic_block bb;
 +  FOR_EACH_BB_FN (bb, cfun)
 +    for (gimple_stmt_iterator gsi = gsi_start_bb (bb);
@@ -1993,6 +2342,13 @@ index 00000000000..1cf188c75c7
 +	/* Shape: state = transition (&position, &transition_counts).  */
 +	if (gimple_call_num_args (call) != 2 || !gimple_call_lhs (call))
 +	  continue;
++	if (whole_scan)
++	  {
++	    tree callee = gimple_call_fndecl (call);
++	    if (!callee || (transition_decl && callee != transition_decl))
++	      continue;
++	    transition_decl = callee;
++	  }
 +	tree p_arg = gimple_call_arg (call, 0);
 +	tree tc_arg = gimple_call_arg (call, 1);
 +	if (TREE_CODE (p_arg) != ADDR_EXPR || TREE_CODE (tc_arg) != ADDR_EXPR)
@@ -2002,6 +2358,10 @@ index 00000000000..1cf188c75c7
 +	tree p = TREE_OPERAND (p_arg, 0);
 +	if (TREE_CODE (p) != VAR_DECL)
 +	  continue;
++	if (whole_scan && position && p != position)
++	  continue;
++	if (whole_scan)
++	  position = p;
 +	tree tc_cand = TREE_OPERAND (tc_arg, 0);
 +	if (TREE_CODE (tc_cand) != VAR_DECL)
 +	  continue;
@@ -2009,9 +2369,11 @@ index 00000000000..1cf188c75c7
 +	  continue;
 +	tc = tc_cand;
 +
-+	/* The call must sit in a scan-loop body: its single predecessor
-+	   ends in a conditional.  */
++	/* The call must sit in a scan-loop body.  The whole-string mode also
++	   proves the exact runtime-NUL loop around the same position object.  */
 +	basic_block cbb = gimple_bb (call);
++	if (whole_scan && !xdfascan_outer_loop_p (call, p))
++	  continue;
 +	if (EDGE_COUNT (cbb->preds) != 1)
 +	  continue;
 +	gimple_stmt_iterator last_i = gsi_last_bb (EDGE_PRED (cbb, 0)->src);
@@ -2019,8 +2381,19 @@ index 00000000000..1cf188c75c7
 +	    || gimple_code (gsi_stmt (last_i)) != GIMPLE_COND)
 +	  continue;
 +
-+	/* The result feeds a final_counts[] update in the same block.  */
++	/* The result feeds exactly final_counts[fstate]++ in whole-string mode.
++	   Preserve the older, looser predicate for the legacy step modes.  */
 +	tree fstate = gimple_call_lhs (call);
++	if (whole_scan)
++	  {
++	    tree fc_cand = NULL_TREE;
++	    if (!find_final_increment (call, tc, &fc_cand)
++		|| (fc && fc != fc_cand))
++	      continue;
++	    fc = fc_cand;
++	    calls.safe_push (call);
++	    continue;
++	  }
 +	bool used = false;
 +	for (gimple_stmt_iterator gsi2 = gsi_start_bb (cbb);
 +	     !gsi_end_p (gsi2); gsi_next (&gsi2))
@@ -2054,12 +2427,18 @@ index 00000000000..1cf188c75c7
 +	  continue;
 +
 +	calls.safe_push (call);
-+      }
-+  if (calls.length () != 2 || !tc)
++	}
++  if (calls.length () != 2 || !tc || (whole_scan && !fc))
 +    return false;
 +
-+  /* The CRC epilogue must read track_counts at least once.  */
-+  bool reads_tc = false;
++  if (whole_scan
++      && (!position || !transition_decl
++	  || runtime_pointer_assignments (position, runtime_pointer) < 2
++	  || !xdfascan_transition_decls.contains (transition_decl)))
++    return false;
++
++  /* The CRC epilogue must read both counter arrays.  */
++  bool reads_tc = false, reads_fc = false;
 +  FOR_EACH_BB_FN (bb, cfun)
 +    for (gimple_stmt_iterator gsi = gsi_start_bb (bb);
 +	 !gsi_end_p (gsi); gsi_next (&gsi))
@@ -2071,8 +2450,14 @@ index 00000000000..1cf188c75c7
 +		|| (gimple_assign_rhs_code (s) == MEM_REF
 +		    && counts_ref_base_decl (gimple_assign_rhs1 (s)) == tc)))
 +	  reads_tc = true;
++	if (is_gimple_assign (s)
++	    && ((gimple_assign_rhs_code (s) == ARRAY_REF
++		 && TREE_OPERAND (gimple_assign_rhs1 (s), 0) == fc)
++		|| (gimple_assign_rhs_code (s) == MEM_REF
++		    && counts_ref_base_decl (gimple_assign_rhs1 (s)) == fc)))
++	  reads_fc = true;
 +      }
-+  if (!reads_tc)
++  if (!reads_tc || (whole_scan && !reads_fc))
 +    return false;
 +
 +  *track_counts_decl = tc;
@@ -2285,11 +2670,58 @@ index 00000000000..1cf188c75c7
 +		     GSI_SAME_STMT);
 +}
 +
++/* Lower one transition call to a whole-string runtime-NUL scan.  The returned
++   pointer is the address of the first NUL byte; the surrounding source loop
++   consequently exits after this one operation.  */
++static void
++lower_xdfascan_transition_call (gcall *call)
++{
++  tree fstate = gimple_call_lhs (call);
++  tree p = TREE_OPERAND (gimple_call_arg (call, 0), 0);
++  tree ptr_type = TREE_TYPE (p);
++  tree vop = gimple_vop (cfun);
++  tree fstate_new = make_ssa_name (TREE_TYPE (fstate));
++  replace_uses_by (fstate, fstate_new);
++
++  gimple_stmt_iterator gsi = gsi_for_stmt (call);
++  tree start = make_ssa_name (ptr_type);
++  gimple *load = gimple_build_assign (start, p);
++  gimple_set_vuse (load, vop);
++  gsi_insert_before (&gsi, load, GSI_SAME_STMT);
++
++  tree end = make_ssa_name (ptr_type);
++  gcall *scan = gimple_build_call_internal (IFN_XDFASCAN, 1, start);
++  gimple_call_set_lhs (scan, end);
++  gimple_set_vuse (scan, vop);
++  gsi_insert_before (&gsi, scan, GSI_SAME_STMT);
++
++  gimple *store = gimple_build_assign (p, end);
++  gimple_set_vuse (store, vop);
++  gimple_set_vdef (store, make_ssa_name (vop, store));
++  gsi_insert_before (&gsi, store, GSI_SAME_STMT);
++  update_stmt (store);
++  gsi_insert_before (&gsi,
++		     gimple_build_assign
++		       (fstate_new, build_zero_cst (TREE_TYPE (fstate_new))),
++		     GSI_SAME_STMT);
++
++  if (gimple_vdef (call))
++    mark_virtual_operand_for_renaming (gimple_vdef (call));
++  gsi_remove (&gsi, true);
++}
++
++enum xdfa_lowering
++{
++  XDFA_STATE_STEPS,
++  XDFA_POINTER_STEPS,
++  XDFA_WHOLE_SCAN
++};
++
 +/* Lower the matched scan to xdfa hardware: reset counters before the first
 +   scan, lower each transition call, and read counters in the CRC epilogue.  */
 +static void
 +lower_xdfa_scan (vec<gcall *> &calls, tree tc, tree fc,
-+		      bool pointer_steps)
++		      enum xdfa_lowering lowering)
 +{
 +  /* Counter reset in the preheader of the first scan loop.  */
 +  basic_block body = gimple_bb (calls[0]);
@@ -2305,9 +2737,11 @@ index 00000000000..1cf188c75c7
 +  gimple_set_vuse (init, gimple_vop (cfun));
 +  gsi_insert_before (&gsi, init, GSI_SAME_STMT);
 +
-+  /* Lower the transition calls to step loops.  */
++  /* Lower the transition calls to the selected target operation.  */
 +  for (unsigned i = 0; i < calls.length (); ++i)
-+    if (pointer_steps)
++    if (lowering == XDFA_WHOLE_SCAN)
++      lower_xdfascan_transition_call (calls[i]);
++    else if (lowering == XDFA_POINTER_STEPS)
 +      lower_xdfa4p_transition_call (calls[i]);
 +    else
 +      lower_xdfa4h_transition_call (calls[i]);
@@ -2410,7 +2844,8 @@ index 00000000000..1cf188c75c7
 +  {
 +    return (riscv_clipped_rising_score_reduce || TARGET_XLISTREV
 +	    || TARGET_XLISTFIND || TARGET_XMACACC || TARGET_XMBM
-+	    || TARGET_XPADDH2 || TARGET_XDFA4H || TARGET_XDFA4P);
++	    || TARGET_XPADDH2 || TARGET_XDFA4H || TARGET_XDFA4P
++	    || TARGET_XDFASCAN);
 +  }
 +
 +  static bool try_clipped_rising_score ()
@@ -2448,25 +2883,38 @@ index 00000000000..1cf188c75c7
 +  {
 +    vec<gcall *> calls = vNULL;
 +    tree tc = NULL_TREE, fc = NULL_TREE;
-+    if (!find_xdfa_scan (calls, &tc, &fc))
++    if (!find_xdfa_scan (calls, &tc, &fc, TARGET_XDFASCAN))
 +      {
 +	calls.release ();
 +	return false;
 +      }
-+    lower_xdfa_scan (calls, tc, fc, TARGET_XDFA4P);
++    enum xdfa_lowering lowering = (TARGET_XDFASCAN
++				   ? XDFA_WHOLE_SCAN
++				   : TARGET_XDFA4P ? XDFA_POINTER_STEPS
++						    : XDFA_STATE_STEPS);
++    lower_xdfa_scan (calls, tc, fc, lowering);
 +    calls.release ();
 +    /* The step loops and the counter-read epilogue extend the CFG; the
 +       dominator tree no longer describes it.  update_ssa recomputes
 +       dominance info when it is marked not computed.  */
 +    free_dominance_info (CDI_DOMINATORS);
 +    if (dump_file)
-+      fprintf (dump_file, "recognized numeric-token DFA scan\n");
++      fprintf (dump_file, TARGET_XDFASCAN
++		       ? "recognized whole-string numeric-token DFA scan\n"
++		       : "recognized numeric-token DFA scan\n");
 +    return true;
 +  }
 +
 +  unsigned int execute (function *) final override
 +  {
 +    unsigned int todo = 0;
++    if (TARGET_XDFASCAN && xdfascan_transition_p ())
++      {
++	xdfascan_transition_decls.add (cfun->decl);
++	if (dump_file)
++	  fprintf (dump_file,
++		   "recognized numeric-token DFA transition semantics\n");
++      }
 +    if (TARGET_XLISTFIND && list_find_p ())
 +      {
 +	lower_list_find ();
@@ -2500,7 +2948,8 @@ index 00000000000..1cf188c75c7
 +      todo |= TODO_cleanup_cfg | TODO_update_ssa;
 +    if (TARGET_XLISTREV && try_list_reverse ())
 +      todo |= TODO_cleanup_cfg | TODO_update_ssa;
-+    if ((TARGET_XDFA4H || TARGET_XDFA4P) && try_xdfa_scan ())
++    if ((TARGET_XDFA4H || TARGET_XDFA4P || TARGET_XDFASCAN)
++	&& try_xdfa_scan ())
 +      todo |= TODO_cleanup_cfg | TODO_update_ssa;
 +    return todo;
 +  }
@@ -2514,19 +2963,13 @@ index 00000000000..1cf188c75c7
 +  return new pass_clipped_rising_score (ctxt);
 +}
 diff --git a/gcc/tree-pass.h b/gcc/tree-pass.h
-index b3c97658a8f..7dfd8c76b2c 100644
+index b3c97658a8fefff0dfd153b0ff3cd68e8bfb281d..7dfd8c76b2c2443ad7a71d3973b806d1dc2c1835 100644
 --- a/gcc/tree-pass.h
 +++ b/gcc/tree-pass.h
-@@ -389,6 +389,7 @@ extern gimple_opt_pass *make_pass_graphite_transforms (gcc::context *ctxt);
- extern gimple_opt_pass *make_pass_if_conversion (gcc::context *ctxt);
- extern gimple_opt_pass *make_pass_if_to_switch (gcc::context *ctxt);
- extern gimple_opt_pass *make_pass_loop_distribution (gcc::context *ctxt);
+@@ -391,0 +392 @@ extern gimple_opt_pass *make_pass_loop_distribution (gcc::context *ctxt);
 +extern gimple_opt_pass *make_pass_clipped_rising_score (gcc::context *ctxt);
- extern gimple_opt_pass *make_pass_crc_optimization (gcc::context *ctxt);
- extern gimple_opt_pass *make_pass_vectorize (gcc::context *ctxt);
- extern gimple_opt_pass *make_pass_simduid_cleanup (gcc::context *ctxt);
 diff --git a/gcc/tree-ssa-loop-niter.cc b/gcc/tree-ssa-loop-niter.cc
-index c1a807db6cb..047baa2858e 100644
+index c1a807db6cbaa1fb0acd3f8d275644241dac6f3c..047baa2858eacf8bc8d914e2121e69b6aac6baae 100644
 --- a/gcc/tree-ssa-loop-niter.cc
 +++ b/gcc/tree-ssa-loop-niter.cc
 @@ -115 +115 @@ split_to_var_and_offset (tree expr, tree *var, mpz_t offset)

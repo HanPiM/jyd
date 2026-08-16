@@ -55,8 +55,8 @@ class JYDAHT10FPGABlackBox extends BlackBox with HasBlackBoxResource {
     val scl_drive_low  = Output(Bool())
     val sda_drive_low  = Output(Bool())
     val status         = Output(UInt(3.W))
-    val temperature_x10 = Output(SInt(32.W))
-    val humidity_x10   = Output(UInt(32.W))
+    val temperature_x10 = Output(SInt(16.W))
+    val humidity_x10   = Output(UInt(16.W))
     val sample_seq     = Output(UInt(32.W))
     val local_temperature_x10 = Output(SInt(16.W))
     val local_humidity_x10 = Output(UInt(16.W))
@@ -101,8 +101,8 @@ class SimpleBusFPGAAHT10 extends Module {
   val readData = MuxLookup(io.bus.addr(3, 2), 0.U(32.W))(
     Seq(
       AHT10Register.Status    -> sensor.io.status.pad(32),
-      AHT10Register.TempX10   -> sensor.io.temperature_x10.asUInt,
-      AHT10Register.HumiX10   -> sensor.io.humidity_x10,
+      AHT10Register.TempX10   -> Cat(Fill(16, sensor.io.temperature_x10(15)), sensor.io.temperature_x10.asUInt),
+      AHT10Register.HumiX10   -> sensor.io.humidity_x10.pad(32),
       AHT10Register.SampleSeq -> sensor.io.sample_seq
     )
   )

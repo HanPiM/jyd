@@ -13,8 +13,8 @@ module jyd_aht10_fpga (
     output wire        scl_drive_low,
     output wire        sda_drive_low,
     output wire [2:0]  status,
-    output wire signed [31:0] temperature_x10,
-    output wire [31:0] humidity_x10,
+    output wire signed [15:0] temperature_x10,
+    output wire [15:0] humidity_x10,
     output wire [31:0] sample_seq,
     output wire signed [15:0] local_temperature_x10,
     output wire [15:0] local_humidity_x10,
@@ -76,8 +76,8 @@ module jyd_aht10_fpga (
     (* ASYNC_REG = "TRUE" *) reg error_sync2;
 
     reg sample_toggle_seen;
-    reg signed [31:0] temperature_cpu;
-    reg        [31:0] humidity_cpu;
+    reg signed [15:0] temperature_cpu;
+    reg        [15:0] humidity_cpu;
     reg         [2:0] status_cpu;
     reg        [31:0] sample_seq_cpu;
 
@@ -105,8 +105,8 @@ module jyd_aht10_fpga (
             if (sample_toggle_sync2 != sample_toggle_seen) begin
                 // The bundled snapshot has already been stable for at least
                 // two CPU clocks when the synchronized toggle is observed.
-                temperature_cpu    <= {{16{temperature_snapshot[15]}}, temperature_snapshot};
-                humidity_cpu       <= {16'b0, humidity_snapshot};
+                temperature_cpu    <= temperature_snapshot;
+                humidity_cpu       <= humidity_snapshot;
                 status_cpu         <= status_snapshot;
                 sample_seq_cpu     <= sample_seq_cpu + 1'b1;
                 sample_toggle_seen <= sample_toggle_sync2;

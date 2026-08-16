@@ -14,8 +14,8 @@ module tb_jyd_aht10_cdc;
     assign sda = sda_drive_low ? 1'b0 : 1'bz;
 
     wire [2:0] status;
-    wire signed [31:0] temperature_x10;
-    wire [31:0] humidity_x10;
+    wire signed [15:0] temperature_x10;
+    wire [15:0] humidity_x10;
     wire [31:0] sample_seq;
     wire signed [15:0] local_temperature_x10;
     wire [15:0] local_humidity_x10;
@@ -44,7 +44,7 @@ module tb_jyd_aht10_cdc;
         dut.status_snapshot = 3'b001;
         dut.sample_toggle = 1'b1;
         repeat (12) @(posedge cpu_clk);
-        if (sample_seq !== 1 || temperature_x10 !== 32'sd264 || humidity_x10 !== 32'd637 || status[0] !== 1) begin
+        if (sample_seq !== 1 || temperature_x10 !== 16'sd264 || humidity_x10 !== 16'd637 || status[0] !== 1) begin
             $display("FAIL first CDC seq=%0d T=%0d H=%0d status=%b",
                      sample_seq, temperature_x10, humidity_x10, status);
             $finish;
@@ -54,13 +54,13 @@ module tb_jyd_aht10_cdc;
         dut.temperature_snapshot = -16'sd55;
         dut.humidity_snapshot = 16'd812;
         repeat (12) @(posedge cpu_clk);
-        if (sample_seq !== 1 || temperature_x10 !== 32'sd264 || humidity_x10 !== 32'd637) begin
+        if (sample_seq !== 1 || temperature_x10 !== 16'sd264 || humidity_x10 !== 16'd637) begin
             $display("FAIL CDC updated without toggle"); $finish;
         end
 
         dut.sample_toggle = 1'b0;
         repeat (12) @(posedge cpu_clk);
-        if (sample_seq !== 2 || temperature_x10 !== -32'sd55 || humidity_x10 !== 32'd812) begin
+        if (sample_seq !== 2 || temperature_x10 !== -16'sd55 || humidity_x10 !== 16'd812) begin
             $display("FAIL second CDC seq=%0d T=%0d H=%0d", sample_seq, temperature_x10, humidity_x10);
             $finish;
         end

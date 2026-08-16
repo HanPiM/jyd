@@ -3,7 +3,7 @@ package cpu
 import chisel3._
 import chisel3.util.{Cat, RegEnable, Valid}
 import cpu.alu.mult_gen_mul16_fast
-import jyd.{BlkMemGen2KB, DistMemGen512x8}
+import jyd.{BlkMemGen4KB, DistMemGen512x8}
 
 class DCache extends Module {
   val io = IO(new Bundle {
@@ -50,11 +50,9 @@ class DCache extends Module {
     val updateMask = Input(UInt(4.W))
   })
 
-  // Two 2 KiB banks form a 4 KiB direct-mapped cache.  Keep the bank select
-  // outside the memory address: each Vivado IP remains the proven 512 x 32
-  // block-memory configuration and each distributed tag/late-data RAM remains
-  // the proven 512 x 8 configuration.
-  val dataMem = Seq.fill(2)(Module(new BlkMemGen2KB))
+  // Keep the ordinary data path in one 1024 x 32 block RAM. A single RAMB36
+  // removes the post-BRAM bank mux while preserving the one-cycle read latency.
+  val dataMem = Module(new BlkMemGen4KB)
   val tagMem  = Seq.fill(2)(Module(new DistMemGen512x8))
   // Two private asynchronous read replicas let the list walker fetch a node's
   // next and info words in parallel.  Their outputs terminate at walker-local
@@ -100,6 +98,7 @@ class DCache extends Module {
   val dotNAccumulator = Reg(UInt(32.W))
   val dotNBitMode = Reg(Bool())
   val dotNRequestValid = RegInit(false.B)
+  val dotNRequestUseB = RegInit(false.B)
   val dotNRequestAddressReg = Reg(UInt(32.W))
 
   // The backing store accepts an ordinary store one cycle before the mirrored
@@ -121,16 +120,10 @@ class DCache extends Module {
   val listReverseCapturedHit = RegEnable(queryHit && !queryStoreConflict, io.listReverseHitCapture)
   io.listReverseCapturedHit := listReverseCapturedHit
 
-  dataMem.foreach { bank =>
-    bank.io.clkb  := clock
-    bank.io.enb   := true.B
-    bank.io.addrb := queryAddr
-  }
-  // Block RAM returns the address from the previous cycle.  Its bank select
-  // must therefore be delayed by the same cycle; using queryBank directly
-  // aliases a load with the following instruction's bank.
-  val readBank = RegNext(queryBank)
-  io.readData := Mux(readBank, dataMem(1).io.doutb, dataMem(0).io.doutb)
+  dataMem.io.clkb  := clock
+  dataMem.io.enb   := true.B
+  dataMem.io.addrb := io.queryIndex
+  io.readData      := dataMem.io.doutb
 
   // List-find and dotN are mutually exclusive, so share their registered
   // private-query addresses. This keeps FSM decode and a 32-bit mux out of the
@@ -193,11 +186,13 @@ class DCache extends Module {
     dotNAccumulator := 0.U
     dotNBitMode := io.dotNBitMode
     dotNRequestValid := false.B
+    dotNRequestUseB := false.B
     dotNState := Mux(io.dotNLength === 0.U, DotNState.done, DotNState.stream)
   }.elsewhen(dotNState === DotNState.stream) {
     dotNOperandA := dotNStreamOperandA
     dotNOperandB := dotNStreamOperandB
     dotNOperandAHigh := listFindQueryAddress(1)
+    dotNRequestAddressReg := listFindQueryAddress & ~3.U(32.W)
     dotNBufferedBAddress := listFindQueryAddressB
     dotNRemaining := dotNRemaining - 1.U
     listFindQueryAddress := listFindQueryAddress + 2.U
@@ -209,11 +204,11 @@ class DCache extends Module {
     }.elsewhen(!listQueryHits(0)) {
       dotNBufferedBValid := listQueryHits(1)
       dotNRequestValid := true.B
-      dotNRequestAddressReg := listFindQueryAddress & ~3.U(32.W)
+      dotNRequestUseB := false.B
       dotNState := DotNState.requestA
     }.otherwise {
       dotNRequestValid := true.B
-      dotNRequestAddressReg := listFindQueryAddressB & ~3.U(32.W)
+      dotNRequestUseB := true.B
       dotNState := DotNState.requestB
     }
   }.elsewhen(dotNState === DotNState.requestA && io.dotNRequestFire) {
@@ -229,7 +224,7 @@ class DCache extends Module {
       dotNState := DotNState.launchStored
     }.otherwise {
       dotNRequestValid := true.B
-      dotNRequestAddressReg := dotNBufferedBAddress & ~3.U(32.W)
+      dotNRequestUseB := true.B
       dotNState := DotNState.requestB
     }
   }.elsewhen(dotNState === DotNState.requestB && io.dotNRequestFire) {
@@ -260,7 +255,14 @@ class DCache extends Module {
   }
 
   io.dotNRequest := dotNRequestValid
-  io.dotNRequestAddress := dotNRequestAddressReg
+  when(dotNRequestValid) {
+    assert(dotNState === DotNState.requestA || dotNState === DotNState.requestB)
+  }
+  io.dotNRequestAddress := Mux(
+    dotNRequestUseB,
+    dotNBufferedBAddress & ~3.U(32.W),
+    dotNRequestAddressReg
+  )
   io.dotNDone := dotNState === DotNState.done
   io.dotNResult := dotNAccumulator
 
@@ -422,16 +424,15 @@ class DCache extends Module {
   val dataWrite = storeUpdate || io.update
   val dataWriteMask = Mux(storeUpdate, storeMask, Mux(io.update, io.updateMask, 0.U))
   val dataWriteIndex = Mux(storeUpdate, storeIndex, io.updateAddr(11, 2))
-  val dataWriteBank  = dataWriteIndex(9)
-  val dataWriteAddr  = dataWriteIndex(8, 0)
   val dataWriteData = Mux(storeUpdate, storeData, io.updateData)
-  dataMem.zipWithIndex.foreach { case (bank, index) =>
-    bank.io.clka  := clock
-    bank.io.ena   := dataWrite && dataWriteBank === index.U
-    bank.io.wea   := dataWriteMask
-    bank.io.addra := dataWriteAddr
-    bank.io.dina  := dataWriteData
-  }
+  dataMem.io.clka  := clock
+  dataMem.io.ena   := dataWrite
+  dataMem.io.wea   := dataWriteMask
+  dataMem.io.addra := dataWriteIndex
+  dataMem.io.dina  := dataWriteData
+
+  val dataWriteBank = dataWriteIndex(9)
+  val dataWriteAddr = dataWriteIndex(8, 0)
 
   listDataMem.foreach { portBanks =>
     portBanks.zipWithIndex.foreach { case (banks, bankIndex) =>

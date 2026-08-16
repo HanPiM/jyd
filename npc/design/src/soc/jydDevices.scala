@@ -211,40 +211,40 @@ class JYDFPGAIROMBlackBox extends BlackBox {
   })
 }
 
-/** Simulation model for the 2 KiB, 32-bit-wide Vivado block-memory IP.
+/** Simulation model for the 4 KiB, 32-bit-wide Vivado block-memory IP.
   *
   * Keep the BlackBox name identical to the Vivado IP so FPGA builds bind this
   * instance to the IP output product. The inline SystemVerilog source is used
   * only by RTL simulation and is excluded from synthesis/FPGA packaging.
   */
-class BlkMemGen2KB extends BlackBox with HasBlackBoxInline {
-  override def desiredName: String = "blk_mem_gen_2KB"
+class BlkMemGen4KB extends BlackBox with HasBlackBoxInline {
+  override def desiredName: String = "blk_mem_gen_4KB"
   val io = IO(new Bundle {
     val clka  = Input(Clock())
     val ena   = Input(Bool())
     val wea   = Input(UInt(4.W))
-    val addra = Input(UInt(9.W))
+    val addra = Input(UInt(10.W))
     val dina  = Input(UInt(32.W))
     val clkb  = Input(Clock())
     val enb   = Input(Bool())
-    val addrb = Input(UInt(9.W))
+    val addrb = Input(UInt(10.W))
     val doutb = Output(UInt(32.W))
   })
 
   setInline(
-    "blk_mem_gen_2KB.sv",
-    """module blk_mem_gen_2KB (
+    "blk_mem_gen_4KB.sv",
+    """module blk_mem_gen_4KB (
       |  input  wire        clka,
       |  input  wire        ena,
       |  input  wire [3:0]  wea,
-      |  input  wire [8:0]  addra,
+      |  input  wire [9:0]  addra,
       |  input  wire [31:0] dina,
       |  input  wire        clkb,
       |  input  wire        enb,
-      |  input  wire [8:0]  addrb,
+      |  input  wire [9:0]  addrb,
       |  output reg  [31:0] doutb
       |);
-      |  reg [31:0] mem [0:511];
+      |  reg [31:0] mem [0:1023];
       |
       |  always @(posedge clka) begin
       |    if (ena) begin
@@ -518,9 +518,13 @@ class JYDPeripheralBridge(
 
   val reqFire = io.cpu.req_valid && io.cpu.req_ready
 
-  for ((sel, bus) <- targets) {
-    val hit = targetSel === sel
-    bus.req_valid := io.cpu.req_valid && hit
+  val anyExtraHit = extraTargets.map(_._3).foldLeft(false.B)(_ || _)
+  io.dram.req_valid := io.cpu.req_valid && !anyExtraHit
+  for ((sel, bus, _) <- extraTargets) {
+    bus.req_valid := io.cpu.req_valid && targetSel === sel
+  }
+
+  for ((_, bus) <- targets) {
     bus.addr      := io.cpu.addr
     bus.size      := io.cpu.size
     bus.wdata     := io.cpu.wdata

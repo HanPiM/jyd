@@ -844,10 +844,13 @@ class EXU(
   // residence. Use that registered identity to select the request payload;
   // state-machine request bits only qualify valid. This keeps state decode out
   // of the shared address/data network and does not change the handshake.
-  normalMemReq.addr  := Mux(isNumericDfaStep,
-    Mux(xdfaWordFirstRequest, reg_v2, xdfaWordAddress) & ~3.U(32.W),
-    Mux(isListReverse, listReverseCurrent,
-      Mux(isDcacheWalker, dcacheWalkerRequestAddress, Mux(isXmsum, xmsumAddress, reg1AddImm))))
+  // Xmsum issues one request per cycle, so give its registered address a
+  // direct arm instead of passing its selector through every accelerator mux.
+  normalMemReq.addr  := Mux(isXmsum, xmsumAddress,
+    Mux(isNumericDfaStep,
+      Mux(xdfaWordFirstRequest, reg_v2, xdfaWordAddress) & ~3.U(32.W),
+      Mux(isListReverse, listReverseCurrent,
+        Mux(isDcacheWalker, dcacheWalkerRequestAddress, reg1AddImm))))
   normalMemReq.size  := Mux(isNumericDfaStep || isListReverse || isDcacheWalker || isXmsum,
     2.U, func3t(1, 0))
   normalMemReq.wen   := Mux(isNumericDfaStep, false.B,

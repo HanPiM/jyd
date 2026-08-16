@@ -315,6 +315,8 @@ class IDU(
   val isCrcU8Custom = inst(31, 25) === 0.U && arithmeticFunc3 === 0.U && inst(6, 0) === "b0001011".U
   val isXdup8loCustom = inst(31, 25) === 1.U && arithmeticFunc3 === 1.U && inst(24, 20) === 0.U &&
     inst(6, 0) === "b0001011".U
+  val isPackedHalfAddCustom =
+    inst(31, 25) === 2.U && arithmeticFunc3 === 1.U && inst(6, 0) === "b0001011".U
   val isBitExtractMulCustom = inst(31, 25) === 0.U && arithmeticFunc3 === 5.U && inst(6, 0) === "b0001011".U
   val isFusedBitExtractMulCustom = inst(31, 25) === 1.U && arithmeticFunc3 === 5.U && inst(6, 0) === "b0001011".U
   val isMatrixAccumulateCustom = inst(6, 0) === "b0001011".U && arithmeticFunc3 === 3.U &&
@@ -361,7 +363,7 @@ class IDU(
       (arithmeticFunc7 === "b0100000".U && (arithmeticFunc3 === 0.U || arithmeticFunc3 === "b101".U))
   )
   val isFastIntegerArithmetic = isTypArithmetic &&
-    (isRv32iImmediate || isRv32iRegister || isPack || isXdup8loCustom)
+    (isRv32iImmediate || isRv32iRegister || isPack || isXdup8loCustom || isPackedHalfAddCustom)
   val isShortB = isBShiftAdd || isBSext || isBMinu || isBBext ||
     isBSet || isBClr || isBInv || isBAndn || isBOrn || isBXnor || isBMax || isBMaxu || isBMin ||
     isBRol || isBRev8

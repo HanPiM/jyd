@@ -50,6 +50,8 @@
 
 #define MATCH_XACCEL_XDUP8LO 0x0200100b
 #define MASK_XACCEL_XDUP8LO  0xfff0707f
+#define MATCH_XACCEL_XPADDH2 0x0400100b
+#define MASK_XACCEL_XPADDH2  0xfe00707f
 
 #define MATCH_XACCEL_XMAC16 0x0000300b
 #define MATCH_XACCEL_XMACACC_FIRST 0x0800300b
@@ -394,6 +396,13 @@ static int decode_exec(Decode *s) {
   if (IS_INST(XACCEL_XDUP8LO)) {
     word_t byte = (R(rs1) >> 8) & 0xffu;
     R(rd) = (R(rs1) & ~0xffu) | byte;
+    matched = true;
+  }
+  if (IS_INST(XACCEL_XPADDH2)) {
+    word_t addend = R(rs2) & 0xffffu;
+    word_t low = (R(rs1) & 0xffffu) + addend;
+    word_t high = ((R(rs1) >> 16) & 0xffffu) + addend;
+    R(rd) = ((high & 0xffffu) << 16) | (low & 0xffffu);
     matched = true;
   }
   if (IS_INST(XACCEL_XMAC16)) {

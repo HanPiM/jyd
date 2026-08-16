@@ -247,11 +247,10 @@ class EXU(
     dotLength := reg_v1(15, 0)
   }
 
-  // A numeric-token scan consumes at most the configured data-region size, so 16-bit
-  // counters retain the full architectural result while avoiding sixteen
-  // unnecessary 32-bit incrementers in the timing-sensitive EXU.
-  val xdfaCounters = RegInit(VecInit(Seq.fill(8)(0.U(12.W))))
-  val xdfaFinalCounters = RegInit(VecInit(Seq.fill(8)(0.U(16.W))))
+  // Counter overflow follows the uint32_t reference semantics independently
+  // of the caller's string length or iteration count.
+  val xdfaCounters = RegInit(VecInit(Seq.fill(8)(0.U(32.W))))
+  val xdfaFinalCounters = RegInit(VecInit(Seq.fill(8)(0.U(32.W))))
   val xdfaPendingMask = RegInit(0.U(8.W))
   object NumericDfaState extends ChiselEnum {
     val idle, request, response, processLow, processHigh, commit, done = Value
@@ -266,11 +265,13 @@ class EXU(
   val xdfaWordIntermediate = Reg(UInt(16.W))
   val xdfaCommitMask = Reg(UInt(8.W))
   val xdfaCommitFinalState = Reg(UInt(3.W))
+  val xdfaScanFinishAfterCommit = RegInit(false.B)
   val xdfaInternalState = RegInit(0.U(3.W))
   val xdfaInternalStopped = RegInit(true.B)
   val isNumericDfaStep = isNumericDfa && func3t === 5.U
   val isNumericDfaHistogramStep = isNumericDfaStep && func7t === 1.U
   val isNumericDfaStepPtr = isNumericDfaStep && func7t === 2.U
+  val isNumericDfaScan = isNumericDfaStep && func7t === 3.U
   val xdfaWordLow = Module(new NumericTokenDfa2ByteStep)
   val xdfaWordHigh = Module(new NumericTokenDfa2ByteStep)
   xdfaWordLow.io.state := xdfaWordStartState
@@ -291,8 +292,15 @@ class EXU(
   val xdfaWordResult = Mux(func3t === 2.U, xdfaCounterRead, Mux(isNumericDfaStep, xdfaWordStepResult, 0.U))
 
   when(xdfaWordState === NumericDfaState.idle && io.in.valid && isNumericDfaStep) {
-    xdfaWordStartState := Mux(isNumericDfaStepPtr, Mux(xdfaInternalStopped, 0.U, xdfaInternalState), reg_v1(2, 0))
+    xdfaWordStartState := Mux(isNumericDfaScan, 0.U,
+      Mux(isNumericDfaStepPtr, Mux(xdfaInternalStopped, 0.U, xdfaInternalState), reg_v1(2, 0)))
     xdfaWordAddress := reg_v2
+    when(isNumericDfaScan) {
+      xdfaPendingMask := 0.U
+      xdfaInternalState := 0.U
+      xdfaInternalStopped := true.B
+      xdfaScanFinishAfterCommit := false.B
+    }
     xdfaWordState := Mux(io.memReq.fire, NumericDfaState.response, NumericDfaState.request)
   }.elsewhen(xdfaWordState === NumericDfaState.request && io.memReq.fire) {
     xdfaWordState := NumericDfaState.response
@@ -307,13 +315,12 @@ class EXU(
     xdfaWordState := NumericDfaState.processHigh
   }.elsewhen(xdfaWordState === NumericDfaState.processHigh) {
     val combinedMask = xdfaPendingMask | xdfaWordHigh.io.result(15, 8)
-    xdfaPendingMask := Mux(xdfaWordHigh.io.result(7), 0.U, combinedMask)
     val nextAddressLow = xdfaWordAddress(2, 0) +& xdfaWordHigh.io.result(5, 3)
     val nextAddress = Cat(
       Mux(nextAddressLow(3), xdfaWordAddressUpperPlusOne, xdfaWordAddress(31, 3)),
       nextAddressLow(2, 0)
     )
-    xdfaWordStepResult := Mux(isNumericDfaStepPtr,
+    xdfaWordStepResult := Mux(isNumericDfaStepPtr || isNumericDfaScan,
       nextAddress,
       Cat(0.U(17.W), xdfaWordHigh.io.result(15, 8), xdfaWordHigh.io.result(7),
         xdfaWordHigh.io.result(5, 3), xdfaWordHigh.io.result(2, 0)))
@@ -321,7 +328,28 @@ class EXU(
       xdfaInternalState := xdfaWordHigh.io.result(2, 0)
       xdfaInternalStopped := xdfaWordHigh.io.result(7)
     }
-    when(isNumericDfaHistogramStep || isNumericDfaStepPtr) {
+    when(isNumericDfaScan) {
+      xdfaWordAddress := nextAddress
+      when(xdfaWordHigh.io.result(7)) {
+        xdfaPendingMask := 0.U
+        xdfaWordStartState := 0.U
+        when(xdfaWordHigh.io.result(5, 3) === 0.U && combinedMask === 0.U) {
+          // The first byte is the terminal NUL of an empty token. The NUL is
+          // read, but it is not consumed and does not create a final count.
+          xdfaWordState := NumericDfaState.done
+        }.otherwise {
+          xdfaCommitMask := combinedMask
+          xdfaCommitFinalState := xdfaWordHigh.io.result(2, 0)
+          xdfaScanFinishAfterCommit := xdfaWordHigh.io.result(5, 3) === 0.U
+          xdfaWordState := NumericDfaState.commit
+        }
+      }.otherwise {
+        xdfaPendingMask := combinedMask
+        xdfaWordStartState := xdfaWordHigh.io.result(2, 0)
+        xdfaWordState := NumericDfaState.request
+      }
+    }.elsewhen(isNumericDfaHistogramStep || isNumericDfaStepPtr) {
+      xdfaPendingMask := Mux(xdfaWordHigh.io.result(7), 0.U, combinedMask)
       when(xdfaWordHigh.io.result(7)) {
         when(isNumericDfaStepPtr && xdfaWordHigh.io.result(5, 3) === 0.U && xdfaPendingMask === 0.U) {
           // Terminal empty-token NUL step: the software loop never executes it,
@@ -347,7 +375,8 @@ class EXU(
         xdfaFinalCounters(state) := xdfaFinalCounters(state) + 1.U
       }
     }
-    xdfaWordState := NumericDfaState.done
+    xdfaWordState := Mux(isNumericDfaScan && !xdfaScanFinishAfterCommit,
+      NumericDfaState.request, NumericDfaState.done)
   }.elsewhen(xdfaWordState === NumericDfaState.done && io.out.fire) {
     xdfaWordState := NumericDfaState.idle
   }
@@ -839,7 +868,11 @@ class EXU(
     io.dcache.listFindRequestAddress
   )
   val xmsumRequest = xmsumIssueActive && !xmsumAllIssued
-  val xdfaWordFirstRequest = xdfaWordState === NumericDfaState.idle && io.in.valid && isNumericDfaStep
+  // The whole-string instruction can arrive immediately behind an ordinary
+  // memory operation. Delay only its first request by one state so an older
+  // untagged response cannot be mistaken for the scan's first word.
+  val xdfaWordFirstRequest = xdfaWordState === NumericDfaState.idle && io.in.valid && isNumericDfaStep &&
+    !isNumericDfaScan
   val xdfaWordRequest = xdfaWordState === NumericDfaState.request || xdfaWordFirstRequest
   val normalMemReq = Wire(new MemReq)
   // The accelerator kind is held in ID/EX for the instruction's entire EXU

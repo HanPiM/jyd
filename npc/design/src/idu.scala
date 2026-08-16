@@ -330,7 +330,7 @@ class IDU(
     ((inst(31, 25) === 0.U &&
       (arithmeticFunc3 === 0.U || arithmeticFunc3 === 2.U || arithmeticFunc3 === 3.U || arithmeticFunc3 === 5.U)) ||
      (inst(31, 25) === 1.U && (arithmeticFunc3 === 2.U || arithmeticFunc3 === 5.U)) ||
-     (inst(31, 25) === 2.U && arithmeticFunc3 === 5.U))
+     ((inst(31, 25) === 2.U || inst(31, 25) === 3.U) && arithmeticFunc3 === 5.U))
   res.bExtValid := isTypArithmetic && !isMExtArithmetic && isIterativeB
   res.crcValid := isCrcU8Custom
   res.xdup8loValid := isXdup8loCustom

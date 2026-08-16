@@ -103,6 +103,7 @@ static word_t matrix_accumulator;
 #define MATCH_XACCEL_XDFA4H_FINAL_READ 0x0200205b
 #define MATCH_XACCEL_XDFA4H_STEP 0x0200505b
 #define MATCH_XACCEL_XDFA4H_STEP_PTR 0x0400505b
+#define MATCH_XACCEL_XDFA_SCAN 0x0600505b
 #define MASK_XACCEL_XDFACNT       0xfe00707f
 #define MASK_XACCEL_XDFACNT_INIT  MASK_XACCEL_XDFACNT
 #define MASK_XACCEL_XDFACNT_INC   MASK_XACCEL_XDFACNT
@@ -113,6 +114,7 @@ static word_t matrix_accumulator;
 #define MASK_XACCEL_XDFA4H_FINAL_READ MASK_XACCEL_XDFACNT
 #define MASK_XACCEL_XDFA4H_STEP MASK_XACCEL_XDFACNT
 #define MASK_XACCEL_XDFA4H_STEP_PTR MASK_XACCEL_XDFACNT
+#define MASK_XACCEL_XDFA_SCAN MASK_XACCEL_XDFACNT
 
 enum { XA_MAC16, XA_DOT16, XA_DOTN, XA_BMUL, XA_LISTREV, XA_LISTFIND, XA_MSUM };
 
@@ -180,6 +182,41 @@ static word_t numeric_dfa_word_step(word_t state, word_t symbols,
   if (format2)
     return state | (consumed << 3) | (stop << 5) | (mask << 6);
   return state | (consumed << 3) | (stop << 6) | (mask << 7);
+}
+
+static word_t numeric_dfa_scan(vaddr_t address) {
+  word_t state = 0;
+  numeric_dfa_pending_mask = 0;
+  numeric_dfa_internal_state = 0;
+  numeric_dfa_internal_stopped = 1;
+
+  for (;;) {
+    unsigned offset = address & 3u;
+    word_t symbols = vaddr_read(address & ~3u, 4) >> (8 * offset);
+    word_t result = numeric_dfa_word_step(state, symbols, 4 - offset, false);
+    word_t consumed = (result >> 3) & 7u;
+    numeric_dfa_pending_mask |= result >> 7;
+    address += consumed;
+
+    if ((result & (1u << 6)) == 0) {
+      state = result & 7u;
+      continue;
+    }
+
+    if (consumed != 0 || numeric_dfa_pending_mask != 0) {
+      for (unsigned next_state = 0; next_state < 8; next_state++)
+        if (numeric_dfa_pending_mask & (1u << next_state))
+          numeric_dfa_transition_counts[next_state]++;
+      numeric_dfa_final_counts[result & 7u]++;
+    }
+    numeric_dfa_pending_mask = 0;
+    state = 0;
+
+    // A zero-consumption stop is the first NUL. It is read but is neither
+    // consumed nor presented to the DFA as a transition symbol.
+    if (consumed == 0)
+      return address;
+  }
 }
 
 static word_t crc_update(word_t data, word_t crc, unsigned bytes) {
@@ -621,6 +658,11 @@ static int decode_exec(Decode *s) {
     numeric_dfa_internal_stopped = (result >> 6) & 1u;
     R(rd) = address + ((result >> 3) & 7u);
     riscv_profile_record_xdfacnt(5);
+    matched = true;
+  }
+  if (IS_INST(XACCEL_XDFA_SCAN)) {
+    R(rd) = numeric_dfa_scan(R(rs2));
+    riscv_profile_record_xdfacnt(6);
     matched = true;
   }
 

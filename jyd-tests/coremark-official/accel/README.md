@@ -11,20 +11,20 @@ combined build is:
 
 ```sh
 make ARCH=riscv32-jyd ITERATIONS=10000 \
-  COREMARK_XEXTS=_xmbm_xcrcu8_xlistrev_xmsum_xdfa4p_xlistfind_xmacacc_xdotn \
-  EXTRA_CFLAGS='-mxmbm -mxcrcu8 -mxlistrev -mclipped-rising-score-reduce -mxdfa4p -mxlistfind -mxmacacc -mxdotn' \
+  COREMARK_XEXTS=_xmbm_xcrcu8_xdup8lo_xlistrev_xmsum_xdfa4p_xlistfind_xmacacc_xdotn \
+  EXTRA_CFLAGS='-mxmbm -mxcrcu8 -mxdup8lo -mxlistrev -mclipped-rising-score-reduce -mxdfa4p -mxlistfind -mxmacacc -mxdotn' \
   CROSS_COMPILE=/path/to/patched-toolchain/bin/riscv64-unknown-linux-gnu- \
   image
 
 make ARCH=riscv32-jyd ITERATIONS=10000 \
-  COREMARK_XEXTS=_xmbm_xcrcu8_xlistrev_xmsum_xdfa4p_xlistfind_xmacacc_xdotn \
-  EXTRA_CFLAGS='-mxmbm -mxcrcu8 -mxlistrev -mclipped-rising-score-reduce -mxdfa4p -mxlistfind -mxmacacc -mxdotn' \
+  COREMARK_XEXTS=_xmbm_xcrcu8_xdup8lo_xlistrev_xmsum_xdfa4p_xlistfind_xmacacc_xdotn \
+  EXTRA_CFLAGS='-mxmbm -mxcrcu8 -mxdup8lo -mxlistrev -mclipped-rising-score-reduce -mxdfa4p -mxlistfind -mxmacacc -mxdotn' \
   CROSS_COMPILE=/path/to/patched-toolchain/bin/riscv64-unknown-linux-gnu- \
   audit-accel
 ```
 
 Supported image identity names are `xmac16`, `xdot16`, `xdotn`, `xbmul`, `xmbm`,
-`xcrcu8`, `xlistfind`, `xlistrev`, `xmacacc`, `xmsum`, `xdfacnt`, `xdfa2`,
+`xcrcu8`, `xdup8lo`, `xlistfind`, `xlistrev`, `xmacacc`, `xmsum`, `xdfacnt`, `xdfa2`,
 `xdfa4`, `xdfa4h`, and `xdfa4p`.  The active GCC patch, compiler source SHA,
 selection details, checkers, and performance evidence are documented in
 `gcc-md/README.md`.

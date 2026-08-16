@@ -63,10 +63,39 @@ diff --git a/gcc/config/riscv/peephole.md b/gcc/config/riscv/peephole.md
 index e49bc0426653fd29e564335d3d9e891291e68c5e..af6dc675447b19e542251825525dace6c54f4b33 100644
 --- a/gcc/config/riscv/peephole.md
 +++ b/gcc/config/riscv/peephole.md
-@@ -19,6 +19,275 @@
+@@ -19,6 +19,304 @@
  ;; <http://www.gnu.org/licenses/>.
  
  ;; Simplify (unsigned long)(unsigned int)a << const
++(define_insn "xdup8losi2"
++  [(set (match_operand:SI 0 "register_operand" "=r")
++	(unspec:SI [(match_operand:SI 1 "register_operand" "r")]
++		   UNSPEC_XDUP8LO))]
++  "TARGET_XDUP8LO && !TARGET_64BIT"
++  ".insn r 0x0b, 1, 1, %0, %1, x0"
++  [(set_attr "type" "bitmanip")
++   (set_attr "mode" "SI")])
++
++(define_peephole2
++  [(set (match_operand:SI 0 "register_operand")
++	(zero_extend:SI (match_operand:HI 1 "register_operand")))
++   (set (match_dup 0)
++	(lshiftrt:SI (match_dup 0) (const_int 8)))
++   (set (match_operand:SI 2 "register_operand")
++	(and:SI (match_operand:SI 3 "register_operand") (const_int -256)))
++   (set (match_operand:SI 4 "register_operand")
++	(ior:SI (match_dup 2) (match_dup 0)))]
++  "TARGET_XDUP8LO && !TARGET_64BIT
++   && REGNO (operands[1]) == REGNO (operands[3])
++   && REGNO (operands[0]) != REGNO (operands[3])
++   && REGNO (operands[0]) != REGNO (operands[2])
++   && (rtx_equal_p (operands[0], operands[4])
++       || peep2_reg_dead_p (4, operands[0]))
++   && (rtx_equal_p (operands[2], operands[4])
++       || peep2_reg_dead_p (4, operands[2]))"
++  [(set (match_dup 4)
++	(unspec:SI [(match_dup 3)] UNSPEC_XDUP8LO))])
++
 +(define_insn "packed_field_mul"
 +  [(set (match_operand:SI 0 "register_operand" "=r")
 +	(unspec:SI [(match_operand:SI 1 "register_operand" "r")]
@@ -343,7 +372,7 @@ diff --git a/gcc/config/riscv/riscv.md b/gcc/config/riscv/riscv.md
 index d2883ef9f5af7c368f11f945298699da6759e2ec..cb461425f192966eb5eaa7913bdd4e49a404de83 100644
 --- a/gcc/config/riscv/riscv.md
 +++ b/gcc/config/riscv/riscv.md
-@@ -100,6 +100,31 @@
+@@ -100,6 +100,32 @@
    UNSPEC_CRC
    UNSPEC_CRC_REV
  
@@ -351,6 +380,7 @@ index d2883ef9f5af7c368f11f945298699da6759e2ec..cb461425f192966eb5eaa7913bdd4e49
 +  UNSPEC_XBMUL
 +  UNSPEC_XMBM
 +  UNSPEC_XCRCU8
++  UNSPEC_XDUP8LO
 +  UNSPEC_CLIPPED_RISING_SCORE_REDUCE
 +  UNSPEC_XLISTREV
 +  UNSPEC_XLISTFIND_INDEX
@@ -379,7 +409,7 @@ diff --git a/gcc/config/riscv/riscv.opt b/gcc/config/riscv/riscv.opt
 index 2c26ee99691315d1374d6e5d4ddebf30f259eb1f..4fd6522cb412db3791db44e1288ebb7503693890 100644
 --- a/gcc/config/riscv/riscv.opt
 +++ b/gcc/config/riscv/riscv.opt
-@@ -81,6 +81,46 @@ mdiv
+@@ -81,6 +81,50 @@ mdiv
  Target Mask(DIV)
  Use hardware instructions for integer division.
  
@@ -394,6 +424,10 @@ index 2c26ee99691315d1374d6e5d4ddebf30f259eb1f..4fd6522cb412db3791db44e1288ebb75
 +mxcrcu8
 +Target Var(riscv_xcrcu8) Init(0)
 +Use the custom byte-wise CRC16 instruction.
++
++mxdup8lo
++Target Mask(XDUP8LO)
++Copy byte 1 into byte 0 while preserving the upper 24 bits.
 +
 +mclipped-rising-score-reduce
 +Target Var(riscv_clipped_rising_score_reduce) Init(0)

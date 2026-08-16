@@ -18,8 +18,8 @@ make ARCH=riscv32-nemu ITERATIONS=1000 TOTAL_DATA_SIZE=2000 \
 ```
 
 The default uses GCC machine-description selection for the final accelerator
-set (`xmbm`, `xcrcu8`, `xlistrev`, `xmsum`, `xdfa4p`, `xlistfind`, and
-`xmacacc`). The shared defaults are in `coremark-defaults.mk`.
+set (`xmbm`, `xcrcu8`, `xdup8lo`, `xlistrev`, `xmsum`, `xdfa4p`, `xlistfind`,
+`xmacacc`, and `xdotn`). The shared defaults are in `coremark-defaults.mk`.
 
 The default build output is this project's `build/` directory. Each combination
 of `ITERATIONS`, `TOTAL_DATA_SIZE`, `RISCV_ZEXTS`, and `EXTRA_CFLAGS` gets a

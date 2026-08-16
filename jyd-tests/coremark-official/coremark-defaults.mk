@@ -6,12 +6,13 @@
 COREMARK_DEFAULT_RISCV_ZEXTS := _zba_zbb_zbkb_zbs
 
 COREMARK_DEFAULT_GCC_MD := 1
-COREMARK_DEFAULT_XEXTS := _xmbm_xcrcu8_xlistrev_xmsum_xdfa4p_xlistfind_xmacacc_xdotn
+COREMARK_DEFAULT_XEXTS := _xmbm_xcrcu8_xdup8lo_xlistrev_xmsum_xdfa4p_xlistfind_xmacacc_xdotn
 
-COREMARK_GCC_MD_SUPPORTED_XEXTS := xbmul xmbm xcrcu8 xlistrev xmsum xdfa4h xdfa4p xlistfind xmacacc xdotn
+COREMARK_GCC_MD_SUPPORTED_XEXTS := xbmul xmbm xcrcu8 xdup8lo xlistrev xmsum xdfa4h xdfa4p xlistfind xmacacc xdotn
 COREMARK_MD_FLAG_xbmul := -mxbmul
 COREMARK_MD_FLAG_xmbm := -mxmbm
 COREMARK_MD_FLAG_xcrcu8 := -mxcrcu8
+COREMARK_MD_FLAG_xdup8lo := -mxdup8lo
 COREMARK_MD_FLAG_xlistrev := -mxlistrev
 COREMARK_MD_FLAG_xmsum := -mclipped-rising-score-reduce
 COREMARK_MD_FLAG_xdfa4h := -mxdfa4h

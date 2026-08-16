@@ -48,6 +48,9 @@
 #define MASK_XACCEL_CRCU16  MASK_XACCEL_CRC
 #define MASK_XACCEL_CRCU32  MASK_XACCEL_CRC
 
+#define MATCH_XACCEL_XDUP8LO 0x0200100b
+#define MASK_XACCEL_XDUP8LO  0xfff0707f
+
 #define MATCH_XACCEL_XMAC16 0x0000300b
 #define MATCH_XACCEL_XMACACC_FIRST 0x0800300b
 #define MATCH_XACCEL_XMACACC_ADD 0x0a00300b
@@ -386,6 +389,11 @@ static int decode_exec(Decode *s) {
   }
   if (IS_INST(XACCEL_CRCU32)) {
     R(rd) = crc_update(R(rs1), R(rs2), 4);
+    matched = true;
+  }
+  if (IS_INST(XACCEL_XDUP8LO)) {
+    word_t byte = (R(rs1) >> 8) & 0xffu;
+    R(rd) = (R(rs1) & ~0xffu) | byte;
     matched = true;
   }
   if (IS_INST(XACCEL_XMAC16)) {

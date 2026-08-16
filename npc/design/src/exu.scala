@@ -522,6 +522,7 @@ class EXU(
   fast_in.src2   := fastRegV2
   fast_in.isImm  := isFmtI
   fast_in.isSub  := dinst.info.aluIsSub
+  fast_in.xdup8loValid := dinst.info.xdup8loValid
   fast_in.func3t := func3t
   fast_in.func7t := func7t
 

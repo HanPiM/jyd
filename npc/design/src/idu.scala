@@ -313,6 +313,8 @@ class IDU(
   val isBRol = !isFmtI && arithmeticFunc7 === "b0110000".U && arithmeticFunc3 === "b001".U
   val isBRev8 = isFmtI && arithmeticFunc7 === "b0110100".U && arithmeticFunc3 === "b101".U && bImmLow5 === 24.U
   val isCrcU8Custom = inst(31, 25) === 0.U && arithmeticFunc3 === 0.U && inst(6, 0) === "b0001011".U
+  val isXdup8loCustom = inst(31, 25) === 1.U && arithmeticFunc3 === 1.U && inst(24, 20) === 0.U &&
+    inst(6, 0) === "b0001011".U
   val isBitExtractMulCustom = inst(31, 25) === 0.U && arithmeticFunc3 === 5.U && inst(6, 0) === "b0001011".U
   val isFusedBitExtractMulCustom = inst(31, 25) === 1.U && arithmeticFunc3 === 5.U && inst(6, 0) === "b0001011".U
   val isMatrixAccumulateCustom = inst(6, 0) === "b0001011".U && arithmeticFunc3 === 3.U &&
@@ -329,6 +331,7 @@ class IDU(
      (inst(31, 25) === 2.U && arithmeticFunc3 === 5.U))
   res.bExtValid := isTypArithmetic && !isMExtArithmetic && isIterativeB
   res.crcValid := isCrcU8Custom
+  res.xdup8loValid := isXdup8loCustom
   res.xbmulValid := isBitExtractMulCustom
   res.xmbmValid := isFusedBitExtractMulCustom
   res.xmacaccValid := isMatrixAccumulateCustom
@@ -357,7 +360,8 @@ class IDU(
     arithmeticFunc7 === 0.U ||
       (arithmeticFunc7 === "b0100000".U && (arithmeticFunc3 === 0.U || arithmeticFunc3 === "b101".U))
   )
-  val isFastIntegerArithmetic = isTypArithmetic && (isRv32iImmediate || isRv32iRegister || isPack)
+  val isFastIntegerArithmetic = isTypArithmetic &&
+    (isRv32iImmediate || isRv32iRegister || isPack || isXdup8loCustom)
   val isShortB = isBShiftAdd || isBSext || isBMinu || isBBext ||
     isBSet || isBClr || isBInv || isBAndn || isBOrn || isBXnor || isBMax || isBMaxu || isBMin ||
     isBRol || isBRev8

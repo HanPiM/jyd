@@ -9,7 +9,7 @@ Check out public GCC base commit `ff20c357b3f`, then apply
 `active-accel-gcc16.patch` with `git apply --index --unidiff-zero`. Configure
 and build an RV32-capable RISC-V cross compiler in separate source, build, and
 install directories. The patch SHA-256 is
-`b3b72a207c63383b6c66fbfe0d90b2b99d3ee40117722e6368b7d04c7879d775`.
+`05c3db37685d83f28f3575b0e175ddffcb6b01c95faa9858d87e43a85d0db20c`.
 The patch includes the loop-bound analysis prerequisite that was previously a
 local-only commit on top of that public base.
 
@@ -19,6 +19,7 @@ local-only commit on top of that public base.
 |---|---|---|---|
 | xmbm | matrix bit-extraction expression | `-mxmbm` | custom-0, funct3 5, funct7 1 |
 | xcrcu8 | GCC reversed-CRC builtin/optab | `-mxcrcu8` | custom-0, funct3 0, funct7 0 |
+| xdup8lo | exact byte-copy bit-field idiom | `-mxdup8lo` | custom-0, funct3 1, funct7 1, rs2 x0 |
 | xmsum | clipped rising-score loop recognizer | `-mclipped-rising-score-reduce` | custom-0, funct3 7, funct7 2 |
 | xlistrev | in-place list-reversal recognizer | `-mxlistrev` | custom-0, funct3 6, funct7 0/2 |
 | xdfa4p | numeric-token state-scan recognizer | `-mxdfa4p` | custom-2, funct3 5, funct7 2 |
@@ -38,6 +39,11 @@ The xcrcu8 integration uses GCC's generic
 `__builtin_rev_crc16_data8(crc, data, 0x8005)` interface in `xcrc_hw.h`.  The
 RISC-V CRC optab selects xcrcu8 for this width and polynomial; the benchmark
 header contains no custom inline assembly.
+
+The xdup8lo operation copies source byte 1 into byte 0 while preserving source
+bits 31 through 8. Its peephole matches the exact four-operation RTL shape,
+checks temporary-register lifetime and aliasing, and remains disabled without
+`-mxdup8lo`.
 
 The xmsum and xlistrev recognizers are shape based.  The numeric DFA path also
 verifies the expected scan and counter structure.  Reporting is outside the
@@ -78,27 +84,35 @@ The frozen compiler passed:
 - GCC `all-gcc` and `install-gcc` with 16 jobs.
 - Every checker listed below.
 - `make -C npc checkformat` and `make -C npc verilog`.
-- NPC ITERATIONS=10 with difftest: 1,518,228 cycles, 485,420 retired
-  instructions, correct CRCs, and GOOD TRAP.
-- NPC ITERATIONS=100 without difftest: 14,516,900 cycles, 4,405,217 retired
-  instructions, correct CRCs, and GOOD TRAP.
-- The affine 10/100 estimate for ITERATIONS=10000 at 300 MHz:
-  1,444,370,820 cycles, or `4.814569400s`, leaving `185.430600ms` below the
-  strict 5-second target. The retained machine-readable result is
-  `/srv/data/jyd/archive/coremark-cycle-estimate-xdot-runtime-n-d4b6282-20260815T2251Z/estimate.json`.
-- Exact NEMU ITERATIONS=10000 through the owning AM `make run` target:
-  CRCs `e714/1fd7/8e3a/988c`, Correct operation validated, GOOD TRAP, and
-  434,662,586 guest instructions.
+- `riscv32-jyd` add and directed xdup8lo tests with active difftest. The
+  directed test covers same-register and distinct-register forms, fixed corner
+  cases, and 4,096 deterministic 32-bit inputs.
+- Isolated NPC ITERATIONS=10/100 measurements for both the enabled and control
+  images, with CRCs `e714/1fd7/8e3a/fcaf` and `e714/1fd7/8e3a/988c`.
+- The control affine ITERATIONS=10000 estimate is 1,306,730,398 cycles, or
+  `4.355767993s` at 300 MHz. Enabling xdup8lo reduces that estimate to
+  1,294,217,749 cycles, or `4.314059163s`: a measured reduction of 12,512,649
+  cycles (`41.708830ms`). The retained results are
+  `/srv/data/jyd/archive/coremark-xdup8lo-ca08cc2-control-20260817T0024Z/`
+  and `/srv/data/jyd/archive/coremark-xdup8lo-ca08cc2-enabled-20260817T0021Z/`.
+- The final compiler executable SHA-256 is
+  `fb203c1c269608dde38601f12df122be56407b6c5f95245744588187144aacca`.
+  Its final ITERATIONS=10000 text image SHA-256 is
+  `448172ee5c866932d9268a49cbfce83205b0e8cb41638ea7fec838755d5a83f8`.
 
-The final ELF has 38 static xcrcu8 sites, one xlistrev site, five xmsum sites,
-two xdfa4p step sites, four xlistfind sites, six xmacacc sites, four xdotn sites
-(two configuration, one signed, and one bit-extract), and one xdfa final-counter
-read. The generated program image was exercised by NEMU and NPC difftest.
+The final ELF has 38 static xcrcu8 sites, two xdup8lo sites, one xlistrev site,
+five xmsum sites, two xdfa4p step sites, four xlistfind sites, six xmacacc sites,
+four xdotn sites (two configuration, one signed, and one bit-extract), and one
+xdfa final-counter read. The generated program image was exercised by NPC
+difftest; the protected CoreMark source MD5 check also passes.
 
 ## Checkers
 
 - `check-xbmul-pattern.sh <gcc>` checks the legacy packed-field pattern and
   xcrcu8 selection from unmodified CoreMark sources.
+- `check-xdup8lo.sh <gcc>` checks exact and renamed positive shapes, explicit
+  option disablement, live-temporary rejection, wrong shift/mask rejection,
+  and selection from unmodified CoreMark sources.
 - `check-xmbm-xdfa4p.sh <gcc>` checks xmbm and xdfa4p control/enabled builds.
 - `check-clipped-rising-score.sh <gcc>` checks xmsum positive and negative
   selection.

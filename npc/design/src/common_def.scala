@@ -211,6 +211,9 @@ class DecodedInstInfo(implicit p : CPUParameters) extends InstMetaInfo with HasR
   // Byte-wise CRC is a single-cycle custom-0 R-type operation.
   val crcValid = Bool()
 
+  // Copy byte 1 into byte 0 while preserving the upper 24 bits.
+  val xdup8loValid = Bool()
+
   // Bit-extract multiply is a single-cycle custom-0 operation.
   val xbmulValid = Bool()
 

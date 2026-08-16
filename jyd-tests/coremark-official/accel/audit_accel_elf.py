@@ -5,6 +5,7 @@ import subprocess
 
 ENCODINGS = {
     "xcrcu8": (0x0000000B,),
+    "xdup8lo": (0x0200100B,),
     "xmac16": (0x0000300B,),
     "xdot16": (0x0000400B,),
     "xdotn": (0x0600400B, 0x0800400B, 0x0A00400B),
@@ -21,6 +22,11 @@ ENCODINGS = {
     "xdfa4p": (0x0400505B,),
 }
 MASK = 0xFE00707F
+MASKS = {"xdup8lo": 0xFFF0707F}
+
+
+def matches_encoding(name, instruction, encoding):
+    return instruction & MASKS.get(name, MASK) == encoding
 
 
 def output(*args):
@@ -57,7 +63,7 @@ def main():
             continue
         instructions.append(instruction)
         for name in enabled:
-            if instruction & MASK in ENCODINGS[name]:
+            if any(matches_encoding(name, instruction, encoding) for encoding in ENCODINGS[name]):
                 counts[name] += 1
 
     for name in ("xlistfind", "xmacacc", "xdotn"):
@@ -66,7 +72,7 @@ def main():
         missing_subops = [
             f"0x{encoding:08x}"
             for encoding in ENCODINGS[name]
-            if not any(instruction & MASK == encoding for instruction in instructions)
+            if not any(matches_encoding(name, instruction, encoding) for instruction in instructions)
         ]
         if missing_subops:
             raise SystemExit(f"{name} missing sub-operations: {', '.join(missing_subops)}")

@@ -63,7 +63,7 @@ mkdir -p "$PWD/out"
 只存在于本机提交的循环边界分析前置修复。补丁 SHA-256 应为：
 
 ```text
-b3b72a207c63383b6c66fbfe0d90b2b99d3ee40117722e6368b7d04c7879d775
+05c3db37685d83f28f3575b0e175ddffcb6b01c95faa9858d87e43a85d0db20c
 ```
 
 检查版本和后端完整性：
@@ -71,6 +71,8 @@ b3b72a207c63383b6c66fbfe0d90b2b99d3ee40117722e6368b7d04c7879d775
 ```sh
 "$JYD_GCC/bin/riscv64-unknown-linux-gnu-gcc" --version
 ./jyd-tests/coremark-official/accel/gcc-md/check-backend-integrity.sh
+./jyd-tests/coremark-official/accel/gcc-md/check-xdup8lo.sh \
+  "$JYD_GCC/bin/riscv64-unknown-linux-gnu-gcc"
 ./jyd-tests/coremark-official/accel/gcc-md/check-xlistfind-xmacacc.sh \
   "$JYD_GCC/bin/riscv64-unknown-linux-gnu-gcc"
 ./jyd-tests/coremark-official/accel/gcc-md/check-xmbm-xdfa4p.sh \

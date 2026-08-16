@@ -511,11 +511,36 @@ class CPUCore(
 
   idu.io.rvec <> gprs.io.read
 
-  val lsuFwdInfo = ExtractFwdInfoFromLSU(lsu.io.in, dcache.io.readData)
+  val lsuFwdInfo = ExtractFwdInfoFromLSU(lsu.io.in)
   val lsuFastFwdInfo = ExtractFastFwdInfoFromLSU(lsu.io.in)
   idu.io.wrBackInfo.exu := exu.io.fwd
   idu.io.wrBackInfo.lsu := lsuFwdInfo
   idu.io.wrBackInfo.wbu := ExtractFwdInfoFromWrBack(wbu.io.in, wbu.io.memResp)
+  // This shadow token advances under the same allowIn as the LSU/WBU payload.
+  // It keeps slow-result lane-valid control out of the IDU-to-fetch CE path.
+  val wbuAddressBlocked = RegInit(false.B)
+  val wbuCandidate = lsu.io.out.bits
+  val wbuCandidateLoadBlocked =
+    wbuCandidate.loadResult.valid && !(wbuCandidate.cacheableLoad && wbuCandidate.dcacheHit)
+  when(lsu.io.out.ready) {
+    wbuAddressBlocked := lsu.io.out.valid && ResultLaneSelect.anyValid(wbuCandidate) && (
+      wbuCandidate.resultKind === ResultKind.longArithmetic ||
+        wbuCandidate.resultKind === ResultKind.accelerator || wbuCandidateLoadBlocked
+    )
+  }
+  dontTouch(wbuAddressBlocked)
+  idu.io.wbuAddressBlocked := wbuAddressBlocked
+  when(wbu.io.in.valid) {
+    val currentLoadBlocked =
+      wbu.io.in.bits.loadResult.valid && !(wbu.io.in.bits.cacheableLoad && wbu.io.in.bits.dcacheHit)
+    assert(
+      wbuAddressBlocked === (ResultLaneSelect.anyValid(wbu.io.in.bits) && (
+        wbu.io.in.bits.resultKind === ResultKind.longArithmetic ||
+          wbu.io.in.bits.resultKind === ResultKind.accelerator || currentLoadBlocked
+      )),
+      "WBU address-block shadow must stay aligned with its payload"
+    )
+  }
   idu.io.lsuFastAddressFwd := lsuFastFwdInfo
   exu.io.previousStageFwd := lsuFastFwdInfo
 

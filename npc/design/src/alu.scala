@@ -518,31 +518,21 @@ class SpecialExecutionCluster extends Module {
   val xbmulResult = (((src1(5, 2) * src1(11, 5))).pad(32))
   io.acceleratorOut := Mux(inbits.crcValid, crcResult, xbmulResult)
 
-  val aluResult = MuxCase(
-    0.U,
-    Seq(
-      isSh1Add -> sh1AddResult,
-      isSh2Add -> sh2AddResult,
-      isSh3Add -> sh3AddResult,
-      isSextB  -> sextBResult,
-      isSextH  -> sextHResult,
-      isMinu   -> minuResult,
-      isBext   -> bextResult,
-      isBSet   -> bsetResult,
-      isBClr   -> bclrResult,
-      isBInv   -> binvResult,
-      isAndn   -> andnResult,
-      isOrn    -> ornResult,
-      isXnor   -> xnorResult,
-      isMax    -> maxResult,
-      isMaxu   -> maxuResult,
-      isMin    -> minResult,
-      isRol    -> rolResult,
-      isRev8   -> rev8Result,
-      inbits.crcValid   -> crcResult,
-      inbits.xbmulValid -> xbmulResult
-    )
+  val nonRolSelects = Seq(
+    isSh1Add, isSh2Add, isSh3Add, isSextB, isSextH, isMinu, isBext, isBSet, isBClr,
+    isBInv, isAndn, isOrn, isXnor, isMax, isMaxu, isMin, isRev8
   )
+  val nonRolResults = Seq(
+    sh1AddResult, sh2AddResult, sh3AddResult, sextBResult, sextHResult, minuResult, bextResult, bsetResult,
+    bclrResult, binvResult, andnResult, ornResult, xnorResult, maxResult, maxuResult, minResult, rev8Result
+  )
+  val nonRolALUResult = Mux1H(nonRolSelects.zip(nonRolResults))
+  when(io.in.valid) {
+    assert(PopCount(VecInit(nonRolSelects)) <= 1.U, "short-B result selectors must be one-hot")
+  }
+  // ROL is the only short-B operation with a barrel network. Give it a direct
+  // result arm instead of routing it through the wide priority chain.
+  val aluResult = Mux(isRol, rolResult, nonRolALUResult)
 
   val isBExt = inbits.bExtValid
   val isXmbm = inbits.xmbmValid

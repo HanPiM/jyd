@@ -190,6 +190,7 @@ class IDU(
 
     val wrBackInfo           = Input(new WrBackInfoGroup)
     val lsuFastAddressFwd    = Input(new WrBackForwardInfo)
+    val wbuAddressBlocked    = Input(Bool())
 
     val out = Decoupled(new DecodedInst)
   })
@@ -420,7 +421,7 @@ class IDU(
       io.wrBackInfo.wbu.kind =/= ResultKind.accelerator && io.wrBackInfo.wbu.kind =/= ResultKind.longArithmetic
   val needStallAddress =
     addressExuConflict || (addressLsuConflict && !addressLsuFastReady) ||
-      (addressWbuConflict && !addressWbuReady)
+      (needReg1AddImm && SingleByPassMux.conflict(res.rs1, io.wrBackInfo.wbu.addr, io.wbuAddressBlocked))
   val needStall = bypassMux.io.needStall || needStallAddress
 
   layer.block(PerfCounterLayer) {

@@ -97,6 +97,8 @@ class DCache extends Module {
   val dotNStride = Reg(UInt(17.W))
   val dotNAccumulator = Reg(UInt(32.W))
   val dotNBitMode = Reg(Bool())
+  val dotNRequestValid = RegInit(false.B)
+  val dotNRequestUseB = RegInit(false.B)
   val dotNRequestAddressReg = Reg(UInt(32.W))
 
   // The backing store accepts an ordinary store one cycle before the mirrored
@@ -183,15 +185,14 @@ class DCache extends Module {
     dotNStride := Cat(io.dotNLength, 0.U(1.W))
     dotNAccumulator := 0.U
     dotNBitMode := io.dotNBitMode
+    dotNRequestValid := false.B
+    dotNRequestUseB := false.B
     dotNState := Mux(io.dotNLength === 0.U, DotNState.done, DotNState.stream)
   }.elsewhen(dotNState === DotNState.stream) {
     dotNOperandA := dotNStreamOperandA
     dotNOperandB := dotNStreamOperandB
     dotNOperandAHigh := listFindQueryAddress(1)
-    // Select and register the missing operand address at the lookup boundary.
-    // The external memory path then sees only a registered address, rather than
-    // a request-kind selector followed by a 32-bit address mux.
-    dotNRequestAddressReg := Mux(listQueryHits(0), listFindQueryAddressB, listFindQueryAddress) & ~3.U(32.W)
+    dotNRequestAddressReg := listFindQueryAddress & ~3.U(32.W)
     dotNBufferedBAddress := listFindQueryAddressB
     dotNRemaining := dotNRemaining - 1.U
     listFindQueryAddress := listFindQueryAddress + 2.U
@@ -202,11 +203,16 @@ class DCache extends Module {
       }
     }.elsewhen(!listQueryHits(0)) {
       dotNBufferedBValid := listQueryHits(1)
+      dotNRequestValid := true.B
+      dotNRequestUseB := false.B
       dotNState := DotNState.requestA
     }.otherwise {
+      dotNRequestValid := true.B
+      dotNRequestUseB := true.B
       dotNState := DotNState.requestB
     }
   }.elsewhen(dotNState === DotNState.requestA && io.dotNRequestFire) {
+    dotNRequestValid := false.B
     dotNState := DotNState.responseA
   }.elsewhen(dotNState === DotNState.responseA && io.dotNMemResponse.valid) {
     dotNOperandA := Mux(
@@ -217,10 +223,12 @@ class DCache extends Module {
     when(dotNBufferedBValid) {
       dotNState := DotNState.launchStored
     }.otherwise {
-      dotNRequestAddressReg := dotNBufferedBAddress & ~3.U(32.W)
+      dotNRequestValid := true.B
+      dotNRequestUseB := true.B
       dotNState := DotNState.requestB
     }
   }.elsewhen(dotNState === DotNState.requestB && io.dotNRequestFire) {
+    dotNRequestValid := false.B
     dotNState := DotNState.responseB
   }.elsewhen(dotNState === DotNState.responseB && io.dotNMemResponse.valid) {
     dotNOperandB := Mux(
@@ -238,6 +246,7 @@ class DCache extends Module {
   }.elsewhen(dotNState === DotNState.drain && dotNProductValid && dotNProductLast) {
     dotNState := DotNState.done
   }.elsewhen(dotNState === DotNState.done && io.dotNConsume) {
+    dotNRequestValid := false.B
     dotNState := DotNState.idle
   }
 
@@ -245,24 +254,17 @@ class DCache extends Module {
     dotNAccumulator := dotNNextAccumulator
   }
 
-  io.dotNRequest := dotNState === DotNState.requestA || dotNState === DotNState.requestB
-  io.dotNRequestAddress := dotNRequestAddressReg
+  io.dotNRequest := dotNRequestValid
+  when(dotNRequestValid) {
+    assert(dotNState === DotNState.requestA || dotNState === DotNState.requestB)
+  }
+  io.dotNRequestAddress := Mux(
+    dotNRequestUseB,
+    dotNBufferedBAddress & ~3.U(32.W),
+    dotNRequestAddressReg
+  )
   io.dotNDone := dotNState === DotNState.done
   io.dotNResult := dotNAccumulator
-
-  def stageListFindNode(nodeAddress: UInt): Unit = {
-    listFindNextHit := listQueryHits(0)
-    listFindInfoHit := listQueryHits(1)
-    listFindNext := listReadData(0)
-    listFindInfo := listReadData(1)
-    // Port A has finished reading the node's next pointer. Point it at the
-    // captured info target for the following resolve cycle without feeding
-    // the hit decision back through the asynchronous RAM address.
-    listFindQueryAddress := listReadData(1)
-    listFindRequestValid := !listQueryHits(0) || !listQueryHits(1)
-    listFindRequestAddressReg := Mux(listQueryHits(0), listFindQueryAddressB, nodeAddress)
-    listFindState := ListFindState.nodeResolve
-  }
 
   when(listFindState === ListFindState.idle && io.listFindStart) {
     assert(dotNState === DotNState.idle, "list-find and dotN walkers must be mutually exclusive")
@@ -279,7 +281,17 @@ class DCache extends Module {
       listFindState := ListFindState.nodeLookup
     }
   }.elsewhen(listFindState === ListFindState.nodeLookup) {
-    stageListFindNode(listFindCurrent)
+    listFindNextHit := listQueryHits(0)
+    listFindInfoHit := listQueryHits(1)
+    listFindNext := listReadData(0)
+    listFindInfo := listReadData(1)
+    // Port A has finished reading the node's next pointer. Point it at the
+    // captured info target for the following resolve cycle without feeding
+    // the hit decision back through the asynchronous RAM address.
+    listFindQueryAddress := listReadData(1)
+    listFindRequestValid := !listQueryHits(0) || !listQueryHits(1)
+    listFindRequestAddressReg := Mux(listQueryHits(0), listFindQueryAddressB, listFindCurrent)
+    listFindState := ListFindState.nodeResolve
   }.elsewhen(listFindState === ListFindState.nodeResolve) {
     when(!listFindNextHit) {
       when(io.listFindRequestFire) {
@@ -290,14 +302,11 @@ class DCache extends Module {
         listFindState := ListFindState.infoMemory
       }
     }.otherwise {
+      listFindQueryAddress := listFindInfo
       listFindDataHit := listQueryHits(0)
       listFindWord := listReadData(0)
       listFindRequestValid := !listQueryHits(0)
       listFindRequestAddressReg := listFindInfo
-      // The data word is captured above. Use both private read ports to fetch
-      // the next node while the registered word is resolved.
-      listFindQueryAddress := listFindNext
-      listFindQueryAddressB := listFindNext + 4.U
       listFindState := ListFindState.dataResolve
     }
   }.elsewhen(listFindState === ListFindState.nextMemory && io.listFindMemResponse.valid) {
@@ -322,24 +331,24 @@ class DCache extends Module {
     listFindWord := listReadData(0)
     listFindRequestValid := !listQueryHits(0)
     listFindRequestAddressReg := listFindQueryAddress
-    listFindQueryAddress := listFindNext
-    listFindQueryAddressB := listFindNext + 4.U
     listFindState := ListFindState.dataResolve
   }.elsewhen(listFindState === ListFindState.dataResolve) {
     when(listFindDataHit) {
       val value = Mux(listFindDataMode, Cat(0.U(8.W), listFindWord(7, 0)), listFindWord(31, 16))
-      // The next node was prefetched while this registered value was waiting
-      // to be compared. Its metadata is irrelevant when the search completes.
-      stageListFindNode(listFindNext)
+      // Speculatively stage the next node before resolving the match.  These
+      // registers are irrelevant in done, so the value comparison no longer
+      // selects their timing-sensitive D inputs.
       listFindCurrent := listFindNext
+      listFindQueryAddress := listFindNext
+      listFindQueryAddressB := listFindNext + 4.U
       when(value === listFindTarget) {
-        listFindRequestValid := false.B
         listFindResult := listFindCurrent
         listFindState := ListFindState.done
       }.elsewhen(listFindNext === 0.U) {
-        listFindRequestValid := false.B
         listFindResult := 0.U
         listFindState := ListFindState.done
+      }.otherwise {
+        listFindState := ListFindState.nodeLookup
       }
     }.elsewhen(io.listFindRequestFire) {
       listFindState := ListFindState.dataMemory
@@ -347,16 +356,17 @@ class DCache extends Module {
   }.elsewhen(listFindState === ListFindState.dataMemory && io.listFindMemResponse.valid) {
     val value = Mux(listFindDataMode, Cat(0.U(8.W), io.listFindMemResponse.bits(7, 0)),
       io.listFindMemResponse.bits(31, 16))
-    stageListFindNode(listFindNext)
     listFindCurrent := listFindNext
+    listFindQueryAddress := listFindNext
+    listFindQueryAddressB := listFindNext + 4.U
     when(value === listFindTarget) {
-      listFindRequestValid := false.B
       listFindResult := listFindCurrent
       listFindState := ListFindState.done
     }.elsewhen(listFindNext === 0.U) {
-      listFindRequestValid := false.B
       listFindResult := 0.U
       listFindState := ListFindState.done
+    }.otherwise {
+      listFindState := ListFindState.nodeLookup
     }
   }.elsewhen(listFindState === ListFindState.done && io.listFindConsume) {
     listFindRequestValid := false.B

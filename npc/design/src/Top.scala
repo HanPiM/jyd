@@ -36,40 +36,6 @@ class CPUCoreAsBlackBox extends BlackBox {
   })
 }
 
-class PayloadEnableBuffer extends BlackBox with HasBlackBoxInline {
-  override def desiredName: String = "payload_enable_buffer"
-  val io = IO(new Bundle {
-    val I0 = Input(Bool())
-    val O  = Output(Bool())
-  })
-
-  setInline(
-    "payload_enable_buffer.sv",
-    """`ifdef VERILATOR
-      |module LUT1 #(
-      |  parameter [1:0] INIT = 2'b00
-      |) (
-      |  input  wire I0,
-      |  output wire O
-      |);
-      |  assign O = INIT[I0];
-      |endmodule
-      |`endif
-      |
-      |module payload_enable_buffer (
-      |  input  wire I0,
-      |  output wire O
-      |);
-      |  (* DONT_TOUCH = "yes" *)
-      |  LUT1 #(.INIT(2'b10)) impl (
-      |    .I0(I0),
-      |    .O(O)
-      |  );
-      |endmodule
-      |""".stripMargin
-  )
-}
-
 class PCProviderAsBlackBox extends BlackBox {
   override def desiredName: String = "CPUTop_ResetPCProvider"
   val io = IO(new Bundle {
@@ -503,113 +469,27 @@ class CPUCore(
 
   val exuPipe       = Wire(Decoupled(new DecodedInst))
   val exuPayloadReg = Reg(new DecodedInst)
-  val exuReg1LowReg = Reg(UInt(16.W))
-  val exuReg1HighReg = Reg(UInt(16.W))
-  val exuReg2LowReg = Reg(UInt(16.W))
-  val exuReg2HighReg = Reg(UInt(16.W))
   val exuValidReg   = RegInit(false.B)
   // Resolve adjacent-result branches from their registered LSU payload. This
   // keeps the branch comparator out of the ID/EX valid-register input cone.
-  exuPipe.bits := exuPayloadReg
-  exuPipe.bits.info.reg1 := Cat(exuReg1HighReg, exuReg1LowReg)
-  exuPipe.bits.info.reg2 := Cat(exuReg2HighReg, exuReg2LowReg)
+  exuPipe.bits  := exuPayloadReg
   exuPipe.valid := exuValidReg
   exu.io.in.bits := exuPipe.bits
   exu.io.in.valid := exuPipe.valid
   exuPipe.ready := exu.io.in.ready
   val adjacentBranchBubble = exu.io.in.fire && exu.io.in.bits.info.adjacentFastBranch
   val exuAllowIn = !exuValidReg || exuPipe.ready
-  val exuSlotClear = adjacentBranchBubble || lateRedirectBlocked || immediateRedirectNow
-  // Payload contents are don't-care while the slot is invalid. Capturing them
-  // speculatively keeps redirect resolution out of every wide payload enable.
-  val exuPayloadLoad = exuAllowIn
-  // The ID/EX payload is physically wide. Explicit local LUT buffers keep its
-  // common load control from becoming a single global high-fanout route.
-  val exuPayloadLoads = Seq.fill(10) {
-    val buffer = Module(new PayloadEnableBuffer)
-    buffer.io.I0 := exuPayloadLoad
-    buffer.io.O
-  }
   // Hold the younger IDU instruction for one cycle after an adjacent-result
   // branch. If the registered comparison redirects on the following cycle,
   // the redirect clears this slot. All epoch changes originate from a redirect,
   // so clearing the valid register also keeps the epoch out of every EXU unit's
   // combinational input-valid path.
   idu.io.out.ready := exuAllowIn && !adjacentBranchBubble && !lateRedirectBlocked
-  when(exuSlotClear) {
+  when(adjacentBranchBubble || lateRedirectBlocked || immediateRedirectNow) {
     exuValidReg := false.B
   }.elsewhen(exuAllowIn) {
-    exuValidReg := idu.io.out.valid
-  }
-  when(exuPayloadLoads(0)) {
-    exuReg1LowReg := idu.io.out.bits.info.reg1(15, 0)
-  }
-  when(exuPayloadLoads(1)) {
-    exuReg1HighReg := idu.io.out.bits.info.reg1(31, 16)
-  }
-  when(exuPayloadLoads(2)) {
-    exuReg2LowReg := idu.io.out.bits.info.reg2(15, 0)
-  }
-  when(exuPayloadLoads(3)) {
-    exuReg2HighReg := idu.io.out.bits.info.reg2(31, 16)
-  }
-  when(exuPayloadLoads(4)) {
-    exuPayloadReg.code     := idu.io.out.bits.code
-    exuPayloadReg.pc       := idu.io.out.bits.pc
-    exuPayloadReg.iid      := idu.io.out.bits.iid
-    exuPayloadReg.epoch    := idu.io.out.bits.epoch
-    exuPayloadReg.predTake := idu.io.out.bits.predTake
-    exuPayloadReg.info.fmt := idu.io.out.bits.info.fmt
-    exuPayloadReg.info.typ := idu.io.out.bits.info.typ
-  }
-  when(exuPayloadLoads(5)) {
-    exuPayloadReg.info.imm    := idu.io.out.bits.info.imm
-    exuPayloadReg.info.rd     := idu.io.out.bits.info.rd
-    exuPayloadReg.info.rs1    := idu.io.out.bits.info.rs1
-    exuPayloadReg.info.rs2    := idu.io.out.bits.info.rs2
-    exuPayloadReg.info.rdWrEn := idu.io.out.bits.info.rdWrEn
-  }
-  when(exuPayloadLoads(6)) {
-    exuPayloadReg.info.staticNextPCOrCSRTarget := idu.io.out.bits.info.staticNextPCOrCSRTarget
-    exuPayloadReg.info.pcAddImm                := idu.io.out.bits.info.pcAddImm
-  }
-  when(exuPayloadLoads(7)) {
-    exuPayloadReg.info.reg1AddImm         := idu.io.out.bits.info.reg1AddImm
-    exuPayloadReg.info.fastAluRs1         := idu.io.out.bits.info.fastAluRs1
-    exuPayloadReg.info.fastAluRs2         := idu.io.out.bits.info.fastAluRs2
-    exuPayloadReg.info.fastBranchRs1      := idu.io.out.bits.info.fastBranchRs1
-    exuPayloadReg.info.fastBranchRs2      := idu.io.out.bits.info.fastBranchRs2
-    exuPayloadReg.info.fastStoreRs2       := idu.io.out.bits.info.fastStoreRs2
-    exuPayloadReg.info.adjacentFastBranch := idu.io.out.bits.info.adjacentFastBranch
-  }
-  when(exuPayloadLoads(8)) {
-    exuPayloadReg.info.resultKind         := idu.io.out.bits.info.resultKind
-    exuPayloadReg.info.bExtValid          := idu.io.out.bits.info.bExtValid
-    exuPayloadReg.info.crcValid           := idu.io.out.bits.info.crcValid
-    exuPayloadReg.info.xbmulValid         := idu.io.out.bits.info.xbmulValid
-    exuPayloadReg.info.xmbmValid          := idu.io.out.bits.info.xmbmValid
-    exuPayloadReg.info.xmacaccValid       := idu.io.out.bits.info.xmacaccValid
-    exuPayloadReg.info.xdotConfigValid    := idu.io.out.bits.info.xdotConfigValid
-    exuPayloadReg.info.xdotNValid         := idu.io.out.bits.info.xdotNValid
-    exuPayloadReg.info.listReverseValid   := idu.io.out.bits.info.listReverseValid
-    exuPayloadReg.info.listReverseStep    := idu.io.out.bits.info.listReverseStep
-    exuPayloadReg.info.listReverseLoop    := idu.io.out.bits.info.listReverseLoop
-    exuPayloadReg.info.listFindValid      := idu.io.out.bits.info.listFindValid
-    exuPayloadReg.info.xmsumValid         := idu.io.out.bits.info.xmsumValid
-    exuPayloadReg.info.numericDfaValid    := idu.io.out.bits.info.numericDfaValid
-    exuPayloadReg.info.aluIsSub           := idu.io.out.bits.info.aluIsSub
-    exuPayloadReg.info.isECall            := idu.io.out.bits.info.isECall
-    exuPayloadReg.info.isMRet             := idu.io.out.bits.info.isMRet
-    exuPayloadReg.info.is_beq             := idu.io.out.bits.info.is_beq
-    exuPayloadReg.info.is_bne             := idu.io.out.bits.info.is_bne
-    exuPayloadReg.info.is_blt             := idu.io.out.bits.info.is_blt
-    exuPayloadReg.info.is_bge             := idu.io.out.bits.info.is_bge
-    exuPayloadReg.info.is_bltu            := idu.io.out.bits.info.is_bltu
-    exuPayloadReg.info.is_bgeu            := idu.io.out.bits.info.is_bgeu
-    exuPayloadReg.info.notBranchPredWrong := idu.io.out.bits.info.notBranchPredWrong
-  }
-  when(exuPayloadLoads(9)) {
-    exuPayloadReg.info.preMuxWrBackData := idu.io.out.bits.info.preMuxWrBackData
+    exuPayloadReg := idu.io.out.bits
+    exuValidReg   := idu.io.out.valid
   }
   // Keep the ordinary cache index on a dedicated resettable register so it is
   // physically independent of the high-fanout address/result payload. It is

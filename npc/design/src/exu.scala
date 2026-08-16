@@ -261,6 +261,7 @@ class EXU(
   val xdfaWordAddressUpperPlusOne = Reg(UInt(29.W))
   val xdfaWordStepResult = Reg(Types.UWord)
   val xdfaWordResponseData = Reg(Types.UWord)
+  val xdfaWordHighClasses = Reg(UInt(6.W))
   val xdfaWordAvailable = Reg(UInt(3.W))
   val xdfaWordIntermediate = Reg(UInt(16.W))
   val xdfaCommitMask = Reg(UInt(8.W))
@@ -273,7 +274,7 @@ class EXU(
   val isNumericDfaStepPtr = isNumericDfaStep && func7t === 2.U
   val isNumericDfaScan = isNumericDfaStep && func7t === 3.U
   val xdfaWordLow = Module(new NumericTokenDfa2ByteStep)
-  val xdfaWordHigh = Module(new NumericTokenDfa2ByteStep)
+  val xdfaWordHigh = Module(new NumericTokenDfa2ClassStep)
   xdfaWordLow.io.state := xdfaWordStartState
   xdfaWordLow.io.mask := 0.U
   xdfaWordLow.io.consumed := 0.U
@@ -286,7 +287,7 @@ class EXU(
   xdfaWordHigh.io.active := xdfaWordIntermediate(6)
   xdfaWordHigh.io.stopped := xdfaWordIntermediate(7)
   xdfaWordHigh.io.mask := xdfaWordIntermediate(15, 8)
-  xdfaWordHigh.io.symbols := xdfaWordResponseData(31, 16)
+  xdfaWordHigh.io.classes := xdfaWordHighClasses
   xdfaWordHigh.io.available := Mux(xdfaWordAvailable > 2.U, xdfaWordAvailable - 2.U, 0.U)
   val xdfaCounterRead = Mux(func7t === 1.U, xdfaFinalCounters(reg_v1(2, 0)), xdfaCounters(reg_v1(2, 0)))
   val xdfaWordResult = Mux(func3t === 2.U, xdfaCounterRead, Mux(isNumericDfaStep, xdfaWordStepResult, 0.U))
@@ -312,6 +313,10 @@ class EXU(
     xdfaWordState := NumericDfaState.processLow
   }.elsewhen(xdfaWordState === NumericDfaState.processLow) {
     xdfaWordIntermediate := xdfaWordLow.io.result
+    xdfaWordHighClasses := Cat(
+      NumericTokenDfaSymbolClass.classify(xdfaWordResponseData(31, 24)),
+      NumericTokenDfaSymbolClass.classify(xdfaWordResponseData(23, 16))
+    )
     xdfaWordState := NumericDfaState.processHigh
   }.elsewhen(xdfaWordState === NumericDfaState.processHigh) {
     val combinedMask = xdfaPendingMask | xdfaWordHigh.io.result(15, 8)

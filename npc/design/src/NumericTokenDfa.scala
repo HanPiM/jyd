@@ -3,29 +3,50 @@ package cpu
 import chisel3._
 import chisel3.util._
 
-class NumericTokenDfa2ByteStep extends Module {
+object NumericTokenDfaSymbolClass {
+  val Other = 0
+  val Zero = 1
+  val Comma = 2
+  val Digit = 3
+  val Sign = 4
+  val Dot = 5
+  val Exponent = 6
+
+  def classify(symbol: UInt): UInt = MuxCase(Other.U(3.W),
+    Seq(
+      (symbol === 0.U) -> Zero.U(3.W),
+      (symbol === ','.U) -> Comma.U(3.W),
+      (symbol >= '0'.U && symbol <= '9'.U) -> Digit.U(3.W),
+      (symbol === '+'.U || symbol === '-'.U) -> Sign.U(3.W),
+      (symbol === '.'.U) -> Dot.U(3.W),
+      (symbol === 'E'.U || symbol === 'e'.U) -> Exponent.U(3.W)
+    ))
+}
+
+class NumericTokenDfa2ClassStep extends Module {
   val io = IO(new Bundle {
     val state     = Input(UInt(3.W))
     val mask      = Input(UInt(8.W))
     val consumed  = Input(UInt(3.W))
     val active    = Input(Bool())
     val stopped   = Input(Bool())
-    val symbols   = Input(UInt(16.W))
+    val classes   = Input(UInt(6.W))
     val available = Input(UInt(3.W))
     val result    = Output(UInt(16.W))
   })
 
-  private def isDigit(c: UInt): Bool = c >= '0'.U && c <= '9'.U
-
-  private def transition(state: UInt, symbol: UInt): (UInt, UInt) = {
-    val digit = isDigit(symbol)
+  private def transition(state: UInt, symbolClass: UInt): (UInt, UInt) = {
+    val digit = symbolClass === NumericTokenDfaSymbolClass.Digit.U
+    val sign = symbolClass === NumericTokenDfaSymbolClass.Sign.U
+    val dot = symbolClass === NumericTokenDfaSymbolClass.Dot.U
+    val exponent = symbolClass === NumericTokenDfaSymbolClass.Exponent.U
     val next = MuxLookup(state, 1.U(3.W))(
       Seq(
-        0.U -> Mux(digit, 4.U, Mux(symbol === '+'.U || symbol === '-'.U, 2.U, Mux(symbol === '.'.U, 5.U, 1.U))),
-        2.U -> Mux(digit, 4.U, Mux(symbol === '.'.U, 5.U, 1.U)),
-        4.U -> Mux(symbol === '.'.U, 5.U, Mux(digit, 4.U, 1.U)),
-        5.U -> Mux(symbol === 'E'.U || symbol === 'e'.U, 3.U, Mux(digit, 5.U, 1.U)),
-        3.U -> Mux(symbol === '+'.U || symbol === '-'.U, 6.U, 1.U),
+        0.U -> Mux(digit, 4.U, Mux(sign, 2.U, Mux(dot, 5.U, 1.U))),
+        2.U -> Mux(digit, 4.U, Mux(dot, 5.U, 1.U)),
+        4.U -> Mux(dot, 5.U, Mux(digit, 4.U, 1.U)),
+        5.U -> Mux(exponent, 3.U, Mux(digit, 5.U, 1.U)),
+        3.U -> Mux(sign, 6.U, 1.U),
         6.U -> Mux(digit, 7.U, 1.U),
         7.U -> Mux(digit, 7.U, 1.U)
       )
@@ -56,12 +77,12 @@ class NumericTokenDfa2ByteStep extends Module {
   stopped(0) := io.stopped
 
   for (i <- 0 until 2) {
-    val symbol = io.symbols(8 * i + 7, 8 * i)
-    val zero = symbol === 0.U
-    val comma = symbol === ','.U
+    val symbolClass = io.classes(3 * i + 2, 3 * i)
+    val zero = symbolClass === NumericTokenDfaSymbolClass.Zero.U
+    val comma = symbolClass === NumericTokenDfaSymbolClass.Comma.U
     val take = active(i) && i.U < io.available
     val run = take && !zero && !comma
-    val (next, transitionMask) = transition(states(i), symbol)
+    val (next, transitionMask) = transition(states(i), symbolClass)
     val invalid = run && next === 1.U
     val terminal = take && (zero || comma || invalid)
     states(i + 1) := Mux(run, next, states(i))
@@ -72,4 +93,30 @@ class NumericTokenDfa2ByteStep extends Module {
   }
 
   io.result := Cat(masks(2), stopped(2), active(2), consumed(2), states(2))
+}
+
+class NumericTokenDfa2ByteStep extends Module {
+  val io = IO(new Bundle {
+    val state     = Input(UInt(3.W))
+    val mask      = Input(UInt(8.W))
+    val consumed  = Input(UInt(3.W))
+    val active    = Input(Bool())
+    val stopped   = Input(Bool())
+    val symbols   = Input(UInt(16.W))
+    val available = Input(UInt(3.W))
+    val result    = Output(UInt(16.W))
+  })
+
+  val classStep = Module(new NumericTokenDfa2ClassStep)
+  classStep.io.state := io.state
+  classStep.io.mask := io.mask
+  classStep.io.consumed := io.consumed
+  classStep.io.active := io.active
+  classStep.io.stopped := io.stopped
+  classStep.io.classes := Cat(
+    NumericTokenDfaSymbolClass.classify(io.symbols(15, 8)),
+    NumericTokenDfaSymbolClass.classify(io.symbols(7, 0))
+  )
+  classStep.io.available := io.available
+  io.result := classStep.io.result
 }

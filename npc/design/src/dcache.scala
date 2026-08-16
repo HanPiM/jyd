@@ -139,7 +139,8 @@ class DCache extends Module {
   val listQueryHits = listTagEntries.zip(listQueryTags).zip(listQueryAddrs).zip(listQueryBanks).map {
     case (((entry, tag), addr), bank) =>
       val storeConflict = storeUpdate && storeIndex === Cat(bank, addr) && storeTag === tag
-      entry(0) && entry(7, 1) === tag && !storeConflict
+      // Tag bit 0 is address bit 11, which already selected this physical bank.
+      entry(0) && entry(7, 2) === tag(6, 1) && !storeConflict
   }
   val listReadData = listDataMem.zipWithIndex.map { case (portBanks, port) =>
     portBanks.flatten.foreach(_.io.dpra := listQueryAddrs(port))

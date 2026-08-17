@@ -13,7 +13,8 @@ COREMARK_BENCH_DIR ?= $(COREMARK_PORT_DIR)
 COREMARK_ACCEL_DIR ?= $(abspath $(COREMARK_PORT_DIR)/../accel)
 COREMARK_DEFAULTS ?= $(abspath $(COREMARK_PORT_DIR)/../coremark-defaults.mk)
 include $(COREMARK_DEFAULTS)
-COREMARK_ITERATIONS ?= 10000
+ITERATIONS ?= 10000
+COREMARK_ITERATIONS ?= $(ITERATIONS)
 COREMARK_DATA_SIZE ?= 2000
 COREMARK_OPT ?= -Os
 COREMARK_SUPPORT_OPT ?= -Os
@@ -104,6 +105,18 @@ COREMARK_BENCH_OBJS := $(addprefix $(DST_DIR)/,$(addsuffix .o,$(basename $(COREM
 COREMARK_SUPPORT_OBJS := $(addprefix $(DST_DIR)/,$(addsuffix .o,$(basename $(COREMARK_SUPPORT_SRCS))))
 COREMARK_CRC_CALLER_OBJS := $(addprefix $(DST_DIR)/,$(addsuffix .o,$(basename $(COREMARK_CRC_CALLER_SRCS))))
 COREMARK_O3_OBJS := $(addprefix $(DST_DIR)/,$(addsuffix .o,$(basename $(COREMARK_O3_SRCS))))
+COREMARK_ITERATIONS_STAMP := $(DST_DIR)/coremark-iterations.stamp
+
+# Make does not otherwise notice command-line flag changes. Update this stamp
+# only when the embedded iteration count changes so cached CoreMark objects are
+# rebuilt without forcing the RT-Thread kernel to rebuild.
+$(COREMARK_ITERATIONS_STAMP): FORCE
+	@mkdir -p $(dir $@)
+	@if [ ! -f $@ ] || [ "$$(cat $@)" != "$(COREMARK_ITERATIONS)" ]; then \
+		printf '%s\n' '$(COREMARK_ITERATIONS)' > $@; \
+	fi
+
+$(COREMARK_BENCH_OBJS) $(COREMARK_SUPPORT_OBJS): $(COREMARK_ITERATIONS_STAMP)
 # Only the CoreMark benchmark translation units get the B extensions; the
 # last -march on the command line wins, so this overrides the base ISA above.
 $(COREMARK_BENCH_OBJS): CFLAGS += -march=rv32im$(COREMARK_ZEXTS)_zicsr

@@ -27,10 +27,12 @@ For a short diagnostic run:
 ```sh
 make -C jyd-tests/rtthread-nano ARCH=riscv32-jyd \
   CROSS_COMPILE=/path/to/md-gcc/bin/riscv64-unknown-linux-gnu- \
-  COREMARK_ITERATIONS=1 COREMARK_DATA_SIZE=2000 run
+  ITERATIONS=1 COREMARK_DATA_SIZE=2000 run
 ```
 
-The normal default remains `COREMARK_ITERATIONS=10000`.
+The normal default remains `ITERATIONS=10000`. The older
+`COREMARK_ITERATIONS` variable remains available as a CoreMark-specific
+override for existing build commands.
 
 For footprint accounting, first build the RT-Thread-only baseline:
 

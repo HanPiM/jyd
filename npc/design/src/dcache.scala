@@ -59,13 +59,10 @@ class DCache extends Module {
   // removes the post-BRAM bank mux while preserving the one-cycle read latency.
   val dataMem = Module(new BlkMemGen4KB)
   val tagMem  = Seq.fill(2)(Module(new DistMemGen512x8))
-  // Two private asynchronous read replicas let list-find fetch a node's next
-  // and info words in parallel. List reverse has a separate read-only replica,
-  // so neither walker's address selection enters the other's RAM read path.
+  // Two private asynchronous read ports let list-find fetch a node's next and
+  // info words in parallel. List reverse reuses port 0 while list-find is idle.
   val listTagMem = Seq.fill(2)(Seq.fill(2)(Module(new DistMemGen512x8)))
   val listDataMem = Seq.fill(2)(Seq.fill(2)(Seq.fill(4)(Module(new DistMemGen512x8))))
-  val listReverseTagMem = Seq.fill(2)(Module(new DistMemGen512x8))
-  val listReverseDataMem = Seq.fill(2)(Seq.fill(4)(Module(new DistMemGen512x8)))
 
   object ListFindState extends ChiselEnum {
     val idle, nodeLookup, nodeResolve, nextMemory, infoRequest, infoMemory, dataLookup, dataResolve, dataMemory,
@@ -86,6 +83,7 @@ class DCache extends Module {
   val listFindInfo = Reg(UInt(32.W))
   val listFindRequestValid = RegInit(false.B)
   val listFindRequestAddressReg = Reg(UInt(32.W))
+  val listFindOwnsPort0 = RegInit(false.B)
 
   object DotNState extends ChiselEnum {
     val idle, stream, drain, done = Value
@@ -133,7 +131,12 @@ class DCache extends Module {
   dataMem.io.addrb := io.queryIndex
   io.readData      := dataMem.io.doutb
 
-  val listQueryAddresses = Seq(listFindQueryAddress, listFindQueryAddressB)
+  // Ownership changes only at walker start/consume boundaries. This keeps the
+  // multi-bit FSM decode out of the asynchronous RAM address and result cones.
+  val listQueryAddresses = Seq(
+    Mux(listFindOwnsPort0, listFindQueryAddress, io.listReversePrefetchAddress),
+    listFindQueryAddressB
+  )
   val listQueryTags = listQueryAddresses.map(_(17, 11))
   val listQueryBanks = listQueryAddresses.map(_(11))
   val listQueryAddrs = listQueryAddresses.map(_(10, 2))
@@ -152,24 +155,9 @@ class DCache extends Module {
     val bankData = portBanks.map(banks => Cat(banks.reverse.map(_.io.dpo)))
     Mux(listQueryBanks(port), bankData(1), bankData(0))
   }
-  val listReverseQueryTag = io.listReversePrefetchAddress(17, 11)
-  val listReverseQueryBank = io.listReversePrefetchAddress(11)
-  val listReverseQueryAddr = io.listReversePrefetchAddress(10, 2)
-  listReverseTagMem.foreach(_.io.dpra := listReverseQueryAddr)
-  val listReverseTagEntry = Mux(
-    listReverseQueryBank,
-    listReverseTagMem(1).io.dpo,
-    listReverseTagMem(0).io.dpo
-  )
-  val listReverseStoreConflict =
-    storeUpdate && storeIndex === io.listReversePrefetchAddress(11, 2) && storeTag === listReverseQueryTag
   io.listReversePrefetchHit :=
-    io.listReversePrefetchAddress(31, 16) === "h8010".U &&
-      listReverseTagEntry(0) && listReverseTagEntry(7, 2) === listReverseQueryTag(6, 1) &&
-      !listReverseStoreConflict
-  listReverseDataMem.flatten.foreach(_.io.dpra := listReverseQueryAddr)
-  val listReverseBankData = listReverseDataMem.map(banks => Cat(banks.reverse.map(_.io.dpo)))
-  io.listReversePrefetchData := Mux(listReverseQueryBank, listReverseBankData(1), listReverseBankData(0))
+    io.listReversePrefetchAddress(31, 16) === "h8010".U && listQueryHits(0)
+  io.listReversePrefetchData := listReadData(0)
 
   // JYD memory accepts one request per cycle and returns responses in order two
   // cycles later. Cache recently used A words by their complete runtime address.
@@ -303,6 +291,7 @@ class DCache extends Module {
 
   when(listFindState === ListFindState.idle && io.listFindStart) {
     assert(dotNState === DotNState.idle, "list-find and dotN walkers must be mutually exclusive")
+    listFindOwnsPort0 := true.B
     listFindRequestValid := false.B
     listFindCurrent := io.listFindAddress
     listFindQueryAddress := io.listFindAddress
@@ -397,6 +386,7 @@ class DCache extends Module {
     }
   }.elsewhen(listFindState === ListFindState.done && io.listFindConsume) {
     listFindRequestValid := false.B
+    listFindOwnsPort0 := false.B
     listFindState := ListFindState.idle
   }
 
@@ -447,15 +437,6 @@ class DCache extends Module {
     bank.io.a := tagWriteAddr
     bank.io.d := tagWriteData
   }
-  listReverseTagMem.zipWithIndex.foreach { case (bank, bankIndex) =>
-    val storeTagData = Cat(storeTag, storeFull)
-    val tagWriteData = Mux(storeUpdate, storeTagData, updateTagData)
-    bank.io.clk := clock
-    bank.io.we := tagWrite && tagWriteBank === bankIndex.U
-    bank.io.a := tagWriteAddr
-    bank.io.d := tagWriteData
-  }
-
   val dataWrite = storeUpdate || io.update
   val dataWriteMask = Mux(storeUpdate, storeMask, Mux(io.update, io.updateMask, 0.U))
   val dataWriteIndex = Mux(storeUpdate, storeIndex, io.updateAddr(11, 2))
@@ -477,14 +458,6 @@ class DCache extends Module {
         bank.io.a := dataWriteAddr
         bank.io.d := dataWriteData(8 * byte + 7, 8 * byte)
       }
-    }
-  }
-  listReverseDataMem.zipWithIndex.foreach { case (banks, bankIndex) =>
-    banks.zipWithIndex.foreach { case (bank, byte) =>
-      bank.io.clk := clock
-      bank.io.we := dataWrite && dataWriteBank === bankIndex.U && dataWriteMask(byte)
-      bank.io.a := dataWriteAddr
-      bank.io.d := dataWriteData(8 * byte + 7, 8 * byte)
     }
   }
 }

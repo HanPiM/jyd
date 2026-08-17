@@ -120,3 +120,84 @@ class NumericTokenDfa2ByteStep extends Module {
   classStep.io.available := io.available
   io.result := classStep.io.result
 }
+
+/** Scan two bytes while allowing a token boundary between them.
+  *
+  * The generic step module deliberately stops at the first comma, invalid
+  * transition, or NUL because its caller exposes one software-visible token
+  * step. The whole-string scanner has no such boundary: it can commit the
+  * finished token locally, restart from state zero, and consume the following
+  * byte from the same fetched word.
+  */
+class NumericTokenDfa2ByteScan extends Module {
+  val io = IO(new Bundle {
+    val state     = Input(UInt(3.W))
+    val mask      = Input(UInt(8.W))
+    val symbols   = Input(UInt(16.W))
+    val available = Input(UInt(2.W))
+    val active    = Input(Bool())
+    val nextState = Output(UInt(3.W))
+    val nextMask  = Output(UInt(8.W))
+    val consumed  = Output(UInt(2.W))
+    val terminated = Output(Bool())
+    val counterIncrement = Output(Vec(8, UInt(2.W)))
+    val finalIncrement   = Output(Vec(8, UInt(2.W)))
+  })
+
+  val classes = Seq(
+    NumericTokenDfaSymbolClass.classify(io.symbols(7, 0)),
+    NumericTokenDfaSymbolClass.classify(io.symbols(15, 8))
+  )
+  val steps = Seq.fill(2)(Module(new NumericTokenDfa2ClassStep))
+  val states = Wire(Vec(3, UInt(3.W)))
+  val masks = Wire(Vec(3, UInt(8.W)))
+  val active = Wire(Vec(3, Bool()))
+  val terminated = Wire(Vec(3, Bool()))
+  val consumed = Wire(Vec(3, UInt(2.W)))
+  val counterIncrement = Wire(Vec(3, Vec(8, UInt(2.W))))
+  val finalIncrement = Wire(Vec(3, Vec(8, UInt(2.W))))
+
+  states(0) := io.state
+  masks(0) := io.mask
+  active(0) := io.active
+  terminated(0) := false.B
+  consumed(0) := 0.U
+  counterIncrement(0).foreach(_ := 0.U)
+  finalIncrement(0).foreach(_ := 0.U)
+
+  for (byte <- 0 until 2) {
+    val take = active(byte) && byte.U < io.available
+    val zero = classes(byte) === NumericTokenDfaSymbolClass.Zero.U
+    val step = steps(byte)
+    step.io.state := states(byte)
+    step.io.mask := masks(byte)
+    step.io.consumed := 0.U
+    step.io.active := take
+    step.io.stopped := false.B
+    step.io.classes := Cat(0.U(3.W), classes(byte))
+    step.io.available := Mux(take, 1.U, 0.U)
+
+    val stopped = take && step.io.result(7)
+    val commit = stopped && (!zero || masks(byte).orR)
+    val committedMask = step.io.result(15, 8)
+    val committedState = step.io.result(2, 0)
+    states(byte + 1) := Mux(stopped, 0.U, step.io.result(2, 0))
+    masks(byte + 1) := Mux(stopped, 0.U, step.io.result(15, 8))
+    terminated(byte + 1) := terminated(byte) || (stopped && zero)
+    active(byte + 1) := take && !(stopped && zero)
+    consumed(byte + 1) := consumed(byte) + (take && !zero)
+    for (state <- 0 until 8) {
+      counterIncrement(byte + 1)(state) :=
+        counterIncrement(byte)(state) + (commit && committedMask(state))
+      finalIncrement(byte + 1)(state) :=
+        finalIncrement(byte)(state) + (commit && committedState === state.U)
+    }
+  }
+
+  io.nextState := states(2)
+  io.nextMask := masks(2)
+  io.consumed := consumed(2)
+  io.terminated := terminated(2)
+  io.counterIncrement := counterIncrement(2)
+  io.finalIncrement := finalIncrement(2)
+}

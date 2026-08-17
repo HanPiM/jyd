@@ -86,6 +86,9 @@ class EXU(
       val readData   = Input(Types.UWord)
       val listReverseHitCapture = Output(Bool())
       val listReverseCapturedHit = Input(Bool())
+      val listReversePrefetchAddress = Output(Types.UWord)
+      val listReversePrefetchHit = Input(Bool())
+      val listReversePrefetchData = Input(Types.UWord)
       val storeEpoch = Input(Bool())
       val queryIndex = Output(UInt(10.W))
       val queryTag   = Output(UInt(7.W))
@@ -113,6 +116,7 @@ class EXU(
       val dotNDone = Input(Bool())
       val dotNResult = Input(Types.UWord)
       val storeUpdate = Output(Bool())
+      val storeAddress = Output(Types.UWord)
       val storeFull   = Output(Bool())
       val storeData   = Output(Types.UWord)
       val storeMask   = Output(UInt(4.W))
@@ -174,6 +178,11 @@ class EXU(
   val listReversePrefetchHit = Reg(Bool())
   val listReversePrefetchData = Reg(Types.UWord)
   val listReverseQueryAddress = Reg(Types.UWord)
+  val listReverseLoadRequestFire0 = RegNext(
+    io.memReq.fire && listReverseState === ListReverseState.loadRequest,
+    false.B
+  )
+  val listReverseLoadRequestFire1 = RegNext(listReverseLoadRequestFire0, false.B)
 
   val isListFind = dinst.info.listFindValid
   val isDotConfig = dinst.info.xdotConfigValid
@@ -266,7 +275,12 @@ class EXU(
   val xdfaWordIntermediate = Reg(UInt(16.W))
   val xdfaCommitMask = Reg(UInt(8.W))
   val xdfaCommitFinalState = Reg(UInt(3.W))
-  val xdfaScanFinishAfterCommit = RegInit(false.B)
+  val xdfaScanLowState = Reg(UInt(3.W))
+  val xdfaScanLowMask = Reg(UInt(8.W))
+  val xdfaScanLowConsumed = Reg(UInt(2.W))
+  val xdfaScanLowTerminated = Reg(Bool())
+  val xdfaScanLowCounterIncrement = Reg(Vec(8, UInt(2.W)))
+  val xdfaScanLowFinalIncrement = Reg(Vec(8, UInt(2.W)))
   val xdfaInternalState = RegInit(0.U(3.W))
   val xdfaInternalStopped = RegInit(true.B)
   val isNumericDfaStep = isNumericDfa && func3t === 5.U
@@ -289,6 +303,18 @@ class EXU(
   xdfaWordHigh.io.mask := xdfaWordIntermediate(15, 8)
   xdfaWordHigh.io.classes := xdfaWordHighClasses
   xdfaWordHigh.io.available := Mux(xdfaWordAvailable > 2.U, xdfaWordAvailable - 2.U, 0.U)
+  val xdfaScanLow = Module(new NumericTokenDfa2ByteScan)
+  xdfaScanLow.io.state := xdfaWordStartState
+  xdfaScanLow.io.mask := xdfaPendingMask
+  xdfaScanLow.io.symbols := xdfaWordResponseData(15, 0)
+  xdfaScanLow.io.available := Mux(xdfaWordAvailable >= 2.U, 2.U, xdfaWordAvailable(1, 0))
+  xdfaScanLow.io.active := true.B
+  val xdfaScanHigh = Module(new NumericTokenDfa2ByteScan)
+  xdfaScanHigh.io.state := xdfaScanLowState
+  xdfaScanHigh.io.mask := xdfaScanLowMask
+  xdfaScanHigh.io.symbols := xdfaWordResponseData(31, 16)
+  xdfaScanHigh.io.available := Mux(xdfaWordAvailable > 2.U, xdfaWordAvailable - 2.U, 0.U)
+  xdfaScanHigh.io.active := !xdfaScanLowTerminated
   val xdfaCounterRead = Mux(func7t === 1.U, xdfaFinalCounters(reg_v1(2, 0)), xdfaCounters(reg_v1(2, 0)))
   val xdfaWordResult = Mux(func3t === 2.U, xdfaCounterRead, Mux(isNumericDfaStep, xdfaWordStepResult, 0.U))
 
@@ -300,7 +326,6 @@ class EXU(
       xdfaPendingMask := 0.U
       xdfaInternalState := 0.U
       xdfaInternalStopped := true.B
-      xdfaScanFinishAfterCommit := false.B
     }
     xdfaWordState := NumericDfaState.request
   }.elsewhen(xdfaWordState === NumericDfaState.request && io.memReq.fire) {
@@ -317,6 +342,12 @@ class EXU(
       NumericTokenDfaSymbolClass.classify(xdfaWordResponseData(31, 24)),
       NumericTokenDfaSymbolClass.classify(xdfaWordResponseData(23, 16))
     )
+    xdfaScanLowState := xdfaScanLow.io.nextState
+    xdfaScanLowMask := xdfaScanLow.io.nextMask
+    xdfaScanLowConsumed := xdfaScanLow.io.consumed
+    xdfaScanLowTerminated := xdfaScanLow.io.terminated
+    xdfaScanLowCounterIncrement := xdfaScanLow.io.counterIncrement
+    xdfaScanLowFinalIncrement := xdfaScanLow.io.finalIncrement
     xdfaWordState := NumericDfaState.processHigh
   }.elsewhen(xdfaWordState === NumericDfaState.processHigh) {
     val combinedMask = xdfaPendingMask | xdfaWordHigh.io.result(15, 8)
@@ -325,7 +356,7 @@ class EXU(
       Mux(nextAddressLow(3), xdfaWordAddressUpperPlusOne, xdfaWordAddress(31, 3)),
       nextAddressLow(2, 0)
     )
-    xdfaWordStepResult := Mux(isNumericDfaStepPtr || isNumericDfaScan,
+    xdfaWordStepResult := Mux(isNumericDfaStepPtr,
       nextAddress,
       Cat(0.U(17.W), xdfaWordHigh.io.result(15, 8), xdfaWordHigh.io.result(7),
         xdfaWordHigh.io.result(5, 3), xdfaWordHigh.io.result(2, 0)))
@@ -334,25 +365,20 @@ class EXU(
       xdfaInternalStopped := xdfaWordHigh.io.result(7)
     }
     when(isNumericDfaScan) {
-      xdfaWordAddress := nextAddress
-      when(xdfaWordHigh.io.result(7)) {
-        xdfaPendingMask := 0.U
-        xdfaWordStartState := 0.U
-        when(xdfaWordHigh.io.result(5, 3) === 0.U && combinedMask === 0.U) {
-          // The first byte is the terminal NUL of an empty token. The NUL is
-          // read, but it is not consumed and does not create a final count.
-          xdfaWordState := NumericDfaState.done
-        }.otherwise {
-          xdfaCommitMask := combinedMask
-          xdfaCommitFinalState := xdfaWordHigh.io.result(2, 0)
-          xdfaScanFinishAfterCommit := xdfaWordHigh.io.result(5, 3) === 0.U
-          xdfaWordState := NumericDfaState.commit
-        }
-      }.otherwise {
-        xdfaPendingMask := combinedMask
-        xdfaWordStartState := xdfaWordHigh.io.result(2, 0)
-        xdfaWordState := NumericDfaState.request
+      val scanConsumed = xdfaScanLowConsumed +& xdfaScanHigh.io.consumed
+      val scanNextAddress = xdfaWordAddress + scanConsumed
+      xdfaWordStepResult := scanNextAddress
+      xdfaWordAddress := scanNextAddress
+      xdfaPendingMask := xdfaScanHigh.io.nextMask
+      xdfaWordStartState := xdfaScanHigh.io.nextState
+      for (state <- 0 until 8) {
+        val counterIncrement = xdfaScanLowCounterIncrement(state) +& xdfaScanHigh.io.counterIncrement(state)
+        val finalIncrement = xdfaScanLowFinalIncrement(state) +& xdfaScanHigh.io.finalIncrement(state)
+        xdfaCounters(state) := xdfaCounters(state) + counterIncrement
+        xdfaFinalCounters(state) := xdfaFinalCounters(state) + finalIncrement
       }
+      xdfaWordState := Mux(xdfaScanLowTerminated || xdfaScanHigh.io.terminated,
+        NumericDfaState.done, NumericDfaState.request)
     }.elsewhen(isNumericDfaHistogramStep || isNumericDfaStepPtr) {
       xdfaPendingMask := Mux(xdfaWordHigh.io.result(7), 0.U, combinedMask)
       when(xdfaWordHigh.io.result(7)) {
@@ -380,8 +406,7 @@ class EXU(
         xdfaFinalCounters(state) := xdfaFinalCounters(state) + 1.U
       }
     }
-    xdfaWordState := Mux(isNumericDfaScan && !xdfaScanFinishAfterCommit,
-      NumericDfaState.request, NumericDfaState.done)
+    xdfaWordState := NumericDfaState.done
   }.elsewhen(xdfaWordState === NumericDfaState.done && io.out.fire) {
     xdfaWordState := NumericDfaState.idle
   }
@@ -401,6 +426,15 @@ class EXU(
       }
     }
   }
+
+  val listReversePrivateIndexConflict = listReverseCurrent(11, 2) === listReverseNext(11, 2)
+  val listReverseResolvedPrefetchHit = listReverseNext === listReverseCurrent ||
+    (io.dcache.listReversePrefetchHit && !listReversePrivateIndexConflict)
+  val listReverseResolvedPrefetchData = Mux(
+    listReverseNext === listReverseCurrent,
+    listReversePrevious,
+    io.dcache.listReversePrefetchData
+  )
 
   when(listReverseState === ListReverseState.idle && io.in.valid && isListReverse) {
     val usePrefetch = isListReverseLoop && listReversePrefetchValid
@@ -432,32 +466,30 @@ class EXU(
       ListReverseState.storeRequest, ListReverseState.loadRequest)
   }.elsewhen(listReverseState === ListReverseState.loadRequest && io.memReq.fire) {
     listReverseState := ListReverseState.loadResponse
-  }.elsewhen(listReverseState === ListReverseState.loadResponse && io.memResp.valid) {
+  }.elsewhen(listReverseState === ListReverseState.loadResponse && io.memResp.valid && listReverseLoadRequestFire1) {
     listReverseQueryAddress := io.memResp.bits
     listReverseNext := io.memResp.bits
     listReverseState := ListReverseState.storeRequest
-  }.elsewhen(listReverseState === ListReverseState.storeRequest && io.memReq.fire) {
-    listReverseState := ListReverseState.cacheUpdate
-  }.elsewhen(listReverseState === ListReverseState.cacheUpdate) {
-    val resolvedPrefetchHit = listReverseNext === listReverseCurrent || io.dcache.listReverseCapturedHit
-    val prefetchedData = Mux(
-      listReverseNext === listReverseCurrent,
-      listReversePrevious,
-      io.dcache.readData
-    )
-    listReversePrefetchHit := resolvedPrefetchHit
-    listReversePrefetchData := prefetchedData
+  }.elsewhen((listReverseState === ListReverseState.storeRequest ||
+    listReverseState === ListReverseState.cacheUpdate) && io.memReq.fire) {
+    listReversePrefetchHit := listReverseResolvedPrefetchHit
+    listReversePrefetchData := listReverseResolvedPrefetchData
     when(isListReverseLoop && listReverseNext =/= 0.U) {
       listReversePrevious := listReverseCurrent
       listReverseCurrent := listReverseNext
-      listReverseNext := prefetchedData
-      listReverseQueryAddress := prefetchedData
-      listReverseState := Mux(resolvedPrefetchHit, ListReverseState.storeRequest, ListReverseState.loadRequest)
+      listReverseNext := listReverseResolvedPrefetchData
+      listReverseQueryAddress := listReverseResolvedPrefetchData
+      listReverseState := Mux(listReverseResolvedPrefetchHit,
+        ListReverseState.storeRequest, ListReverseState.loadRequest)
     }.otherwise {
       listReverseResult := Mux(isListReverseLoop, listReverseCurrent, listReverseNext)
       listReversePrefetchValid := !isListReverseLoop && listReverseNext =/= 0.U
       listReverseState := ListReverseState.done
     }
+  }.elsewhen(listReverseState === ListReverseState.storeRequest) {
+    // Update the private cache once, then retain the backing-store request in
+    // cacheUpdate if the external memory applies backpressure.
+    listReverseState := ListReverseState.cacheUpdate
   }.elsewhen(listReverseState === ListReverseState.done && io.out.fire) {
     listReverseState := ListReverseState.idle
   }
@@ -818,7 +850,8 @@ class EXU(
 
   val memWData = GenMemWData(reg1AddImm(1, 0), storeRegV2)
 
-  val listReverseStoreRequest = listReverseState === ListReverseState.storeRequest
+  val listReverseStoreRequest =
+    listReverseState === ListReverseState.storeRequest || listReverseState === ListReverseState.cacheUpdate
   // The list-reversal operand is held in the IDU/EXU payload for the instruction's
   // entire residence in EXU.  Its decoder disables the previous-EXU direct
   // bypass, so this registered value cannot create a forwarding-to-tag path.
@@ -828,8 +861,8 @@ class EXU(
   val dcacheQueryAddr = Mux(isListReverse, listReverseQueryAddress, reg1AddImm)
   io.dcache.queryIndex := Mux(isListReverse, listReverseQueryAddress(11, 2), io.stagedDcacheQueryIndex)
   io.dcache.queryTag   := dcacheQueryAddr(17, 11)
-  io.dcache.listReverseHitCapture :=
-    listReverseState === ListReverseState.lookup || listReverseState === ListReverseState.storeRequest
+  io.dcache.listReverseHitCapture := listReverseState === ListReverseState.lookup
+  io.dcache.listReversePrefetchAddress := listReverseNext
   io.dcache.listFindStart := io.in.valid && isListFind && !io.dcache.listFindDone
   io.dcache.listFindConsume := io.out.fire && isListFind
   io.dcache.listFindAddress := reg_v1
@@ -850,14 +883,15 @@ class EXU(
   // accelerator state never enters a distributed-memory write-enable cone.
   val normalStoreRequest = isTypStore && io.in.valid && io.out.ready
   val cacheableStoreFire = io.memReq.fire && normalStoreRequest && reg1AddImm(21, 20) === "b01".U
-  val listReverseStepCacheStore = isListReverseStep && listReverseState === ListReverseState.cacheUpdate
+  val listReverseCacheStore = isListReverse && listReverseState === ListReverseState.storeRequest
   // Keep the asynchronous tag lookup out of this cross-module control and
   // every data-memory write enable.
   io.dcache.storeUpdate := cacheableStoreFire
+  io.dcache.storeAddress := reg1AddImm
   io.dcache.storeFull   := cacheableStoreFire && memWMask.andR
   io.dcache.storeData   := memWData
   io.dcache.storeMask   := memWMask
-  io.dcache.fullUpdate     := listReverseStepCacheStore
+  io.dcache.fullUpdate     := listReverseCacheStore
   io.dcache.fullUpdateValid := true.B
   io.dcache.fullUpdateAddr := listReverseCurrent
   io.dcache.fullUpdateData := listReversePrevious

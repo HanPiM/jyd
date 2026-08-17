@@ -341,6 +341,9 @@ class CPUCore(
   exu.io.dcache.readData := dcache.io.readData
   dcache.io.listReverseHitCapture := exu.io.dcache.listReverseHitCapture
   exu.io.dcache.listReverseCapturedHit := dcache.io.listReverseCapturedHit && p.enableDCache.B
+  dcache.io.listReversePrefetchAddress := exu.io.dcache.listReversePrefetchAddress
+  exu.io.dcache.listReversePrefetchHit := dcache.io.listReversePrefetchHit && p.enableDCache.B
+  exu.io.dcache.listReversePrefetchData := dcache.io.listReversePrefetchData
   dcache.io.listFindStart := exu.io.dcache.listFindStart
   dcache.io.listFindConsume := exu.io.dcache.listFindConsume
   dcache.io.listFindAddress := exu.io.dcache.listFindAddress
@@ -364,6 +367,9 @@ class CPUCore(
   exu.io.dcache.dotNRequestAddress := dcache.io.dotNRequestAddress
   exu.io.dcache.dotNDone := dcache.io.dotNDone
   exu.io.dcache.dotNResult := dcache.io.dotNResult
+  dcache.io.dataMutation := exu.io.dcache.storeUpdate || exu.io.dcache.fullUpdate
+  dcache.io.dataMutationAddr :=
+    Mux(exu.io.dcache.fullUpdate, exu.io.dcache.fullUpdateAddr, exu.io.dcache.storeAddress)
   val dcacheStorePortMutation = exu.io.dcache.storeUpdate && p.enableDCache.B
   val dcacheStoreMutation = dcacheStorePortMutation || (exu.io.dcache.fullUpdate && p.enableDCache.B)
   val dcacheStoreEpoch    = RegInit(false.B)

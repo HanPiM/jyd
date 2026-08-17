@@ -13,6 +13,9 @@ class DCache extends Module {
     val readData  = Output(UInt(32.W))
     val listReverseHitCapture = Input(Bool())
     val listReverseCapturedHit = Output(Bool())
+    val listReversePrefetchAddress = Input(UInt(32.W))
+    val listReversePrefetchHit = Output(Bool())
+    val listReversePrefetchData = Output(UInt(32.W))
 
     val listFindStart = Input(Bool())
     val listFindConsume = Input(Bool())
@@ -39,6 +42,8 @@ class DCache extends Module {
     val dotNDone = Output(Bool())
     val dotNResult = Output(UInt(32.W))
 
+    val dataMutation = Input(Bool())
+    val dataMutationAddr = Input(UInt(32.W))
     val storeUpdate = Input(Bool())
     val storeFull   = Input(Bool())
     val storeData   = Input(UInt(32.W))
@@ -96,6 +101,9 @@ class DCache extends Module {
   val dotNIssueB = RegInit(false.B)
   val dotNAccumulator = Reg(UInt(32.W))
   val dotNBitMode = Reg(Bool())
+  val dotNACacheValid = RegInit(VecInit(Seq.fill(8)(false.B)))
+  val dotNACacheTag = Reg(Vec(8, UInt(27.W)))
+  val dotNACacheData = Reg(Vec(8, UInt(32.W)))
 
   // The backing store accepts an ordinary store one cycle before the mirrored
   // cache memories apply it. Do not expose the old line as a hit in that
@@ -124,7 +132,10 @@ class DCache extends Module {
   // List-find and dotN are mutually exclusive, so share their registered
   // private-query addresses. This keeps FSM decode and a 32-bit mux out of the
   // asynchronous tag/data RAM address cone.
-  val listQueryAddresses = Seq(listFindQueryAddress, listFindQueryAddressB)
+  val listQueryAddresses = Seq(
+    Mux(listFindState === ListFindState.idle, io.listReversePrefetchAddress, listFindQueryAddress),
+    listFindQueryAddressB
+  )
   val listQueryTags = listQueryAddresses.map(_(17, 11))
   val listQueryBanks = listQueryAddresses.map(_(11))
   val listQueryAddrs = listQueryAddresses.map(_(10, 2))
@@ -143,23 +154,48 @@ class DCache extends Module {
     val bankData = portBanks.map(banks => Cat(banks.reverse.map(_.io.dpo)))
     Mux(listQueryBanks(port), bankData(1), bankData(0))
   }
+  io.listReversePrefetchHit :=
+    listQueryAddresses.head(31, 16) === "h8010".U && listQueryHits(0)
+  io.listReversePrefetchData := listReadData(0)
 
   // JYD memory accepts one request per cycle and returns responses in order two
-  // cycles later. Stream alternating A/B words directly from backing memory so
-  // the dot walker does not serialize cache misses or enter the private tag path.
+  // cycles later. Cache recently used A words by their complete runtime address.
+  // A miss preserves the exact alternating A/B stream; an A hit lets consecutive
+  // B requests use the otherwise idle memory bandwidth.
+  val dotNACacheIndex = dotNAddressA(4, 2)
+  val dotNACacheTagMatch = dotNACacheTag(dotNACacheIndex) === dotNAddressA(31, 5)
+  val dotNMutationIndex = io.dataMutationAddr(4, 2)
+  val dotNMutationMatchesCurrent =
+    io.dataMutation && dotNMutationIndex === dotNACacheIndex &&
+      io.dataMutationAddr(31, 5) === dotNAddressA(31, 5)
+  val dotNACacheable = dotNAddressA(31, 16) === "h8010".U
+  val dotNACacheHit =
+    dotNACacheable && dotNACacheValid(dotNACacheIndex) && dotNACacheTagMatch && !dotNMutationMatchesCurrent
+  val dotNRequestIsB = dotNIssueB || dotNACacheHit
+  val dotNCachedAHalf = Mux(dotNAddressA(1), dotNACacheData(dotNACacheIndex)(31, 16),
+    dotNACacheData(dotNACacheIndex)(15, 0))
+
   val dotNRequestFireValid0 = RegNext(io.dotNRequestFire, false.B)
-  val dotNRequestIsB0 = RegEnable(dotNIssueB, io.dotNRequestFire)
-  val dotNRequestHigh0 = RegEnable(Mux(dotNIssueB, dotNAddressB(1), dotNAddressA(1)), io.dotNRequestFire)
-  val dotNRequestLast0 = RegEnable(dotNIssueB && dotNRemaining === 1.U, io.dotNRequestFire)
+  val dotNRequestIsB0 = RegEnable(dotNRequestIsB, io.dotNRequestFire)
+  val dotNRequestHigh0 = RegEnable(Mux(dotNRequestIsB, dotNAddressB(1), dotNAddressA(1)), io.dotNRequestFire)
+  val dotNRequestLast0 = RegEnable(dotNRequestIsB && dotNRemaining === 1.U, io.dotNRequestFire)
+  val dotNRequestCachedA0 = RegEnable(dotNCachedAHalf, io.dotNRequestFire)
+  val dotNRequestAFromMemory0 = RegEnable(dotNIssueB, io.dotNRequestFire)
+  val dotNRequestAIndex0 = RegEnable(dotNACacheIndex, io.dotNRequestFire)
+  val dotNRequestATag0 = RegEnable(dotNAddressA(31, 5), io.dotNRequestFire)
   val dotNRequestFireValid1 = RegNext(dotNRequestFireValid0, false.B)
   val dotNRequestIsB1 = RegEnable(dotNRequestIsB0, dotNRequestFireValid0)
   val dotNRequestHigh1 = RegEnable(dotNRequestHigh0, dotNRequestFireValid0)
   val dotNRequestLast1 = RegEnable(dotNRequestLast0, dotNRequestFireValid0)
+  val dotNRequestCachedA1 = RegEnable(dotNRequestCachedA0, dotNRequestFireValid0)
+  val dotNRequestAFromMemory1 = RegEnable(dotNRequestAFromMemory0, dotNRequestFireValid0)
+  val dotNRequestAIndex1 = RegEnable(dotNRequestAIndex0, dotNRequestFireValid0)
+  val dotNRequestATag1 = RegEnable(dotNRequestATag0, dotNRequestFireValid0)
   val dotNResponseHalf = Mux(dotNRequestHigh1, io.dotNMemResponse.bits(31, 16), io.dotNMemResponse.bits(15, 0))
   val dotNLaunchValid = io.dotNMemResponse.valid && dotNRequestFireValid1 && dotNRequestIsB1
   val dotNLaunchLast = dotNLaunchValid && dotNRequestLast1
 
-  dotNMultiplierOperandA := dotNOperandA
+  dotNMultiplierOperandA := Mux(dotNRequestAFromMemory1, dotNOperandA, dotNRequestCachedA1)
   dotNMultiplierOperandB := dotNResponseHalf
   val dotNMultiplierInputValid = RegNext(dotNLaunchValid, false.B)
   val dotNMultiplierInputLast = RegNext(dotNLaunchLast, false.B)
@@ -191,7 +227,7 @@ class DCache extends Module {
     dotNBitMode := io.dotNBitMode
     dotNState := Mux(io.dotNLength === 0.U, DotNState.done, DotNState.stream)
   }.elsewhen(dotNState === DotNState.stream && io.dotNRequestFire) {
-    when(dotNIssueB) {
+    when(dotNRequestIsB) {
       dotNIssueB := false.B
       dotNAddressA := dotNAddressA + 2.U
       dotNAddressB := dotNAddressB + dotNStride
@@ -211,7 +247,16 @@ class DCache extends Module {
   when(io.dotNMemResponse.valid && dotNRequestFireValid1) {
     when(!dotNRequestIsB1) {
       dotNOperandA := dotNResponseHalf
+      when(dotNRequestATag1(26, 11) === "h8010".U) {
+        dotNACacheValid(dotNRequestAIndex1) := true.B
+        dotNACacheTag(dotNRequestAIndex1) := dotNRequestATag1
+        dotNACacheData(dotNRequestAIndex1) := io.dotNMemResponse.bits
+      }
     }
+  }
+
+  when(io.dataMutation) {
+    dotNACacheValid(dotNMutationIndex) := false.B
   }
 
   when(dotNProductValid) {
@@ -219,7 +264,7 @@ class DCache extends Module {
   }
 
   io.dotNRequest := dotNState === DotNState.stream
-  io.dotNRequestAddress := Mux(dotNIssueB, dotNAddressB, dotNAddressA) & ~3.U(32.W)
+  io.dotNRequestAddress := Mux(dotNRequestIsB, dotNAddressB, dotNAddressA) & ~3.U(32.W)
   io.dotNDone := dotNState === DotNState.done
   io.dotNResult := dotNAccumulator
 

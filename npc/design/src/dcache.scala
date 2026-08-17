@@ -59,11 +59,13 @@ class DCache extends Module {
   // removes the post-BRAM bank mux while preserving the one-cycle read latency.
   val dataMem = Module(new BlkMemGen4KB)
   val tagMem  = Seq.fill(2)(Module(new DistMemGen512x8))
-  // Two private asynchronous read replicas let the list walker fetch a node's
-  // next and info words in parallel.  Their outputs terminate at walker-local
-  // registers and never drive the ordinary DCache hit/result cone.
+  // Two private asynchronous read replicas let list-find fetch a node's next
+  // and info words in parallel. List reverse has a separate read-only replica,
+  // so neither walker's address selection enters the other's RAM read path.
   val listTagMem = Seq.fill(2)(Seq.fill(2)(Module(new DistMemGen512x8)))
   val listDataMem = Seq.fill(2)(Seq.fill(2)(Seq.fill(4)(Module(new DistMemGen512x8))))
+  val listReverseTagMem = Seq.fill(2)(Module(new DistMemGen512x8))
+  val listReverseDataMem = Seq.fill(2)(Seq.fill(4)(Module(new DistMemGen512x8)))
 
   object ListFindState extends ChiselEnum {
     val idle, nodeLookup, nodeResolve, nextMemory, infoRequest, infoMemory, dataLookup, dataResolve, dataMemory,
@@ -104,6 +106,8 @@ class DCache extends Module {
   val dotNACacheValid = RegInit(VecInit(Seq.fill(8)(false.B)))
   val dotNACacheTag = Reg(Vec(8, UInt(27.W)))
   val dotNACacheData = Reg(Vec(8, UInt(32.W)))
+  val dotNACacheHitReg = RegInit(false.B)
+  val dotNACacheDataReg = Reg(UInt(16.W))
 
   // The backing store accepts an ordinary store one cycle before the mirrored
   // cache memories apply it. Do not expose the old line as a hit in that
@@ -129,13 +133,7 @@ class DCache extends Module {
   dataMem.io.addrb := io.queryIndex
   io.readData      := dataMem.io.doutb
 
-  // List-find and dotN are mutually exclusive, so share their registered
-  // private-query addresses. This keeps FSM decode and a 32-bit mux out of the
-  // asynchronous tag/data RAM address cone.
-  val listQueryAddresses = Seq(
-    Mux(listFindState === ListFindState.idle, io.listReversePrefetchAddress, listFindQueryAddress),
-    listFindQueryAddressB
-  )
+  val listQueryAddresses = Seq(listFindQueryAddress, listFindQueryAddressB)
   val listQueryTags = listQueryAddresses.map(_(17, 11))
   val listQueryBanks = listQueryAddresses.map(_(11))
   val listQueryAddrs = listQueryAddresses.map(_(10, 2))
@@ -154,26 +152,44 @@ class DCache extends Module {
     val bankData = portBanks.map(banks => Cat(banks.reverse.map(_.io.dpo)))
     Mux(listQueryBanks(port), bankData(1), bankData(0))
   }
+  val listReverseQueryTag = io.listReversePrefetchAddress(17, 11)
+  val listReverseQueryBank = io.listReversePrefetchAddress(11)
+  val listReverseQueryAddr = io.listReversePrefetchAddress(10, 2)
+  listReverseTagMem.foreach(_.io.dpra := listReverseQueryAddr)
+  val listReverseTagEntry = Mux(
+    listReverseQueryBank,
+    listReverseTagMem(1).io.dpo,
+    listReverseTagMem(0).io.dpo
+  )
+  val listReverseStoreConflict =
+    storeUpdate && storeIndex === io.listReversePrefetchAddress(11, 2) && storeTag === listReverseQueryTag
   io.listReversePrefetchHit :=
-    listQueryAddresses.head(31, 16) === "h8010".U && listQueryHits(0)
-  io.listReversePrefetchData := listReadData(0)
+    io.listReversePrefetchAddress(31, 16) === "h8010".U &&
+      listReverseTagEntry(0) && listReverseTagEntry(7, 2) === listReverseQueryTag(6, 1) &&
+      !listReverseStoreConflict
+  listReverseDataMem.flatten.foreach(_.io.dpra := listReverseQueryAddr)
+  val listReverseBankData = listReverseDataMem.map(banks => Cat(banks.reverse.map(_.io.dpo)))
+  io.listReversePrefetchData := Mux(listReverseQueryBank, listReverseBankData(1), listReverseBankData(0))
 
   // JYD memory accepts one request per cycle and returns responses in order two
   // cycles later. Cache recently used A words by their complete runtime address.
   // A miss preserves the exact alternating A/B stream; an A hit lets consecutive
   // B requests use the otherwise idle memory bandwidth.
-  val dotNACacheIndex = dotNAddressA(4, 2)
-  val dotNACacheTagMatch = dotNACacheTag(dotNACacheIndex) === dotNAddressA(31, 5)
   val dotNMutationIndex = io.dataMutationAddr(4, 2)
-  val dotNMutationMatchesCurrent =
-    io.dataMutation && dotNMutationIndex === dotNACacheIndex &&
-      io.dataMutationAddr(31, 5) === dotNAddressA(31, 5)
-  val dotNACacheable = dotNAddressA(31, 16) === "h8010".U
-  val dotNACacheHit =
-    dotNACacheable && dotNACacheValid(dotNACacheIndex) && dotNACacheTagMatch && !dotNMutationMatchesCurrent
+  val dotNACacheIndex = dotNAddressA(4, 2)
+  val dotNMutationMatchesCurrent = io.dataMutation && io.dataMutationAddr(31, 2) === dotNAddressA(31, 2)
+  val dotNACacheHit = dotNACacheHitReg && !dotNMutationMatchesCurrent
   val dotNRequestIsB = dotNIssueB || dotNACacheHit
-  val dotNCachedAHalf = Mux(dotNAddressA(1), dotNACacheData(dotNACacheIndex)(31, 16),
-    dotNACacheData(dotNACacheIndex)(15, 0))
+  val dotNCachedAHalf = dotNACacheDataReg
+
+  val dotNLookupAddress = Mux(dotNState === DotNState.idle, io.dotNAddressA, dotNAddressA + 2.U)
+  val dotNLookupIndex = dotNLookupAddress(4, 2)
+  val dotNLookupMutation = io.dataMutation && io.dataMutationAddr(31, 2) === dotNLookupAddress(31, 2)
+  val dotNLookupHit =
+    dotNLookupAddress(31, 16) === "h8010".U && dotNACacheValid(dotNLookupIndex) &&
+      dotNACacheTag(dotNLookupIndex) === dotNLookupAddress(31, 5) && !dotNLookupMutation
+  val dotNLookupWord = dotNACacheData(dotNLookupIndex)
+  val dotNLookupHalf = Mux(dotNLookupAddress(1), dotNLookupWord(31, 16), dotNLookupWord(15, 0))
 
   val dotNRequestFireValid0 = RegNext(io.dotNRequestFire, false.B)
   val dotNRequestIsB0 = RegEnable(dotNRequestIsB, io.dotNRequestFire)
@@ -225,6 +241,8 @@ class DCache extends Module {
     dotNIssueB := false.B
     dotNAccumulator := 0.U
     dotNBitMode := io.dotNBitMode
+    dotNACacheHitReg := dotNLookupHit
+    dotNACacheDataReg := dotNLookupHalf
     dotNState := Mux(io.dotNLength === 0.U, DotNState.done, DotNState.stream)
   }.elsewhen(dotNState === DotNState.stream && io.dotNRequestFire) {
     when(dotNRequestIsB) {
@@ -232,6 +250,8 @@ class DCache extends Module {
       dotNAddressA := dotNAddressA + 2.U
       dotNAddressB := dotNAddressB + dotNStride
       dotNRemaining := dotNRemaining - 1.U
+      dotNACacheHitReg := dotNLookupHit
+      dotNACacheDataReg := dotNLookupHalf
       when(dotNRemaining === 1.U) {
         dotNState := DotNState.drain
       }
@@ -428,6 +448,14 @@ class DCache extends Module {
     bank.io.a := tagWriteAddr
     bank.io.d := tagWriteData
   }
+  listReverseTagMem.zipWithIndex.foreach { case (bank, bankIndex) =>
+    val storeTagData = Cat(storeTag, storeFull)
+    val tagWriteData = Mux(storeUpdate, storeTagData, updateTagData)
+    bank.io.clk := clock
+    bank.io.we := tagWrite && tagWriteBank === bankIndex.U
+    bank.io.a := tagWriteAddr
+    bank.io.d := tagWriteData
+  }
 
   val dataWrite = storeUpdate || io.update
   val dataWriteMask = Mux(storeUpdate, storeMask, Mux(io.update, io.updateMask, 0.U))
@@ -450,6 +478,14 @@ class DCache extends Module {
         bank.io.a := dataWriteAddr
         bank.io.d := dataWriteData(8 * byte + 7, 8 * byte)
       }
+    }
+  }
+  listReverseDataMem.zipWithIndex.foreach { case (banks, bankIndex) =>
+    banks.zipWithIndex.foreach { case (bank, byte) =>
+      bank.io.clk := clock
+      bank.io.we := dataWrite && dataWriteBank === bankIndex.U && dataWriteMask(byte)
+      bank.io.a := dataWriteAddr
+      bank.io.d := dataWriteData(8 * byte + 7, 8 * byte)
     }
   }
 }

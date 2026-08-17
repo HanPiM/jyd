@@ -266,7 +266,7 @@ class EXU(
   val xdfaFinalCounters = RegInit(VecInit(Seq.fill(8)(0.U(32.W))))
   val xdfaPendingMask = RegInit(0.U(8.W))
   object NumericDfaState extends ChiselEnum {
-    val idle, request, response, processLow, processHigh, commit, done = Value
+    val idle, request, response, processLow, processHigh, scanCommit, commit, done = Value
   }
   val xdfaWordState = RegInit(NumericDfaState.idle)
   val xdfaWordStartState = Reg(UInt(3.W))
@@ -285,6 +285,10 @@ class EXU(
   val xdfaScanLowTerminated = Reg(Bool())
   val xdfaScanLowCounterIncrement = Reg(Vec(8, UInt(2.W)))
   val xdfaScanLowFinalIncrement = Reg(Vec(8, UInt(2.W)))
+  val xdfaScanCounterIncrement = Reg(Vec(8, UInt(3.W)))
+  val xdfaScanFinalIncrement = Reg(Vec(8, UInt(3.W)))
+  val xdfaScanContinue = Reg(Bool())
+  val xdfaScanCommitPending = RegInit(false.B)
   val xdfaInternalState = RegInit(0.U(3.W))
   val xdfaInternalStopped = RegInit(true.B)
   val isNumericDfaStep = isNumericDfa && func3t === 5.U
@@ -330,6 +334,7 @@ class EXU(
       xdfaPendingMask := 0.U
       xdfaInternalState := 0.U
       xdfaInternalStopped := true.B
+      xdfaScanCommitPending := false.B
     }
     xdfaWordState := NumericDfaState.request
   }.elsewhen(xdfaWordState === NumericDfaState.request && io.memReq.fire) {
@@ -376,13 +381,14 @@ class EXU(
       xdfaPendingMask := xdfaScanHigh.io.nextMask
       xdfaWordStartState := xdfaScanHigh.io.nextState
       for (state <- 0 until 8) {
-        val counterIncrement = xdfaScanLowCounterIncrement(state) +& xdfaScanHigh.io.counterIncrement(state)
-        val finalIncrement = xdfaScanLowFinalIncrement(state) +& xdfaScanHigh.io.finalIncrement(state)
-        xdfaCounters(state) := xdfaCounters(state) + counterIncrement
-        xdfaFinalCounters(state) := xdfaFinalCounters(state) + finalIncrement
+        xdfaScanCounterIncrement(state) :=
+          xdfaScanLowCounterIncrement(state) +& xdfaScanHigh.io.counterIncrement(state)
+        xdfaScanFinalIncrement(state) :=
+          xdfaScanLowFinalIncrement(state) +& xdfaScanHigh.io.finalIncrement(state)
       }
-      xdfaWordState := Mux(xdfaScanLowTerminated || xdfaScanHigh.io.terminated,
-        NumericDfaState.done, NumericDfaState.request)
+      xdfaScanContinue := !(xdfaScanLowTerminated || xdfaScanHigh.io.terminated)
+      xdfaScanCommitPending := true.B
+      xdfaWordState := NumericDfaState.scanCommit
     }.elsewhen(isNumericDfaHistogramStep || isNumericDfaStepPtr) {
       xdfaPendingMask := Mux(xdfaWordHigh.io.result(7), 0.U, combinedMask)
       when(xdfaWordHigh.io.result(7)) {
@@ -400,6 +406,19 @@ class EXU(
       }
     }.otherwise {
       xdfaWordState := NumericDfaState.done
+    }
+  }.elsewhen(xdfaWordState === NumericDfaState.scanCommit) {
+    when(xdfaScanCommitPending) {
+      for (state <- 0 until 8) {
+        xdfaCounters(state) := xdfaCounters(state) + xdfaScanCounterIncrement(state)
+        xdfaFinalCounters(state) := xdfaFinalCounters(state) + xdfaScanFinalIncrement(state)
+      }
+      xdfaScanCommitPending := false.B
+    }
+    when(!xdfaScanContinue) {
+      xdfaWordState := NumericDfaState.done
+    }.elsewhen(io.memReq.fire) {
+      xdfaWordState := NumericDfaState.response
     }
   }.elsewhen(xdfaWordState === NumericDfaState.commit) {
     for (state <- 0 until 8) {
@@ -912,7 +931,8 @@ class EXU(
   // Register every DFA request before presenting it to shared memory. This
   // keeps instruction decode out of the BRAM request-control path and also
   // prevents an older untagged response from being mistaken for the first word.
-  val xdfaWordRequest = xdfaWordState === NumericDfaState.request
+  val xdfaWordRequest = xdfaWordState === NumericDfaState.request ||
+    (xdfaWordState === NumericDfaState.scanCommit && xdfaScanContinue)
   val normalMemReq = Wire(new MemReq)
   // The accelerator kind is held in ID/EX for the instruction's entire EXU
   // residence. Use that registered identity to select the request payload;

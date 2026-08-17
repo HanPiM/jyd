@@ -495,11 +495,16 @@ class CPUCore(
   // so clearing the valid register also keeps the epoch out of every EXU unit's
   // combinational input-valid path.
   idu.io.out.ready := exuAllowIn && !adjacentBranchBubble && !lateRedirectBlocked
+  // A same-cycle redirect makes the younger payload architecturally invalid,
+  // but it need not suppress the wide payload register write. Keep branch
+  // comparison and redirect logic out of every payload bit's write enable.
+  when(idu.io.out.ready) {
+    exuPayloadReg := idu.io.out.bits
+  }
   when(adjacentBranchBubble || lateRedirectBlocked || immediateRedirectNow) {
     exuValidReg := false.B
   }.elsewhen(exuAllowIn) {
-    exuPayloadReg := idu.io.out.bits
-    exuValidReg   := idu.io.out.valid
+    exuValidReg := idu.io.out.valid
   }
   // Keep the ordinary cache index on a dedicated resettable register so it is
   // physically independent of the high-fanout address/result payload. It is

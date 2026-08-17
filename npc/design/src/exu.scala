@@ -179,7 +179,7 @@ class EXU(
   val isDotConfig = dinst.info.xdotConfigValid
   val isDotN = dinst.info.xdotNValid
   val isDcacheWalker = isListFind || isDotN
-  val dotLength = RegInit(9.U(16.W))
+  val dotLength = RegInit(0.U(16.W))
 
   object XmsumState extends ChiselEnum {
     val idle, firstRequest, stream, done = Value

@@ -226,7 +226,7 @@ class DecodedInstInfo(implicit p : CPUParameters) extends InstMetaInfo with HasR
 
   // Blocking strided matrix dot-product walker. A configuration operation
   // supplies the runtime dimension; the two data operations select signed
-  // multiply-accumulate or CoreMark's bit-extract term.
+  // multiply-accumulate or a product-derived bit-field term.
   val xdotConfigValid = Bool()
   val xdotNValid = Bool()
 

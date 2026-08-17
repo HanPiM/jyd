@@ -6,7 +6,7 @@ MEMORY {
 	/* 赛题文档中没有指定堆区，是直接给出编译产物的结果，具体的堆区地址和大小是
 	 * 主办方那边设置的，这里设置的堆区只是提供给自己的测试程序使用，实际比赛时
 	 * 是跑给出的编译产物的 */
-	/* CoreMark-only FPGA configuration provides 64K of DRAM. */
+	/* This FPGA memory map provides 64K of DRAM. */
 	heap (rwx) : ORIGIN = 0x8010c000, LENGTH = 16K
 }
 

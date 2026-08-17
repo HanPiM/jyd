@@ -63,7 +63,7 @@ module jyd_uart_subsystem (
 `ifndef SYNTHESIS
     always @(posedge cpu_clk) begin
         if (resetn && tx_push && tx_fifo_full)
-            $error("JYD UART TX FIFO overflow: CoreMark-capacity contract violated");
+            $error("JYD UART TX FIFO overflow: configured transmit capacity exceeded");
     end
 `endif
 

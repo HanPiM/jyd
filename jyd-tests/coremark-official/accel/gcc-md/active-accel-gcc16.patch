@@ -756,7 +756,7 @@ index cdddb87302f647b4709b246b84cb5766230c6a97..b2e228086fe56796b0cdb1a85511c6ce
 +	  NEXT_PASS (pass_clipped_rising_score);
 diff --git a/gcc/tree-clipped-rising-score.cc b/gcc/tree-clipped-rising-score.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..0a3d56afbb3de95d34844200a1fc5fc9c04867fc
+index 0000000000000000000000000000000000000000..1ebfe998e6c2f291845212da335456aec282b990
 --- /dev/null
 +++ b/gcc/tree-clipped-rising-score.cc
 @@ -0,0 +1,2202 @@
@@ -1240,7 +1240,7 @@ index 0000000000000000000000000000000000000000..0a3d56afbb3de95d34844200a1fc5fc9
 +   depends on types, induction variables, address arithmetic and value flow;
 +   function and local-variable names are irrelevant.  */
 +static bool
-+matrix_add_const_p ()
++packed_halfword_square_add_p ()
 +{
 +  tree n = DECL_ARGUMENTS (cfun->decl);
 +  tree base = n ? DECL_CHAIN (n) : NULL_TREE;
@@ -1437,7 +1437,7 @@ index 0000000000000000000000000000000000000000..0a3d56afbb3de95d34844200a1fc5fc9
 +}
 +
 +static void
-+lower_matrix_add_const ()
++lower_packed_halfword_square_add ()
 +{
 +  tree n = DECL_ARGUMENTS (cfun->decl);
 +  tree base = DECL_CHAIN (n);
@@ -2474,7 +2474,7 @@ index 0000000000000000000000000000000000000000..0a3d56afbb3de95d34844200a1fc5fc9
 +       str += (result >> 3) & 7;
 +       if (result & 64) break;
 +     p = str;
-+     fstate = (CORE_STATE) state;
++     fstate = state converted to the destination enum type;
 +   The caller later removes the corresponding software final-count update;
 +   the hardware records that count when the step reports completion.  */
 +static void
@@ -2585,7 +2585,7 @@ index 0000000000000000000000000000000000000000..0a3d56afbb3de95d34844200a1fc5fc9
 +					NULL_TREE, NULL_TREE),
 +		     GSI_SAME_STMT);
 +
-+  /* Exit: p = str_2; fstate = (CORE_STATE) state_2.  */
++  /* Exit: update p and convert state_2 to the destination enum type.  */
 +  gsi = gsi_start_bb (exit_bb);
 +  gimple *st = gimple_build_assign (p, str_2);
 +  gimple_set_vuse (st, vop);
@@ -2935,9 +2935,9 @@ index 0000000000000000000000000000000000000000..0a3d56afbb3de95d34844200a1fc5fc9
 +	    todo |= TODO_cleanup_cfg | TODO_update_ssa;
 +	  }
 +      }
-+    if (TARGET_XPADDH2 && matrix_add_const_p ())
++    if (TARGET_XPADDH2 && packed_halfword_square_add_p ())
 +      {
-+	lower_matrix_add_const ();
++	lower_packed_halfword_square_add ();
 +	if (dump_file)
 +	  fprintf (dump_file, "recognized packed halfword matrix scalar add\n");
 +	todo |= TODO_cleanup_cfg | TODO_update_ssa;

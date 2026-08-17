@@ -9,7 +9,7 @@ Check out public GCC base commit `ff20c357b3f`, then apply
 `active-accel-gcc16.patch` with `git apply --index --unidiff-zero`. Configure
 and build an RV32-capable RISC-V cross compiler in separate source, build, and
 install directories. The patch SHA-256 is
-`accc713e001e15a736172596863629c15ccc94bbd127b46f1593b3fbfa49b8c1`.
+`39e4659fc888c8a9b833232f9334d58a5c97ec1d0497566de6ea814f7688503b`.
 The patch includes the loop-bound analysis prerequisite that was previously a
 local-only commit on top of that public base.
 

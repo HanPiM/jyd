@@ -2,6 +2,7 @@
 #include "sdbWrap.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <spdlog/common.h>
 #include <spdlog/logger.h>
@@ -65,6 +66,8 @@ static uint64_t non_custom_inst_count = 0;
 static uint64_t custom_attributed_cycle_count = 0;
 static uint64_t non_custom_attributed_cycle_count = 0;
 static uint64_t previous_retire_cycle = 0;
+static std::array<uint64_t, 4096> custom_encoding_inst_counts = {};
+static std::array<uint64_t, 4096> custom_encoding_attributed_cycle_counts = {};
 
 sim_time_t sim_get_time() { return sim_time; }
 sim_cycle_t sim_get_cycle() { return cycle_count; }
@@ -80,6 +83,12 @@ uint64_t sim_get_custom_attributed_cycle_count() {
 }
 uint64_t sim_get_non_custom_attributed_cycle_count() {
   return non_custom_attributed_cycle_count;
+}
+uint64_t sim_get_custom_encoding_inst_count(uint32_t key) {
+  return custom_encoding_inst_counts.at(key);
+}
+uint64_t sim_get_custom_encoding_attributed_cycle_count(uint32_t key) {
+  return custom_encoding_attributed_cycle_counts.at(key);
 }
 
 class sim_time_formatter : public spdlog::custom_flag_formatter {
@@ -147,6 +156,8 @@ static void reset(int n) {
   non_custom_inst_count = 0;
   custom_attributed_cycle_count = 0;
   non_custom_attributed_cycle_count = 0;
+  custom_encoding_inst_counts.fill(0);
+  custom_encoding_attributed_cycle_counts.fill(0);
   previous_retire_cycle = cycle_count;
 }
 
@@ -271,8 +282,14 @@ extern "C" void retire_inst(int inst) {
   const uint64_t attributed_cycles = retire_cycle - previous_retire_cycle;
   previous_retire_cycle = retire_cycle;
   if (is_custom) {
+    const uint32_t custom_opcode = (opcode >> 5) & 0x3;
+    const uint32_t funct3 = (static_cast<uint32_t>(inst) >> 12) & 0x7;
+    const uint32_t funct7 = static_cast<uint32_t>(inst) >> 25;
+    const uint32_t key = (custom_opcode << 10) | (funct3 << 7) | funct7;
     custom_inst_count++;
     custom_attributed_cycle_count += attributed_cycles;
+    custom_encoding_inst_counts[key]++;
+    custom_encoding_attributed_cycle_counts[key] += attributed_cycles;
   } else {
     non_custom_inst_count++;
     non_custom_attributed_cycle_count += attributed_cycles;

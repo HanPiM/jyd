@@ -122,6 +122,8 @@ uint64_t sim_get_custom_inst_count();
 uint64_t sim_get_non_custom_inst_count();
 uint64_t sim_get_custom_attributed_cycle_count();
 uint64_t sim_get_non_custom_attributed_cycle_count();
+uint64_t sim_get_custom_encoding_inst_count(uint32_t key);
+uint64_t sim_get_custom_encoding_attributed_cycle_count(uint32_t key);
 
 void sim_dump_statistics();
 

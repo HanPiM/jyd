@@ -371,6 +371,19 @@ void dumpPerfCountersStatistics(std::ostream &os, bool printFullPerf) {
 	os << "  retirement attribution heuristic (in-order single-retire): cycles since the previous "
 	      "retirement are assigned to the current instruction; dependency/overlap effects follow the "
 	      "next retirement, and reset/post-retirement tail cycles are excluded\n";
+	os << "  custom encoding retirement attribution:\n";
+	for (uint32_t key = 0; key < 4096; ++key) {
+	  const auto count = sim_get_custom_encoding_inst_count(key);
+	  if (count == 0) {
+	    continue;
+	  }
+	  const uint32_t opcode = 0x0b | ((key >> 10) << 5);
+	  const uint32_t funct3 = (key >> 7) & 0x7;
+	  const uint32_t funct7 = key & 0x7f;
+	  const auto cycles = sim_get_custom_encoding_attributed_cycle_count(key);
+	  os << fmt::format("    opcode=0x{:02x} funct7={} funct3={} count={} cycles={} cycles/inst={:.3f}\n",
+	                    opcode, funct7, funct3, count, cycles, (double)cycles / (double)count);
+	}
 	os << "  non-custom IPC/CPI denominator: total cycles (including custom instruction latency)\n";
 
   if (cycle_count == 0) {
@@ -534,6 +547,23 @@ void dumpPerfCounterTo(std::ostream &os) {
       {"non_custom_retirement_attributed_cycle_count", sim_get_non_custom_attributed_cycle_count()},
       {"cycle_count", sim_get_cycle()},
   };
+
+  for (uint32_t key = 0; key < 4096; ++key) {
+    const auto count = sim_get_custom_encoding_inst_count(key);
+    if (count == 0) {
+      continue;
+    }
+    const uint32_t opcode = 0x0b | ((key >> 10) << 5);
+    const uint32_t funct3 = (key >> 7) & 0x7;
+    const uint32_t funct7 = key & 0x7f;
+    j["run"]["custom_encoding_attribution"].push_back({
+        {"opcode", opcode},
+        {"funct7", funct7},
+        {"funct3", funct3},
+        {"instruction_count", count},
+        {"attributed_cycle_count", sim_get_custom_encoding_attributed_cycle_count(key)},
+    });
+  }
 
   bool first = true;
   for (auto &ctr : perf_counters) {

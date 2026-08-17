@@ -351,19 +351,21 @@ class IDU(
   res.xmsumValid := isMatrixReduceCustom
   res.numericDfaValid := isNumericDfaCustom
   res.aluIsSub  := !isFmtI && inst(30)
-  val isPack = inst(6, 0) === "b0110011".U && !isFmtI &&
+  // These fast-path decodes already match the complete opcode, so do not feed
+  // the shared instruction type/format decoder back into the IDU ready cone.
+  val isPack = inst(6, 0) === "b0110011".U &&
     arithmeticFunc3 === "b100".U && arithmeticFunc7 === "b0000100".U
-  val isRv32iImmediate = inst(6, 0) === "b0010011".U && isFmtI && (
+  val isRv32iImmediate = inst(6, 0) === "b0010011".U && (
     (arithmeticFunc3 =/= "b001".U && arithmeticFunc3 =/= "b101".U) ||
       (arithmeticFunc3 === "b001".U && arithmeticFunc7 === 0.U) ||
       (arithmeticFunc3 === "b101".U && (arithmeticFunc7 === 0.U || arithmeticFunc7 === "b0100000".U))
   )
-  val isRv32iRegister = inst(6, 0) === "b0110011".U && !isFmtI && (
+  val isRv32iRegister = inst(6, 0) === "b0110011".U && (
     arithmeticFunc7 === 0.U ||
       (arithmeticFunc7 === "b0100000".U && (arithmeticFunc3 === 0.U || arithmeticFunc3 === "b101".U))
   )
-  val isFastIntegerArithmetic = isTypArithmetic &&
-    (isRv32iImmediate || isRv32iRegister || isPack || isXdup8loCustom || isPackedHalfAddCustom)
+  val isFastIntegerArithmetic =
+    isRv32iImmediate || isRv32iRegister || isPack || isXdup8loCustom || isPackedHalfAddCustom
   val isShortB = isBShiftAdd || isBSext || isBMinu || isBBext ||
     isBSet || isBClr || isBInv || isBAndn || isBOrn || isBXnor || isBMax || isBMaxu || isBMin ||
     isBRol || isBRev8

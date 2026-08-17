@@ -162,7 +162,7 @@ class EXU(
   val isNumericDfa = dinst.info.numericDfaValid
 
   object ListReverseState extends ChiselEnum {
-    val idle, lookup, lookupResolve, loadRequest, loadResponse, storeRequest, cacheUpdate, done = Value
+    val idle, lookup, lookupResolve, loadRequest, loadResponse, storeRequest, done = Value
   }
   val listReverseState = RegInit(ListReverseState.idle)
   val listReverseCurrent = Reg(Types.UWord)
@@ -183,6 +183,10 @@ class EXU(
     false.B
   )
   val listReverseLoadRequestFire1 = RegNext(listReverseLoadRequestFire0, false.B)
+  val listReverseStoreFire = io.memReq.fire && listReverseState === ListReverseState.storeRequest
+  val listReverseCacheUpdateValid = RegNext(listReverseStoreFire, false.B)
+  val listReverseCacheUpdateAddr = RegEnable(listReverseCurrent, listReverseStoreFire)
+  val listReverseCacheUpdateData = RegEnable(listReversePrevious, listReverseStoreFire)
 
   val isListFind = dinst.info.listFindValid
   val isDotConfig = dinst.info.xdotConfigValid
@@ -427,13 +431,17 @@ class EXU(
     }
   }
 
-  val listReversePrivateIndexConflict = listReverseCurrent(11, 2) === listReverseNext(11, 2)
+  val listReverseCacheUpdateForward =
+    listReverseCacheUpdateValid && listReverseCacheUpdateAddr === listReverseNext
+  val listReverseCacheUpdateIndexConflict =
+    listReverseCacheUpdateValid && listReverseCacheUpdateAddr(11, 2) === listReverseNext(11, 2)
   val listReverseResolvedPrefetchHit = listReverseNext === listReverseCurrent ||
-    (io.dcache.listReversePrefetchHit && !listReversePrivateIndexConflict)
+    listReverseCacheUpdateForward ||
+    (io.dcache.listReversePrefetchHit && !listReverseCacheUpdateIndexConflict)
   val listReverseResolvedPrefetchData = Mux(
     listReverseNext === listReverseCurrent,
     listReversePrevious,
-    io.dcache.listReversePrefetchData
+    Mux(listReverseCacheUpdateForward, listReverseCacheUpdateData, io.dcache.listReversePrefetchData)
   )
 
   when(listReverseState === ListReverseState.idle && io.in.valid && isListReverse) {
@@ -462,7 +470,8 @@ class EXU(
   }.elsewhen(listReverseState === ListReverseState.lookupResolve) {
     listReverseQueryAddress := io.dcache.readData
     listReverseNext := io.dcache.readData
-    listReverseState := Mux(io.dcache.listReverseCapturedHit,
+    val initialCacheHit = listReverseCurrent(31, 16) === "h8010".U && io.dcache.listReverseCapturedHit
+    listReverseState := Mux(initialCacheHit,
       ListReverseState.storeRequest, ListReverseState.loadRequest)
   }.elsewhen(listReverseState === ListReverseState.loadRequest && io.memReq.fire) {
     listReverseState := ListReverseState.loadResponse
@@ -470,8 +479,7 @@ class EXU(
     listReverseQueryAddress := io.memResp.bits
     listReverseNext := io.memResp.bits
     listReverseState := ListReverseState.storeRequest
-  }.elsewhen((listReverseState === ListReverseState.storeRequest ||
-    listReverseState === ListReverseState.cacheUpdate) && io.memReq.fire) {
+  }.elsewhen(listReverseStoreFire) {
     listReversePrefetchHit := listReverseResolvedPrefetchHit
     listReversePrefetchData := listReverseResolvedPrefetchData
     when(isListReverseLoop && listReverseNext =/= 0.U) {
@@ -486,10 +494,6 @@ class EXU(
       listReversePrefetchValid := !isListReverseLoop && listReverseNext =/= 0.U
       listReverseState := ListReverseState.done
     }
-  }.elsewhen(listReverseState === ListReverseState.storeRequest) {
-    // Update the private cache once, then retain the backing-store request in
-    // cacheUpdate if the external memory applies backpressure.
-    listReverseState := ListReverseState.cacheUpdate
   }.elsewhen(listReverseState === ListReverseState.done && io.out.fire) {
     listReverseState := ListReverseState.idle
   }
@@ -850,8 +854,7 @@ class EXU(
 
   val memWData = GenMemWData(reg1AddImm(1, 0), storeRegV2)
 
-  val listReverseStoreRequest =
-    listReverseState === ListReverseState.storeRequest || listReverseState === ListReverseState.cacheUpdate
+  val listReverseStoreRequest = listReverseState === ListReverseState.storeRequest
   // The list-reversal operand is held in the IDU/EXU payload for the instruction's
   // entire residence in EXU.  Its decoder disables the previous-EXU direct
   // bypass, so this registered value cannot create a forwarding-to-tag path.
@@ -883,7 +886,6 @@ class EXU(
   // accelerator state never enters a distributed-memory write-enable cone.
   val normalStoreRequest = isTypStore && io.in.valid && io.out.ready
   val cacheableStoreFire = io.memReq.fire && normalStoreRequest && reg1AddImm(21, 20) === "b01".U
-  val listReverseCacheStore = isListReverse && listReverseState === ListReverseState.storeRequest
   // Keep the asynchronous tag lookup out of this cross-module control and
   // every data-memory write enable.
   io.dcache.storeUpdate := cacheableStoreFire
@@ -891,10 +893,10 @@ class EXU(
   io.dcache.storeFull   := cacheableStoreFire && memWMask.andR
   io.dcache.storeData   := memWData
   io.dcache.storeMask   := memWMask
-  io.dcache.fullUpdate     := listReverseCacheStore
+  io.dcache.fullUpdate     := listReverseCacheUpdateValid
   io.dcache.fullUpdateValid := true.B
-  io.dcache.fullUpdateAddr := listReverseCurrent
-  io.dcache.fullUpdateData := listReversePrevious
+  io.dcache.fullUpdateAddr := listReverseCacheUpdateAddr
+  io.dcache.fullUpdateData := listReverseCacheUpdateData
 
   val listReverseLoadRequest = listReverseState === ListReverseState.loadRequest
   val listReverseRequest = listReverseLoadRequest || listReverseStoreRequest

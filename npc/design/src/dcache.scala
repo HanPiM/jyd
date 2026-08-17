@@ -81,25 +81,21 @@ class DCache extends Module {
   val listFindRequestAddressReg = Reg(UInt(32.W))
 
   object DotNState extends ChiselEnum {
-    val idle, stream, requestA, responseA, requestB, responseB, launchStored, drain, done = Value
+    val idle, stream, drain, done = Value
   }
   val dotNState = RegInit(DotNState.idle)
   val dotNOperandA = Reg(UInt(16.W))
-  val dotNOperandB = Reg(UInt(16.W))
-  val dotNOperandAHigh = Reg(Bool())
-  val dotNBufferedBValid = Reg(Bool())
-  val dotNBufferedBAddress = Reg(UInt(32.W))
   val dotNMultiplierOperandA = Reg(UInt(16.W))
   val dotNMultiplierOperandB = Reg(UInt(16.W))
   val dotNProductOperandA = Reg(UInt(16.W))
   val dotNProductOperandB = Reg(UInt(16.W))
   val dotNRemaining = Reg(UInt(16.W))
   val dotNStride = Reg(UInt(17.W))
+  val dotNAddressA = Reg(UInt(32.W))
+  val dotNAddressB = Reg(UInt(32.W))
+  val dotNIssueB = RegInit(false.B)
   val dotNAccumulator = Reg(UInt(32.W))
   val dotNBitMode = Reg(Bool())
-  val dotNRequestValid = RegInit(false.B)
-  val dotNRequestUseB = RegInit(false.B)
-  val dotNRequestAddressReg = Reg(UInt(32.W))
 
   // The backing store accepts an ordinary store one cycle before the mirrored
   // cache memories apply it. Do not expose the old line as a hit in that
@@ -148,17 +144,23 @@ class DCache extends Module {
     Mux(listQueryBanks(port), bankData(1), bankData(0))
   }
 
-  val dotNStreamOperandA = Mux(listFindQueryAddress(1), listReadData(0)(31, 16), listReadData(0)(15, 0))
-  val dotNStreamOperandB = Mux(listFindQueryAddressB(1), listReadData(1)(31, 16), listReadData(1)(15, 0))
-  val dotNStreamLaunch = dotNState === DotNState.stream && listQueryHits(0) && listQueryHits(1)
-  val dotNStoredLaunch = dotNState === DotNState.launchStored
-  val dotNLaunchValid = dotNStreamLaunch || dotNStoredLaunch
-  val dotNLaunchOperandA = Mux(dotNState === DotNState.stream, dotNStreamOperandA, dotNOperandA)
-  val dotNLaunchOperandB = Mux(dotNState === DotNState.stream, dotNStreamOperandB, dotNOperandB)
-  val dotNLaunchLast = dotNLaunchValid && Mux(dotNStoredLaunch, dotNRemaining === 0.U, dotNRemaining === 1.U)
+  // JYD memory accepts one request per cycle and returns responses in order two
+  // cycles later. Stream alternating A/B words directly from backing memory so
+  // the dot walker does not serialize cache misses or enter the private tag path.
+  val dotNRequestFireValid0 = RegNext(io.dotNRequestFire, false.B)
+  val dotNRequestIsB0 = RegEnable(dotNIssueB, io.dotNRequestFire)
+  val dotNRequestHigh0 = RegEnable(Mux(dotNIssueB, dotNAddressB(1), dotNAddressA(1)), io.dotNRequestFire)
+  val dotNRequestLast0 = RegEnable(dotNIssueB && dotNRemaining === 1.U, io.dotNRequestFire)
+  val dotNRequestFireValid1 = RegNext(dotNRequestFireValid0, false.B)
+  val dotNRequestIsB1 = RegEnable(dotNRequestIsB0, dotNRequestFireValid0)
+  val dotNRequestHigh1 = RegEnable(dotNRequestHigh0, dotNRequestFireValid0)
+  val dotNRequestLast1 = RegEnable(dotNRequestLast0, dotNRequestFireValid0)
+  val dotNResponseHalf = Mux(dotNRequestHigh1, io.dotNMemResponse.bits(31, 16), io.dotNMemResponse.bits(15, 0))
+  val dotNLaunchValid = io.dotNMemResponse.valid && dotNRequestFireValid1 && dotNRequestIsB1
+  val dotNLaunchLast = dotNLaunchValid && dotNRequestLast1
 
-  dotNMultiplierOperandA := dotNLaunchOperandA
-  dotNMultiplierOperandB := dotNLaunchOperandB
+  dotNMultiplierOperandA := dotNOperandA
+  dotNMultiplierOperandB := dotNResponseHalf
   val dotNMultiplierInputValid = RegNext(dotNLaunchValid, false.B)
   val dotNMultiplierInputLast = RegNext(dotNLaunchLast, false.B)
 
@@ -180,90 +182,44 @@ class DCache extends Module {
 
   when(dotNState === DotNState.idle && io.dotNStart) {
     assert(listFindState === ListFindState.idle, "dotN and list-find walkers must be mutually exclusive")
-    listFindQueryAddress := io.dotNAddressA
-    listFindQueryAddressB := io.dotNAddressB
+    dotNAddressA := io.dotNAddressA
+    dotNAddressB := io.dotNAddressB
     dotNRemaining := io.dotNLength
     dotNStride := Cat(io.dotNLength, 0.U(1.W))
+    dotNIssueB := false.B
     dotNAccumulator := 0.U
     dotNBitMode := io.dotNBitMode
-    dotNRequestValid := false.B
-    dotNRequestUseB := false.B
     dotNState := Mux(io.dotNLength === 0.U, DotNState.done, DotNState.stream)
-  }.elsewhen(dotNState === DotNState.stream) {
-    dotNOperandA := dotNStreamOperandA
-    dotNOperandB := dotNStreamOperandB
-    dotNOperandAHigh := listFindQueryAddress(1)
-    dotNRequestAddressReg := listFindQueryAddress & ~3.U(32.W)
-    dotNBufferedBAddress := listFindQueryAddressB
-    dotNRemaining := dotNRemaining - 1.U
-    listFindQueryAddress := listFindQueryAddress + 2.U
-    listFindQueryAddressB := listFindQueryAddressB + dotNStride
-    when(dotNStreamLaunch) {
+  }.elsewhen(dotNState === DotNState.stream && io.dotNRequestFire) {
+    when(dotNIssueB) {
+      dotNIssueB := false.B
+      dotNAddressA := dotNAddressA + 2.U
+      dotNAddressB := dotNAddressB + dotNStride
+      dotNRemaining := dotNRemaining - 1.U
       when(dotNRemaining === 1.U) {
         dotNState := DotNState.drain
       }
-    }.elsewhen(!listQueryHits(0)) {
-      dotNBufferedBValid := listQueryHits(1)
-      dotNRequestValid := true.B
-      dotNRequestUseB := false.B
-      dotNState := DotNState.requestA
     }.otherwise {
-      dotNRequestValid := true.B
-      dotNRequestUseB := true.B
-      dotNState := DotNState.requestB
-    }
-  }.elsewhen(dotNState === DotNState.requestA && io.dotNRequestFire) {
-    dotNRequestValid := false.B
-    dotNState := DotNState.responseA
-  }.elsewhen(dotNState === DotNState.responseA && io.dotNMemResponse.valid) {
-    dotNOperandA := Mux(
-      dotNOperandAHigh,
-      io.dotNMemResponse.bits(31, 16),
-      io.dotNMemResponse.bits(15, 0)
-    )
-    when(dotNBufferedBValid) {
-      dotNState := DotNState.launchStored
-    }.otherwise {
-      dotNRequestValid := true.B
-      dotNRequestUseB := true.B
-      dotNState := DotNState.requestB
-    }
-  }.elsewhen(dotNState === DotNState.requestB && io.dotNRequestFire) {
-    dotNRequestValid := false.B
-    dotNState := DotNState.responseB
-  }.elsewhen(dotNState === DotNState.responseB && io.dotNMemResponse.valid) {
-    dotNOperandB := Mux(
-      dotNBufferedBAddress(1),
-      io.dotNMemResponse.bits(31, 16),
-      io.dotNMemResponse.bits(15, 0)
-    )
-    dotNState := DotNState.launchStored
-  }.elsewhen(dotNState === DotNState.launchStored) {
-    when(dotNRemaining === 0.U) {
-      dotNState := DotNState.drain
-    }.otherwise {
-      dotNState := DotNState.stream
+      dotNIssueB := true.B
     }
   }.elsewhen(dotNState === DotNState.drain && dotNProductValid && dotNProductLast) {
     dotNState := DotNState.done
   }.elsewhen(dotNState === DotNState.done && io.dotNConsume) {
-    dotNRequestValid := false.B
     dotNState := DotNState.idle
+  }
+
+  when(io.dotNMemResponse.valid && dotNRequestFireValid1) {
+    when(!dotNRequestIsB1) {
+      dotNOperandA := dotNResponseHalf
+    }
   }
 
   when(dotNProductValid) {
     dotNAccumulator := dotNNextAccumulator
   }
 
-  io.dotNRequest := dotNRequestValid
-  when(dotNRequestValid) {
-    assert(dotNState === DotNState.requestA || dotNState === DotNState.requestB)
-  }
-  io.dotNRequestAddress := Mux(
-    dotNRequestUseB,
-    dotNBufferedBAddress & ~3.U(32.W),
-    dotNRequestAddressReg
-  )
+  io.dotNRequest := dotNState === DotNState.stream
+  io.dotNRequestAddress := Mux(dotNIssueB, dotNAddressB, dotNAddressA) & ~3.U(32.W)
   io.dotNDone := dotNState === DotNState.done
   io.dotNResult := dotNAccumulator
 

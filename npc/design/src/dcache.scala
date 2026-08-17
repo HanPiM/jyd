@@ -177,8 +177,7 @@ class DCache extends Module {
   // B requests use the otherwise idle memory bandwidth.
   val dotNMutationIndex = io.dataMutationAddr(4, 2)
   val dotNACacheIndex = dotNAddressA(4, 2)
-  val dotNMutationMatchesCurrent = io.dataMutation && io.dataMutationAddr(31, 2) === dotNAddressA(31, 2)
-  val dotNACacheHit = dotNACacheHitReg && !dotNMutationMatchesCurrent
+  val dotNACacheHit = dotNACacheHitReg && !io.dataMutation
   val dotNRequestIsB = dotNIssueB || dotNACacheHit
   val dotNCachedAHalf = dotNACacheDataReg
 

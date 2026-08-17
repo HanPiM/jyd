@@ -23,7 +23,7 @@ cleanup()
 }
 trap cleanup EXIT HUP INT TERM
 
-forbidden='fp12|PSEUDO_FLOAT|current_function_name_is|DECL_NAME|IDENTIFIER_POINTER|core_list_find|matrix_mul_matrix|core_bench_state|core_state_transition|-fplugin|gcc-plugin.h|PLUGIN_PASS_MANAGER_SETUP'
+forbidden='fp12|PSEUDO_FLOAT|current_function_name_is|DECL_NAME|DECL_ASSEMBLER_NAME|IDENTIFIER_POINTER|LOCATION_FILE|main_input_filename|core_list_find|matrix_mul_matrix|core_bench_state|core_state_transition|-fplugin|gcc-plugin.h|PLUGIN_PASS_MANAGER_SETUP'
 for file in \
     "$patch_file" \
     "$coremark_dir/Makefile" \
@@ -38,6 +38,26 @@ do
         test "$grep_status" -eq 1 || fail "could not scan audit input: $file"
     fi
 done
+
+for file in "$coremark_dir/Makefile" "$coremark_dir/../rtthread-nano/Makefile"; do
+    test -r "$file" || fail "cannot read CRC build input: $file"
+    if grep -En 'xcrc_hw\.h|COREMARK_CRC_CALLER|__COREMARK_XCRCU8' "$file"; then
+        fail "forced-include CRC selection remains in $file"
+    else
+        grep_status=$?
+        test "$grep_status" -eq 1 || fail "could not scan CRC build input: $file"
+    fi
+done
+
+test ! -e "$coremark_dir/accel/xcrc_hw.h" \
+    || fail "legacy forced-include CRC macro header remains in the tree"
+
+grep -Fq 'fcrc-semantic-lto' "$patch_file" \
+    || fail "GCC patch does not provide the explicit CRC semantic-LTO option"
+grep -Fq 'pass_ch_crc' "$patch_file" \
+    || fail "GCC patch is missing the CRC-specific early loop-shape pass"
+grep -Fq 'pass_crc_semantic_wrappers' "$patch_file" \
+    || fail "GCC patch is missing the LTO CRC semantic propagation pass"
 
 if ! unexpected_extensions=$(find "$coremark_dir/accel" -maxdepth 1 -type f \
     \( -name '*.cc' -o -name '*.so' \) -print -quit); then

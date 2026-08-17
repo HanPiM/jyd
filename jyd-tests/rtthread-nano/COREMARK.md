@@ -47,7 +47,10 @@ values. Optimizing CoreMark must not be reported as reducing the RTOS baseline.
 
 ## Optimization and output boundaries
 
-- Timed benchmark translation units use `COREMARK_OPT=-O3`.
+- The five benchmark translation units use `COREMARK_OPT=-Os` by default.
+  `core_list_join.c`, `core_matrix.c`, `core_state.c`, and `core_util.c` include
+  the checked-in hot-path override and are optimized at `-O3`; `core_main.c`
+  remains at `-Os`.
 - Port, formatter, conversion adapter, and SoftFloat use
   `COREMARK_SUPPORT_OPT=-Os`. The SoftFloat archive path includes this setting
   so incompatible cached objects are not reused.
@@ -58,9 +61,12 @@ values. Optimizing CoreMark must not be reported as reducing the RTOS baseline.
   before taking the start timestamp, then writes `0x00000000` immediately after
   taking the stop timestamp. LED MMIO latency and result formatting are not
   included in the reported CoreMark time.
-- `COREMARK_XEXTS`, `COREMARK_ZEXTS`, and their GCC MD flags default to the
-  values used by `coremark-official`. They apply only to CoreMark benchmark
-  objects; the RT-Thread kernel, FinSH, and AM port stay on `rv32im_zicsr`.
+- `COREMARK_XEXTS`, `COREMARK_ZEXTS`, and the GCC target flags default to the
+  values used by `coremark-official`. Standard Z extensions apply to the five
+  benchmark and four support objects. Accelerator target flags and
+  `-flto -fcrc-semantic-lto` apply only to the five benchmark objects. The
+  RT-Thread kernel, FinSH, AM port, and SoftFloat remain non-LTO on
+  `rv32im_zicsr`; the mixed image is linked through the same patched GCC driver.
 - The default CoreMark build requires the patched GCC described under
   `../coremark-official/accel/gcc-md/`.
 - `RT_ALIGN_SIZE` is 16 because RV32 GCC requires 16-byte stack alignment.

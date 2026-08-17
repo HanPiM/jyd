@@ -1,11 +1,21 @@
 diff --git a/gcc/Makefile.in b/gcc/Makefile.in
-index 8ecef4ccdc7f222658a5e9cef1a3b0362bcfc788..e26943123656804c96608eb99f8ba74a1bf8a04e 100644
+index 8ecef4ccdc7..e2694312365 100644
 --- a/gcc/Makefile.in
 +++ b/gcc/Makefile.in
 @@ -1764,0 +1765 @@ OBJS = \
 +	tree-clipped-rising-score.o \
+diff --git a/gcc/common.opt b/gcc/common.opt
+index 204c8ae721b..68f22a3b943 100644
+--- a/gcc/common.opt
++++ b/gcc/common.opt
+@@ -2544,0 +2545,5 @@ If neither case applies, generate table-based CRC.
++fcrc-semantic-lto
++Common Var(flag_crc_semantic_lto) Init(0) Optimization
++Preserve verified CRC semantics through LTO while restricting unrelated
++cross-translation-unit IPA transformations.
++
 diff --git a/gcc/config/riscv/bitmanip.md b/gcc/config/riscv/bitmanip.md
-index 0d16d79df3ae4cbe6f01556ee32dc6aed6552685..6c75513b1dc80f609abf91044389cf0010294554 100644
+index 0d16d79df3a..6c75513b1dc 100644
 --- a/gcc/config/riscv/bitmanip.md
 +++ b/gcc/config/riscv/bitmanip.md
 @@ -1219,0 +1220,20 @@
@@ -42,7 +52,7 @@ index 0d16d79df3ae4cbe6f01556ee32dc6aed6552685..6c75513b1dc80f609abf91044389cf00
 +    }
 +
 diff --git a/gcc/config/riscv/peephole.md b/gcc/config/riscv/peephole.md
-index e49bc0426653fd29e564335d3d9e891291e68c5e..5864c590efe92934055dbc5474755bce4e94a016 100644
+index e49bc042665..5864c590efe 100644
 --- a/gcc/config/riscv/peephole.md
 +++ b/gcc/config/riscv/peephole.md
 @@ -21,0 +22,318 @@
@@ -365,7 +375,7 @@ index e49bc0426653fd29e564335d3d9e891291e68c5e..5864c590efe92934055dbc5474755bce
 +	(unspec:SI [(match_dup 1)] UNSPEC_XBMUL))])
 +
 diff --git a/gcc/config/riscv/riscv.md b/gcc/config/riscv/riscv.md
-index d2883ef9f5af7c368f11f945298699da6759e2ec..ae554ecda8d9c677c04bee810ce1bf2337b1c8fc 100644
+index d2883ef9f5a..ae554ecda8d 100644
 --- a/gcc/config/riscv/riscv.md
 +++ b/gcc/config/riscv/riscv.md
 @@ -102,0 +103,28 @@
@@ -398,7 +408,7 @@ index d2883ef9f5af7c368f11f945298699da6759e2ec..ae554ecda8d9c677c04bee810ce1bf23
 +  UNSPEC_XDFACNT_INIT
 +
 diff --git a/gcc/config/riscv/riscv.opt b/gcc/config/riscv/riscv.opt
-index 2c26ee99691315d1374d6e5d4ddebf30f259eb1f..5f4a5c98f70d36dead2ee9b9e93635601ef29adb 100644
+index 2c26ee99691..5f4a5c98f70 100644
 --- a/gcc/config/riscv/riscv.opt
 +++ b/gcc/config/riscv/riscv.opt
 @@ -83,0 +84,52 @@ Use hardware instructions for integer division.
@@ -454,8 +464,178 @@ index 2c26ee99691315d1374d6e5d4ddebf30f259eb1f..5f4a5c98f70d36dead2ee9b9e9363560
 +Target Mask(XDFASCAN)
 +Use the whole-string numeric-token DFA scan instruction.
 +
+diff --git a/gcc/gimple-crc-optimization.cc b/gcc/gimple-crc-optimization.cc
+index e69bc2935eb..a924312c82d 100644
+--- a/gcc/gimple-crc-optimization.cc
++++ b/gcc/gimple-crc-optimization.cc
+@@ -36,0 +37 @@ along with GCC; see the file COPYING3.  If not see
++#include "attribs.h"
+@@ -247,0 +249,118 @@ class crc_optimization {
++/* Return true when FUN is a small, side-effect-free wrapper whose only calls
++   are CRC internal functions.  Such wrappers can be propagated through LTO
++   without enabling general-purpose interprocedural inlining.  */
++
++static bool
++crc_semantic_wrapper_p (function *fun)
++{
++  bool has_crc = false;
++  unsigned int statement_count = 0;
++  basic_block bb;
++  FOR_EACH_BB_FN (bb, fun)
++    for (gimple_stmt_iterator gsi = gsi_start_nondebug_bb (bb);
++	 !gsi_end_p (gsi); gsi_next_nondebug (&gsi))
++      {
++	gimple *stmt = gsi_stmt (gsi);
++	if (++statement_count > 128 || gimple_has_volatile_ops (stmt))
++	  return false;
++
++	switch (gimple_code (stmt))
++	  {
++	  case GIMPLE_CALL:
++	    if (gimple_call_internal_p (stmt, IFN_CRC)
++		|| gimple_call_internal_p (stmt, IFN_CRC_REV))
++	      has_crc = true;
++	    else
++	      return false;
++	    break;
++
++	  case GIMPLE_ASSIGN:
++	    if (gimple_store_p (stmt) || gimple_vuse (stmt))
++	      return false;
++	    break;
++
++	  case GIMPLE_COND:
++	  case GIMPLE_GOTO:
++	  case GIMPLE_LABEL:
++	  case GIMPLE_NOP:
++	  case GIMPLE_PHI:
++	  case GIMPLE_PREDICT:
++	  case GIMPLE_RETURN:
++	    break;
++
++	  default:
++	    return false;
++	  }
++      }
++  return has_crc;
++}
++
++static bool
++target_supports_crc_semantic_lto_p ()
++{
++  tree data_type = build_nonstandard_integer_type (8, 1);
++  tree result_type = build_nonstandard_integer_type (16, 1);
++  return direct_internal_fn_supported_p (IFN_CRC_REV,
++					 tree_pair (data_type, result_type),
++					 OPTIMIZE_FOR_BOTH);
++}
++
++static void
++add_function_attribute (tree decl, const char *name)
++{
++  if (!lookup_attribute (name, DECL_ATTRIBUTES (decl)))
++    DECL_ATTRIBUTES (decl)
++      = tree_cons (get_identifier (name), NULL_TREE, DECL_ATTRIBUTES (decl));
++}
++
++static bool
++function_has_indirect_call_p (function *fun)
++{
++  basic_block bb;
++  FOR_EACH_BB_FN (bb, fun)
++    for (gimple_stmt_iterator gsi = gsi_start_nondebug_bb (bb);
++	 !gsi_end_p (gsi); gsi_next_nondebug (&gsi))
++      {
++	gcall *call = dyn_cast<gcall *> (gsi_stmt (gsi));
++	if (call && !gimple_call_internal_p (call)
++	    && !gimple_call_fndecl (call))
++	  return true;
++      }
++  return false;
++}
++
++static void
++mark_crc_semantic_lto_function (function *fun)
++{
++  if (!flag_lto || !flag_crc_semantic_lto
++      || !target_supports_crc_semantic_lto_p ())
++    return;
++
++  tree decl = fun->decl;
++  add_function_attribute (decl, "crc_semantic_lto");
++  if (crc_semantic_wrapper_p (fun))
++    {
++      DECL_DECLARED_INLINE_P (decl) = 1;
++      DECL_DISREGARD_INLINE_LIMITS (decl) = 1;
++      add_function_attribute (decl, "always_inline");
++      add_function_attribute (decl, "crc_semantic_wrapper");
++
++      if (dump_file)
++	fprintf (dump_file, "Marked CRC semantic wrapper for LTO inlining.\n");
++      return;
++    }
++
++  /* Preserve ordinary per-translation-unit optimization while preventing
++     whole-program cloning and folding from duplicating accelerator sites.  */
++  add_function_attribute (decl, "noclone");
++  add_function_attribute (decl, "no_icf");
++  if (function_has_indirect_call_p (fun))
++    {
++      add_function_attribute (decl, "noinline");
++      DECL_UNINLINABLE (decl) = 1;
++    }
++
++  if (dump_file)
++    fprintf (dump_file, "Protected non-CRC function from LTO cloning.\n");
++}
++
+@@ -1379,0 +1499,13 @@ namespace
++    const pass_data pass_data_crc_semantic_wrappers
++	= {
++	    GIMPLE_PASS, /* type */
++	    "crc_inline", /* name */
++	    OPTGROUP_NONE, /* optinfo_flags */
++	    TV_GIMPLE_CRC_OPTIMIZATION, /* tv_id */
++	    (PROP_cfg | PROP_ssa), /* properties_required */
++	    0, /* properties_provided */
++	    0, /* properties_destroyed */
++	    0, /* todo_flags_start */
++	    0, /* todo_flags_finish */
++	};
++
+@@ -1392,0 +1525,4 @@ namespace
++      opt_pass *clone () final override
++      {
++	return new pass_crc_optimization (m_ctxt);
++      }
+@@ -1395,0 +1532,18 @@ namespace
++    class pass_crc_semantic_wrappers : public gimple_opt_pass {
++     public:
++      pass_crc_semantic_wrappers (gcc::context *ctxt)
++	  : gimple_opt_pass (pass_data_crc_semantic_wrappers, ctxt)
++      {}
++
++      bool gate (function *) final override
++      {
++	return flag_optimize_crc && flag_crc_semantic_lto;
++      }
++
++      unsigned int execute (function *fun) final override
++      {
++	mark_crc_semantic_lto_function (fun);
++	return 0;
++      }
++    }; // class pass_crc_semantic_wrappers
++
+@@ -1408,0 +1563,6 @@ make_pass_crc_optimization (gcc::context *ctxt)
++
++gimple_opt_pass *
++make_pass_crc_semantic_wrappers (gcc::context *ctxt)
++{
++  return new pass_crc_semantic_wrappers (ctxt);
++}
 diff --git a/gcc/internal-fn.cc b/gcc/internal-fn.cc
-index 25acc63b247b531179aa6d16873cabe23aadce52..201edc043189596d39b27c1121bb94f5a75fd26f 100644
+index 25acc63b247..201edc04318 100644
 --- a/gcc/internal-fn.cc
 +++ b/gcc/internal-fn.cc
 @@ -40,0 +41 @@ along with GCC; see the file COPYING3.  If not see
@@ -712,7 +892,7 @@ index 25acc63b247b531179aa6d16873cabe23aadce52..201edc043189596d39b27c1121bb94f5
 +}
 +
 diff --git a/gcc/internal-fn.def b/gcc/internal-fn.def
-index d142416725a2950c5f943338ad97701a031c795c..394cb463ec8ab8a4efff127aa029f98f7bf39d69 100644
+index d142416725a..394cb463ec8 100644
 --- a/gcc/internal-fn.def
 +++ b/gcc/internal-fn.def
 @@ -206,0 +207,18 @@ DEF_INTERNAL_OPTAB_FN (CRC_REV, ECF_CONST | ECF_NOTHROW, crc_rev, crc)
@@ -734,8 +914,37 @@ index d142416725a2950c5f943338ad97701a031c795c..394cb463ec8ab8a4efff127aa029f98f
 +DEF_INTERNAL_OPTAB_FN (XDFA4H_FINAL_READ, ECF_NOTHROW | ECF_LEAF,
 +		       xdfa4h_final_read, unary)
 +DEF_INTERNAL_FN (XDFACNT_INIT, ECF_NOTHROW | ECF_LEAF, NULL)
+diff --git a/gcc/ipa-cp.cc b/gcc/ipa-cp.cc
+index 7a50a7ee811..08b2d311fd4 100644
+--- a/gcc/ipa-cp.cc
++++ b/gcc/ipa-cp.cc
+@@ -501,0 +502,3 @@ ipcp_versionable_function_p (struct cgraph_node *node)
++  if (lookup_attribute ("crc_semantic_lto",
++			DECL_ATTRIBUTES (node->decl)))
++    return false;
+diff --git a/gcc/ipa-inline.cc b/gcc/ipa-inline.cc
+index 24d8974d5ca..615d882b1eb 100644
+--- a/gcc/ipa-inline.cc
++++ b/gcc/ipa-inline.cc
+@@ -409,0 +410,16 @@ can_inline_edge_p (struct cgraph_edge *e, bool report,
++  /* CRC semantic LTO deliberately uses the linker plugin only to carry a
++     verified CRC internal function across translation-unit boundaries.  Keep
++     ordinary functions within their original LTO object so their local target
++     patterns retain the same shapes as separate compilation.  */
++  else if (in_lto_p
++	   && caller->lto_file_data != callee->lto_file_data
++	   && (lookup_attribute ("crc_semantic_lto",
++				 DECL_ATTRIBUTES (caller->decl))
++	       || lookup_attribute ("crc_semantic_lto",
++				    DECL_ATTRIBUTES (callee->decl)))
++	   && !lookup_attribute ("crc_semantic_wrapper",
++				 DECL_ATTRIBUTES (callee->decl)))
++    {
++      e->inline_failed = CIF_MUST_REMAIN_IN_TU;
++      inlinable = false;
++    }
 diff --git a/gcc/optabs.def b/gcc/optabs.def
-index 193f42a728a2d414f078bce785f760cca00087ca..cce8e9b7765b9571026b7bbe418acd1e0814b803 100644
+index 193f42a728a..cce8e9b7765 100644
 --- a/gcc/optabs.def
 +++ b/gcc/optabs.def
 @@ -228,0 +229,9 @@ OPTAB_D (movmisalign_optab, "movmisalign$a")
@@ -749,14 +958,22 @@ index 193f42a728a2d414f078bce785f760cca00087ca..cce8e9b7765b9571026b7bbe418acd1e
 +OPTAB_D (xdfa4h_read_optab, "xdfa4h_read$a2")
 +OPTAB_D (xdfa4h_final_read_optab, "xdfa4h_final_read$a2")
 diff --git a/gcc/passes.def b/gcc/passes.def
-index cdddb87302f647b4709b246b84cb5766230c6a97..b2e228086fe56796b0cdb1a85511c6ceaa2392e9 100644
+index cdddb87302f..98101232f65 100644
 --- a/gcc/passes.def
 +++ b/gcc/passes.def
-@@ -96,0 +97 @@ along with GCC; see the file COPYING3.  If not see
+@@ -96,0 +97,9 @@ along with GCC; see the file COPYING3.  If not see
++	  NEXT_PASS (pass_ch_crc);
++	  NEXT_PASS (pass_tree_loop);
++	  PUSH_INSERT_PASSES_WITHIN (pass_tree_loop)
++	      NEXT_PASS (pass_tree_loop_init);
++	      NEXT_PASS (pass_crc_optimization);
++	      NEXT_PASS (pass_tree_loop_done);
++	  POP_INSERT_PASSES ()
++	  NEXT_PASS (pass_crc_semantic_wrappers);
 +	  NEXT_PASS (pass_clipped_rising_score);
 diff --git a/gcc/tree-clipped-rising-score.cc b/gcc/tree-clipped-rising-score.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..1ebfe998e6c2f291845212da335456aec282b990
+index 00000000000..c70b67e0d62
 --- /dev/null
 +++ b/gcc/tree-clipped-rising-score.cc
 @@ -0,0 +1,2202 @@
@@ -778,6 +995,7 @@ index 0000000000000000000000000000000000000000..1ebfe998e6c2f291845212da335456ae
 +#include "fold-const.h"
 +#include "cfghooks.h"
 +#include "cfgloop.h"
++#include "tree-ssa-loop.h"
 +#include "cgraph.h"
 +#include "internal-fn.h"
 +#include "diagnostic-core.h"
@@ -2723,19 +2941,12 @@ index 0000000000000000000000000000000000000000..1ebfe998e6c2f291845212da335456ae
 +lower_xdfa_scan (vec<gcall *> &calls, tree tc, tree fc,
 +		      enum xdfa_lowering lowering)
 +{
-+  /* Counter reset in the preheader of the first scan loop.  */
-+  basic_block body = gimple_bb (calls[0]);
-+  basic_block hdr = EDGE_PRED (body, 0)->src;
-+  basic_block pre = NULL;
-+  for (unsigned i = 0; i < EDGE_COUNT (hdr->preds); ++i)
-+    if (EDGE_PRED (hdr, i)->src != body)
-+      pre = EDGE_PRED (hdr, i)->src;
-+  if (!pre)
-+    return;
-+  gimple_stmt_iterator gsi = gsi_last_bb (pre);
++  /* The loop optimizer has already been finalized for this pass.  Reset once
++     on function entry rather than placing the stateful operation in a loop.  */
++  edge entry = single_succ_edge (ENTRY_BLOCK_PTR_FOR_FN (cfun));
 +  gcall *init = gimple_build_call_internal (IFN_XDFACNT_INIT, 0);
 +  gimple_set_vuse (init, gimple_vop (cfun));
-+  gsi_insert_before (&gsi, init, GSI_SAME_STMT);
++  gsi_insert_on_edge_immediate (entry, init);
 +
 +  /* Lower the transition calls to the selected target operation.  */
 +  for (unsigned i = 0; i < calls.length (); ++i)
@@ -2818,6 +3029,12 @@ index 0000000000000000000000000000000000000000..1ebfe998e6c2f291845212da335456ae
 +	bool is_final = (gimple_assign_rhs_code (s) == ARRAY_REF
 +			 ? TREE_OPERAND (rhs, 0) == fc
 +			 : counts_ref_base_decl (rhs) == fc);
++	/* Keep the indexed hardware counter reads as one loop site.  Apart from
++	   avoiding code growth, this preserves the stateful counter interface
++	   when CRC semantics arrive later through LTO.  */
++	class loop *read_loop = loop_containing_stmt (s);
++	if (read_loop && read_loop->num != 0)
++	  read_loop->unroll = 1;
 +	gcall *read = gimple_build_call_internal
 +	  (is_final ? IFN_XDFA4H_FINAL_READ : IFN_XDFA4H_READ, 1, idx32);
 +	gimple_call_set_lhs (read, new_lhs);
@@ -2963,13 +3180,122 @@ index 0000000000000000000000000000000000000000..1ebfe998e6c2f291845212da335456ae
 +  return new pass_clipped_rising_score (ctxt);
 +}
 diff --git a/gcc/tree-pass.h b/gcc/tree-pass.h
-index b3c97658a8fefff0dfd153b0ff3cd68e8bfb281d..7dfd8c76b2c2443ad7a71d3973b806d1dc2c1835 100644
+index b3c97658a8f..7a0010a4ba8 100644
 --- a/gcc/tree-pass.h
 +++ b/gcc/tree-pass.h
 @@ -391,0 +392 @@ extern gimple_opt_pass *make_pass_loop_distribution (gcc::context *ctxt);
 +extern gimple_opt_pass *make_pass_clipped_rising_score (gcc::context *ctxt);
+@@ -392,0 +394 @@ extern gimple_opt_pass *make_pass_crc_optimization (gcc::context *ctxt);
++extern gimple_opt_pass *make_pass_crc_semantic_wrappers (gcc::context *ctxt);
+@@ -403,0 +406 @@ extern gimple_opt_pass *make_pass_ch (gcc::context *ctxt);
++extern gimple_opt_pass *make_pass_ch_crc (gcc::context *ctxt);
+diff --git a/gcc/tree-ssa-loop-ch.cc b/gcc/tree-ssa-loop-ch.cc
+index 5fdb9a009c9..62dd39c0bfe 100644
+--- a/gcc/tree-ssa-loop-ch.cc
++++ b/gcc/tree-ssa-loop-ch.cc
+@@ -729,0 +730,13 @@ const pass_data pass_data_ch =
++const pass_data pass_data_ch_crc =
++{
++  GIMPLE_PASS, /* type */
++  "ch_crc", /* name */
++  OPTGROUP_LOOP, /* optinfo_flags */
++  TV_TREE_CH, /* tv_id */
++  ( PROP_cfg | PROP_ssa ), /* properties_required */
++  0, /* properties_provided */
++  0, /* properties_destroyed */
++  0, /* todo_flags_start */
++  0, /* todo_flags_finish */
++};
++
+@@ -749,0 +763,18 @@ protected:
++class pass_ch_crc : public ch_base
++{
++public:
++  pass_ch_crc (gcc::context *ctxt)
++    : ch_base (pass_data_ch_crc, ctxt)
++  {}
++
++  bool gate (function *) final override
++  {
++    return flag_optimize_crc && flag_crc_semantic_lto && flag_tree_ch;
++  }
++
++  unsigned int execute (function *) final override;
++
++protected:
++  bool process_loop_p (class loop *loop) final override;
++}; // class pass_ch_crc
++
+@@ -1238,0 +1270,60 @@ pass_ch::execute (function *fun)
++/* Copy only loop headers that have the inexpensive structural prerequisites
++   of a bit-at-a-time CRC.  The subsequent CRC pass still proves the complete
++   data flow and polynomial before replacing the loop.  */
++
++bool
++pass_ch_crc::process_loop_p (class loop *loop)
++{
++  if (!loop || loop->inner)
++    return false;
++
++  tree iterations = number_of_latch_executions (loop);
++  if (!iterations || iterations == chrec_dont_know
++      || !tree_fits_uhwi_p (iterations))
++    return false;
++
++  unsigned HOST_WIDE_INT n = tree_to_uhwi (iterations);
++  if (n != 8 && n != 16 && n != 24 && n != 32 && n != 64)
++    return false;
++
++  bool has_xor = false;
++  bool has_shift_one = false;
++  unsigned int conditional_bbs = 0;
++  basic_block *bbs = get_loop_body (loop);
++  for (unsigned int i = 0; i < loop->num_nodes; ++i)
++    {
++      basic_block bb = bbs[i];
++      if (!single_succ_p (bb))
++	++conditional_bbs;
++
++      for (gimple_stmt_iterator gsi = gsi_start_nondebug_bb (bb);
++	   !gsi_end_p (gsi); gsi_next_nondebug (&gsi))
++	{
++	  gimple *stmt = gsi_stmt (gsi);
++	  if (!is_gimple_assign (stmt))
++	    continue;
++
++	  enum tree_code code = gimple_assign_rhs_code (stmt);
++	  if (code == BIT_XOR_EXPR)
++	    has_xor = true;
++	  else if ((code == LSHIFT_EXPR || code == RSHIFT_EXPR)
++		   && gimple_assign_rhs2 (stmt)
++		   && integer_onep (gimple_assign_rhs2 (stmt)))
++	    has_shift_one = true;
++	}
++    }
++  free (bbs);
++  return conditional_bbs == 2 && has_xor && has_shift_one;
++}
++
++unsigned int
++pass_ch_crc::execute (function *fun)
++{
++  loop_optimizer_init (LOOPS_NORMAL | LOOPS_HAVE_RECORDED_EXITS);
++  scev_initialize ();
++  unsigned int res = copy_headers (fun);
++  scev_finalize ();
++  loop_optimizer_finalize ();
++  return res;
++}
++
+@@ -1291,0 +1383,6 @@ make_pass_ch (gcc::context *ctxt)
++
++gimple_opt_pass *
++make_pass_ch_crc (gcc::context *ctxt)
++{
++  return new pass_ch_crc (ctxt);
++}
 diff --git a/gcc/tree-ssa-loop-niter.cc b/gcc/tree-ssa-loop-niter.cc
-index c1a807db6cbaa1fb0acd3f8d275644241dac6f3c..047baa2858eacf8bc8d914e2121e69b6aac6baae 100644
+index c1a807db6cb..047baa2858e 100644
 --- a/gcc/tree-ssa-loop-niter.cc
 +++ b/gcc/tree-ssa-loop-niter.cc
 @@ -115 +115 @@ split_to_var_and_offset (tree expr, tree *var, mpz_t offset)
@@ -3021,3 +3347,18 @@ index c1a807db6cbaa1fb0acd3f8d275644241dac6f3c..047baa2858eacf8bc8d914e2121e69b6
 +	     entry guards such as "N != 0" become reachable.  */
 +	  if (refine_value_range_using_guard (type, var, c0, cmp, c1, minm, maxm))
 +	    ++cnt;
+diff --git a/gcc/tree-ssa-loop.cc b/gcc/tree-ssa-loop.cc
+index e0cfb9f43ff..83da53a01df 100644
+--- a/gcc/tree-ssa-loop.cc
++++ b/gcc/tree-ssa-loop.cc
+@@ -94 +93,0 @@ make_pass_fix_loops (gcc::context *ctxt)
+-
+@@ -137,0 +137 @@ public:
++  opt_pass *clone () final override { return new pass_tree_loop (m_ctxt); }
+@@ -344,0 +345 @@ public:
++  opt_pass *clone () final override { return new pass_tree_loop_init (m_ctxt); }
+@@ -513,0 +515 @@ public:
++  opt_pass *clone () final override { return new pass_tree_loop_done (m_ctxt); }
+@@ -747,2 +748,0 @@ tree_num_loop_insns (class loop *loop, eni_weights *weights)
+-
+-

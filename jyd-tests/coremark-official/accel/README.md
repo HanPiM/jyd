@@ -34,5 +34,6 @@ path through the EEMBC formatter and AM SoftFloat; compiler passes do not
 alter report calls or format strings.
 
 `make check` verifies the unmodified upstream `coremark.md5` under `src/`.
-Compiler integration, forced headers, and experimental support files remain
-outside that protected directory.
+Compiler integration and checker support files remain outside that protected
+directory. CRC selection is entirely compiler-side; the former forced-include
+macro header is no longer part of the tree.

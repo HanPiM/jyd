@@ -35,6 +35,8 @@ COREMARK_UNKNOWN_XEXTS := $(filter-out $(COREMARK_SUPPORTED_XEXTS),$(COREMARK_XE
 ifneq ($(strip $(COREMARK_UNKNOWN_XEXTS)),)
 $(error Unsupported COREMARK_XEXTS: $(COREMARK_UNKNOWN_XEXTS))
 endif
+COREMARK_CRC_LTO_ENABLED := $(if $(and $(filter 1,$(COREMARK_ENABLE)),$(filter xcrcu8,$(COREMARK_XEXT_WORDS))),1,0)
+COREMARK_CRC_LTO_FLAGS := $(if $(filter 1,$(COREMARK_CRC_LTO_ENABLED)),-flto -fcrc-semantic-lto,)
 NANO_REPO := https://github.com/RT-Thread/rtthread-nano.git
 NANO_COMMIT := $(shell tr -d '[:space:]' < $(ROOT_DIR)/SOURCE_COMMIT)
 NANO_CHECKOUT := $(ROOT_DIR)/upstream
@@ -45,7 +47,6 @@ COREMARK_BENCH_SRCS := $(addprefix $(COREMARK_BENCH_DIR)/, \
         core_list_join.c core_main.c core_matrix.c core_state.c core_util.c)
 COREMARK_SUPPORT_SRCS := $(addprefix $(COREMARK_PORT_DIR)/, \
         core_portme.c ee_printf.c cvt.c coremark_softfloat.c)
-COREMARK_CRC_CALLER_SRCS := $(filter-out $(COREMARK_BENCH_DIR)/core_util.c,$(COREMARK_BENCH_SRCS))
 COREMARK_O3_SRCS := $(addprefix $(COREMARK_BENCH_DIR)/, \
         core_list_join.c core_matrix.c core_state.c core_util.c)
 COREMARK_CFLAGS := -DITERATIONS=$(COREMARK_ITERATIONS) \
@@ -103,24 +104,33 @@ COMMON_CFLAGS := $(filter-out -march=%,$(COMMON_CFLAGS)) -march=rv32im_zicsr
 $(OBJS): CFLAGS += $(NANO_OPT)
 COREMARK_BENCH_OBJS := $(addprefix $(DST_DIR)/,$(addsuffix .o,$(basename $(COREMARK_BENCH_SRCS))))
 COREMARK_SUPPORT_OBJS := $(addprefix $(DST_DIR)/,$(addsuffix .o,$(basename $(COREMARK_SUPPORT_SRCS))))
-COREMARK_CRC_CALLER_OBJS := $(addprefix $(DST_DIR)/,$(addsuffix .o,$(basename $(COREMARK_CRC_CALLER_SRCS))))
 COREMARK_O3_OBJS := $(addprefix $(DST_DIR)/,$(addsuffix .o,$(basename $(COREMARK_O3_SRCS))))
-COREMARK_ITERATIONS_STAMP := $(DST_DIR)/coremark-iterations.stamp
+COREMARK_BUILD_CONFIG_STAMP := $(DST_DIR)/coremark-build-config-v2.stamp
 
-# Make does not otherwise notice command-line flag changes. Update this stamp
-# only when the embedded iteration count changes so cached CoreMark objects are
-# rebuilt without forcing the RT-Thread kernel to rebuild.
-$(COREMARK_ITERATIONS_STAMP): FORCE
+# Make does not otherwise notice command-line flag changes. Include the full
+# embedded-build configuration so an old non-LTO object cannot be reused after
+# enabling semantic CRC lowering.
+$(COREMARK_BUILD_CONFIG_STAMP): FORCE
 	@mkdir -p $(dir $@)
-	@if [ ! -f $@ ] || [ "$$(cat $@)" != "$(COREMARK_ITERATIONS)" ]; then \
-		printf '%s\n' '$(COREMARK_ITERATIONS)' > $@; \
-	fi
+	@{ \
+		printf '%s\n' 'iterations=$(COREMARK_ITERATIONS)'; \
+		printf '%s\n' 'data-size=$(COREMARK_DATA_SIZE)'; \
+		printf '%s\n' 'bench-opt=$(COREMARK_OPT)'; \
+		printf '%s\n' 'zexts=$(COREMARK_ZEXTS)'; \
+		printf '%s\n' 'xexts=$(COREMARK_XEXTS)'; \
+		printf '%s\n' 'md-flags=$(COREMARK_MD_FLAGS)'; \
+		printf '%s\n' 'crc-lto=$(COREMARK_CRC_LTO_ENABLED) $(COREMARK_CRC_LTO_FLAGS)'; \
+	} > $@.tmp
+	@if ! cmp -s $@.tmp $@ 2>/dev/null; then mv $@.tmp $@; else rm -f $@.tmp; fi
 
-$(COREMARK_BENCH_OBJS) $(COREMARK_SUPPORT_OBJS): $(COREMARK_ITERATIONS_STAMP)
+$(COREMARK_BENCH_OBJS) $(COREMARK_SUPPORT_OBJS): $(COREMARK_BUILD_CONFIG_STAMP)
 # Only the CoreMark benchmark translation units get the B extensions; the
 # last -march on the command line wins, so this overrides the base ISA above.
 $(COREMARK_BENCH_OBJS): CFLAGS += -march=rv32im$(COREMARK_ZEXTS)_zicsr
 $(COREMARK_BENCH_OBJS): CFLAGS += $(COREMARK_OPT)
+ifeq ($(COREMARK_CRC_LTO_ENABLED),1)
+$(COREMARK_BENCH_OBJS): CFLAGS += $(COREMARK_CRC_LTO_FLAGS)
+endif
 $(COREMARK_SUPPORT_OBJS): CFLAGS += $(COREMARK_SUPPORT_OPT)
 $(COREMARK_SUPPORT_OBJS): CFLAGS += -march=rv32im$(COREMARK_ZEXTS)_zicsr
 
@@ -128,21 +138,17 @@ $(COREMARK_SUPPORT_OBJS): CFLAGS += -march=rv32im$(COREMARK_ZEXTS)_zicsr
 # image and renames main() to avoid colliding with the RT-Thread entry point.
 COREMARK_COMMON_FLAGS := $(strip $(CFLAGS))
 COREMARK_REPORT_COMMON_FLAGS := $(filter -O% -mabi=% -flto \
-	-fno-builtin -ffreestanding -fdata-sections -ffunction-sections, \
+	-fcrc-semantic-lto -fno-builtin -ffreestanding -fdata-sections -ffunction-sections, \
 	$(COREMARK_COMMON_FLAGS)) -march=rv32im$(COREMARK_ZEXTS)_zicsr
+COREMARK_REPORT_LTO_FLAGS := $(if $(filter 1,$(COREMARK_CRC_LTO_ENABLED)),$(COREMARK_CRC_LTO_FLAGS),)
 COREMARK_FLAGS_HEADER := $(DST_DIR)/coremark-compiler-flags.h
 COREMARK_BENCH_FLAGS = $(COREMARK_OPT) $(COREMARK_MD_FLAGS) \
 	-include $(abspath $(COREMARK_FLAGS_HEADER))
 COREMARK_O3_FLAGS = -include $(COREMARK_ACCEL_DIR)/force_o3.h
-COREMARK_CRC_FLAGS = -include $(COREMARK_ACCEL_DIR)/xcrc_hw.h \
-	-D__COREMARK_XCRCU8=1
 
 $(COREMARK_BENCH_OBJS): $(COREMARK_FLAGS_HEADER)
 $(COREMARK_BENCH_OBJS): CFLAGS += $(COREMARK_BENCH_FLAGS)
 $(COREMARK_O3_OBJS): CFLAGS += $(COREMARK_O3_FLAGS)
-ifneq ($(filter xcrcu8,$(COREMARK_XEXT_WORDS)),)
-$(COREMARK_CRC_CALLER_OBJS): CFLAGS += $(COREMARK_CRC_FLAGS)
-endif
 $(DST_DIR)/$(COREMARK_BENCH_DIR)/core_main.o: CFLAGS += -Dmain=coremark_main
 
 $(COREMARK_FLAGS_HEADER): FORCE $(COREMARK_ACCEL_DIR)/gen_flags_header.py
@@ -150,10 +156,27 @@ $(COREMARK_FLAGS_HEADER): FORCE $(COREMARK_ACCEL_DIR)/gen_flags_header.py
 	@python3 $(COREMARK_ACCEL_DIR)/gen_flags_header.py --output $@ -- \
 		'$(COREMARK_OPT)' $(foreach flag,$(COREMARK_REPORT_COMMON_FLAGS),'$(flag)') \
 		'GCC machine-description selection' $(foreach flag,$(COREMARK_MD_FLAGS),'$(flag)') \
+		'CRC semantic LTO' $(foreach flag,$(COREMARK_REPORT_LTO_FLAGS),'$(flag)') \
 		'software floating-point reporting'
 
 .PHONY: FORCE
 FORCE:
+
+ifeq ($(COREMARK_CRC_LTO_ENABLED),1)
+# LTO objects must be linked through the same GCC driver that produced them;
+# the RTOS and AM archives remain ordinary non-LTO objects.
+RTTHREAD_GCC_LDFLAGS = $(foreach flag,$(LDFLAGS),-Wl$(comma)$(flag))
+RTTHREAD_COREMARK_LTO_LINK_FLAGS = \
+	$(filter-out -march=%,$(COMMON_CFLAGS)) \
+	-march=rv32im$(COREMARK_ZEXTS)_zicsr \
+	$(COREMARK_MD_FLAGS) $(COREMARK_CRC_LTO_FLAGS)
+$(IMAGE).elf: $(LINKAGE) $(LDSCRIPTS)
+	@mkdir -p $(dir $@)
+	@echo \# Creating CoreMark semantic-LTO image [$(ARCH)]
+	@echo + LD "->" $(IMAGE_REL).elf
+	@$(CC) $(RTTHREAD_COREMARK_LTO_LINK_FLAGS) -nostdlib -o $@ \
+		$(RTTHREAD_GCC_LDFLAGS) -Wl,--start-group $(LINKAGE) $(LDLIBS) -Wl,--end-group
+endif
 
 $(OBJS): | fetch
 

@@ -7,7 +7,7 @@ include $(ROOT_DIR)/coremark-defaults.mk
 ITERATIONS ?= 10000
 TOTAL_DATA_SIZE ?= 2000
 RISCV_ZEXTS ?= $(COREMARK_DEFAULT_RISCV_ZEXTS)
-ENABLE_LTO ?= 0
+ENABLE_LTO ?= $(if $(filter xcrcu8,$(COREMARK_XEXT_WORDS)),1,0)
 COREMARK_OPT ?= -Os
 COREMARK_XEXTS ?= $(COREMARK_DEFAULT_XEXTS)
 COREMARK_MD_FLAGS ?= $(call coremark_md_flags,$(COREMARK_XEXTS))
@@ -21,8 +21,16 @@ COREMARK_UNKNOWN_XEXTS := $(filter-out $(COREMARK_SUPPORTED_XEXTS),$(COREMARK_XE
 ifneq ($(strip $(COREMARK_UNKNOWN_XEXTS)),)
 $(error Unsupported COREMARK_XEXTS: $(COREMARK_UNKNOWN_XEXTS))
 endif
+ifneq ($(filter xcrcu8,$(COREMARK_XEXT_WORDS)),)
+ifneq ($(ENABLE_LTO),1)
+$(error COREMARK_XEXTS includes xcrcu8 but ENABLE_LTO is not 1; semantic CRC lowering requires LTO)
+endif
+endif
+COREMARK_CRC_SEMANTIC_LTO := $(if $(and $(filter 1,$(ENABLE_LTO)),$(filter xcrcu8,$(COREMARK_XEXT_WORDS))),1,0)
+COREMARK_CRC_LTO_FLAGS := $(if $(filter 1,$(COREMARK_CRC_SEMANTIC_LTO)),-fcrc-semantic-lto,)
+COREMARK_LTO_FLAGS := -flto $(COREMARK_CRC_LTO_FLAGS)
 sanitize = $(subst $(space),_,$(subst /,_,$(subst :,_,$(subst =,_,$(subst ',_,$(1))))))
-COREMARK_CONFIG_ID = iter$(ITERATIONS)-data$(TOTAL_DATA_SIZE)-z$(call sanitize,$(if $(strip $(RISCV_ZEXTS)),$(RISCV_ZEXTS),none))-x$(call sanitize,$(if $(strip $(COREMARK_XEXTS)),$(COREMARK_XEXTS),none))-c$(call sanitize,$(if $(strip $(EXTRA_CFLAGS)),$(EXTRA_CFLAGS),default))-lto$(ENABLE_LTO)-softfloat
+COREMARK_CONFIG_ID = iter$(ITERATIONS)-data$(TOTAL_DATA_SIZE)-z$(call sanitize,$(if $(strip $(RISCV_ZEXTS)),$(RISCV_ZEXTS),none))-x$(call sanitize,$(if $(strip $(COREMARK_XEXTS)),$(COREMARK_XEXTS),none))-c$(call sanitize,$(if $(strip $(EXTRA_CFLAGS)),$(EXTRA_CFLAGS),default))-lto$(ENABLE_LTO)-crcsem$(COREMARK_CRC_SEMANTIC_LTO)-softfloat
 BUILD_DIR ?= build/$(COREMARK_CONFIG_ID)
 LIB_BUILD_DIR_softfloat = build/$(ARCH)-z$(call sanitize,$(if $(strip $(RISCV_ZEXTS)),$(RISCV_ZEXTS),none))
 
@@ -30,7 +38,6 @@ SRCS = $(shell find src/ -name "*.c")
 LIBS += softfloat
 COREMARK_BENCH_SRCS := src/core_list_join.c src/core_main.c src/core_matrix.c \
                        src/core_state.c src/core_util.c
-COREMARK_CRC_CALLER_SRCS := $(filter-out src/core_util.c,$(COREMARK_BENCH_SRCS))
 COREMARK_O3_SRCS := src/core_list_join.c src/core_matrix.c src/core_state.c src/core_util.c
 INC_PATH += $(CURDIR)/src
 
@@ -54,13 +61,15 @@ CFLAGS += -Os
 CFLAGS += -DITERATIONS=$(ITERATIONS) -DTOTAL_DATA_SIZE=$(TOTAL_DATA_SIZE)
 CFLAGS += -D__COREMARK_XEXTS=\"$(COREMARK_XEXTS)\"
 CFLAGS += $(EXTRA_CFLAGS)
+ifeq ($(ENABLE_LTO),1)
+CFLAGS += $(COREMARK_LTO_FLAGS)
+endif
 COREMARK_COMMON_FLAGS := $(strip $(CFLAGS))
 COREMARK_REPORT_COMMON_FLAGS := $(filter -O% -march=% -mabi=% -flto \
-	-fno-builtin -ffreestanding -fdata-sections -ffunction-sections, \
+	-fcrc-semantic-lto -fno-builtin -ffreestanding -fdata-sections -ffunction-sections, \
 	$(COREMARK_COMMON_FLAGS))
 
 COREMARK_BENCH_OBJS = $(addprefix $(DST_DIR)/, $(addsuffix .o, $(basename $(COREMARK_BENCH_SRCS))))
-COREMARK_CRC_CALLER_OBJS = $(addprefix $(DST_DIR)/, $(addsuffix .o, $(basename $(COREMARK_CRC_CALLER_SRCS))))
 COREMARK_O3_OBJS = $(addprefix $(DST_DIR)/, $(addsuffix .o, $(basename $(COREMARK_O3_SRCS))))
 
 COREMARK_FLAGS_HEADER := $(BUILD_DIR)/generated/compiler_flags.h
@@ -69,16 +78,10 @@ COREMARK_SELECTION_REPORT = 'GCC machine-description selection' \
 COREMARK_BENCH_FLAGS = $(COREMARK_OPT) $(COREMARK_MD_FLAGS) \
 	-include $(abspath $(COREMARK_FLAGS_HEADER))
 COREMARK_O3_FLAGS = -include $(CURDIR)/accel/force_o3.h
-COREMARK_CRC_FLAGS = -include $(CURDIR)/accel/xcrc_hw.h \
-	-D__COREMARK_XCRCU8=1
 
 $(COREMARK_BENCH_OBJS): $(COREMARK_FLAGS_HEADER)
 $(COREMARK_BENCH_OBJS): CFLAGS += $(COREMARK_BENCH_FLAGS)
 $(COREMARK_O3_OBJS): CFLAGS += $(COREMARK_O3_FLAGS)
-
-ifneq ($(filter xcrcu8,$(COREMARK_XEXT_WORDS)),)
-$(COREMARK_CRC_CALLER_OBJS): CFLAGS += $(COREMARK_CRC_FLAGS)
-endif
 
 .PHONY: FORCE
 FORCE:
@@ -89,7 +92,6 @@ $(COREMARK_FLAGS_HEADER): FORCE accel/gen_flags_header.py
 		$(COREMARK_SELECTION_REPORT)
 
 ifeq ($(ENABLE_LTO),1)
-CFLAGS += -flto
 # AM normally invokes ld directly.  LTO objects need to be linked through the
 # compiler driver so GCC can load the matching LTO object handler.  Keeping the
 # recipe local avoids changing the link behavior of other AM images.
@@ -98,7 +100,8 @@ $(IMAGE).elf: $(LINKAGE) $(LDSCRIPTS)
 	@mkdir -p $(dir $@)
 	@echo \# Creating LTO image [$(ARCH)]
 	@echo + LD "->" $(IMAGE_REL).elf
-	@$(CC) $(COMMON_CFLAGS) -nostdlib -flto -o $@ \
+	@$(CC) $(COMMON_CFLAGS) $(COREMARK_MD_FLAGS) $(EXTRA_CFLAGS) \
+		$(COREMARK_LTO_FLAGS) -nostdlib -o $@ \
 		$(COREMARK_GCC_LDFLAGS) -Wl,--start-group $(LINKAGE) $(LDLIBS) -Wl,--end-group
 endif
 

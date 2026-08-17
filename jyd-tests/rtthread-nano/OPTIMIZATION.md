@@ -178,9 +178,12 @@ other conversions are printed literally and their arguments are not consumed.
 - Separated selectable `COREMARK_BENCH_DIR` algorithm sources from the retained
   `COREMARK_PORT_DIR` RTT/AM adaptation. See `COREMARK.md` for the source
   selection procedure.
-- The five timed benchmark objects use `-O3`. Port, EEMBC formatter, float
-  conversion, and SoftFloat adapter objects use `-Os`. Berkeley SoftFloat also
-  uses `-Os` in a separately keyed archive.
+- The five benchmark objects use `COREMARK_OPT=-Os` by default. The four hot
+  algorithm objects other than `core_main.o` include the checked-in `-O3`
+  override. Port, EEMBC formatter, float conversion, and SoftFloat adapter
+  objects use `-Os`; Berkeley SoftFloat also uses `-Os` in a separately keyed
+  archive. When CRC acceleration is selected, only the five benchmark objects
+  use semantic LTO, and the mixed image is linked through the patched GCC driver.
 - CoreMark output uses EEMBC's formatter for `%f` but sends characters through
   `rt_hw_console_output()`. This retains required floating output without
   linking klib printf.

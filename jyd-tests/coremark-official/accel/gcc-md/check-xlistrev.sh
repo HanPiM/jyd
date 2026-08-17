@@ -46,5 +46,5 @@ core_flags='-O3 -march=rv32im_zicsr -mabi=ilp32 -ffreestanding -DITERATIONS=1000
 core_includes="-I$coremark_dir/src -I$jyd_dir/abstract-machine/am/include -I$jyd_dir/abstract-machine/klib/include"
 "$cc" $core_flags $core_includes '-DARCH_H="arch/riscv.h"' \
     -mxlistrev -S "$coremark_dir/src/core_list_join.c" -o "$scratch/clj.s"
-test "$(grep -Fc '.insn r 0x0b, 6' "$scratch/clj.s")" -eq 4
+test "$(grep -Fc '.insn r 0x0b, 6' "$scratch/clj.s")" -eq 8
 echo "xlistrev in-place list reversal: PASS"

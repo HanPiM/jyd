@@ -2,8 +2,8 @@
 
 本文说明如何从固定 GCC 16 基线构建 JYD 交叉编译器，并用同一套
 CoreMark 默认选项生成独立 CoreMark 与 RT-Thread Nano 3.1.5 镜像。
-RT-Thread 内核仍使用 `rv32im_zicsr`；共享选项只作用于其内嵌的
-CoreMark 源文件。
+RT-Thread 内核仍使用 `rv32im_zicsr`。内嵌 CoreMark 的算法对象使用共享的
+标准扩展和专用后端选项；支持对象只使用共享的标准扩展。
 
 ## 0. 使用预编译 GCC 快速复核
 
@@ -63,7 +63,7 @@ mkdir -p "$PWD/out"
 只存在于本机提交的循环边界分析前置修复。补丁 SHA-256 应为：
 
 ```text
-39e4659fc888c8a9b833232f9334d58a5c97ec1d0497566de6ea814f7688503b
+8f6e2ab133abef169590e8d7373395005d0a962f5171828bede3a85f366ba1b4
 ```
 
 检查版本和后端完整性：
@@ -71,6 +71,8 @@ mkdir -p "$PWD/out"
 ```sh
 "$JYD_GCC/bin/riscv64-unknown-linux-gnu-gcc" --version
 ./jyd-tests/coremark-official/accel/gcc-md/check-backend-integrity.sh
+./jyd-tests/coremark-official/accel/gcc-md/check-crc-semantic-lto.sh \
+  "$JYD_GCC/bin/riscv64-unknown-linux-gnu-gcc"
 ./jyd-tests/coremark-official/accel/gcc-md/check-xdup8lo.sh \
   "$JYD_GCC/bin/riscv64-unknown-linux-gnu-gcc"
 ./jyd-tests/coremark-official/accel/gcc-md/check-xpaddh2.sh \
@@ -83,8 +85,9 @@ mkdir -p "$PWD/out"
   "$JYD_GCC/bin/riscv64-unknown-linux-gnu-gcc"
 ```
 
-这些形状检查包含重命名正例和近似形状负例；改名后仍须生成相同
-指令，以验证选择依据是控制流和数据流形状，而不是函数符号。
+CRC 检查覆盖跨翻译单元重命名正例、选项关闭路径，以及错误轮数、错误多项式、
+volatile 和调用副作用负例。其余形状检查也包含重命名正例和近似形状负例；
+改名后仍须生成相同指令，以验证选择依据是控制流和数据流形状，而不是函数符号。
 
 ## 3. 生成 CoreMark COE
 
@@ -124,6 +127,7 @@ out/rtthread-nano/rtthread-nano-riscv32-jyd.data.coe
 out/rtthread-nano/rtthread-nano-riscv32-jyd.elf
 ```
 
-RT-Thread 源文件保持自身的 `rv32im_zicsr -Os` 选项；只有内嵌 CoreMark
-对象读取 `coremark-defaults.mk`，因此两种 CoreMark 镜像不会出现默认
-选项分叉。
+RT-Thread、FinSH 和 AM 源文件保持自身的 `rv32im_zicsr -Os` 选项。内嵌
+CoreMark 的五个算法对象读取完整共享配置；四个支持对象只继承标准扩展，
+不启用专用后端选择或 LTO。启用 CRC 时，最终链接通过同一 patched GCC
+driver 完成，因此两种 CoreMark 镜像不会出现默认选项分叉。

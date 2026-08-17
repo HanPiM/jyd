@@ -3,13 +3,15 @@
 This directory contains the GCC 16 implementation of the custom accelerators.
 The build compiles ordinary C sources. GCC recognizes the supported source idioms and
 emits the custom instructions through internal functions and RISC-V machine
-descriptions.
+descriptions. CRC lowering is implemented in GCC's middle end and is enabled for
+the LTO build with the explicit `-fcrc-semantic-lto` option; there is no forced
+CRC header or source macro substitution.
 
 Check out public GCC base commit `ff20c357b3f`, then apply
 `active-accel-gcc16.patch` with `git apply --index --unidiff-zero`. Configure
 and build an RV32-capable RISC-V cross compiler in separate source, build, and
 install directories. The patch SHA-256 is
-`39e4659fc888c8a9b833232f9334d58a5c97ec1d0497566de6ea814f7688503b`.
+`8f6e2ab133abef169590e8d7373395005d0a962f5171828bede3a85f366ba1b4`.
 The patch includes the loop-bound analysis prerequisite that was previously a
 local-only commit on top of that public base.
 
@@ -37,10 +39,13 @@ expansion. Consequently no xmbm site remains in the combined ELF; the ELF
 auditor reports xmbm as superseded. Building with `-mxmbm` without `-mxmacacc`
 still selects the two expected xmbm sites from unmodified `core_matrix.c`.
 
-The xcrcu8 integration uses GCC's generic
-`__builtin_rev_crc16_data8(crc, data, 0x8005)` interface in `xcrc_hw.h`.  The
-RISC-V CRC optab selects xcrcu8 for this width and polynomial; the benchmark
-header contains no custom inline assembly.
+The xcrcu8 integration recognizes the verified byte-at-a-time CRC data flow in
+the early GIMPLE loop pass and lowers it to GCC's existing `CRC_REV` internal
+function. The RISC-V CRC optab selects xcrcu8 for the 8-bit data, 16-bit CRC,
+`0x8005` polynomial. The LTO propagation pass makes small, side-effect-free
+wrappers containing a verified CRC internal operation available for cross-TU
+inlining, while keeping unrelated accelerator functions from being cloned. The
+old forced-include macro header has been removed from the tree.
 
 The xdup8lo operation copies source byte 1 into byte 0 while preserving source
 bits 31 through 8. Its peephole matches the exact four-operation RTL shape,
@@ -69,7 +74,10 @@ make ARCH=riscv32-jyd \
 
 `coremark-defaults.mk` supplies the final standard-extension set, accelerator
 identity, and matching `-m` flags. RT-Thread Nano imports the same file only for
-its embedded CoreMark objects.
+its embedded CoreMark objects. When `xcrcu8` is selected, the Makefiles enable
+LTO and pass `-fcrc-semantic-lto` to the five CoreMark benchmark translation
+units and the final GCC-driver link; RT-Thread's kernel and AM objects remain
+non-LTO.
 
 Audit the selected configuration's ELF with:
 
@@ -94,24 +102,36 @@ The frozen compiler passed:
   name-independence audits.
 - `make -C npc checkformat`, `make -C npc verilog`, the xdfascan directed
   comparison, and the `riscv32-jyd` add and load-store tests.
-- NPC ITERATIONS=10 with difftest: 1,252,377 cycles, 334,735 retired
+- NPC ITERATIONS=10 with difftest: 867,924 cycles, 336,464 retired
   instructions, CRCs `e714/1fd7/8e3a/fcaf`, and GOOD TRAP.
-- NPC ITERATIONS=100 without difftest: 11,859,471 cycles, 2,901,530 retired
+- NPC ITERATIONS=100 without difftest: 8,082,019 cycles, 2,950,946 retired
   instructions, CRCs `e714/1fd7/8e3a/988c`, and GOOD TRAP.
 - The affine 10/100 estimate for ITERATIONS=10000 at 300 MHz:
-  1,178,639,811 cycles and 285,248,980 instructions, or `3.928799370s`.
+  801,632,469 cycles and 290,543,966 instructions, or `2.672108230s`.
   This is an unboarded fitted result, not a complete 10,000-iteration NPC run
   or a reportable 10-second CoreMark score.
-- The exact candidate's selected 300 MHz post-route result is WNS
-  `-0.718ns`, TNS `-1231.531ns`, and WHS `+0.063ns`. It passes the experiment's
-  strict `WNS > -0.8ns` acceptance boundary by `0.082ns`; Vivado still reports
-  setup timing violations, so this is not zero-slack timing closure.
+- On the same RTL, the previous forced-header image fitted to 832,823,843
+  cycles (`2.776079477s`). Semantic-LTO therefore does not trade away NPC
+  performance; the fitted cycle count is 31,191,374 lower. The raw comparison
+  archives are `coremark-cycle-estimate-reuse-pipeline-bca677c-20260818T010000Z`
+  and `coremark-cycle-estimate-crc-semantic-formal-bca-20260818T072000Z`.
+- The archived 300 MHz implementation of the unchanged `bca677c` RTL, made
+  before the CRC build-chain replacement, has WNS `-0.717ns`, TNS
+  `-1288.362ns`, and WHS `+0.084ns`. It passes the experiment's strict
+  `WNS > -0.8ns` boundary, but remains a setup-violating physical baseline;
+  it is not presented as implementation evidence for the new program image.
+  The retained implementation archive is
+  `vivado-bitstream-bca677c-300mhz-20260818T004000Z`.
 - Exact NEMU ITERATIONS=10000 through the owning AM `make run` target:
-  CRCs `e714/1fd7/8e3a/988c`, GOOD TRAP, and 285,163,978 guest instructions.
-  Its host-timer duration is below CoreMark's 10-second reporting minimum, so
-  it is retained as semantic and instruction-count evidence only.
+  CRCs `e714/1fd7/8e3a/988c`, GOOD TRAP, and 290,465,859 guest instructions.
+  Its host-timer duration is `8.654791s`, below CoreMark's 10-second reporting minimum, so
+  it is retained as semantic and instruction-count evidence only in
+  `coremark-nemu-crc-semantic-formal-bca-20260818T073000Z`.
 
-The final ELF has 38 static xcrcu8 sites, one xlistrev site, five xmsum sites,
+Board service was unavailable for this compiler candidate. The NPC estimate is
+explicitly unboarded, and board validation remains recorded debt.
+
+The final ELF has 44 static xcrcu8 sites, one xlistrev site, five xmsum sites,
 two xdup8lo sites, two xdfascan sites, four xlistfind sites, six xmacacc sites,
 four xdotn sites (two configuration, one signed, and one bit-extract), two
 xpaddh2 sites, and one xdfa final-counter read. The generated program image was
@@ -139,8 +159,12 @@ exercised by NEMU and NPC difftest.
   fallback, and renamed-source name independence.
 - `check-backend-integrity.sh` rejects symbol-name matching, pseudo-float
   support, and alternate compiler-extension paths. It also proves that the
-  patch itself materializes the accelerator pass source; the GCC build invokes
-  its clean-tree mode before compiling.
+  patch itself materializes the accelerator pass source, checks the explicit
+  CRC semantic-LTO option, and rejects forced CRC includes; the GCC build
+  invokes its clean-tree mode before compiling.
+- `check-crc-semantic-lto.sh <gcc>` compiles renamed multi-translation-unit
+  CRC sources, checks option-on/option-off behavior, and rejects wrong-polynomial,
+  wrong-trip-count, volatile, and side-effect near misses.
 
 ## History
 

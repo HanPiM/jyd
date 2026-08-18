@@ -49,7 +49,6 @@ class DCache extends Module {
     val dataMutation = Input(Bool())
     val dataMutationAddr = Input(UInt(32.W))
     val storeUpdate = Input(Bool())
-    val storeAddress = Input(UInt(32.W))
     val storeFull   = Input(Bool())
     val storeData   = Input(UInt(32.W))
     val storeMask   = Input(UInt(4.W))
@@ -125,8 +124,8 @@ class DCache extends Module {
   // cache memories apply it. Do not expose the old line as a hit in that
   // intervening cycle.
   val storeUpdate = RegNext(io.storeUpdate, false.B)
-  val storeIndex  = RegEnable(io.storeAddress(11, 2), io.storeUpdate)
-  val storeTag    = RegEnable(io.storeAddress(17, 11), io.storeUpdate)
+  val storeIndex  = RegEnable(io.queryIndex, io.storeUpdate)
+  val storeTag    = RegEnable(io.queryTag, io.storeUpdate)
 
   val queryBank  = io.queryIndex(9)
   val queryAddr  = io.queryIndex(8, 0)
@@ -358,6 +357,9 @@ class DCache extends Module {
 
   when(io.dataMutation) {
     dotNACacheValid(dotNMutationIndex) := false.B
+  }
+  when(io.dotNRequestFire && dotNState === DotNState.rowStore) {
+    dotNACacheValid(dotNRowAddressC(4, 2)) := false.B
   }
 
   when(dotNProductValid) {

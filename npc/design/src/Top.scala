@@ -371,11 +371,19 @@ class CPUCore(
   exu.io.dcache.dotNRequestWriteData := dcache.io.dotNRequestWriteData
   exu.io.dcache.dotNDone := dcache.io.dotNDone
   exu.io.dcache.dotNResult := dcache.io.dotNResult
+  // Stage row-store mirror writes separately so the walker never enters the
+  // ordinary EXU store-update cone. The external request remains authoritative.
+  val dcacheRowStoreFire = exu.io.dcache.dotNRequestFire && dcache.io.dotNRequestWrite
+  val dcacheRowStoreUpdate = RegNext(dcacheRowStoreFire && p.enableDCache.B, false.B)
+  val dcacheRowStoreAddress = RegEnable(dcache.io.dotNRequestAddress, dcacheRowStoreFire)
+  val dcacheRowStoreData = RegEnable(dcache.io.dotNRequestWriteData, dcacheRowStoreFire)
   dcache.io.dataMutation := exu.io.dcache.storeUpdate || exu.io.dcache.fullUpdate
   dcache.io.dataMutationAddr :=
     Mux(exu.io.dcache.fullUpdate, exu.io.dcache.fullUpdateAddr, exu.io.dcache.storeAddress)
   val dcacheStorePortMutation = exu.io.dcache.storeUpdate && p.enableDCache.B
-  val dcacheStoreMutation = dcacheStorePortMutation || (exu.io.dcache.fullUpdate && p.enableDCache.B)
+  val dcacheRowStoreMutation = dcacheRowStoreFire && p.enableDCache.B
+  val dcacheExternalStoreMutation = dcacheStorePortMutation || dcacheRowStoreMutation
+  val dcacheStoreMutation = dcacheExternalStoreMutation || (exu.io.dcache.fullUpdate && p.enableDCache.B)
   val dcacheStoreEpoch    = RegInit(false.B)
   when(dcacheStoreMutation) {
     dcacheStoreEpoch := ~dcacheStoreEpoch
@@ -384,25 +392,38 @@ class CPUCore(
   wbu.io.dcacheStoreEpoch  := dcacheStoreEpoch
   val dcacheStoreUpdate = exu.io.dcache.storeUpdate && p.enableDCache.B
   dcache.io.storeUpdate := dcacheStoreUpdate
-  dcache.io.storeAddress := exu.io.dcache.storeAddress
   dcache.io.storeFull   := exu.io.dcache.storeFull
   dcache.io.storeData   := exu.io.dcache.storeData
   dcache.io.storeMask   := exu.io.dcache.storeMask
   lsu.io.dcacheReadData := dcache.io.readData
-  dcache.io.update := p.enableDCache.B && (exu.io.dcache.fullUpdate || (wbu.io.dcacheUpdate && !dcacheStoreMutation))
-  dcache.io.updateValid := Mux(exu.io.dcache.fullUpdate, exu.io.dcache.fullUpdateValid, true.B)
-  dcache.io.updateAddr := Mux(exu.io.dcache.fullUpdate, exu.io.dcache.fullUpdateAddr, wbu.io.dcacheAddr)
-  dcache.io.updateData := Mux(exu.io.dcache.fullUpdate, exu.io.dcache.fullUpdateData, wbu.io.dcacheData)
+  dcache.io.update := p.enableDCache.B && (
+    dcacheRowStoreUpdate || exu.io.dcache.fullUpdate || (wbu.io.dcacheUpdate && !dcacheStoreMutation)
+  )
+  dcache.io.updateValid := Mux(
+    dcacheRowStoreUpdate,
+    true.B,
+    Mux(exu.io.dcache.fullUpdate, exu.io.dcache.fullUpdateValid, true.B)
+  )
+  dcache.io.updateAddr := Mux(
+    dcacheRowStoreUpdate,
+    dcacheRowStoreAddress,
+    Mux(exu.io.dcache.fullUpdate, exu.io.dcache.fullUpdateAddr, wbu.io.dcacheAddr)
+  )
+  dcache.io.updateData := Mux(
+    dcacheRowStoreUpdate,
+    dcacheRowStoreData,
+    Mux(exu.io.dcache.fullUpdate, exu.io.dcache.fullUpdateData, wbu.io.dcacheData)
+  )
   dcache.io.updateMask := Mux(
-    exu.io.dcache.fullUpdate,
-    Mux(exu.io.dcache.fullUpdateValid, "b1111".U, 0.U),
-    wbu.io.dcacheMask
+    dcacheRowStoreUpdate,
+    "b1111".U,
+    Mux(exu.io.dcache.fullUpdate, Mux(exu.io.dcache.fullUpdateValid, "b1111".U, 0.U), wbu.io.dcacheMask)
   )
 
   // JYD memory accepts one request per cycle and responds two cycles later.
   // A store in the intervening cycle changes the generation; a store in the
   // response cycle wins directly over the older refill.
-  val previousDcacheStoreMutation = RegNext(dcacheStorePortMutation, false.B)
+  val previousDcacheStoreMutation = RegNext(dcacheExternalStoreMutation, false.B)
   when(wbu.io.dcacheUpdate && !exu.io.dcache.fullUpdate) {
     assert(!previousDcacheStoreMutation, "A refill must observe an intervening store generation")
   }

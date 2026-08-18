@@ -913,15 +913,14 @@ class EXU(
   // accelerator state never enters a distributed-memory write-enable cone.
   val normalStoreRequest = isTypStore && io.in.valid && io.out.ready
   val dotNStoreRequest = isDotN && io.dcache.dotNRequestWrite
-  val cacheableStoreFire = io.memReq.fire &&
-    ((normalStoreRequest && reg1AddImm(21, 20) === "b01".U) || dotNStoreRequest)
+  val cacheableStoreFire = io.memReq.fire && normalStoreRequest && reg1AddImm(21, 20) === "b01".U
   // Keep the asynchronous tag lookup out of this cross-module control and
   // every data-memory write enable.
   io.dcache.storeUpdate := cacheableStoreFire
-  io.dcache.storeAddress := Mux(dotNStoreRequest, io.dcache.dotNRequestAddress, reg1AddImm)
-  io.dcache.storeFull   := Mux(dotNStoreRequest, cacheableStoreFire, cacheableStoreFire && memWMask.andR)
-  io.dcache.storeData   := Mux(dotNStoreRequest, io.dcache.dotNRequestWriteData, memWData)
-  io.dcache.storeMask   := Mux(dotNStoreRequest, "b1111".U, memWMask)
+  io.dcache.storeAddress := reg1AddImm
+  io.dcache.storeFull   := cacheableStoreFire && memWMask.andR
+  io.dcache.storeData   := memWData
+  io.dcache.storeMask   := memWMask
   io.dcache.fullUpdate     := listReverseCacheUpdateValid
   io.dcache.fullUpdateValid := true.B
   io.dcache.fullUpdateAddr := listReverseCacheUpdateAddr

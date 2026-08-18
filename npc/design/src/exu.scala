@@ -91,6 +91,7 @@ class EXU(
       val listReversePrefetchData = Input(Types.UWord)
       val storeEpoch = Input(Bool())
       val queryIndex = Output(UInt(10.W))
+      val readIndex  = Output(UInt(10.W))
       val queryTag   = Output(UInt(7.W))
       val listFindStart = Output(Bool())
       val listFindConsume = Output(Bool())
@@ -456,10 +457,15 @@ class EXU(
     }
   }
 
+  val listReversePrefetchAddress = Mux(
+    listReverseState === ListReverseState.lookup || listReverseState === ListReverseState.lookupResolve,
+    listReverseCurrent,
+    listReverseNext
+  )
   val listReverseCacheUpdateForward =
-    listReverseCacheUpdateValid && listReverseCacheUpdateAddr === listReverseNext
+    listReverseCacheUpdateValid && listReverseCacheUpdateAddr === listReversePrefetchAddress
   val listReverseCacheUpdateIndexConflict =
-    listReverseCacheUpdateValid && listReverseCacheUpdateAddr(11, 2) === listReverseNext(11, 2)
+    listReverseCacheUpdateValid && listReverseCacheUpdateAddr(11, 2) === listReversePrefetchAddress(11, 2)
   val listReverseResolvedPrefetchHit = listReverseNext === listReverseCurrent ||
     listReverseCacheUpdateForward ||
     (io.dcache.listReversePrefetchHit && !listReverseCacheUpdateIndexConflict)
@@ -495,7 +501,7 @@ class EXU(
   }.elsewhen(listReverseState === ListReverseState.lookupResolve) {
     listReverseQueryAddress := io.dcache.readData
     listReverseNext := io.dcache.readData
-    val initialCacheHit = listReverseCurrent(31, 16) === "h8010".U && io.dcache.listReverseCapturedHit
+    val initialCacheHit = io.dcache.listReversePrefetchHit
     listReverseState := Mux(initialCacheHit,
       ListReverseState.storeRequest, ListReverseState.loadRequest)
   }.elsewhen(listReverseState === ListReverseState.loadRequest && io.memReq.fire) {
@@ -886,11 +892,11 @@ class EXU(
   // The loop consumes the init result and then walks the remaining runtime
   // chain internally. The done-boundary register keeps that private handoff out
   // of the asynchronous tag RAM.
-  val dcacheQueryAddr = Mux(isListReverse, listReverseQueryAddress, reg1AddImm)
-  io.dcache.queryIndex := Mux(isListReverse, listReverseQueryAddress(11, 2), io.stagedDcacheQueryIndex)
-  io.dcache.queryTag   := dcacheQueryAddr(17, 11)
-  io.dcache.listReverseHitCapture := listReverseState === ListReverseState.lookup
-  io.dcache.listReversePrefetchAddress := listReverseNext
+  io.dcache.queryIndex := io.stagedDcacheQueryIndex
+  io.dcache.readIndex := Mux(isListReverse, listReverseQueryAddress(11, 2), io.stagedDcacheQueryIndex)
+  io.dcache.queryTag   := reg1AddImm(17, 11)
+  io.dcache.listReverseHitCapture := false.B
+  io.dcache.listReversePrefetchAddress := listReversePrefetchAddress
   io.dcache.listFindStart := io.in.valid && isListFind && !io.dcache.listFindDone
   io.dcache.listFindConsume := io.out.fire && isListFind
   io.dcache.listFindAddress := reg_v1

@@ -336,6 +336,7 @@ class CPUCore(
   exu.io.memResp := dataMemBus.io.memResp
   wbu.io.memResp <> dataMemBus.io.memResp
   dcache.io.queryIndex := exu.io.dcache.queryIndex
+  dcache.io.readIndex  := exu.io.dcache.readIndex
   dcache.io.queryTag   := exu.io.dcache.queryTag
   exu.io.dcache.hit    := dcache.io.hit && p.enableDCache.B
   exu.io.dcache.readData := dcache.io.readData

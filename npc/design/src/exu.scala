@@ -919,7 +919,7 @@ class EXU(
   // accelerator state never enters a distributed-memory write-enable cone.
   val normalStoreRequest = isTypStore && io.in.valid && io.out.ready
   val dotNStoreRequest = io.dcache.dotNRequest && io.dcache.dotNRequestWrite
-  val cacheableStoreFire = io.memReq.fire && normalStoreRequest && reg1AddImm(21, 20) === "b01".U
+  val cacheableStoreFire = io.memReq.ready && normalStoreRequest && reg1AddImm(21, 20) === "b01".U
   // Keep the asynchronous tag lookup out of this cross-module control and
   // every data-memory write enable.
   io.dcache.storeUpdate := cacheableStoreFire
@@ -948,31 +948,41 @@ class EXU(
   // prevents an older untagged response from being mistaken for the first word.
   val xdfaWordRequest = xdfaWordState === NumericDfaState.request ||
     (xdfaWordState === NumericDfaState.scanCommit && xdfaScanContinue)
-  val normalMemReq = Wire(new MemReq)
-  // The accelerator kind is held in ID/EX for the instruction's entire EXU
-  // residence. Use that registered identity to select the request payload;
-  // state-machine request bits only qualify valid. This keeps state decode out
-  // of the shared address/data network and does not change the handshake.
-  // Xmsum issues one request per cycle, so give its registered address a
-  // direct arm instead of passing its selector through every accelerator mux.
-  normalMemReq.addr  := Mux(isXmsum, xmsumAddress,
-    Mux(isNumericDfaStep,
+  val acceleratorRequest = xdfaWordRequest || listReverseRequest || dcacheWalkerRequest || xmsumRequest
+  val scalarRequest = needMemReq && io.in.valid && io.out.ready
+
+  // Keep the ordinary load/store payload independent from the accelerator
+  // selection network. Accelerator request bits and addresses are registered
+  // by their owning state machines and remain stable until the shared request
+  // fires, so this final two-way selection preserves Decoupled backpressure.
+  val scalarMemReq = Wire(new MemReq)
+  scalarMemReq.addr := reg1AddImm
+  scalarMemReq.size := func3t(1, 0)
+  scalarMemReq.wen := isTypStore
+  scalarMemReq.wdata := memWData
+  scalarMemReq.wmask := memWMask
+
+  val acceleratorMemReq = Wire(new MemReq)
+  acceleratorMemReq.addr := Mux(
+    xmsumRequest,
+    xmsumAddress,
+    Mux(
+      xdfaWordRequest,
       xdfaWordAddress & ~3.U(32.W),
-      Mux(isListReverse, listReverseCurrent,
-        Mux(isDcacheWalker, dcacheWalkerRequestAddress, reg1AddImm))))
-  normalMemReq.size  := Mux(isNumericDfaStep || isListReverse || isDcacheWalker || isXmsum,
-    2.U, func3t(1, 0))
-  normalMemReq.wen   := Mux(isNumericDfaStep, false.B,
-    Mux(isListReverse, listReverseStoreRequest,
-      Mux(dotNRequest, io.dcache.dotNRequestWrite, isTypStore)))
-  normalMemReq.wdata := Mux(listReverseStoreRequest, listReversePrevious,
-    Mux(dotNStoreRequest, io.dcache.dotNRequestWriteData,
-      Mux(xmsumRequest || dcacheWalkerRequest || (isListReverse && !listReverseStoreRequest), 0.U, memWData)))
-  normalMemReq.wmask := Mux(listReverseStoreRequest || dotNStoreRequest, "b1111".U,
-    Mux(xmsumRequest || dcacheWalkerRequest || (isListReverse && !listReverseStoreRequest), 0.U, memWMask))
-  io.memReq.valid := xdfaWordRequest || listReverseRequest || dcacheWalkerRequest || xmsumRequest ||
-    (needMemReq && io.in.valid && io.out.ready)
-  io.memReq.bits := normalMemReq
+      Mux(listReverseRequest, listReverseCurrent, dcacheWalkerRequestAddress)
+    )
+  )
+  acceleratorMemReq.size := 2.U
+  acceleratorMemReq.wen := listReverseStoreRequest || dotNStoreRequest
+  acceleratorMemReq.wdata := Mux(
+    listReverseStoreRequest,
+    listReversePrevious,
+    Mux(dotNStoreRequest, io.dcache.dotNRequestWriteData, 0.U)
+  )
+  acceleratorMemReq.wmask := Mux(listReverseStoreRequest || dotNStoreRequest, "b1111".U, 0.U)
+
+  io.memReq.valid := acceleratorRequest || scalarRequest
+  io.memReq.bits := Mux(acceleratorRequest, acceleratorMemReq, scalarMemReq)
 
   val normalReady = memReqFire || (
     io.out.ready && !needMemReq && exuResultValid

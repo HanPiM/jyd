@@ -457,11 +457,7 @@ class EXU(
     }
   }
 
-  val listReversePrefetchAddress = Mux(
-    listReverseState === ListReverseState.lookup || listReverseState === ListReverseState.lookupResolve,
-    listReverseCurrent,
-    listReverseNext
-  )
+  val listReversePrefetchAddress = listReverseQueryAddress
   val listReverseCacheUpdateForward =
     listReverseCacheUpdateValid && listReverseCacheUpdateAddr === listReversePrefetchAddress
   val listReverseCacheUpdateIndexConflict =

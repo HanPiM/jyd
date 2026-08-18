@@ -50,6 +50,20 @@ static inline uint32_t xdotn_bit(const int16_t *a, const int16_t *b) {
   return result;
 }
 
+static inline uint32_t store_half_then_xdotn_signed(int16_t *address,
+                                                     int16_t value,
+                                                     const int16_t *a,
+                                                     const int16_t *b) {
+  uint32_t result;
+  asm volatile("sh %3, 0(%1)\n\t"
+               ".insn r 0x0b, 4, 4, %0, %2, %4"
+               : "=r"(result)
+               : "r"(address), "r"(a), "r"((uint32_t)(uint16_t)value),
+                 "r"(b)
+               : "memory");
+  return result;
+}
+
 static uint32_t reference_signed(const int16_t *a, const int16_t *b,
                                  unsigned n) {
   uint32_t result = 0;
@@ -108,6 +122,52 @@ static void run_case(unsigned n, unsigned alignment) {
   }
 }
 
+static void run_adjacent_store_alias_case(void) {
+  const unsigned n = 8;
+  int16_t *a = a_storage;
+  int16_t *b = b_storage;
+  unsigned b_row = n;
+  unsigned a_offset = 0;
+
+  for (; a_offset < 8 && b_row == n; a_offset++) {
+    unsigned a_cache_index = ((uintptr_t)&a_storage[a_offset] >> 2) & 7u;
+    for (unsigned row = 0; row < n; row++)
+      if ((((uintptr_t)&b[row * n] >> 2) & 7u) == a_cache_index) {
+        a = &a_storage[a_offset];
+        b_row = row;
+        break;
+      }
+  }
+  if (b_row == n)
+    fail(6, n, 0, 0, 1);
+
+  for (unsigned k = 0; k < n; k++)
+    a[k] = (int16_t)(k * 41u - 137u);
+  for (unsigned row = 0; row < n; row++)
+    for (unsigned column = 0; column < n; column++)
+      b[row * n + column] = (int16_t)(row * 23u + column * 17u - 109u);
+
+  xdotn_config(n);
+  uint32_t warm = xdotn_signed(a, b);
+  uint32_t expected = reference_signed(a, b, n);
+  if (warm != expected)
+    fail(4, n, 0, expected, warm);
+
+  uint32_t actual = store_half_then_xdotn_signed(&a[0], (int16_t)0x3456, a, b);
+  expected = reference_signed(a, b, n);
+  if (actual != expected)
+    fail(5, n, 0, expected, actual);
+
+  warm = xdotn_signed(a, b);
+  expected = reference_signed(a, b, n);
+  if (warm != expected)
+    fail(7, n, b_row, expected, warm);
+  actual = store_half_then_xdotn_signed(&b[b_row * n], (int16_t)0xa321, a, b);
+  expected = reference_signed(a, b, n);
+  if (actual != expected)
+    fail(8, n, b_row, expected, actual);
+}
+
 static void run_row_case(unsigned n, unsigned alignment, unsigned bit_mode) {
   int16_t *a = a_storage + alignment;
   int16_t *b = b_storage + alignment;
@@ -143,6 +203,8 @@ int main(void) {
   for (unsigned alignment = 0; alignment < 2; alignment++)
     for (unsigned test = 0; test < sizeof(lengths) / sizeof(lengths[0]); test++)
       run_case(lengths[test], alignment);
+
+  run_adjacent_store_alias_case();
 
   static const unsigned row_lengths[] = {4, 9, 16};
   for (unsigned alignment = 0; alignment < 2; alignment++)

@@ -27,7 +27,7 @@ object ExtractFwdInfoFromLSU {
     val loadDataValid = info.bits.isLoad && info.bits.cacheableLoad && info.bits.dcacheHit
     val out = Wire(new WrBackForwardInfo)
     out.addr      := ResultLaneSelect.rd(wrBack)
-    out.enWr      := ResultLaneSelect.writesRd(wrBack) && info.valid
+    out.enWr      := ResultLaneSelect.anyValid(wrBack) && info.valid
     out.dataVaild := info.valid && (!info.bits.isLoad || loadDataValid)
     out.data      := Mux(info.bits.isLoad, loadData, ResultLaneSelect.nonLoadData(wrBack))
     out.kind      := wrBack.resultKind
@@ -42,10 +42,9 @@ object ExtractFastFwdInfoFromLSU {
   ): WrBackForwardInfo = {
     val wrBack = info.bits.exuWriteBack
     val out = Wire(new WrBackForwardInfo)
-    val fastResultValid = wrBack.rdWrEn && wrBack.resultKind === ResultKind.fastInt
-    out.addr      := wrBack.rd
-    out.enWr      := fastResultValid && info.valid
-    out.dataVaild := fastResultValid && info.valid
+    out.addr      := wrBack.fastResult.rd
+    out.enWr      := wrBack.fastResult.valid && info.valid
+    out.dataVaild := wrBack.fastResult.valid && info.valid
     out.data      := wrBack.fastResult.data
     out.kind      := ResultKind.fastInt
     out
@@ -121,13 +120,12 @@ class LSU(
   //   )
   // )
 
-  outWriteBackInfo.rdWrEn        := activeReq.exuWriteBack.rdWrEn
-  outWriteBackInfo.rd            := activeReq.exuWriteBack.rd
   outWriteBackInfo.resultKind    := activeReq.exuWriteBack.resultKind
   outWriteBackInfo.fastResult    := activeReq.exuWriteBack.fastResult
   outWriteBackInfo.directResult  := activeReq.exuWriteBack.directResult
   outWriteBackInfo.longResult    := activeReq.exuWriteBack.longResult
   outWriteBackInfo.acceleratorResult := activeReq.exuWriteBack.acceleratorResult
+  outWriteBackInfo.loadResult    := activeReq.exuWriteBack.loadResult
   outWriteBackInfo.isLoad        := activeReq.isLoad
   outWriteBackInfo.isMemOp       := isMemOp
   outWriteBackInfo.lsuResult     := io.dcacheReadData
@@ -138,6 +136,10 @@ class LSU(
   outWriteBackInfo.cacheableLoad := activeReq.cacheableLoad
   outWriteBackInfo.dcacheHit     := activeReq.dcacheHit
   outWriteBackInfo.dcacheStoreEpoch := activeReq.dcacheStoreEpoch
+
+  when(io.in.valid) {
+    assert(PopCount(ResultLaneSelect.validVec(activeReq.exuWriteBack)) <= 1.U, "LSU result lanes must be one-hot")
+  }
 
   StageLogger(
     clock,

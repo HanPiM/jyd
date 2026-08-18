@@ -819,16 +819,32 @@ class EXU(
       Mux(isDcacheWalker, dcacheWalkerResult, Mux(isXmsum, xmsumResult, simpleAcceleratorOut)))
   )
 
-  writeBackInfo.rdWrEn := dinst.info.rdWrEn
-  writeBackInfo.rd := dinst.info.rd
   writeBackInfo.resultKind := dinst.info.resultKind
+  writeBackInfo.fastResult.valid := dinst.info.rdWrEn && resultIsFast
+  writeBackInfo.fastResult.rd := dinst.info.rd
   writeBackInfo.fastResult.data := fastIntegerOut
+  writeBackInfo.directResult.valid := dinst.info.rdWrEn && dinst.info.resultKind === ResultKind.direct
+  writeBackInfo.directResult.rd := dinst.info.rd
   writeBackInfo.directResult.data := Mux(isTypSys, csrReadDataReg, dinst.info.preMuxWrBackData)
+  writeBackInfo.longResult.valid := dinst.info.rdWrEn && resultIsLong
+  writeBackInfo.longResult.rd := dinst.info.rd
   writeBackInfo.longResult.data := specialExecutionOut
+  writeBackInfo.acceleratorResult.valid := dinst.info.rdWrEn && resultIsAccelerator
+  writeBackInfo.acceleratorResult.rd := dinst.info.rd
   writeBackInfo.acceleratorResult.data := acceleratorData
+  writeBackInfo.loadResult.valid := dinst.info.rdWrEn && isTypLoad
+  writeBackInfo.loadResult.rd := dinst.info.rd
 
   when(io.in.valid) {
-    assert(isTypLoad === (writeBackInfo.resultKind === ResultKind.load), "load result metadata must stay aligned")
+    assert(PopCount(ResultLaneSelect.validVec(writeBackInfo)) <= 1.U, "EXU result lanes must be one-hot")
+    assert(!writeBackInfo.fastResult.valid || writeBackInfo.resultKind === ResultKind.fastInt)
+    assert(!writeBackInfo.directResult.valid || writeBackInfo.resultKind === ResultKind.direct)
+    assert(!writeBackInfo.longResult.valid || writeBackInfo.resultKind === ResultKind.longArithmetic)
+    assert(!writeBackInfo.acceleratorResult.valid || writeBackInfo.resultKind === ResultKind.accelerator)
+    assert(!writeBackInfo.loadResult.valid || writeBackInfo.resultKind === ResultKind.load)
+    when(dinst.info.rdWrEn) {
+      assert(PopCount(ResultLaneSelect.validVec(writeBackInfo)) === 1.U, "GPR producer must select exactly one lane")
+    }
   }
 
   // Fill in LSU stage

@@ -563,9 +563,9 @@ class CPUCore(
   val wbuAddressBlocked = RegInit(false.B)
   val wbuCandidate = lsu.io.out.bits
   val wbuCandidateLoadBlocked =
-    wbuCandidate.isLoad && !(wbuCandidate.cacheableLoad && wbuCandidate.dcacheHit)
+    wbuCandidate.loadResult.valid && !(wbuCandidate.cacheableLoad && wbuCandidate.dcacheHit)
   when(lsu.io.out.ready) {
-    wbuAddressBlocked := lsu.io.out.valid && ResultLaneSelect.writesRd(wbuCandidate) && (
+    wbuAddressBlocked := lsu.io.out.valid && ResultLaneSelect.anyValid(wbuCandidate) && (
       wbuCandidate.resultKind === ResultKind.longArithmetic ||
         wbuCandidate.resultKind === ResultKind.accelerator || wbuCandidateLoadBlocked
     )
@@ -574,9 +574,9 @@ class CPUCore(
   idu.io.wbuAddressBlocked := wbuAddressBlocked
   when(wbu.io.in.valid) {
     val currentLoadBlocked =
-      wbu.io.in.bits.isLoad && !(wbu.io.in.bits.cacheableLoad && wbu.io.in.bits.dcacheHit)
+      wbu.io.in.bits.loadResult.valid && !(wbu.io.in.bits.cacheableLoad && wbu.io.in.bits.dcacheHit)
     assert(
-      wbuAddressBlocked === (ResultLaneSelect.writesRd(wbu.io.in.bits) && (
+      wbuAddressBlocked === (ResultLaneSelect.anyValid(wbu.io.in.bits) && (
         wbu.io.in.bits.resultKind === ResultKind.longArithmetic ||
           wbu.io.in.bits.resultKind === ResultKind.accelerator || currentLoadBlocked
       )),

@@ -63,7 +63,7 @@ mkdir -p "$PWD/out"
 只存在于本机提交的循环边界分析前置修复。补丁 SHA-256 应为：
 
 ```text
-8f6e2ab133abef169590e8d7373395005d0a962f5171828bede3a85f366ba1b4
+b666bc17ec70e7c75e0773b22e320613e8cbf00bb51ed4bf74de8b2008cf9b43
 ```
 
 检查版本和后端完整性：

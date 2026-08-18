@@ -52,10 +52,10 @@ index 0d16d79df3a..6c75513b1dc 100644
 +    }
 +
 diff --git a/gcc/config/riscv/peephole.md b/gcc/config/riscv/peephole.md
-index e49bc042665..5864c590efe 100644
+index e49bc042665..422dde8692b 100644
 --- a/gcc/config/riscv/peephole.md
 +++ b/gcc/config/riscv/peephole.md
-@@ -21,0 +22,318 @@
+@@ -21,0 +22,337 @@
 +(define_insn "xdup8losi2"
 +  [(set (match_operand:SI 0 "register_operand" "=r")
 +	(unspec:SI [(match_operand:SI 1 "register_operand" "r")]
@@ -263,11 +263,12 @@ index e49bc042665..5864c590efe 100644
 +  ".insn r 0x0b, 3, 9, %0, %1, %2"
 +  [(set_attr "type" "imul") (set_attr "mode" "SI")])
 +
-+(define_insn "xdotn_configsi1"
-+  [(unspec_volatile [(match_operand:SI 0 "register_operand" "r")]
++(define_insn "xdotn_configsi2"
++  [(unspec_volatile [(match_operand:SI 0 "register_operand" "r")
++                    (match_operand:SI 1 "register_operand" "r")]
 +                    UNSPEC_XDOTN_CONFIG)]
 +  "TARGET_XDOTN && !TARGET_64BIT"
-+  ".insn r 0x0b, 4, 3, zero, %0, zero"
++  ".insn r 0x0b, 4, 3, zero, %0, %1"
 +  [(set_attr "type" "multi") (set_attr "mode" "SI")])
 +
 +(define_insn "xdotnsi3"
@@ -288,6 +289,24 @@ index e49bc042665..5864c590efe 100644
 +   (clobber (mem:BLK (scratch)))]
 +  "TARGET_XDOTN && !TARGET_64BIT"
 +  ".insn r 0x0b, 4, 5, %0, %1, %2"
++  [(set_attr "type" "multi") (set_attr "mode" "SI")])
++
++(define_insn "xdotrowsi2"
++  [(unspec_volatile [(match_operand:SI 0 "register_operand" "r")
++                     (match_operand:SI 1 "register_operand" "r")]
++                    UNSPEC_XDOTROW)
++   (clobber (mem:BLK (scratch)))]
++  "TARGET_XDOTN && !TARGET_64BIT"
++  ".insn r 0x0b, 4, 6, zero, %0, %1"
++  [(set_attr "type" "multi") (set_attr "mode" "SI")])
++
++(define_insn "xdotrow_bitsi2"
++  [(unspec_volatile [(match_operand:SI 0 "register_operand" "r")
++                     (match_operand:SI 1 "register_operand" "r")]
++                    UNSPEC_XDOTROW_BIT)
++   (clobber (mem:BLK (scratch)))]
++  "TARGET_XDOTN && !TARGET_64BIT"
++  ".insn r 0x0b, 4, 7, zero, %0, %1"
 +  [(set_attr "type" "multi") (set_attr "mode" "SI")])
 +
 +;; Numeric-token DFA (xdfa4h): one hardware step over the word at the string
@@ -375,10 +394,10 @@ index e49bc042665..5864c590efe 100644
 +	(unspec:SI [(match_dup 1)] UNSPEC_XBMUL))])
 +
 diff --git a/gcc/config/riscv/riscv.md b/gcc/config/riscv/riscv.md
-index d2883ef9f5a..ae554ecda8d 100644
+index d2883ef9f5a..c9386fdd1d5 100644
 --- a/gcc/config/riscv/riscv.md
 +++ b/gcc/config/riscv/riscv.md
-@@ -102,0 +103,28 @@
+@@ -102,0 +103,30 @@
 +  ;; Packed bit-field multiply and byte-wise CRC16.
 +  UNSPEC_XBMUL
 +  UNSPEC_XMBM
@@ -397,6 +416,8 @@ index d2883ef9f5a..ae554ecda8d 100644
 +  UNSPEC_XDOTN_CONFIG
 +  UNSPEC_XDOTN
 +  UNSPEC_XDOTN_BIT
++  UNSPEC_XDOTROW
++  UNSPEC_XDOTROW_BIT
 +  UNSPEC_XPADDH2
 +
 +  ;; Numeric-token DFA.
@@ -635,12 +656,12 @@ index e69bc2935eb..a924312c82d 100644
 +  return new pass_crc_semantic_wrappers (ctxt);
 +}
 diff --git a/gcc/internal-fn.cc b/gcc/internal-fn.cc
-index 25acc63b247..201edc04318 100644
+index 25acc63b247..be154de7d17 100644
 --- a/gcc/internal-fn.cc
 +++ b/gcc/internal-fn.cc
 @@ -40,0 +41 @@ along with GCC; see the file COPYING3.  If not see
 +#include "insn-flags.h"
-@@ -3466,0 +3468,250 @@ expand_UNIQUE (internal_fn, gcall *stmt)
+@@ -3466,0 +3468,342 @@ expand_UNIQUE (internal_fn, gcall *stmt)
 +/* Reset the hardware numeric-DFA counters (xdfa4h).  */
 +static void
 +expand_XDFACNT_INIT (internal_fn, gcall *)
@@ -694,29 +715,73 @@ index 25acc63b247..201edc04318 100644
 +  rtx done = gen_label_rtx ();
 +  rtx one = GEN_INT (1);
 +
-+  /* Configure the runtime dimension once, then collapse every inner product
-+     to one memory-walking instruction.  Keep the generic expansion for zero
-+     or dimensions that do not fit the walker's 16-bit counter.  */
++  /* Use a row walker for small disjoint matrices and a dot walker for larger
++     disjoint matrices.  Preserve the original memory update order when the
++     output overlaps either input.  */
 +  if (TARGET_XDOTN)
 +    {
 +      rtx generic = gen_label_rtx ();
++      rtx scalar_fallback = gen_label_rtx ();
++      rtx scalar_outer = gen_label_rtx ();
++      rtx scalar_inner = gen_label_rtx ();
++      rtx scalar_accum = gen_label_rtx ();
++      rtx dot_fallback = gen_label_rtx ();
++      rtx row_check_b = gen_label_rtx ();
++      rtx row_range_ok = gen_label_rtx ();
++      rtx row_outer = gen_label_rtx ();
 +      rtx dot_outer = gen_label_rtx ();
 +      rtx dot_inner = gen_label_rtx ();
 +      rtx dot_step = xmacacc_shift (n, 1);
 +      rtx dot_elements = gen_reg_rtx (SImode);
 +      emit_insn (gen_mulsi3 (dot_elements, n, n));
 +      rtx dot_a_end = xmacacc_add (a, xmacacc_shift (dot_elements, 1));
++      rtx dot_b_full_end = xmacacc_add (b, xmacacc_shift (dot_elements, 1));
++      rtx dot_c_step = xmacacc_shift (dot_elements, 2);
++      rtx dot_c_end = xmacacc_add (c, dot_c_step);
 +      rtx dot_b_end = xmacacc_add (b, dot_step);
 +
 +      emit_cmp_and_jump_insns (n, const0_rtx, EQ, NULL_RTX, SImode, 1,
 +			       generic, profile_probability::very_unlikely ());
-+      emit_cmp_and_jump_insns (n, GEN_INT (65535), GTU, NULL_RTX, SImode, 1,
++      emit_cmp_and_jump_insns (n, GEN_INT (32767), GTU, NULL_RTX, SImode, 1,
 +			       generic, profile_probability::very_unlikely ());
++      emit_cmp_and_jump_insns (dot_a_end, a, LTU, NULL_RTX, SImode, 1,
++			       scalar_fallback, profile_probability::very_unlikely ());
++      emit_cmp_and_jump_insns (dot_b_full_end, b, LTU, NULL_RTX, SImode, 1,
++			       scalar_fallback, profile_probability::very_unlikely ());
++      emit_cmp_and_jump_insns (dot_c_end, c, LTU, NULL_RTX, SImode, 1,
++			       scalar_fallback, profile_probability::very_unlikely ());
++      emit_cmp_and_jump_insns (dot_c_end, a, LEU, NULL_RTX, SImode, 1,
++			       row_check_b, profile_probability::even ());
++      emit_cmp_and_jump_insns (dot_a_end, c, LEU, NULL_RTX, SImode, 1,
++			       row_check_b, profile_probability::even ());
++      emit_jump_insn (gen_jump (scalar_fallback));
++      emit_barrier ();
++      emit_label (row_check_b);
++      emit_cmp_and_jump_insns (dot_c_end, b, LEU, NULL_RTX, SImode, 1,
++			       row_range_ok, profile_probability::even ());
++      emit_cmp_and_jump_insns (dot_b_full_end, c, GTU, NULL_RTX, SImode, 1,
++			       scalar_fallback, profile_probability::even ());
++      emit_label (row_range_ok);
++      emit_cmp_and_jump_insns (n, GEN_INT (4), LTU, NULL_RTX, SImode, 1,
++			       dot_fallback, profile_probability::unlikely ());
++      emit_cmp_and_jump_insns (n, GEN_INT (16), GTU, NULL_RTX, SImode, 1,
++			       dot_fallback, profile_probability::unlikely ());
++      emit_label (row_outer);
++      emit_insn (gen_xdotn_configsi2 (n, c_ptr));
++      emit_insn (bit_extract ? gen_xdotrow_bitsi2 (a_row, b) : gen_xdotrowsi2 (a_row, b));
++      emit_insn (gen_addsi3 (c_ptr, c_ptr, dot_step));
++      emit_insn (gen_addsi3 (c_ptr, c_ptr, dot_step));
++      emit_insn (gen_addsi3 (a_row, a_row, dot_step));
++      emit_cmp_and_jump_insns (a_row, dot_a_end, NE, NULL_RTX, SImode, 1,
++			       row_outer, profile_probability::likely ());
++      emit_jump_insn (gen_jump (done));
++      emit_barrier ();
++      emit_label (dot_fallback);
 +      emit_label (dot_outer);
 +      emit_move_insn (b_col, b);
 +      /* Besides refreshing the state for each row, the configuration op
 +	 separates the loop's b_col move from the blocking dot consumer.  */
-+      emit_insn (gen_xdotn_configsi1 (n));
++      emit_insn (gen_xdotn_configsi2 (n, c_ptr));
 +      emit_label (dot_inner);
 +      rtx dot_result = gen_reg_rtx (SImode);
 +      emit_insn (bit_extract
@@ -730,6 +795,54 @@ index 25acc63b247..201edc04318 100644
 +      emit_insn (gen_addsi3 (a_row, a_row, dot_step));
 +      emit_cmp_and_jump_insns (a_row, dot_a_end, NE, NULL_RTX, SImode, 1,
 +			       dot_outer, profile_probability::likely ());
++      emit_jump_insn (gen_jump (done));
++      emit_barrier ();
++      emit_label (scalar_fallback);
++      rtx scalar_a_ptr = gen_reg_rtx (SImode);
++      rtx scalar_b_ptr = gen_reg_rtx (SImode);
++      rtx scalar_a_limit = gen_reg_rtx (SImode);
++      rtx scalar_product = gen_reg_rtx (SImode);
++      rtx scalar_term = gen_reg_rtx (SImode);
++      rtx scalar_current = gen_reg_rtx (SImode);
++      rtx scalar_sum = gen_reg_rtx (SImode);
++      emit_label (scalar_outer);
++      emit_move_insn (b_col, b);
++      emit_label (scalar_inner);
++      emit_move_insn (scalar_a_ptr, a_row);
++      emit_move_insn (scalar_b_ptr, b_col);
++      emit_insn (gen_addsi3 (scalar_a_limit, a_row, dot_step));
++      emit_move_insn (gen_rtx_MEM (SImode, c_ptr), const0_rtx);
++      emit_label (scalar_accum);
++      rtx scalar_av = xmacacc_load_half (scalar_a_ptr);
++      rtx scalar_bv = xmacacc_load_half (scalar_b_ptr);
++      emit_insn (gen_mulsi3 (scalar_product, scalar_av, scalar_bv));
++      if (bit_extract)
++	{
++	  rtx lo = gen_reg_rtx (SImode);
++	  rtx hi = gen_reg_rtx (SImode);
++	  emit_insn (gen_lshrsi3 (lo, scalar_product, GEN_INT (2)));
++	  emit_insn (gen_andsi3 (lo, lo, GEN_INT (15)));
++	  emit_insn (gen_lshrsi3 (hi, scalar_product, GEN_INT (5)));
++	  emit_insn (gen_andsi3 (hi, hi, GEN_INT (127)));
++	  emit_insn (gen_mulsi3 (scalar_term, lo, hi));
++	}
++      else
++	emit_move_insn (scalar_term, scalar_product);
++      emit_move_insn (scalar_current, gen_rtx_MEM (SImode, c_ptr));
++      emit_insn (gen_addsi3 (scalar_sum, scalar_current, scalar_term));
++      emit_move_insn (gen_rtx_MEM (SImode, c_ptr), scalar_sum);
++      emit_insn (gen_addsi3 (scalar_a_ptr, scalar_a_ptr, GEN_INT (2)));
++      emit_insn (gen_addsi3 (scalar_b_ptr, scalar_b_ptr, dot_step));
++      emit_cmp_and_jump_insns (scalar_a_ptr, scalar_a_limit, NE, NULL_RTX,
++			       SImode, 1, scalar_accum,
++			       profile_probability::likely ());
++      emit_insn (gen_addsi3 (c_ptr, c_ptr, GEN_INT (4)));
++      emit_insn (gen_addsi3 (b_col, b_col, GEN_INT (2)));
++      emit_cmp_and_jump_insns (b_col, dot_b_end, NE, NULL_RTX, SImode, 1,
++			       scalar_inner, profile_probability::likely ());
++      emit_insn (gen_addsi3 (a_row, a_row, dot_step));
++      emit_cmp_and_jump_insns (a_row, dot_a_end, NE, NULL_RTX, SImode, 1,
++			       scalar_outer, profile_probability::likely ());
 +      emit_jump_insn (gen_jump (done));
 +      emit_barrier ();
 +      emit_label (generic);

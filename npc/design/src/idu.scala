@@ -323,7 +323,7 @@ class IDU(
     inst(31, 25) >= 4.U && inst(31, 25) <= 9.U
   val isDotConfigCustom = inst(6, 0) === "b0001011".U && arithmeticFunc3 === 4.U && inst(31, 25) === 3.U
   val isDotNCustom = inst(6, 0) === "b0001011".U && arithmeticFunc3 === 4.U &&
-    (inst(31, 25) === 4.U || inst(31, 25) === 5.U)
+    (inst(31, 25) >= 4.U && inst(31, 25) <= 7.U)
   val isListReverseCustom = isListReverseEncoding
   val isMatrixReduceCustom = inst(31, 25) === 2.U && arithmeticFunc3 === 7.U && inst(6, 0) === "b0001011".U
   val isNumericDfaCustom = inst(6, 0) === "b1011011".U &&
@@ -339,7 +339,8 @@ class IDU(
   res.xmacaccValid := isMatrixAccumulateCustom
   res.xdotConfigValid := isDotConfigCustom
   res.xdotNValid := isDotNCustom
-  when((isMatrixAccumulateCustom && inst(31, 25) =/= 8.U && inst(31, 25) =/= 9.U) || isDotConfigCustom) {
+  when((isMatrixAccumulateCustom && inst(31, 25) =/= 8.U && inst(31, 25) =/= 9.U) || isDotConfigCustom ||
+    (isDotNCustom && inst(31, 25) >= 6.U)) {
     res.rdWrEn := false.B
   }
   res.listReverseValid := isListReverseCustom

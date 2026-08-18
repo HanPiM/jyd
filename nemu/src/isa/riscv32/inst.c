@@ -64,6 +64,8 @@
 #define MATCH_XACCEL_XDOTN_CONFIG 0x0600400b
 #define MATCH_XACCEL_XDOTN 0x0800400b
 #define MATCH_XACCEL_XDOTN_BIT 0x0a00400b
+#define MATCH_XACCEL_XDOTROW 0x0c00400b
+#define MATCH_XACCEL_XDOTROW_BIT 0x0e00400b
 #define MATCH_XACCEL_XBMUL  0x0000500b
 #define MATCH_XACCEL_XMBM   0x0200500b
 #define MATCH_XACCEL_XLISTREV_INIT 0x0000600b
@@ -83,6 +85,8 @@
 #define MASK_XACCEL_XDOTN_CONFIG MASK_XACCEL_XACCEL
 #define MASK_XACCEL_XDOTN MASK_XACCEL_XACCEL
 #define MASK_XACCEL_XDOTN_BIT MASK_XACCEL_XACCEL
+#define MASK_XACCEL_XDOTROW MASK_XACCEL_XACCEL
+#define MASK_XACCEL_XDOTROW_BIT MASK_XACCEL_XACCEL
 #define MASK_XACCEL_XBMUL  MASK_XACCEL_XACCEL
 #define MASK_XACCEL_XMBM   MASK_XACCEL_XACCEL
 #define MASK_XACCEL_XLISTREV_INIT MASK_XACCEL_XACCEL
@@ -481,8 +485,32 @@ static int decode_exec(Decode *s) {
     matched = true;
   }
   static unsigned xdotn_length;
+  static vaddr_t xdotrow_address_c;
   if (IS_INST(XACCEL_XDOTN_CONFIG)) {
     xdotn_length = R(rs1) & 0xffffu;
+    xdotrow_address_c = R(rs2);
+    matched = true;
+  }
+  if (IS_INST(XACCEL_XDOTROW) || IS_INST(XACCEL_XDOTROW_BIT)) {
+    vaddr_t address_a = R(rs1);
+    vaddr_t address_b = R(rs2);
+    unsigned length = xdotn_length;
+    bool bit_extract = IS_INST(XACCEL_XDOTROW_BIT);
+    for (unsigned column = 0; column < length; column++) {
+      word_t sum = 0;
+      for (unsigned k = 0; k < length; k++) {
+        word_t a = vaddr_read(address_a + 2 * k, 2) & 0xffffu;
+        word_t b = vaddr_read(address_b + 2 * (k * length + column), 2) & 0xffffu;
+        word_t product = a * b;
+        word_t term = bit_extract
+                          ? ((product >> 2) & 0xfu) * ((product >> 5) & 0x7fu)
+                          : (word_t)(sx16(a) * sx16(b));
+        sum += term;
+      }
+      vaddr_write(xdotrow_address_c + 4 * column, 4, sum);
+    }
+    riscv_profile_record_xaccel(XA_DOTN, (uint64_t)length * length,
+                                3 * (uint64_t)length * length);
     matched = true;
   }
   if (IS_INST(XACCEL_XDOTN) || IS_INST(XACCEL_XDOTN_BIT)) {

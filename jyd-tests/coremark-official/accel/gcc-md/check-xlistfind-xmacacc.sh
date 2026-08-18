@@ -44,7 +44,7 @@ test "$(grep -Fc '.insn r 0x0b, 6, 3' "$scratch/list-renamed.s")" -gt 0
     -o "$scratch/matrix-control.s"
 "$cc" $flags $includes "$arch" -mxmacacc -mxdotn -fdump-tree-clippedscore \
     -S "$coremark_dir/src/core_matrix.c" -o "$scratch/matrix-xdotn.s"
-if grep -Eq '\.insn r 0x0b, (3, (4|5|6|7|8|9)|4, (3|4|5))' "$scratch/matrix-control.s"; then
+if grep -Eq '\.insn r 0x0b, (3, (4|5|6|7|8|9)|4, (3|4|5|6|7))' "$scratch/matrix-control.s"; then
     echo "matrix control unexpectedly contains xmacacc/xdotn" >&2
     exit 1
 fi
@@ -53,7 +53,7 @@ grep -Fq 'recognized bit-extract matrix accumulation' "$scratch"/matrix-xdotn.c.
 for funct7 in 4 5 6 7 8 9; do
     test "$(grep -Fc ".insn r 0x0b, 3, $funct7" "$scratch/matrix-xdotn.s")" -gt 0
 done
-for funct7 in 3 4 5; do
+for funct7 in 3 4 5 6 7; do
     test "$(grep -Fc ".insn r 0x0b, 4, $funct7" "$scratch/matrix-xdotn.s")" -gt 0
 done
 
@@ -67,7 +67,7 @@ grep -Fq 'recognized bit-extract matrix accumulation' "$scratch"/matrix-renamed.
 for funct7 in 4 5 6 7 8 9; do
     test "$(grep -Fc ".insn r 0x0b, 3, $funct7" "$scratch/matrix-renamed.s")" -gt 0
 done
-for funct7 in 3 4 5; do
+for funct7 in 3 4 5 6 7; do
     test "$(grep -Fc ".insn r 0x0b, 4, $funct7" "$scratch/matrix-renamed.s")" -gt 0
 done
 

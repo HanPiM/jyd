@@ -11,7 +11,7 @@ Check out public GCC base commit `ff20c357b3f`, then apply
 `active-accel-gcc16.patch` with `git apply --index --unidiff-zero`. Configure
 and build an RV32-capable RISC-V cross compiler in separate source, build, and
 install directories. The patch SHA-256 is
-`8f6e2ab133abef169590e8d7373395005d0a962f5171828bede3a85f366ba1b4`.
+`b666bc17ec70e7c75e0773b22e320613e8cbf00bb51ed4bf74de8b2008cf9b43`.
 The patch includes the loop-bound analysis prerequisite that was previously a
 local-only commit on top of that public base.
 
@@ -28,16 +28,21 @@ local-only commit on top of that public base.
 | xdfascan | NUL-terminated numeric-token scan recognizer | `-mxdfascan` | custom-2, funct3 5, funct7 3 |
 | xlistfind | linked-list search recognizer | `-mxlistfind` | custom-0, funct3 6, funct7 1/3 |
 | xmacacc | matrix multiply recognizer and target loop expansion | `-mxmacacc` | custom-0, funct3 3, funct7 4-9 |
-| xdotn | runtime-N matrix dot walker selected by the matrix recognizer | `-mxdotn` | custom-0, funct3 4, funct7 3/4/5 |
+| xdotn | runtime-N matrix dot and row walkers selected by the matrix recognizer | `-mxdotn` | custom-0, funct3 4, funct7 3/4/5/6/7 |
 | xpaddh2 | aligned 16-bit matrix-add loop recognizer | `-mxpaddh2` | custom-0, funct3 1, funct7 2 |
 
-The combined build enables `-mxmbm`, `-mxmacacc`, and `-mxdotn`. GCC emits a
-runtime-dimension configuration operation followed by one xdotn instruction
-per signed or bit-extract dot product. Dimensions from 1 through 65535 use the
-walker; zero or larger dimensions retain the scalar xmacacc target-loop
-expansion. Consequently no xmbm site remains in the combined ELF; the ELF
-auditor reports xmbm as superseded. Building with `-mxmbm` without `-mxmacacc`
-still selects the two expected xmbm sites from unmodified `core_matrix.c`.
+The combined build enables `-mxmbm`, `-mxmacacc`, and `-mxdotn`. For
+non-overlapping runtime dimensions from 4 through 16, GCC checks that the
+complete A, B, and C ranges do not wrap, then emits a configuration operation
+carrying N and the C pointer followed by one signed or bit-extract row
+instruction per A row. Non-overlapping dimensions from 1 through 3 and 17
+through 32767 use the scalar-result xdotn walker, one instruction per dot
+product. Overlapping or wrapping ranges in that interval use an exact scalar
+fallback that preserves every original C initialization and accumulation
+write. N=0 and dimensions above 32767 retain the generic xmacacc target-loop
+path. Consequently no xmbm site remains in the combined ELF; the ELF auditor
+reports xmbm as superseded. Building with `-mxmbm` without `-mxmacacc` still
+selects the two expected xmbm sites from unmodified `core_matrix.c`.
 
 The xcrcu8 integration recognizes the verified byte-at-a-time CRC data flow in
 the early GIMPLE loop pass and lowers it to GCC's existing `CRC_REV` internal
@@ -87,10 +92,10 @@ make ARCH=riscv32-jyd \
   audit-accel
 ```
 
-The auditor requires all enabled instruction families, xdotn configuration and
-both data modes, every xlistfind and xmacacc sub-operation, and the xdfa
-final-counter read. Soft-float helper symbols are expected in the normal report
-path and are not accelerator-audit failures.
+The auditor requires all enabled instruction families, xdotn configuration,
+dot and row operations in both data modes, every xlistfind and xmacacc
+sub-operation, and the xdfa final-counter read. Soft-float helper symbols are
+expected in the normal report path and are not accelerator-audit failures.
 
 ## Validation
 
@@ -133,8 +138,8 @@ explicitly unboarded, and board validation remains recorded debt.
 
 The final ELF has 44 static xcrcu8 sites, one xlistrev site, five xmsum sites,
 two xdup8lo sites, two xdfascan sites, four xlistfind sites, six xmacacc sites,
-four xdotn sites (two configuration, one signed, and one bit-extract), two
-xpaddh2 sites, and one xdfa final-counter read. The generated program image was
+eight xdotn sites covering configuration plus signed and bit-extract dot and row
+operations, two xpaddh2 sites, and one xdfa final-counter read. The generated program image was
 exercised by NEMU and NPC difftest.
 
 ## Checkers
@@ -155,7 +160,7 @@ exercised by NEMU and NPC difftest.
 - `check-xdfascan.sh <gcc>` checks the full runtime NUL scan and rejects
   delimiter, final-count, and mixed-callee near matches.
 - `check-xlistfind-xmacacc.sh <gcc>` checks both xlistfind sub-operations and
-  all six xmacacc sub-operations, all three xdotn sub-operations, the invalid-N
+  all six xmacacc sub-operations, all five xdotn sub-operations, option-off
   fallback, and renamed-source name independence.
 - `check-backend-integrity.sh` rejects symbol-name matching, pseudo-float
   support, and alternate compiler-extension paths. It also proves that the

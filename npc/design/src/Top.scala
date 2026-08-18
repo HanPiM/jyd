@@ -359,12 +359,16 @@ class CPUCore(
   dcache.io.dotNConsume := exu.io.dcache.dotNConsume
   dcache.io.dotNAddressA := exu.io.dcache.dotNAddressA
   dcache.io.dotNAddressB := exu.io.dcache.dotNAddressB
+  dcache.io.dotNAddressC := exu.io.dcache.dotNAddressC
   dcache.io.dotNLength := exu.io.dcache.dotNLength
   dcache.io.dotNBitMode := exu.io.dcache.dotNBitMode
+  dcache.io.dotNRowMode := exu.io.dcache.dotNRowMode
   dcache.io.dotNRequestFire := exu.io.dcache.dotNRequestFire
   dcache.io.dotNMemResponse := exu.io.dcache.dotNMemResponse
   exu.io.dcache.dotNRequest := dcache.io.dotNRequest
   exu.io.dcache.dotNRequestAddress := dcache.io.dotNRequestAddress
+  exu.io.dcache.dotNRequestWrite := dcache.io.dotNRequestWrite
+  exu.io.dcache.dotNRequestWriteData := dcache.io.dotNRequestWriteData
   exu.io.dcache.dotNDone := dcache.io.dotNDone
   exu.io.dcache.dotNResult := dcache.io.dotNResult
   dcache.io.dataMutation := exu.io.dcache.storeUpdate || exu.io.dcache.fullUpdate
@@ -380,6 +384,7 @@ class CPUCore(
   wbu.io.dcacheStoreEpoch  := dcacheStoreEpoch
   val dcacheStoreUpdate = exu.io.dcache.storeUpdate && p.enableDCache.B
   dcache.io.storeUpdate := dcacheStoreUpdate
+  dcache.io.storeAddress := exu.io.dcache.storeAddress
   dcache.io.storeFull   := exu.io.dcache.storeFull
   dcache.io.storeData   := exu.io.dcache.storeData
   dcache.io.storeMask   := exu.io.dcache.storeMask

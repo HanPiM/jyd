@@ -6,6 +6,8 @@
 
 static int16_t a_storage[MAX_N + 2] __attribute__((aligned(4)));
 static int16_t b_storage[MAX_N * MAX_N + 2] __attribute__((aligned(4)));
+static uint32_t c_storage[MAX_N + 2] __attribute__((aligned(4)));
+static uint32_t c_reference[MAX_N + 2] __attribute__((aligned(4)));
 
 static void fail(unsigned mode, unsigned n, unsigned alignment,
                  uint32_t expected, uint32_t actual) {
@@ -16,6 +18,18 @@ static void fail(unsigned mode, unsigned n, unsigned alignment,
 
 static inline void xdotn_config(unsigned n) {
   asm volatile(".insn r 0x0b, 4, 3, x0, %0, x0" : : "r"(n) : "memory");
+}
+
+static inline void xdotrow_config(unsigned n, uint32_t *c) {
+  asm volatile(".insn r 0x0b, 4, 3, x0, %0, %1" : : "r"(n), "r"(c) : "memory");
+}
+
+static inline void xdotrow_signed(const int16_t *a, const int16_t *b) {
+  asm volatile(".insn r 0x0b, 4, 6, x0, %0, %1" : : "r"(a), "r"(b) : "memory");
+}
+
+static inline void xdotrow_bit(const int16_t *a, const int16_t *b) {
+  asm volatile(".insn r 0x0b, 4, 7, x0, %0, %1" : : "r"(a), "r"(b) : "memory");
 }
 
 static inline uint32_t xdotn_signed(const int16_t *a, const int16_t *b) {
@@ -94,12 +108,47 @@ static void run_case(unsigned n, unsigned alignment) {
   }
 }
 
+static void run_row_case(unsigned n, unsigned alignment, unsigned bit_mode) {
+  int16_t *a = a_storage + alignment;
+  int16_t *b = b_storage + alignment;
+  uint32_t *c = c_storage + alignment;
+
+  for (unsigned k = 0; k < n; k++)
+    a[k] = (int16_t)((int)(k * 29u + n * 13u) % 257 - 128);
+  for (unsigned row = 0; row < n; row++)
+    for (unsigned column = 0; column < n; column++)
+      b[row * n + column] =
+          (int16_t)((int)(row * 17u + column * 31u + n * 5u) % 251 - 125);
+
+  for (unsigned column = 0; column < n; column++) {
+    c[column] = 0xdeadbeefu;
+    c_reference[column] = bit_mode ? reference_bit(a, b + column, n)
+                                   : reference_signed(a, b + column, n);
+  }
+
+  xdotrow_config(n, c);
+  if (bit_mode)
+    xdotrow_bit(a, b);
+  else
+    xdotrow_signed(a, b);
+
+  for (unsigned column = 0; column < n; column++)
+    if (c[column] != c_reference[column])
+      fail(2 + bit_mode, n, alignment, c_reference[column], c[column]);
+}
+
 int main(void) {
   static const unsigned lengths[] = {0, 1, 2, 8, 9, 15, 16, 17, 31};
 
   for (unsigned alignment = 0; alignment < 2; alignment++)
     for (unsigned test = 0; test < sizeof(lengths) / sizeof(lengths[0]); test++)
       run_case(lengths[test], alignment);
+
+  static const unsigned row_lengths[] = {4, 9, 16};
+  for (unsigned alignment = 0; alignment < 2; alignment++)
+    for (unsigned test = 0; test < sizeof(row_lengths) / sizeof(row_lengths[0]); test++)
+      for (unsigned mode = 0; mode < 2; mode++)
+        run_row_case(row_lengths[test], alignment, mode);
 
   printf("xdotn-directed: PASS\n");
   return 0;

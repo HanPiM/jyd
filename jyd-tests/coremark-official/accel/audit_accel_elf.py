@@ -9,7 +9,7 @@ ENCODINGS = {
     "xpaddh2": (0x0400100B,),
     "xmac16": (0x0000300B,),
     "xdot16": (0x0000400B,),
-    "xdotn": (0x0600400B, 0x0800400B, 0x0A00400B),
+    "xdotn": (0x0600400B, 0x0800400B, 0x0A00400B, 0x0C00400B, 0x0E00400B),
     "xbmul": (0x0000500B,),
     "xmbm": (0x0200500B,),
     "xlistrev": (0x0400600B,),
@@ -30,6 +30,7 @@ EXACT_COUNTS = {
     "xdup8lo": 2,
     "xpaddh2": 2,
     "xdfascan": 2,
+    "xdotn": 8,
 }
 
 

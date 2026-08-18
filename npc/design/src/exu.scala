@@ -295,6 +295,13 @@ class EXU(
   val xdfaScanCounterIncrement = Reg(Vec(8, UInt(3.W)))
   val xdfaScanFinalIncrement = Reg(Vec(8, UInt(3.W)))
   val xdfaScanContinue = Reg(Bool())
+  // A whole-string scan only stops on a NUL. Register that byte-level
+  // decision and the next aligned word address so the following request can
+  // overlap the counter-commit boundary without exposing DFA combinational
+  // logic to the shared memory request path.
+  val xdfaScanContinueEarly = Reg(Bool())
+  val xdfaScanNextAddress = Reg(Types.UWord)
+  val xdfaScanRequestIssued = RegInit(false.B)
   val xdfaScanCommitPending = RegInit(false.B)
   val xdfaInternalState = RegInit(0.U(3.W))
   val xdfaInternalStopped = RegInit(true.B)
@@ -341,6 +348,7 @@ class EXU(
       xdfaPendingMask := 0.U
       xdfaInternalState := 0.U
       xdfaInternalStopped := true.B
+      xdfaScanRequestIssued := false.B
       xdfaScanCommitPending := false.B
     }
     xdfaWordState := NumericDfaState.request
@@ -351,6 +359,7 @@ class EXU(
     xdfaWordResponseData := io.memResp.bits >> (xdfaWordAddress(1, 0) << 3)
     xdfaWordAvailable := 4.U - xdfaWordAddress(1, 0)
     xdfaWordAddressUpperPlusOne := xdfaWordAddress(31, 3) + 1.U
+    xdfaScanNextAddress := (xdfaWordAddress & ~3.U(32.W)) + 4.U
     xdfaWordState := NumericDfaState.processLow
   }.elsewhen(xdfaWordState === NumericDfaState.processLow) {
     xdfaWordIntermediate := xdfaWordLow.io.result
@@ -364,6 +373,17 @@ class EXU(
     xdfaScanLowTerminated := xdfaScanLow.io.terminated
     xdfaScanLowCounterIncrement := xdfaScanLow.io.counterIncrement
     xdfaScanLowFinalIncrement := xdfaScanLow.io.finalIncrement
+    when(isNumericDfaScan) {
+      val byte0IsNul = xdfaWordResponseData(7, 0) === 0.U
+      val byte1IsNul = xdfaWordResponseData(15, 8) === 0.U
+      val byte2IsNul = xdfaWordResponseData(23, 16) === 0.U
+      val byte3IsNul = xdfaWordResponseData(31, 24) === 0.U
+      val hasNul = (xdfaWordAvailable > 0.U && byte0IsNul) ||
+        (xdfaWordAvailable > 1.U && byte1IsNul) ||
+        (xdfaWordAvailable > 2.U && byte2IsNul) ||
+        (xdfaWordAvailable > 3.U && byte3IsNul)
+      xdfaScanContinueEarly := !hasNul
+    }
     xdfaWordState := NumericDfaState.processHigh
   }.elsewhen(xdfaWordState === NumericDfaState.processHigh) {
     val combinedMask = xdfaPendingMask | xdfaWordHigh.io.result(15, 8)
@@ -395,6 +415,11 @@ class EXU(
       }
       xdfaScanContinue := !(xdfaScanLowTerminated || xdfaScanHigh.io.terminated)
       xdfaScanCommitPending := true.B
+      when(xdfaScanContinueEarly) {
+        // The address and no-NUL decision were registered in the previous
+        // state, so this request does not lengthen the DFA transition path.
+        xdfaScanRequestIssued := io.memReq.fire
+      }
       xdfaWordState := NumericDfaState.scanCommit
     }.elsewhen(isNumericDfaHistogramStep || isNumericDfaStepPtr) {
       xdfaPendingMask := Mux(xdfaWordHigh.io.result(7), 0.U, combinedMask)
@@ -424,8 +449,21 @@ class EXU(
     }
     when(!xdfaScanContinue) {
       xdfaWordState := NumericDfaState.done
-    }.elsewhen(io.memReq.fire) {
-      xdfaWordState := NumericDfaState.response
+    }.otherwise {
+      when(!xdfaScanRequestIssued && io.memReq.fire) {
+        xdfaScanRequestIssued := true.B
+      }
+      // Requests return in order after the same two-cycle pipeline used by
+      // the original response state. Capture the word here while the
+      // independent counter commit is already in flight.
+      when(io.memResp.valid && (xdfaScanRequestIssued || io.memReq.fire)) {
+        xdfaWordResponseData := io.memResp.bits >> (xdfaWordAddress(1, 0) << 3)
+        xdfaWordAvailable := 4.U - xdfaWordAddress(1, 0)
+        xdfaWordAddressUpperPlusOne := xdfaWordAddress(31, 3) + 1.U
+        xdfaScanNextAddress := (xdfaWordAddress & ~3.U(32.W)) + 4.U
+        xdfaScanRequestIssued := false.B
+        xdfaWordState := NumericDfaState.processLow
+      }
     }
   }.elsewhen(xdfaWordState === NumericDfaState.commit) {
     for (state <- 0 until 8) {
@@ -942,8 +980,12 @@ class EXU(
   // Register every DFA request before presenting it to shared memory. This
   // keeps instruction decode out of the BRAM request-control path and also
   // prevents an older untagged response from being mistaken for the first word.
+  val xdfaScanEarlyRequest = xdfaWordState === NumericDfaState.processHigh &&
+    isNumericDfaScan && xdfaScanContinueEarly
+  val xdfaScanRetryRequest = xdfaWordState === NumericDfaState.scanCommit &&
+    xdfaScanContinue && !xdfaScanRequestIssued
   val xdfaWordRequest = xdfaWordState === NumericDfaState.request ||
-    (xdfaWordState === NumericDfaState.scanCommit && xdfaScanContinue)
+    xdfaScanEarlyRequest || xdfaScanRetryRequest
   val acceleratorRequest = xdfaWordRequest || listReverseRequest || dcacheWalkerRequest || xmsumRequest
   val scalarRequest = needMemReq && io.in.valid && io.out.ready
 
@@ -959,12 +1001,13 @@ class EXU(
   scalarMemReq.wmask := memWMask
 
   val acceleratorMemReq = Wire(new MemReq)
+  val xdfaRequestAddress = Mux(xdfaScanEarlyRequest, xdfaScanNextAddress, xdfaWordAddress)
   acceleratorMemReq.addr := Mux(
     xmsumRequest,
     xmsumAddress,
     Mux(
       xdfaWordRequest,
-      xdfaWordAddress & ~3.U(32.W),
+      xdfaRequestAddress & ~3.U(32.W),
       Mux(listReverseRequest, listReverseCurrent, dcacheWalkerRequestAddress)
     )
   )

@@ -3,7 +3,7 @@ package cpu
 import chisel3._
 import chisel3.util.{Cat, RegEnable, Valid}
 import cpu.alu.mult_gen_mul16_fast
-import jyd.{BlkMemGen4KB, DistMemGen512x8}
+import jyd.{BlkMemGen4KB, DistMemGen32x32, DistMemGen512x8}
 
 class DCache extends Module {
   val io = IO(new Bundle {
@@ -63,6 +63,7 @@ class DCache extends Module {
   // removes the post-BRAM bank mux while preserving the one-cycle read latency.
   val dataMem = Module(new BlkMemGen4KB)
   val tagMem  = Seq.fill(2)(Module(new DistMemGen512x8))
+  val dotNRowAccumulatorMem = Module(new DistMemGen32x32)
   // Two private asynchronous read ports let list-find fetch a node's next and
   // info words in parallel. List reverse reuses port 0 while list-find is idle.
   val listTagMem = Seq.fill(2)(Seq.fill(2)(Module(new DistMemGen512x8)))
@@ -93,6 +94,7 @@ class DCache extends Module {
     val idle, stream, drain, rowLoadA, rowLoadADrain, rowStreamB, rowDrain, rowStore, done = Value
   }
   val dotNState = RegInit(DotNState.idle)
+  val dotNStartPending = RegInit(false.B)
   val dotNOperandA = Reg(UInt(16.W))
   val dotNMultiplierOperandA = Reg(UInt(16.W))
   val dotNMultiplierOperandB = Reg(UInt(16.W))
@@ -103,6 +105,7 @@ class DCache extends Module {
   val dotNAddressA = Reg(UInt(32.W))
   val dotNAddressB = Reg(UInt(32.W))
   val dotNIssueB = RegInit(false.B)
+  val dotNScalarRequestValid = RegInit(false.B)
   val dotNAccumulator = Reg(UInt(32.W))
   val dotNBitMode = Reg(Bool())
   val dotNRowMode = Reg(Bool())
@@ -112,9 +115,11 @@ class DCache extends Module {
   val dotNACacheHitReg = RegInit(false.B)
   val dotNACacheDataReg = Reg(UInt(16.W))
   val dotNRowA = Reg(Vec(16, UInt(16.W)))
-  val dotNRowAccumulators = RegInit(VecInit(Seq.fill(16)(0.U(32.W))))
   val dotNRowAddressC = Reg(UInt(32.W))
   val dotNRowRequestAddress = Reg(UInt(32.W))
+  val dotNRowRequestValid = RegInit(false.B)
+  val dotNRowRequestB = RegInit(false.B)
+  val dotNRowRequestWrite = RegInit(false.B)
   val dotNRowIssueIndex = Reg(UInt(8.W))
   val dotNRowIssueColumn = Reg(UInt(4.W))
   val dotNRowIssueK = Reg(UInt(4.W))
@@ -191,7 +196,7 @@ class DCache extends Module {
   val dotNLookupWord = dotNACacheData(dotNLookupIndex)
   val dotNLookupHalf = Mux(dotNLookupAddress(1), dotNLookupWord(31, 16), dotNLookupWord(15, 0))
 
-  val dotNScalarRequestFire = io.dotNRequestFire && !dotNRowMode
+  val dotNScalarRequestFire = io.dotNRequestFire && dotNScalarRequestValid
   val dotNRequestFireValid0 = RegNext(dotNScalarRequestFire, false.B)
   val dotNRequestIsB0 = RegEnable(dotNRequestIsB, io.dotNRequestFire)
   val dotNRequestHigh0 = RegEnable(Mux(dotNRequestIsB, dotNAddressB(1), dotNAddressA(1)), io.dotNRequestFire)
@@ -212,18 +217,22 @@ class DCache extends Module {
   val dotNScalarLaunchValid = io.dotNMemResponse.valid && dotNRequestFireValid1 && dotNRequestIsB1
   val dotNScalarLaunchLast = dotNScalarLaunchValid && dotNRequestLast1
 
-  val dotNRowReadFire = io.dotNRequestFire && dotNRowMode && dotNState =/= DotNState.rowStore
-  val dotNRowLoadAFire0 = RegNext(dotNRowReadFire && dotNState === DotNState.rowLoadA, false.B)
-  val dotNRowLoadAIndex0 = RegEnable(dotNRowIssueIndex(3, 0), dotNRowReadFire)
-  val dotNRowLoadAHigh0 = RegEnable(dotNRowRequestAddress(1), dotNRowReadFire)
-  val dotNRowLoadALast0 = RegEnable(dotNRowIssueIndex === dotNRemaining - 1.U, dotNRowReadFire)
-  val dotNRowBFire0 = RegNext(dotNRowReadFire && dotNState === DotNState.rowStreamB, false.B)
-  val dotNRowBK0 = RegEnable(dotNRowIssueK, dotNRowReadFire)
-  val dotNRowBColumn0 = RegEnable(dotNRowIssueColumn, dotNRowReadFire)
-  val dotNRowBHigh0 = RegEnable(dotNRowRequestAddress(1), dotNRowReadFire)
+  val dotNRowRequestFire = io.dotNRequestFire && dotNRowRequestValid
+  val dotNRowReadFire = dotNRowRequestFire && !dotNRowRequestWrite
+  val dotNRowLoadAActive = dotNRowRequestValid && !dotNRowRequestWrite && !dotNRowRequestB
+  val dotNRowLoadARequest = dotNRowReadFire && !dotNRowRequestB
+  val dotNRowBRequest = dotNRowReadFire && dotNRowRequestB
+  val dotNRowLoadAFire0 = RegNext(dotNRowLoadARequest, false.B)
+  val dotNRowLoadAIndex0 = RegEnable(dotNRowIssueIndex(3, 0), dotNRowLoadARequest)
+  val dotNRowLoadAHigh0 = RegEnable(dotNRowRequestAddress(1), dotNRowLoadARequest)
+  val dotNRowLoadALast0 = RegEnable(dotNRowIssueIndex === dotNRemaining - 1.U, dotNRowLoadARequest)
+  val dotNRowBFire0 = RegNext(dotNRowBRequest, false.B)
+  val dotNRowBK0 = RegEnable(dotNRowIssueK, dotNRowBRequest)
+  val dotNRowBColumn0 = RegEnable(dotNRowIssueColumn, dotNRowBRequest)
+  val dotNRowBHigh0 = RegEnable(dotNRowRequestAddress(1), dotNRowBRequest)
   val dotNRowBLast0 = RegEnable(
     dotNRowIssueK === dotNRemaining - 1.U && dotNRowIssueColumn === dotNRemaining - 1.U,
-    dotNRowReadFire
+    dotNRowBRequest
   )
   val dotNRowLoadAFire1 = RegNext(dotNRowLoadAFire0, false.B)
   val dotNRowLoadAIndex1 = RegEnable(dotNRowLoadAIndex0, dotNRowLoadAFire0)
@@ -266,31 +275,66 @@ class DCache extends Module {
   val dotNBitTerm = (dotNProduct(5, 2) * dotNProduct(11, 5)).pad(32)
   val dotNTerm = Mux(dotNBitMode, dotNBitTerm, dotNSignedTerm)
   val dotNNextAccumulator = dotNAccumulator + dotNTerm
+  val dotNRowTermValid = RegNext(dotNProductValid && dotNRowMode, false.B)
+  val dotNRowTermLast = RegEnable(dotNProductLast, dotNProductValid && dotNRowMode)
+  val dotNRowTermColumn = RegEnable(dotNProductColumn, dotNProductValid && dotNRowMode)
+  val dotNRowTerm = RegEnable(dotNTerm, dotNProductValid && dotNRowMode)
 
-  when(dotNState === DotNState.idle && io.dotNStart) {
+  // The load-A phase clears its current lane; an external stall only repeats
+  // that harmless zero write, while accepted requests advance the lane. Row
+  // products then update the asynchronous LUTRAM read port one pipeline stage
+  // after signed/bit term formation.
+  val dotNRowAccumulatorWrite = dotNRowLoadAActive || dotNRowTermValid
+  dotNRowAccumulatorMem.io.clk := clock
+  dotNRowAccumulatorMem.io.we := dotNRowAccumulatorWrite
+  dotNRowAccumulatorMem.io.a :=
+    Mux(dotNRowLoadAActive, dotNRowIssueIndex(3, 0), dotNRowTermColumn).pad(6)
+  dotNRowAccumulatorMem.io.dpra :=
+    Mux(dotNRowRequestWrite, dotNRowStoreIndex, dotNRowTermColumn).pad(6)
+  dotNRowAccumulatorMem.io.d :=
+    Mux(dotNRowLoadAActive, 0.U, dotNRowAccumulatorMem.io.dpo + dotNRowTerm)
+
+  // Capture the EXU request and payload at the cache boundary. The EXU keeps a
+  // multi-cycle instruction valid until completion, so the pending bit both
+  // breaks the raw start-to-FSM path and prevents a second capture.
+  val dotNStartCapture = dotNState === DotNState.idle && !dotNStartPending && io.dotNStart
+  when(dotNStartCapture) {
     assert(listFindState === ListFindState.idle, "dotN and list-find walkers must be mutually exclusive")
+    dotNStartPending := true.B
     dotNAddressA := io.dotNAddressA
     dotNAddressB := io.dotNAddressB
+    dotNRowAddressC := io.dotNAddressC
     dotNRemaining := io.dotNLength
     dotNStride := Cat(io.dotNLength, 0.U(1.W))
-    dotNIssueB := false.B
-    dotNAccumulator := 0.U
     dotNBitMode := io.dotNBitMode
     dotNRowMode := io.dotNRowMode
-    when(io.dotNRowMode) {
-      assert(io.dotNLength >= 4.U && io.dotNLength <= 16.U, "dot-row length must be in [4, 16]")
-      dotNRowAddressC := io.dotNAddressC
-      dotNRowRequestAddress := io.dotNAddressA
+    dotNACacheHitReg := dotNLookupHit
+    dotNACacheDataReg := dotNLookupHalf
+  }
+
+  when(dotNState === DotNState.idle && dotNStartPending) {
+    assert(listFindState === ListFindState.idle, "dotN and list-find walkers must be mutually exclusive")
+    dotNStartPending := false.B
+    dotNIssueB := false.B
+    dotNAccumulator := 0.U
+    when(dotNRowMode) {
+      assert(dotNRemaining >= 4.U && dotNRemaining <= 16.U, "dot-row length must be in [4, 16]")
+      dotNScalarRequestValid := false.B
+      dotNRowRequestAddress := dotNAddressA
+      dotNRowRequestValid := true.B
+      dotNRowRequestB := false.B
+      dotNRowRequestWrite := false.B
       dotNRowIssueIndex := 0.U
       dotNRowIssueColumn := 0.U
       dotNRowIssueK := 0.U
       dotNRowStoreIndex := 0.U
-      dotNRowAccumulators.foreach(_ := 0.U)
       dotNState := DotNState.rowLoadA
     }.otherwise {
-      dotNACacheHitReg := dotNLookupHit
-      dotNACacheDataReg := dotNLookupHalf
-      dotNState := Mux(io.dotNLength === 0.U, DotNState.done, DotNState.stream)
+      dotNScalarRequestValid := dotNRemaining =/= 0.U
+      dotNRowRequestValid := false.B
+      dotNRowRequestB := false.B
+      dotNRowRequestWrite := false.B
+      dotNState := Mux(dotNRemaining === 0.U, DotNState.done, DotNState.stream)
     }
   }.elsewhen(dotNState === DotNState.stream && io.dotNRequestFire) {
     when(dotNRequestIsB) {
@@ -301,6 +345,7 @@ class DCache extends Module {
       dotNACacheHitReg := dotNLookupHit
       dotNACacheDataReg := dotNLookupHalf
       when(dotNRemaining === 1.U) {
+        dotNScalarRequestValid := false.B
         dotNState := DotNState.drain
       }
     }.otherwise {
@@ -308,13 +353,14 @@ class DCache extends Module {
     }
   }.elsewhen(dotNState === DotNState.drain && dotNProductValid && dotNProductLast) {
     dotNState := DotNState.done
-  }.elsewhen(dotNState === DotNState.rowLoadA && io.dotNRequestFire) {
+  }.elsewhen(dotNState === DotNState.rowLoadA && dotNRowRequestFire) {
     dotNRowRequestAddress := dotNRowRequestAddress + 2.U
     dotNRowIssueIndex := dotNRowIssueIndex + 1.U
     when(dotNRowIssueIndex === dotNRemaining - 1.U) {
+      dotNRowRequestValid := false.B
       dotNState := DotNState.rowLoadADrain
     }
-  }.elsewhen(dotNState === DotNState.rowStreamB && io.dotNRequestFire) {
+  }.elsewhen(dotNState === DotNState.rowStreamB && dotNRowRequestFire) {
     dotNRowRequestAddress := dotNRowRequestAddress + 2.U
     when(dotNRowIssueColumn === dotNRemaining - 1.U) {
       dotNRowIssueColumn := 0.U
@@ -323,12 +369,15 @@ class DCache extends Module {
       dotNRowIssueColumn := dotNRowIssueColumn + 1.U
     }
     when(dotNRowIssueK === dotNRemaining - 1.U && dotNRowIssueColumn === dotNRemaining - 1.U) {
+      dotNRowRequestValid := false.B
       dotNState := DotNState.rowDrain
     }
-  }.elsewhen(dotNState === DotNState.rowStore && io.dotNRequestFire) {
-    dotNRowAddressC := dotNRowAddressC + 4.U
+  }.elsewhen(dotNState === DotNState.rowStore && dotNRowRequestFire) {
+    dotNRowRequestAddress := dotNRowRequestAddress + 4.U
     dotNRowStoreIndex := dotNRowStoreIndex + 1.U
     when(dotNRowStoreIndex === dotNRemaining - 1.U) {
+      dotNRowRequestValid := false.B
+      dotNRowRequestWrite := false.B
       dotNState := DotNState.done
     }
   }.elsewhen(dotNState === DotNState.done && io.dotNConsume) {
@@ -351,6 +400,8 @@ class DCache extends Module {
       Mux(dotNRowLoadAHigh1, io.dotNMemResponse.bits(31, 16), io.dotNMemResponse.bits(15, 0))
     when(dotNRowLoadALast1) {
       dotNRowRequestAddress := dotNAddressB
+      dotNRowRequestValid := true.B
+      dotNRowRequestB := true.B
       dotNState := DotNState.rowStreamB
     }
   }
@@ -358,30 +409,29 @@ class DCache extends Module {
   when(io.dataMutation) {
     dotNACacheValid(dotNMutationIndex) := false.B
   }
-  when(io.dotNRequestFire && dotNState === DotNState.rowStore) {
-    dotNACacheValid(dotNRowAddressC(4, 2)) := false.B
+  when(dotNRowRequestFire && dotNRowRequestWrite) {
+    dotNACacheValid(dotNRowRequestAddress(4, 2)) := false.B
   }
 
-  when(dotNProductValid) {
-    when(dotNRowMode) {
-      dotNRowAccumulators(dotNProductColumn) := dotNRowAccumulators(dotNProductColumn) + dotNTerm
-      when(dotNProductLast) {
-        dotNState := DotNState.rowStore
-      }
-    }.otherwise {
-      dotNAccumulator := dotNNextAccumulator
-    }
+  when(dotNProductValid && !dotNRowMode) {
+    dotNAccumulator := dotNNextAccumulator
+  }
+  when(dotNRowTermValid && dotNRowTermLast) {
+    dotNRowRequestAddress := dotNRowAddressC
+    dotNRowRequestValid := true.B
+    dotNRowRequestB := false.B
+    dotNRowRequestWrite := true.B
+    dotNState := DotNState.rowStore
   }
 
-  io.dotNRequest := dotNState === DotNState.stream || dotNState === DotNState.rowLoadA ||
-    dotNState === DotNState.rowStreamB || dotNState === DotNState.rowStore
+  io.dotNRequest := dotNScalarRequestValid || dotNRowRequestValid
   io.dotNRequestAddress := Mux(
-    dotNRowMode,
-    Mux(dotNState === DotNState.rowStore, dotNRowAddressC, dotNRowRequestAddress),
+    dotNRowRequestValid,
+    dotNRowRequestAddress,
     Mux(dotNRequestIsB, dotNAddressB, dotNAddressA)
   ) & ~3.U(32.W)
-  io.dotNRequestWrite := dotNState === DotNState.rowStore
-  io.dotNRequestWriteData := dotNRowAccumulators(dotNRowStoreIndex)
+  io.dotNRequestWrite := dotNRowRequestWrite
+  io.dotNRequestWriteData := dotNRowAccumulatorMem.io.dpo
   io.dotNDone := dotNState === DotNState.done
   io.dotNResult := dotNAccumulator
 
@@ -400,7 +450,10 @@ class DCache extends Module {
   }
 
   when(listFindState === ListFindState.idle && io.listFindStart) {
-    assert(dotNState === DotNState.idle, "list-find and dotN walkers must be mutually exclusive")
+    assert(
+      dotNState === DotNState.idle && !dotNStartPending && !dotNStartCapture,
+      "list-find and dotN walkers must be mutually exclusive"
+    )
     listFindOwnsPort0 := true.B
     listFindRequestValid := false.B
     listFindCurrent := io.listFindAddress

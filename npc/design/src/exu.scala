@@ -912,7 +912,7 @@ class EXU(
   // normal store port. Qualify the architectural store locally so cache hit or
   // accelerator state never enters a distributed-memory write-enable cone.
   val normalStoreRequest = isTypStore && io.in.valid && io.out.ready
-  val dotNStoreRequest = isDotN && io.dcache.dotNRequestWrite
+  val dotNStoreRequest = io.dcache.dotNRequest && io.dcache.dotNRequestWrite
   val cacheableStoreFire = io.memReq.fire && normalStoreRequest && reg1AddImm(21, 20) === "b01".U
   // Keep the asynchronous tag lookup out of this cross-module control and
   // every data-memory write enable.
@@ -932,7 +932,7 @@ class EXU(
   val dotNRequest = io.dcache.dotNRequest
   val dcacheWalkerRequest = listFindRequest || dotNRequest
   val dcacheWalkerRequestAddress = Mux(
-    dotNRequest,
+    isDotN,
     io.dcache.dotNRequestAddress,
     io.dcache.listFindRequestAddress
   )
@@ -958,12 +958,12 @@ class EXU(
     2.U, func3t(1, 0))
   normalMemReq.wen   := Mux(isNumericDfaStep, false.B,
     Mux(isListReverse, listReverseStoreRequest,
-      Mux(isDotN, io.dcache.dotNRequestWrite, !isDcacheWalker && !isXmsum && isTypStore)))
+      Mux(dotNRequest, io.dcache.dotNRequestWrite, isTypStore)))
   normalMemReq.wdata := Mux(listReverseStoreRequest, listReversePrevious,
     Mux(dotNStoreRequest, io.dcache.dotNRequestWriteData,
-      Mux(isXmsum || isDcacheWalker || (isListReverse && !listReverseStoreRequest), 0.U, memWData)))
+      Mux(xmsumRequest || dcacheWalkerRequest || (isListReverse && !listReverseStoreRequest), 0.U, memWData)))
   normalMemReq.wmask := Mux(listReverseStoreRequest || dotNStoreRequest, "b1111".U,
-    Mux(isXmsum || isDcacheWalker || (isListReverse && !listReverseStoreRequest), 0.U, memWMask))
+    Mux(xmsumRequest || dcacheWalkerRequest || (isListReverse && !listReverseStoreRequest), 0.U, memWMask))
   io.memReq.valid := xdfaWordRequest || listReverseRequest || dcacheWalkerRequest || xmsumRequest ||
     (needMemReq && io.in.valid && io.out.ready)
   io.memReq.bits := normalMemReq
